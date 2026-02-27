@@ -2,5 +2,9 @@ name = "LTLLib"
 version = "0.1.0"
 defaultTargets = ["LTLLib"]
 
+[[require]]
+name = "lentil"
+path = "../Lentil"
+
 [[lean_lib]]
 name = "LTLLib"
