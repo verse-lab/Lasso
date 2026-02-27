@@ -1,0 +1,6 @@
+name = "LTLLib"
+version = "0.1.0"
+defaultTargets = ["LTLLib"]
+
+[[lean_lib]]
+name = "LTLLib"
