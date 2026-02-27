@@ -29,7 +29,7 @@ LTLLib/
 **`LTL/Syntax.lean`** — Defines both formula types and the conversion between them:
 - `NNF α` — Internal NNF (Negative Normal Form) IR where negation only appears at the atomic level (`prop`/`nprop`). Provides `neg`, `eventually`, `always`, `implies`. Corresponds to `'a ltlr` / `'a frml` in the CAVA LTL framework. This is the representation consumed by the GBA pipeline.
 - `Formula α` — User-facing syntax with the full set of standard operators: `not`, `implies`, `iff`, `eventually`, `always`, etc. Corresponds to `'a ltln` in the CAVA framework.
-- `Formula.toNNF` / `Formula.toNNFNeg` — Mutually recursive NNF compilation. Pushes negation to atoms, desugars derived operators. Corresponds to `ltln_to_ltlr`.
+- `Formula.toNNF` — NNF compilation with a `pos : Bool` polarity parameter. Pushes negation to atoms, desugars derived operators. Corresponds to `ltln_to_ltlr`.
 
 **`LTL/Subformulas.lean`** — Computes the subformula closure (`subformulas`) and extracts Until-subformulas as pairs (`untilSubformulas`). Corresponds to `subfrmlsr` and `until_frmlsr` in the CAVA framework. Used for defining acceptance conditions (one set per Until-subformula).
 

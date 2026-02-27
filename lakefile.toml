@@ -6,5 +6,11 @@ defaultTargets = ["LTLLib"]
 name = "lentil"
 path = "../Lentil"
 
+[[require]]
+name = "cslib"
+scope = "leanprover"
+git = "https://github.com/leanprover/cslib.git"
+rev = "2df5ad81825dba80e2613db9b213f99b8febd09d"
+
 [[lean_lib]]
 name = "LTLLib"
