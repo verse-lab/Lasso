@@ -1,6 +1,13 @@
-# Plan: Degeneralization Correctness Proof (Phase D)
+# Plan: Degeneralization Correctness Proof (Phase D) — ✅ DONE
 
-## Context
+## Status
+
+**COMPLETED.** Both sorry's filled. Builds cleanly with 0 sorry, 0 warnings.
+
+The actual proof followed the "simpler alternative" approach (CAVA's `degen_run_find_acc_aux`)
+rather than the `Frequently` API approach. Used `Nat.find` from `Mathlib.Order.Nat`.
+
+## Original Context
 
 Phase 1 is mostly complete: `Semantics.lean` is sorry-free, `Acceptance.lean` has all
 definitions (`GBASpec`, `BASpec`, `GBASpec.degeneralize`, `counterStep`, `mkCounter`) and
@@ -8,7 +15,7 @@ definitions (`GBASpec`, `BASpec`, `GBASpec.degeneralize`, `counterStep`, `mkCoun
 Two `sorry`s remain in `degeneralize_correct` (lines 210, 253 of `Acceptance.lean`).
 
 This plan fills in both sorry's, following the proof structure from CAVA's `Automata.thy`
-(lines 976-1252) and leveraging Mathlib's `Filter.Frequently` API.
+(lines 976-1252).
 
 ## File to modify
 

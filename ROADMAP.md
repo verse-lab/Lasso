@@ -11,7 +11,7 @@ NNF formula ψ
     ▼  (constructGBA)          Phase 3-4: prove this correct
 GBA (generalized Buchi automaton)
     │
-    ▼  (degeneralize)          Deferred: prove this correct
+    ▼  (degeneralize)          Phase D: ✅ proved correct
 BA (standard Buchi automaton)
     │
     ▼  (nestedDFS / emptiness) Phase E: prove this correct
@@ -41,10 +41,9 @@ This requires additionally:
 
 ---
 
-## Phase 1: Semantic Foundations  ✅ (mostly done)
+## Phase 1: Semantic Foundations  ✅ DONE
 
-**Status**: Semantics.lean complete (sorry-free). Acceptance.lean has definitions
-but degeneralize_correct has 2 sorry's (deferred, not on critical path).
+**Status**: All sorry-free. Builds cleanly.
 
 | Item | Status |
 |------|--------|
@@ -52,7 +51,7 @@ but degeneralize_correct has 2 sorry's (deferred, not on critical path).
 | `NNF.neg_correct` | ✅ |
 | `Formula.toNNF_correct` | ✅ |
 | `GBASpec`, `BASpec`, `GBASpec.Accepts` | ✅ |
-| `degeneralize_correct` | ⏸ deferred (not needed for Phase 4) |
+| `degeneralize_correct` | ✅ (completed in Phase D) |
 
 ## Phase 2: Termination
 
@@ -86,28 +85,21 @@ properties (e.g., `and(p,q) ∈ old(n) → p ∈ old(n) ∧ q ∈ old(n)`).
 
 ---
 
-## Phase D: Degeneralization Correctness (deferred)
+## Phase D: Degeneralization Correctness  ✅ DONE
 
 ```
 ∀ ξ, A.degeneralize.Accepts ξ ↔ A.Accepts ξ
 ```
 
-Standard counter-cycling argument (Baier & Katoen, Section 4.3.3).
-Independent of Phases 2-4. Only needed for Phase E.
+**Status**: Sorry-free. Uses counter-cycling argument following CAVA's `Automata.thy`.
 
-### Proof idea (following CAVA's Automata.thy)
+Helper lemmas proved: `counterStep_not_accept_gen`, `counterStep_accept_gen`,
+`counter_stays_at`, `counter_advances_from`, `counter_reaches_zero`,
+`counter_advance_to_next`.
 
-**Forward** (BA accepts → GBA accepts):
-- BA accepting run visits counter=0 ∧ F_0 infinitely often
-- If any F_i were visited only finitely often, counter gets stuck → contradiction
-- Between consecutive accepting visits, counter cycles through all values
-
-**Backward** (GBA accepts → BA accepts):
-- Construct counter sequence (mkCounter, already defined)
-- Show counter cycles because each F_i is visited infinitely often
-- At counter=0 with F_0 visited → accepting BA state
-
-**Estimated effort**: ~150-200 lines of Lean proof.
+Main proofs: `degeneralize_forward` (chains `counter_advance_to_next` by induction
+on acceptance set index) and `degeneralize_backward` (uses `counter_reaches_zero` +
+`Nat.find` + `counter_stays_zero`).
 
 ---
 
@@ -213,11 +205,11 @@ Phase D and E extend to the full pipeline.
 
 | Phase | Lines (est.) | Difficulty |
 |-------|-------------|------------|
-| Phase 1 remaining (degeneralize) | 150-200 | Medium |
+| ~~Phase 1 (semantics)~~ | ~~150-200~~ | ✅ DONE |
 | Phase 2 (expand termination) | ~200 | Hard |
 | Phase 2 (DFS termination) | ~100 | Medium |
 | Phase 3 (invariants) | ~500 | Medium-Hard |
 | Phase 4 (soundness + completeness) | ~800 | Hard |
-| Phase D (degeneralization proof) | 150-200 | Medium |
+| ~~Phase D (degeneralization proof)~~ | ~~150-200~~ | ✅ DONE |
 | Phase E Layer 2 (lasso characterization) | ~300 | Medium |
 | Phase E Layer 3 (algorithm correctness) | 500-1000 | Very Hard |

@@ -4,10 +4,10 @@ This document outlines a plan for porting the correctness proofs from the Isabel
 
 ## Current state
 
-- **0** theorems/lemmas in LTLLib
-- **3** `partial` functions: `expand` (Expand.lean), `innerDFS` and `outerDFSLoop` (NestedDFS.lean)
+- Phase 1 (Semantics) and Phase D (Degeneralization) are **DONE** — all sorry-free
+- **3** `partial` functions remain: `expand` (Expand.lean), `innerDFS` and `outerDFSLoop` (NestedDFS.lean)
 - **0** `sorry`
-- No semantic definitions (LTL satisfaction, automata acceptance)
+- Completed: `tla_release`, `NNF.toPred`, `NNF.satisfies`, `NNF.neg_correct`, `Formula.toNNF_correct`, `GBASpec`, `BASpec`, `degeneralize_correct`
 
 ## What the Isabelle formalization proves
 
@@ -51,7 +51,7 @@ The refinement framework is used pervasively: `expand` is defined using `REC` (w
 
 ## Proof porting phases
 
-### Phase 1: Semantic foundations
+### Phase 1: Semantic foundations ✅ DONE
 
 Define the denotational semantics needed to even *state* the correctness theorems. No dependency on other phases.
 
@@ -74,7 +74,7 @@ Define the denotational semantics needed to even *state* the correctness theorem
 - `GBA.Run`: an infinite path `σ : Nat → State` compatible with labeling
 - `GBA.isAcceptingRun`: run visits every acceptance set infinitely often
 - `GBA.accepts ξ`: there exists an accepting run labeled by ξ
-- Same for `BA`, plus: `theorem degeneralize_correct : ba.accepts ξ ↔ gba.accepts ξ`
+- Same for `BA`, plus: `theorem degeneralize_correct : ba.accepts ξ ↔ gba.accepts ξ` ✅
 
 **Key consideration**: ω-words are `Nat → Set α` (or `Nat → α → Prop`). Lean's `Set` is `α → Prop`, so this is `Nat → α → Prop`. The `suffix` operation is `fun j ξ i => ξ (i + j)`.
 
@@ -162,7 +162,7 @@ Phase 1 (Semantics)          Phase 2 (Termination)
 
 | Phase | Isabelle lines | Estimated Lean effort |
 |-------|---------------|----------------------|
-| Phase 1: Semantics | ~200 (imported from AFP) | Medium — define from scratch, prove `toNNF_correct` |
+| ~~Phase 1: Semantics~~ | ~~~200~~ | ✅ DONE |
 | Phase 2: Termination | ~400 | Hard — restructure from refinement framework to direct WF induction |
 | Phase 3: Invariants | ~1000 | Medium-Hard — mechanical but tedious, ~15 propagation lemmas |
 | Phase 4: Main theorems | ~1800 | Hard — soundness induction + completeness witness construction |
