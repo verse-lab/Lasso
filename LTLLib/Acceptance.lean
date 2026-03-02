@@ -1,15 +1,15 @@
 /-
   Proof-level automata acceptance definitions.
 
-  Defines abstract specifications for Generalized Büchi Automata (GBA) and
-  standard Büchi Automata (BA), their acceptance conditions, and the
-  degeneralization construction with its correctness proof.
+  Defines `OASpec`, a unified abstract specification for both Generalized
+  Büchi Automata (GBA, with `k` acceptance sets) and standard Büchi Automata
+  (BA, with `k = 1`), their acceptance conditions, and the degeneralization
+  construction with its correctness proof.
 
   Key definitions:
-  - `GBASpec`: Proof-level GBA with multiple acceptance sets
-  - `BASpec`: Proof-level BA with single acceptance set
-  - `GBASpec.degeneralize`: Abstract degeneralization construction
-  - `GBA.toSpec`: Bridge from computational `GBA` to `GBASpec`
+  - `OASpec`: Proof-level automaton with `k` acceptance sets (parameter)
+  - `OASpec.degeneralize`: Abstract degeneralization construction (k → 1)
+  - `GBA.toSpec`: Bridge from computational `GBA` to `OASpec`
 
   Key theorems:
   - `degeneralize_correct`: Degeneralized BA accepts the same ω-words as the GBA
@@ -24,154 +24,116 @@ namespace LTLLib
 
 open TLA Classical
 
-/-! ## Proof-level GBA specification -/
+/-! ## Proof-level automaton specification -/
 
-/-- Abstract specification of a Generalized Büchi Automaton.
-    Parametrized by state type `State` and atomic proposition type `α`. -/
-structure GBASpec (State : Type) (α : Type) where
+/-- Abstract specification of an ω-automaton with `k` acceptance sets.
+    When `k = 1`, this is a standard Büchi Automaton (BA).
+    When `k > 1`, this is a Generalized Büchi Automaton (GBA).
+    When `k = 0`, every run is vacuously accepting. -/
+structure OASpec (State : Type) (α : Type) (k : Nat) where
   /-- Transition relation. -/
   trans : State → State → Prop
   /-- Initial state predicate. -/
   initial : State → Prop
   /-- Label compatibility: state is compatible with a valuation. -/
   labelCompat : State → (α → Prop) → Prop
-  /-- Number of acceptance sets. -/
-  numAcceptSets : Nat
-  /-- Acceptance set predicate, indexed by `Fin numAcceptSets`. -/
-  acceptSet : Fin numAcceptSets → State → Prop
+  /-- Acceptance set predicate, indexed by `Fin k`. -/
+  acceptSet : Fin k → State → Prop
 
-namespace GBASpec
+namespace OASpec
 
-variable {State : Type} {α : Type} (A : GBASpec State α)
+variable {State : Type} {α : Type} {k : Nat} (A : OASpec State α k)
 
-/-- An infinite run of the GBA: initial state and valid transitions. -/
-def IsRun (σ : exec State) : Prop :=
-  A.initial (σ 0) ∧ ∀ k, A.trans (σ k) (σ (k + 1))
+/-- An infinite run: initial state and valid transitions. -/
+def isRun (σ : exec State) : Prop :=
+  A.initial (σ 0) ∧ ∀ n, A.trans (σ n) (σ (n + 1))
 
 /-- A run is compatible with an ω-word if each state is label-compatible
     with the corresponding position. -/
-def RunCompatible (σ : exec State) (ξ : OmegaWord α) : Prop :=
-  ∀ k, A.labelCompat (σ k) (ξ k)
+def runCompatible (σ : exec State) (ξ : OmegaWord α) : Prop :=
+  ∀ n, A.labelCompat (σ n) (ξ n)
 
-/-- A run is GBA-accepting if it visits each acceptance set infinitely often. -/
-def IsAccepting (σ : exec State) : Prop :=
-  ∀ i : Fin A.numAcceptSets, ∀ k, ∃ j, A.acceptSet i (σ (k + j))
+/-- A run is accepting if it visits each acceptance set infinitely often. -/
+def isAcceptingRun (σ : exec State) : Prop :=
+  ∀ i : Fin k, ∀ n, ∃ j, A.acceptSet i (σ (n + j))
 
-/-- The GBA accepts an ω-word if there exists a run that is valid,
+/-- The automaton accepts an ω-word if there exists a run that is valid,
     compatible, and accepting. -/
-def Accepts (ξ : OmegaWord α) : Prop :=
-  ∃ σ : exec State, A.IsRun σ ∧ A.RunCompatible σ ξ ∧ A.IsAccepting σ
+def accepts (ξ : OmegaWord α) : Prop :=
+  ∃ σ : exec State, A.isRun σ ∧ A.runCompatible σ ξ ∧ A.isAcceptingRun σ
 
-end GBASpec
-
-/-! ## Proof-level BA specification -/
-
-/-- Abstract specification of a (standard) Büchi Automaton.
-    Has a single set of accepting states instead of multiple acceptance sets. -/
-structure BASpec (State : Type) (α : Type) where
-  /-- Transition relation. -/
-  trans : State → State → Prop
-  /-- Initial state predicate. -/
-  initial : State → Prop
-  /-- Label compatibility. -/
-  labelCompat : State → (α → Prop) → Prop
-  /-- Accepting state predicate. -/
-  accepting : State → Prop
-
-namespace BASpec
-
-variable {State : Type} {α : Type} (A : BASpec State α)
-
-/-- An infinite run of the BA. -/
-def IsRun (σ : exec State) : Prop :=
-  A.initial (σ 0) ∧ ∀ k, A.trans (σ k) (σ (k + 1))
-
-/-- A run is compatible with an ω-word. -/
-def RunCompatible (σ : exec State) (ξ : OmegaWord α) : Prop :=
-  ∀ k, A.labelCompat (σ k) (ξ k)
-
-/-- A run is BA-accepting if it visits an accepting state infinitely often. -/
-def IsAccepting (σ : exec State) : Prop :=
-  ∀ k, ∃ j, A.accepting (σ (k + j))
-
-/-- The BA accepts an ω-word if there exists a valid, compatible,
-    accepting run. -/
-def Accepts (ξ : OmegaWord α) : Prop :=
-  ∃ σ : exec State, A.IsRun σ ∧ A.RunCompatible σ ξ ∧ A.IsAccepting σ
-
-end BASpec
+end OASpec
 
 /-! ## Abstract degeneralization -/
 
 /-- One-step counter update for degeneralization.
     Advances the counter when the current acceptance set is visited. -/
-noncomputable def GBASpec.counterStep {State : Type} {α : Type}
-    (A : GBASpec State α) (q : State) (c : Fin (max 1 A.numAcceptSets)) :
-    Fin (max 1 A.numAcceptSets) :=
-  if h : A.numAcceptSets = 0 then c
+noncomputable def OASpec.counterStep {State : Type} {α : Type} {k : Nat}
+    (A : OASpec State α k) (q : State) (c : Fin (max 1 k)) :
+    Fin (max 1 k) :=
+  if h : k = 0 then c
   else
-    let k := A.numAcceptSets
     have hk : k > 0 := Nat.pos_of_ne_zero h
     if A.acceptSet ⟨c.val % k, Nat.mod_lt _ hk⟩ q
     then ⟨(c.val + 1) % (max 1 k), Nat.mod_lt _ (by omega)⟩
     else c
 
 /-- Counter sequence for the degeneralized run, starting at 0. -/
-noncomputable def GBASpec.mkCounter {State : Type} {α : Type}
-    (A : GBASpec State α) (σ : exec State) : Nat → Fin (max 1 A.numAcceptSets)
+noncomputable def OASpec.mkCounter {State : Type} {α : Type} {k : Nat}
+    (A : OASpec State α k) (σ : exec State) : Nat → Fin (max 1 k)
   | 0 => ⟨0, by omega⟩
   | n + 1 => A.counterStep (σ n) (A.mkCounter σ n)
 
-/-- Degeneralize a GBA spec into a BA spec.
+/-- Degeneralize an automaton with `k` acceptance sets into one with 1.
 
-    States of the BA are pairs `(q, c)` where `q` is a GBA state and
-    `c : Fin (max 1 numAcceptSets)` is the acceptance counter.
+    States of the output are pairs `(q, c)` where `q` is the original state
+    and `c : Fin (max 1 k)` is the acceptance counter.
 
     The counter advances (mod k) when the current acceptance set is visited.
-    Accepting states have counter = 0 AND (when k > 0) the state is in
-    acceptance set 0. This prevents trivial acceptance when the counter
+    The single acceptance set requires counter = 0 AND (when k > 0) the state
+    is in acceptance set 0. This prevents trivial acceptance when the counter
     never advances. -/
-noncomputable def GBASpec.degeneralize {State : Type} {α : Type}
-    (A : GBASpec State α) :
-    BASpec (State × Fin (max 1 A.numAcceptSets)) α where
+noncomputable def OASpec.degeneralize {State : Type} {α : Type} {k : Nat}
+    (A : OASpec State α k) :
+    OASpec (State × Fin (max 1 k)) α 1 where
   trans := fun (q, c) (q', c') =>
     A.trans q q' ∧ c' = A.counterStep q c
   initial := fun (q, c) => A.initial q ∧ c = ⟨0, by omega⟩
   labelCompat := fun (q, _) v => A.labelCompat q v
-  accepting := fun (q, c) =>
+  acceptSet := fun _ (q, c) =>
     c = ⟨0, by omega⟩ ∧
-    if h : A.numAcceptSets = 0 then True
+    if h : k = 0 then True
     else A.acceptSet ⟨0, Nat.pos_of_ne_zero h⟩ q
 
 /-! ## Degeneralization correctness -/
 
 section DegeneralizationCorrectness
 
-variable {State : Type} {α : Type} (A : GBASpec State α)
+variable {State : Type} {α : Type} {k : Nat} (A : OASpec State α k)
 
 /-- When counter is at 0 and F_0 is not visited, counter stays at 0. -/
-private theorem counterStep_zero_not_accept (q : State) (hk : A.numAcceptSets > 0)
+private theorem counterStep_zero_not_accept (q : State) (hk : k > 0)
     (hna : ¬ A.acceptSet ⟨0, hk⟩ q) :
     A.counterStep q ⟨0, by omega⟩ = ⟨0, by omega⟩ := by
-  unfold GBASpec.counterStep
-  have hne : A.numAcceptSets ≠ 0 := by omega
+  unfold OASpec.counterStep
+  have hne : k ≠ 0 := by omega
   simp [dif_neg hne]
   intro h
   exact absurd h (by simpa using hna)
 
 /-- When counter is at 0 and F_0 IS visited, counter advances to 1 (mod max 1 k). -/
-private theorem counterStep_zero_accept (q : State) (hk : A.numAcceptSets > 0)
+private theorem counterStep_zero_accept (q : State) (hk : k > 0)
     (ha : A.acceptSet ⟨0, hk⟩ q) :
-    A.counterStep q ⟨0, by omega⟩ = ⟨1 % (max 1 A.numAcceptSets), Nat.mod_lt _ (by omega)⟩ := by
-  unfold GBASpec.counterStep
-  have hne : A.numAcceptSets ≠ 0 := by omega
+    A.counterStep q ⟨0, by omega⟩ = ⟨1 % (max 1 k), Nat.mod_lt _ (by omega)⟩ := by
+  unfold OASpec.counterStep
+  have hne : k ≠ 0 := by omega
   simp [dif_neg hne]
   intro h
   exact absurd (by simpa using ha) h
 
 /-- Counter stays at 0 as long as F_0 is not visited. -/
 private theorem counter_stays_zero (σ : exec State) (n m : Nat)
-    (hk : A.numAcceptSets > 0)
+    (hk : k > 0)
     (hc : A.mkCounter σ n = ⟨0, by omega⟩)
     (hna : ∀ p, n ≤ p → p < n + m → ¬ A.acceptSet ⟨0, hk⟩ (σ p)) :
     A.mkCounter σ (n + m) = ⟨0, by omega⟩ := by
@@ -181,46 +143,46 @@ private theorem counter_stays_zero (σ : exec State) (n m : Nat)
     have ih' : A.mkCounter σ (n + m) = ⟨0, by omega⟩ := by
       apply ih; intro p hp1 hp2; exact hna p hp1 (by omega)
     show A.mkCounter σ (n + m + 1) = _
-    simp [GBASpec.mkCounter, ih']
+    simp [OASpec.mkCounter, ih']
     exact counterStep_zero_not_accept A (σ (n + m)) hk (hna (n + m) (by omega) (by omega))
 
 /-- Generalized: when F_c is NOT visited, counter stays at c. -/
 private theorem counterStep_not_accept_gen (q : State)
-    (c : Fin (max 1 A.numAcceptSets))
-    (hk : A.numAcceptSets > 0)
+    (c : Fin (max 1 k))
+    (hk : k > 0)
     (hna : ¬ A.acceptSet ⟨c.val, by have := c.isLt; omega⟩ q) :
     A.counterStep q c = c := by
-  unfold GBASpec.counterStep
-  have hne : A.numAcceptSets ≠ 0 := by omega
+  unfold OASpec.counterStep
+  have hne : k ≠ 0 := by omega
   rw [dif_neg hne]
-  have hmod : c.val % A.numAcceptSets = c.val :=
+  have hmod : c.val % k = c.val :=
     Nat.mod_eq_of_lt (by have := c.isLt; omega)
-  have : ¬ A.acceptSet ⟨c.val % A.numAcceptSets, Nat.mod_lt _ (by omega)⟩ q := by
-    rwa [show (⟨c.val % A.numAcceptSets, Nat.mod_lt _ (by omega)⟩ : Fin A.numAcceptSets) =
+  have : ¬ A.acceptSet ⟨c.val % k, Nat.mod_lt _ (by omega)⟩ q := by
+    rwa [show (⟨c.val % k, Nat.mod_lt _ (by omega)⟩ : Fin k) =
       ⟨c.val, by have := c.isLt; omega⟩ from Fin.ext hmod]
   simp [if_neg this]
 
 /-- Generalized: when F_c IS visited, counter advances. -/
 private theorem counterStep_accept_gen (q : State)
-    (c : Fin (max 1 A.numAcceptSets))
-    (hk : A.numAcceptSets > 0)
+    (c : Fin (max 1 k))
+    (hk : k > 0)
     (ha : A.acceptSet ⟨c.val, by have := c.isLt; omega⟩ q) :
-    A.counterStep q c = ⟨(c.val + 1) % (max 1 A.numAcceptSets),
+    A.counterStep q c = ⟨(c.val + 1) % (max 1 k),
       Nat.mod_lt _ (by omega)⟩ := by
-  unfold GBASpec.counterStep
-  have hne : A.numAcceptSets ≠ 0 := by omega
+  unfold OASpec.counterStep
+  have hne : k ≠ 0 := by omega
   rw [dif_neg hne]
-  have hmod : c.val % A.numAcceptSets = c.val :=
+  have hmod : c.val % k = c.val :=
     Nat.mod_eq_of_lt (by have := c.isLt; omega)
-  have : A.acceptSet ⟨c.val % A.numAcceptSets, Nat.mod_lt _ (by omega)⟩ q := by
-    rwa [show (⟨c.val % A.numAcceptSets, Nat.mod_lt _ (by omega)⟩ : Fin A.numAcceptSets) =
+  have : A.acceptSet ⟨c.val % k, Nat.mod_lt _ (by omega)⟩ q := by
+    rwa [show (⟨c.val % k, Nat.mod_lt _ (by omega)⟩ : Fin k) =
       ⟨c.val, by have := c.isLt; omega⟩ from Fin.ext hmod]
   simp [if_pos this]
 
 /-- Counter stays at value c as long as F_c is not visited (generalization of counter_stays_zero). -/
 private theorem counter_stays_at (σ : exec State) (n m : Nat)
-    (c : Fin (max 1 A.numAcceptSets))
-    (hk : A.numAcceptSets > 0)
+    (c : Fin (max 1 k))
+    (hk : k > 0)
     (hc : A.mkCounter σ n = c)
     (hna : ∀ p, n ≤ p → p < n + m → ¬ A.acceptSet ⟨c.val, by have := c.isLt; omega⟩ (σ p)) :
     A.mkCounter σ (n + m) = c := by
@@ -230,19 +192,19 @@ private theorem counter_stays_at (σ : exec State) (n m : Nat)
     have ih' : A.mkCounter σ (n + m) = c := by
       apply ih; intro p hp1 hp2; exact hna p hp1 (by omega)
     show A.mkCounter σ (n + m + 1) = _
-    simp [GBASpec.mkCounter, ih']
+    simp [OASpec.mkCounter, ih']
     exact counterStep_not_accept_gen A (σ (n + m)) c hk (hna (n + m) (by omega) (by omega))
 
 /-- Counter eventually advances from c to (c+1) % max 1 k.
     Uses Nat.find to locate the first visit to F_c, then counter_stays_at
     to show counter is still at c at that point. -/
 private theorem counter_advances_from (σ : exec State) (n : Nat)
-    (c : Fin (max 1 A.numAcceptSets))
-    (hk : A.numAcceptSets > 0)
+    (c : Fin (max 1 k))
+    (hk : k > 0)
     (hc : A.mkCounter σ n = c)
     (hvisit : ∃ j, A.acceptSet ⟨c.val, by have := c.isLt; omega⟩ (σ (n + j))) :
     ∃ m, n < m ∧
-      A.mkCounter σ m = ⟨(c.val + 1) % (max 1 A.numAcceptSets),
+      A.mkCounter σ m = ⟨(c.val + 1) % (max 1 k),
         Nat.mod_lt _ (by omega)⟩ := by
   -- Find the first j such that F_c is visited at σ (n + j)
   let j := Nat.find hvisit
@@ -257,20 +219,20 @@ private theorem counter_advances_from (σ : exec State) (n : Nat)
       rwa [show n + (p - n) = p from by omega] at this)
   -- At n + j, F_c is visited, so counter advances
   refine ⟨n + j + 1, by omega, ?_⟩
-  simp [GBASpec.mkCounter, hstay]
+  simp [OASpec.mkCounter, hstay]
   exact counterStep_accept_gen A (σ (n + j)) c hk hj_spec
 
 /-- Counter eventually reaches 0 from any value, given all acceptance sets
     are visited infinitely often. -/
 private theorem counter_reaches_zero (σ : exec State) (n : Nat)
-    (hk : A.numAcceptSets > 0)
-    (hacc : ∀ i : Fin A.numAcceptSets, ∀ k, ∃ j, A.acceptSet i (σ (k + j))) :
+    (hk : k > 0)
+    (hacc : ∀ i : Fin k, ∀ k, ∃ j, A.acceptSet i (σ (k + j))) :
     ∃ m, n ≤ m ∧ (A.mkCounter σ m).val = 0 := by
   -- Induction on fuel = max 1 k, using distance k - c.val as decreasing measure
-  suffices h : ∀ (d : Nat) (n : Nat) (c : Fin (max 1 A.numAcceptSets)),
-      A.mkCounter σ n = c → max 1 A.numAcceptSets - c.val ≤ d →
+  suffices h : ∀ (d : Nat) (n : Nat) (c : Fin (max 1 k)),
+      A.mkCounter σ n = c → max 1 k - c.val ≤ d →
       ∃ m, n ≤ m ∧ (A.mkCounter σ m).val = 0 from
-    h (max 1 A.numAcceptSets) n _ rfl (by omega)
+    h (max 1 k) n _ rfl (by omega)
   intro d
   induction d with
   | zero =>
@@ -281,27 +243,27 @@ private theorem counter_reaches_zero (σ : exec State) (n : Nat)
     by_cases h0 : c.val = 0
     · exact ⟨n, le_refl n, by rw [hc]; exact h0⟩
     · -- Counter at c > 0; advance to (c+1) % max 1 k
-      have hcv : c.val < A.numAcceptSets := by have := c.isLt; omega
+      have hcv : c.val < k := by have := c.isLt; omega
       obtain ⟨m, hnm, hm⟩ := counter_advances_from A σ n c hk hc
         (hacc ⟨c.val, hcv⟩ n)
-      let c' : Fin (max 1 A.numAcceptSets) :=
-        ⟨(c.val + 1) % (max 1 A.numAcceptSets), Nat.mod_lt _ (by omega)⟩
+      let c' : Fin (max 1 k) :=
+        ⟨(c.val + 1) % (max 1 k), Nat.mod_lt _ (by omega)⟩
       by_cases h0' : c'.val = 0
       · -- Counter reached 0 after one advance
         exact ⟨m, by omega, by rw [hm]; exact h0'⟩
       · -- Counter still not 0; c+1 < max 1 k so c'.val = c.val + 1
-        have hc'lt : c.val + 1 < max 1 A.numAcceptSets := by
+        have hc'lt : c.val + 1 < max 1 k := by
           by_contra hge
           push_neg at hge
-          have hceq : c.val + 1 = max 1 A.numAcceptSets := by
+          have hceq : c.val + 1 = max 1 k := by
             have := c.isLt; omega
-          have : (c.val + 1) % max 1 A.numAcceptSets = 0 := by
+          have : (c.val + 1) % max 1 k = 0 := by
             rw [hceq, Nat.mod_self]
           exact h0' this
         have hc'eq : c'.val = c.val + 1 := by
           simp only [c']
           exact Nat.mod_eq_of_lt hc'lt
-        have hdist : max 1 A.numAcceptSets - c'.val ≤ d := by
+        have hdist : max 1 k - c'.val ≤ d := by
           rw [hc'eq]; omega
         obtain ⟨m', hm'le, hm'zero⟩ := ih m c' hm hdist
         exact ⟨m', by omega, hm'zero⟩
@@ -309,15 +271,15 @@ private theorem counter_reaches_zero (σ : exec State) (n : Nat)
 /-- If counter is at v > 0 at position c, and counter reaches 0 at position d ≥ c,
     then acceptSet v is visited somewhere in [c, d), and the counter advances there. -/
 private theorem counter_advance_to_next (σ : exec State) (c d : Nat)
-    (v : Fin (max 1 A.numAcceptSets))
-    (hk : A.numAcceptSets > 0)
+    (v : Fin (max 1 k))
+    (hk : k > 0)
     (hv : v.val > 0)
     (hc : A.mkCounter σ c = v)
     (hd : (A.mkCounter σ d).val = 0)
     (hcd : c ≤ d) :
     ∃ p, c ≤ p ∧ p < d ∧
       A.acceptSet ⟨v.val, by have := v.isLt; omega⟩ (σ p) ∧
-      A.mkCounter σ (p + 1) = ⟨(v.val + 1) % max 1 A.numAcceptSets,
+      A.mkCounter σ (p + 1) = ⟨(v.val + 1) % max 1 k,
         Nat.mod_lt _ (by omega)⟩ := by
   -- Find the first visit to F_v after c
   have hexists : ∃ j, A.acceptSet ⟨v.val, by have := v.isLt; omega⟩ (σ (c + j)) := by
@@ -350,40 +312,42 @@ private theorem counter_advance_to_next (σ : exec State) (c d : Nat)
     have : v.val = 0 := by rw [← congrArg Fin.val hstay_d]; exact hd
     omega
   refine ⟨c + j₀, by omega, hj0_bound, hj0_spec, ?_⟩
-  simp [GBASpec.mkCounter, hstay]
+  simp [OASpec.mkCounter, hstay]
   exact counterStep_accept_gen A (σ (c + j₀)) v hk hj0_spec
 
 /-- Forward direction: if the degeneralized BA accepts, so does the GBA.
     Project the BA run onto its state component to get a GBA run. -/
 private theorem degeneralize_forward {ξ : OmegaWord α}
-    (h : A.degeneralize.Accepts ξ) : A.Accepts ξ := by
+    (h : A.degeneralize.accepts ξ) : A.accepts ξ := by
   obtain ⟨σ_ba, hrun, hcompat, hacc⟩ := h
-  let σ_gba : exec State := fun k => (σ_ba k).1
+  let σ_gba : exec State := fun n => (σ_ba n).1
   refine ⟨σ_gba, ?_, ?_, ?_⟩
-  · -- IsRun
+  · -- isRun
     constructor
     · exact (hrun.1).1
-    · intro k; exact (hrun.2 k).1
-  · -- RunCompatible
-    intro k; exact hcompat k
-  · -- IsAccepting
+    · intro n; exact (hrun.2 n).1
+  · -- runCompatible
+    intro n; exact hcompat n
+  · -- isAcceptingRun
     intro i
-    by_cases h0 : A.numAcceptSets = 0
+    by_cases h0 : k = 0
     · have := i.isLt; omega
-    · have hk : A.numAcceptSets > 0 := Nat.pos_of_ne_zero h0
+    · have hk : k > 0 := Nat.pos_of_ne_zero h0
       -- Establish: (σ_ba n).2 = A.mkCounter σ_gba n
       have hcounter : ∀ n, (σ_ba n).2 = A.mkCounter σ_gba n := by
         intro n; induction n with
-        | zero => exact (hrun.1).2 ▸ (by simp [GBASpec.mkCounter])
+        | zero => exact (hrun.1).2 ▸ (by simp [OASpec.mkCounter])
         | succ n ih =>
           have htrans := (hrun.2 n).2
-          simp [GBASpec.mkCounter, σ_gba, ← ih]; exact htrans
+          simp [OASpec.mkCounter, σ_gba, ← ih]; exact htrans
       -- Extract BA acceptance info using counter correspondence
+      -- Specialize BA acceptance to its single Fin 1 index
+      have hacc_ba := hacc ⟨0, by omega⟩
       have hacc' : ∀ n, ∃ j,
           (A.mkCounter σ_gba (n + j)).val = 0 ∧
           A.acceptSet ⟨0, hk⟩ (σ_gba (n + j)) := by
         intro n
-        obtain ⟨j, hj⟩ := hacc n
+        obtain ⟨j, hj⟩ := hacc_ba n
         refine ⟨j, ?_, ?_⟩
         · have h1 := hj.1
           simp at h1
@@ -399,7 +363,7 @@ private theorem degeneralize_forward {ξ : OmegaWord α}
         exact ⟨j, by rwa [show i = ⟨0, hk⟩ from Fin.ext hi0]⟩
       · -- Case i > 0: chain counter advances between two accepting positions
         have hi_pos : i.val ≥ 1 := by omega
-        have hk2 : A.numAcceptSets ≥ 2 := by have := i.isLt; omega
+        have hk2 : k ≥ 2 := by have := i.isLt; omega
         -- Step 1: find m₁ ≥ n with counter = 0 ∧ F_0
         obtain ⟨j₁, hm1_c0, hm1_f0⟩ := hacc' n
         let m₁ := n + j₁
@@ -407,7 +371,7 @@ private theorem degeneralize_forward {ξ : OmegaWord α}
         have hm1_eq : A.mkCounter σ_gba m₁ = ⟨0, by omega⟩ := Fin.ext hm1_c0
         -- counter(m₁+1) advances to ⟨1, _⟩ (since k ≥ 2, 1 % k = 1)
         have hm1_next : A.mkCounter σ_gba (m₁ + 1) = ⟨1, by omega⟩ := by
-          unfold GBASpec.mkCounter
+          unfold OASpec.mkCounter
           rw [hm1_eq, counterStep_zero_accept A (σ_gba m₁) hk hm1_f0]
           exact Fin.ext (Nat.mod_eq_of_lt (by omega))
         -- Step 2: find m₂ > m₁ with counter = 0
@@ -417,11 +381,11 @@ private theorem degeneralize_forward {ξ : OmegaWord α}
         -- Key claim: ∀ w with 1 ≤ w ≤ i.val, ∃ position in [m₁+1, m₂)
         --   where acceptSet w is visited and counter advances
         suffices hsuff : ∀ w : Nat, (hw1 : 1 ≤ w) → (hwi : w ≤ i.val) →
-            (hwk : w < A.numAcceptSets) →
+            (hwk : w < k) →
             ∃ p, m₁ + 1 ≤ p ∧ p < m₂ ∧
               A.acceptSet ⟨w, by omega⟩ (σ_gba p) ∧
               A.mkCounter σ_gba (p + 1) =
-                ⟨(w + 1) % max 1 A.numAcceptSets, Nat.mod_lt _ (by omega)⟩ by
+                ⟨(w + 1) % max 1 k, Nat.mod_lt _ (by omega)⟩ by
           obtain ⟨p, hp1, _, hpacc, _⟩ := hsuff i.val (by omega) le_rfl i.isLt
           exact ⟨p - n, by rw [show n + (p - n) = p by omega]; exact hpacc⟩
         intro w
@@ -432,7 +396,7 @@ private theorem degeneralize_forward {ξ : OmegaWord α}
           by_cases hw_eq : w = 0
           · -- w+1 = 1: use counter_advance_to_next from m₁+1 (counter = 1)
             subst hw_eq
-            have hone : (⟨1, by omega⟩ : Fin (max 1 A.numAcceptSets)).val > 0 := by
+            have hone : (⟨1, by omega⟩ : Fin (max 1 k)).val > 0 := by
               simp
             obtain ⟨p, hlo, hhi, hacc_p, hnext_p⟩ :=
               counter_advance_to_next A σ_gba (m₁ + 1) m₂
@@ -442,12 +406,12 @@ private theorem degeneralize_forward {ξ : OmegaWord α}
             obtain ⟨p₁, hp1_lo, hp1_hi, _, hp1_next⟩ :=
               ih (by omega) (by omega) (by omega)
             -- counter(p₁+1) = (w+1) % max 1 k. Since w+1 < k, this is w+1.
-            have hw1_mod : (w + 1) % max 1 A.numAcceptSets = w + 1 :=
+            have hw1_mod : (w + 1) % max 1 k = w + 1 :=
               Nat.mod_eq_of_lt (by omega)
             have hc_p1 : A.mkCounter σ_gba (p₁ + 1) = ⟨w + 1, by omega⟩ := by
               rw [hp1_next]; exact Fin.ext hw1_mod
             have hw1_pos : (⟨w + 1, by omega⟩ :
-                Fin (max 1 A.numAcceptSets)).val > 0 := Nat.succ_pos w
+                Fin (max 1 k)).val > 0 := Nat.succ_pos w
             obtain ⟨p₂, hp2_lo, hp2_hi, hp2_acc, hp2_next⟩ :=
               counter_advance_to_next A σ_gba (p₁ + 1) m₂
                 ⟨w + 1, by omega⟩ hk hw1_pos hc_p1 hm2_c0 (by omega)
@@ -456,39 +420,39 @@ private theorem degeneralize_forward {ξ : OmegaWord α}
 /-- Backward direction: if the GBA accepts, so does the degeneralized BA.
     Construct the acceptance counter from the GBA run. -/
 private theorem degeneralize_backward {ξ : OmegaWord α}
-    (h : A.Accepts ξ) : A.degeneralize.Accepts ξ := by
+    (h : A.accepts ξ) : A.degeneralize.accepts ξ := by
   obtain ⟨σ_gba, hrun, hcompat, hacc⟩ := h
   -- The BA run pairs each GBA state with its counter value
-  let σ_ba : exec (State × Fin (max 1 A.numAcceptSets)) :=
+  let σ_ba : exec (State × Fin (max 1 k)) :=
     fun n => (σ_gba n, A.mkCounter σ_gba n)
   refine ⟨σ_ba, ?_, ?_, ?_⟩
-  · -- IsRun
+  · -- isRun
     constructor
     · -- Initial: σ_gba 0 is initial and counter starts at 0
       exact ⟨hrun.1, rfl⟩
     · -- Transitions
       intro n
       exact ⟨hrun.2 n, rfl⟩
-  · -- RunCompatible
-    intro k; exact hcompat k
-  · -- IsAccepting
-    intro n
-    by_cases h0 : A.numAcceptSets = 0
+  · -- runCompatible
+    intro n; exact hcompat n
+  · -- isAcceptingRun
+    intro i n
+    by_cases h0 : k = 0
     · -- No acceptance sets: counter is always 0, and acceptance is trivially true
       refine ⟨0, ?_⟩
-      simp [GBASpec.degeneralize]
+      simp [OASpec.degeneralize]
       constructor
       · -- counter = ⟨0, _⟩
         have : ∀ m, (A.mkCounter σ_gba m).val = 0 := by
           intro m; induction m with
-          | zero => simp [GBASpec.mkCounter]
+          | zero => simp [OASpec.mkCounter]
           | succ m ih =>
-            simp [GBASpec.mkCounter, GBASpec.counterStep, h0]
+            simp [OASpec.mkCounter, OASpec.counterStep, h0]
             exact ih
         exact Fin.ext (this (n + 0))
       · simp [h0]
     · -- k > 0: need counter = 0 ∧ acceptSet 0
-      have hk : A.numAcceptSets > 0 := Nat.pos_of_ne_zero h0
+      have hk : k > 0 := Nat.pos_of_ne_zero h0
       -- Step 1: Find m ≥ n where counter reaches 0
       obtain ⟨m, hnm, hm0⟩ := counter_reaches_zero A σ_gba n hk hacc
       -- Step 2: F_0 is visited i.o.; find first visit after m
@@ -503,23 +467,23 @@ private theorem degeneralize_backward {ξ : OmegaWord α}
       -- Witness: position m + j₀
       refine ⟨m + j₀ - n, ?_⟩
       rw [show n + (m + j₀ - n) = m + j₀ by omega]
-      show A.degeneralize.accepting (σ_ba (m + j₀))
-      simp only [GBASpec.degeneralize, σ_ba]
+      show A.degeneralize.acceptSet i (σ_ba (m + j₀))
+      simp only [OASpec.degeneralize, σ_ba]
       refine ⟨hstay, ?_⟩
       simp [dif_neg h0]
       exact hj0_spec
 
 /-- The degeneralized BA accepts exactly the same ω-words as the GBA. -/
 theorem degeneralize_correct (ξ : OmegaWord α) :
-    A.degeneralize.Accepts ξ ↔ A.Accepts ξ :=
+    A.degeneralize.accepts ξ ↔ A.accepts ξ :=
   ⟨degeneralize_forward A, degeneralize_backward A⟩
 
 end DegeneralizationCorrectness
 
 /-! ## Bridge from computational GBA to proof-level spec -/
 
-/-- Convert a computational `GBA` to a proof-level `GBASpec`. -/
-def GBA.toSpec [BEq α] [Hashable α] (gba : GBA α) : GBASpec Nat α where
+/-- Convert a computational `GBA` to a proof-level `OASpec`. -/
+def GBA.toSpec [BEq α] [Hashable α] (gba : GBA α) : OASpec Nat α gba.numAcceptSets where
   trans q q' := q' ∈ gba.getSuccessors q
   initial q := gba.isInitial q
   labelCompat q v :=
@@ -527,7 +491,6 @@ def GBA.toSpec [BEq α] [Hashable α] (gba : GBA α) : GBASpec Nat α where
     | some (pos, neg) =>
       (∀ a, pos.contains a → v a) ∧ (∀ a, neg.contains a → ¬ v a)
     | none => True
-  numAcceptSets := gba.numAcceptSets
   acceptSet i q := gba.isAccepting i.val q
 
 end LTLLib
