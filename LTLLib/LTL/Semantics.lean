@@ -84,14 +84,14 @@ def NNF.satisfies (ξ : OmegaWord α) (φ : NNF α) : Prop :=
 
 /-- Suffix compatibility: satisfying at a suffix composes properly. -/
 theorem NNF.satisfies_drop_drop (ξ : OmegaWord α) (k l : Nat) (φ : NNF α) :
-    NNF.satisfies ((ξ.drop k).drop l) φ ↔ NNF.satisfies (ξ.drop (k + l)) φ := by
+  φ.satisfies ((ξ.drop k).drop l) ↔ φ.satisfies (ξ.drop (k + l)) := by
   simp only [NNF.satisfies, exec.drop_drop]
 
 /-! ## Negation correctness -/
 
 /-- Negating an NNF formula flips satisfaction. -/
 theorem NNF.neg_correct (ξ : OmegaWord α) (φ : NNF α) :
-  NNF.satisfies ξ φ.neg ↔ ¬ NNF.satisfies ξ φ := by
+  φ.neg.satisfies ξ ↔ ¬ φ.satisfies ξ := by
   induction φ generalizing ξ <;> dsimp [satisfies, NNF.neg, NNF.toPred, tla_release] at * <;> tla_unfold_simp <;> try grind
 
 /-! ## Formula-level semantics -/
