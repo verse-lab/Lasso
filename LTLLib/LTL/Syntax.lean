@@ -107,6 +107,18 @@ inductive NNF (α : Type) where
   | release (φ ψ : NNF α) : NNF α
 deriving Repr, Inhabited, DecidableEq, BEq, Hashable
 
+instance [BEq α] [LawfulBEq α] : LawfulBEq (NNF α) where
+  rfl := by intro a ; induction a <;> simp [BEq.beq, instBEqNNF.beq] at * <;> grind
+  eq_of_beq := by
+    intro a ; induction a <;> intro b <;> cases b <;> try solve | simp [BEq.beq, instBEqNNF.beq]
+    all_goals simp [BEq.beq, instBEqNNF.beq] at * ; try grind
+
+instance [BEq α] [Hashable α] [inst : LawfulHashable α] : LawfulHashable (NNF α) where
+  hash_eq := by
+    intro a ; induction a <;> intro b <;> cases b <;> try solve | simp [BEq.beq, instBEqNNF.beq]
+    all_goals simp [BEq.beq, instBEqNNF.beq, hash, instHashableNNF.hash] at * ; try grind
+    all_goals intro h ; have := inst.hash_eq _ _ h ; grind
+
 namespace NNF
 
 /-- Negate an LTL formula, pushing negation inward to maintain NNF.
