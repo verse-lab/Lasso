@@ -147,6 +147,61 @@ def addAllToSet (s : Std.HashSet (NNF α)) (fs : List (NNF α))
     : Std.HashSet (NNF α) :=
   fs.foldl Std.HashSet.insert s
 
+/-- Fuel-based version of expand for proofs. Returns `none` when fuel runs out.
+Mirrors `expand` exactly but is total, enabling induction on fuel. -/
+def expandFuel : Nat → GBANode α → ExpandState α → Option (Nat × ExpandState α)
+  | 0, _, _ => none
+  | fuel + 1, node, st =>
+  if node.new.isEmpty then
+    match findDuplicate st node with
+    | some existingName =>
+      some (node.name, mergeIncoming st node existingName)
+    | none =>
+      let st := { st with nodes := st.nodes.insert node.name node }
+      let (succName, st) := freshName st
+      let successor : GBANode α := {
+        name := succName
+        incoming := Std.HashSet.emptyWithCapacity 4 |>.insert node.name
+        new := node.next.fold (init := []) fun acc f => f :: acc
+        old := Std.HashSet.emptyWithCapacity 8
+        next := Std.HashSet.emptyWithCapacity 8
+      }
+      expandFuel fuel successor st
+  else
+    let φ := node.new.head!
+    let node := { node with new := node.new.tail! }
+    if isLiteral φ then
+      if node.old.contains (negateLiteral φ) then
+        some (node.name, st)
+      else
+        expandFuel fuel { node with old := node.old.insert φ } st
+    else if φ matches .tt then
+      expandFuel fuel { node with old := node.old.insert φ } st
+    else if φ matches .ff then
+      some (node.name, st)
+    else if isDeterministic φ then
+      expandFuel fuel {
+        node with
+        new := addToNew node (new1 φ)
+        old := node.old.insert φ
+        next := addAllToSet node.next (next1 φ)
+      } st
+    else
+      match expandFuel fuel {
+        node with
+        new := addToNew node (new1 φ)
+        old := node.old.insert φ
+        next := addAllToSet node.next (next1 φ)
+      } st with
+      | none => none
+      | some (nm, st) =>
+        expandFuel fuel {
+          node with
+          name := nm
+          new := addToNew node (new2 φ)
+          old := node.old.insert φ
+        } st
+
 /-- The main expand algorithm.
 
 Corresponds to `expand_body` / `expand` in LTL_to_GBA.thy (lines 232-280).
@@ -274,5 +329,22 @@ def createGraph (φ : NNF α) : ExpandState α :=
   }
   let (_, finalState) := expand initNode initState
   finalState
+
+/-- Fuel-based version of createGraph for proofs. -/
+def createGraphFuel (fuel : Nat) (φ : NNF α) : Option (ExpandState α) :=
+  let initNode : GBANode α := {
+    name := 1
+    incoming := Std.HashSet.emptyWithCapacity 4 |>.insert expandInit
+    new := [φ]
+    old := Std.HashSet.emptyWithCapacity 8
+    next := Std.HashSet.emptyWithCapacity 8
+  }
+  let initState : ExpandState α := {
+    nextName := 2
+    nodes := Std.HashMap.emptyWithCapacity 16
+  }
+  match expandFuel fuel initNode initState with
+  | some (_, finalState) => some finalState
+  | none => none
 
 end LTLLib
