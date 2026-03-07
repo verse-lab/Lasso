@@ -73,20 +73,20 @@ def new2 : NNF α → List (NNF α)
   Corresponds to `expand_new_name` in LTL_to_GBA.thy (line 135), which is `Suc`.
 - `nodes`: Map from node name to finished (fully expanded) node.
   Corresponds to the `ns` (node set) parameter threaded through `expand`. -/
-structure ExpandState (α : Type) [BEq α] [Hashable α] where
+structure ExpandState (α : Type) (S : Type) where
   nextName : Nat
-  nodes : Std.HashMap Nat (GBANode α)
+  nodes : Std.HashMap Nat (GBANode α S)
 deriving Inhabited
 
 /-- The special "init" node name, used as the incoming marker for initial states.
 Corresponds to `expand_init ≡ 0` in LTL_to_GBA.thy (line 134). -/
 def expandInit : Nat := 0
 
-variable [BEq α] [Hashable α]
+variable {S : Type} [FSet (NNF α) S]
 
 /-- Generate a fresh node name and advance the counter.
 Corresponds to `expand_new_name ≡ Suc` in LTL_to_GBA.thy (line 135). -/
-def freshName (st : ExpandState α) : Nat × ExpandState α :=
+def freshName (st : ExpandState α S) : Nat × ExpandState α S :=
   (st.nextName, { st with nextName := st.nextName + 1 })
 
 /-- Find an existing node with the same (old, next) signature.
@@ -94,7 +94,7 @@ Returns the node name if found.
 
 Corresponds to the check `∃n'∈ns. old n' = old n ∧ next n' = next n`
 in `expand_body` (LTL_to_GBA.thy, line 236). -/
-def findDuplicate (st : ExpandState α) (node : GBANode α) : Option Nat :=
+def findDuplicate (st : ExpandState α S) (node : GBANode α S) : Option Nat :=
   -- Search through all finished nodes for one with matching signature
   st.nodes.fold (init := none) fun acc name n =>
     match acc with
@@ -106,8 +106,8 @@ Corresponds to `upd_incoming n ns` in LTL_to_GBA.thy (lines 153-161).
   upd_incoming n ns = (λn'. if old n' = old n ∧ next n' = next n
                             then n'⟨incoming := incoming n ∪ incoming n'⟩
                             else n') ` ns -/
-def mergeIncoming (st : ExpandState α) (node : GBANode α) (targetName : Nat)
-    : ExpandState α :=
+def mergeIncoming (st : ExpandState α S) (node : GBANode α S) (targetName : Nat)
+    : ExpandState α S :=
   match st.nodes[targetName]? with
   | some target =>
     let merged := { target with incoming := node.incoming.fold (init := target.incoming) fun acc x => acc.insert x }
@@ -137,15 +137,14 @@ def isDeterministic : NNF α → Bool
 
 /-- Add formulas to a node's `new` set, skipping those already in `old`.
 This avoids re-expanding formulas that have already been processed. -/
-def addToNew (node : GBANode α) (formulas : List (NNF α)) : List (NNF α) :=
+def addToNew (node : GBANode α S) (formulas : List (NNF α)) : List (NNF α) :=
   let existing := node.old
   formulas.foldl (init := node.new) fun acc f =>
-    if existing.contains f then acc else f :: acc
+    if FSet.contains existing f then acc else f :: acc
 
-/-- Add formulas to a HashSet. -/
-def addAllToSet (s : Std.HashSet (NNF α)) (fs : List (NNF α))
-    : Std.HashSet (NNF α) :=
-  fs.foldl Std.HashSet.insert s
+/-- Add formulas to a set. -/
+def addAllToSet (s : S) (fs : List (NNF α)) : S :=
+  fs.foldl FSet.insert s
 
 /-- The main expand algorithm.
 
@@ -162,8 +161,8 @@ Defined using `partial_fixpoint` with `Option` return type, which provides:
 - Equational rewrite rules (`rw [expand]`)
 - A `partial_correctness` theorem for inductive reasoning
 without requiring a termination proof. -/
-def expand (node : GBANode α) (st : ExpandState α)
-    : Option (Nat × ExpandState α) := do
+def expand (node : GBANode α S) (st : ExpandState α S)
+    : Option (Nat × ExpandState α S) := do
   if node.new.isEmpty then
     match findDuplicate st node with
     | some existingName =>
@@ -171,45 +170,45 @@ def expand (node : GBANode α) (st : ExpandState α)
     | none =>
       let st := { st with nodes := st.nodes.insert node.name node }
       let (succName, st) := freshName st
-      let successor : GBANode α := {
+      let successor : GBANode α S := {
         name := succName
         incoming := Std.HashSet.emptyWithCapacity 4 |>.insert node.name
-        new := node.next.fold (init := []) fun acc f => f :: acc
-        old := Std.HashSet.emptyWithCapacity 8
-        next := Std.HashSet.emptyWithCapacity 8
+        new := FSet.foldl (fun acc f => f :: acc) [] node.next
+        old := FSet.empty
+        next := FSet.empty
       }
       expand successor st
   else
     let φ := node.new.head!
     let node := { node with new := node.new.tail! }
     if isLiteral φ then
-      if node.old.contains (negateLiteral φ) then
+      if FSet.contains node.old (negateLiteral φ) then
         pure (node.name, st)
       else
-        expand { node with old := node.old.insert φ } st
+        expand { node with old := FSet.insert node.old φ } st
     else if φ matches .tt then
-      expand { node with old := node.old.insert φ } st
+      expand { node with old := FSet.insert node.old φ } st
     else if φ matches .ff then
       pure (node.name, st)
     else if isDeterministic φ then
       expand {
         node with
         new := addToNew node (new1 φ)
-        old := node.old.insert φ
+        old := FSet.insert node.old φ
         next := addAllToSet node.next (next1 φ)
       } st
     else do
       let (nm, st) ← expand {
         node with
         new := addToNew node (new1 φ)
-        old := node.old.insert φ
+        old := FSet.insert node.old φ
         next := addAllToSet node.next (next1 φ)
       } st
       expand {
         node with
         name := nm
         new := addToNew node (new2 φ)
-        old := node.old.insert φ
+        old := FSet.insert node.old φ
       } st
 partial_fixpoint
 
@@ -229,15 +228,15 @@ The initial node has:
 - `new = {φ}` (the formula to check)
 - `old = {}, next = {}` (empty)
 -/
-def createGraph (φ : NNF α) : Option (ExpandState α) :=
-  let initNode : GBANode α := {
+def createGraph (φ : NNF α) : Option (ExpandState α S) :=
+  let initNode : GBANode α S := {
     name := 1  -- expand_new_name expand_init = Suc 0 = 1
     incoming := Std.HashSet.emptyWithCapacity 4 |>.insert expandInit
     new := [φ]
-    old := Std.HashSet.emptyWithCapacity 8
-    next := Std.HashSet.emptyWithCapacity 8
+    old := FSet.empty
+    next := FSet.empty
   }
-  let initState : ExpandState α := {
+  let initState : ExpandState α S := {
     nextName := 2  -- next available name after 1
     nodes := Std.HashMap.emptyWithCapacity 16
   }
