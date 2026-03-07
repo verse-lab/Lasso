@@ -4,10 +4,12 @@ This document outlines a plan for porting the correctness proofs from the Isabel
 
 ## Current state
 
-- Phase 1 (Semantics) and Phase D (Degeneralization) are **DONE** — all sorry-free
-- **3** `partial` functions remain: `expand` (Expand.lean), `innerDFS` and `outerDFSLoop` (NestedDFS.lean)
-- **0** `sorry`
-- Completed: `tla_release`, `NNF.toPred`, `NNF.satisfies`, `NNF.neg_correct`, `Formula.toNNF_correct`, `GBASpec`, `BASpec`, `degeneralize_correct`
+- Phase 1 (Semantics), Phase D (Degeneralization), and Phase 3 (Invariants) are **DONE** — all sorry-free
+- **FSet abstraction** completed — abstract finite set typeclass with HashSet/TreeSet instances
+- **2** `partial` functions remain: `innerDFS` and `outerDFSLoop` (NestedDFS.lean)
+- `expand` uses `partial_fixpoint` (provides equational rewriting + `partial_correctness` induction)
+- **0** `sorry`, **0** warnings
+- Completed: `tla_release`, `NNF.toPred`, `NNF.satisfies`, `NNF.neg_correct`, `Formula.toNNF_correct`, `GBASpec`, `BASpec`, `degeneralize_correct`, `FSet` typeclass, `ExpandSpec`, `createGraph_spec`
 
 ## What the Isabelle formalization proves
 
@@ -102,25 +104,34 @@ This is the hardest part of Phase 2. The Isabelle proof uses ~200 lines for the 
 
 **`innerDFS` / `outerDFSLoop` termination** — these are simpler DFS traversals. Termination follows from the visited-set growing monotonically on a finite state space. However, the state space is only finite if the input automaton is finite (which follows from Phase 2's expand termination + subformula finiteness). For a standalone termination proof, we'd need to take finiteness as a precondition.
 
-### Phase 3: Structural invariants
+### Phase 3: Structural invariants  ✅ DONE
 
-Depends on Phase 2 (needs non-partial `expand` to do induction on).
+**Status**: All sorry-free (~1795 lines in `Invariants.lean`).
 
-The ~15 **propagation lemmas** show that expand preserves semantic properties. Each has the form: "if property P holds before expanding formula φ, then P holds after." One lemma per NNF constructor:
+Proved using `partial_correctness` induction on `expand` — does NOT require
+termination proofs (Phase 2). The `partial_fixpoint` definition provides a
+`partial_correctness` theorem for inductive reasoning.
 
-- `expand_false_propag`: ⊥ ∈ old(q) → q is discarded
-- `expand_and_propag`: (φ ∧ ψ) ∈ old(q) → φ ∈ old(q) ∧ ψ ∈ old(q)
-- `expand_or_propag`: (φ ∨ ψ) ∈ old(q) → φ ∈ old(q) ∨ ψ ∈ old(q)
-- `expand_next_propag`: (X φ) ∈ old(q) → φ ∈ next(q)
-- `expand_until_propag`: (φ U ψ) ∈ old(q) → (φ U ψ) ∈ next(q) ∨ ψ ∈ old(q)
-- `expand_release_propag`: similar for Release
-- etc.
+9 invariant properties bundled in `ExpandSpec`:
+- `literal_consistent`: `prop(a) ∈ old(q) → nprop(a) ∉ old(q)`
+- `no_false`: `ff ∉ old(q)`
+- `and_propag`: `and(p,q) ∈ old(n) → p ∈ old(n) ∧ q ∈ old(n)`
+- `or_propag`: `or(p,q) ∈ old(n) → p ∈ old(n) ∨ q ∈ old(n)`
+- `next_propag`: `next(p) ∈ old(n) → p ∈ next(n)`
+- `until_propag`: `until(p,q) ∈ old(n) → q ∈ old(n) ∨ (p ∈ old(n) ∧ until(p,q) ∈ next(n))`
+- `release_propag`: `release(p,q) ∈ old(n) → (p ∈ old(n) ∧ q ∈ old(n)) ∨ (q ∈ old(n) ∧ release(p,q) ∈ next(n))`
+- `successor_inherit`: `name(q) ∈ incoming(q') → next(q) ⊆ old(q')`
+- `initial_formula`: `expandInit ∈ incoming(q) → φ ∈ old(q)`
 
-Plus the global invariant: all formulas in any node's new/old/next are subformulas of the input formula.
+Main theorem: `createGraph_spec : createGraph φ = some st → ExpandSpec φ st`
+
+Also completed: **FSet abstraction** — abstract finite set typeclass with
+`Std.HashSet` and `Std.TreeSet` instances, applied throughout Node/Expand/
+Construction/Invariants.
 
 ### Phase 4: Main correctness theorems
 
-Depends on Phases 1–3.
+Depends on Phases 1 + 3 (both done). Phase 2 (termination) is NOT required.
 
 **Soundness (L4_8 → L4_9)**: By structural induction on ψ. Given an accepting run σ of the GBA labeled by ξ, and ψ ∈ old(σ(0)), show `ξ ⊨ ψ`. Uses:
 - Propagation lemmas (Phase 3) to know what's in old/next of each node
@@ -138,15 +149,15 @@ Depends on Phases 1–3.
 ## Dependency graph
 
 ```
-Phase 1 (Semantics)          Phase 2 (Termination)
-        │                            │
-        │                            │
-        └──────────┬─────────────────┘
-                   │
-           Phase 3 (Invariants)
-                   │
-           Phase 4 (Soundness + Completeness)
+Phase 1 (Semantics) ✅ ─────────────────────┐
+                                             ▼
+Phase 3 (Invariants) ✅ ──────────────► Phase 4 (Soundness + Completeness)
+
+Phase 2 (Termination) ── independent, not required for Phase 3 or 4
 ```
+
+Phase 3 was completed using `partial_correctness` induction (no termination needed).
+Phase 2 is nice to have but does not block Phase 4.
 
 ## Key challenges vs. Isabelle
 
@@ -160,9 +171,10 @@ Phase 1 (Semantics)          Phase 2 (Termination)
 
 ## Estimated effort
 
-| Phase | Isabelle lines | Estimated Lean effort |
-|-------|---------------|----------------------|
-| ~~Phase 1: Semantics~~ | ~~~200~~ | ✅ DONE |
+| Phase | Isabelle lines | Lean effort |
+|-------|---------------|-------------|
+| ~~Phase 1: Semantics~~ | ~~~200~~ | ✅ DONE (~280 lines) |
+| ~~Phase D: Degeneralization~~ | ~~~200~~ | ✅ DONE (~580 lines) |
+| ~~Phase 3: Invariants + FSet~~ | ~~~1000~~ | ✅ DONE (~1795 + 168 lines) |
 | Phase 2: Termination | ~400 | Hard — restructure from refinement framework to direct WF induction |
-| Phase 3: Invariants | ~1000 | Medium-Hard — mechanical but tedious, ~15 propagation lemmas |
 | Phase 4: Main theorems | ~1800 | Hard — soundness induction + completeness witness construction |

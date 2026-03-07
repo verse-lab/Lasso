@@ -53,6 +53,22 @@ This requires additionally:
 | `GBASpec`, `BASpec`, `GBASpec.Accepts` | ✅ |
 | `degeneralize_correct` | ✅ (completed in Phase D) |
 
+## Phase 3: Structural Invariants  ✅ DONE
+
+**Status**: All sorry-free (~1795 lines in `Invariants.lean`).
+
+Proved using `partial_correctness` induction on `expand` — does NOT require
+termination proofs (Phase 2). The `partial_fixpoint` definition provides
+equational rewrite rules and a `partial_correctness` theorem.
+
+9 invariant properties bundled in `ExpandSpec`, including propagation lemmas
+for all NNF constructors, literal consistency, successor inheritance, and
+initial formula containment. Main theorem: `createGraph_spec`.
+
+Also completed: **FSet abstraction** — abstract finite set typeclass (`FSet.lean`)
+with `Std.HashSet` and `Std.TreeSet` instances, applied throughout Node/Expand/
+Construction/Invariants.
+
 ## Phase 2: Termination
 
 Remove `partial` from `expand`, `innerDFS`, `outerDFSLoop`.
@@ -63,16 +79,9 @@ Remove `partial` from `expand`, `innerDFS`, `outerDFSLoop`.
 | `innerDFS` termination | `|reachable| − |innerVisited|` |
 | `outerDFSLoop` termination | Lexicographic on (outerVisited size, stack, remaining successors) |
 
-**Note**: `innerDFS` and `outerDFSLoop` termination is only needed for Phase E
-(emptiness check correctness), not for Phases 3-4. `expand` termination IS
-needed for Phase 3 (well-founded induction on expand).
-
-## Phase 3: Structural Invariants
-
-~15 propagation lemmas proved by well-founded induction on `expand`.
-
-These say: after `expand` finishes, the resulting nodes satisfy structural
-properties (e.g., `and(p,q) ∈ old(n) → p ∈ old(n) ∧ q ∈ old(n)`).
+**Note**: Phase 3 was completed WITHOUT expand termination, using `partial_correctness`
+induction. Phase 4 may also be achievable without termination proofs.
+`innerDFS` and `outerDFSLoop` termination is only needed for Phase E.
 
 ## Phase 4: GBA Correctness
 
@@ -175,18 +184,19 @@ reachability checker (much simpler than full nested DFS correctness).
 ## Dependency Graph
 
 ```
-Phase 1 (Semantics) ──────────────────────┐
-                                           ▼
-Phase 2 (Termination of expand) ──► Phase 3 (Invariants) ──► Phase 4 (GBA Correctness)
-                                                                      │
-Phase D (Degeneralization) ◄──────────────────────────────────────────┘
-         │                                                   (independent)
+Phase 1 (Semantics) ✅ ─────────────────────┐
+                                             ▼
+Phase 3 (Invariants) ✅ ──────────────► Phase 4 (GBA Correctness)
+                                              │
+Phase D (Degeneralization) ✅ ◄──────────────┘  (independent)
+         │
          ▼
 Phase 2 (Termination of DFS) ──► Phase E (Emptiness Correctness)
 ```
 
-Phases 2-4 are the core path (matching Isabelle LTL_to_GBA).
-Phase D and E extend to the full pipeline.
+Phase 3 was completed using `partial_correctness` (no termination needed).
+Phase 4 depends on Phases 1 + 3 (both done).
+Phase 2 (termination) is independent — nice to have but not blocking.
 
 ---
 
@@ -206,10 +216,10 @@ Phase D and E extend to the full pipeline.
 | Phase | Lines (est.) | Difficulty |
 |-------|-------------|------------|
 | ~~Phase 1 (semantics)~~ | ~~150-200~~ | ✅ DONE |
+| ~~Phase D (degeneralization proof)~~ | ~~150-200~~ | ✅ DONE |
+| ~~Phase 3 (invariants + FSet)~~ | ~~500~~ ~1800 actual | ✅ DONE |
 | Phase 2 (expand termination) | ~200 | Hard |
 | Phase 2 (DFS termination) | ~100 | Medium |
-| Phase 3 (invariants) | ~500 | Medium-Hard |
 | Phase 4 (soundness + completeness) | ~800 | Hard |
-| ~~Phase D (degeneralization proof)~~ | ~~150-200~~ | ✅ DONE |
 | Phase E Layer 2 (lasso characterization) | ~300 | Medium |
 | Phase E Layer 3 (algorithm correctness) | 500-1000 | Very Hard |
