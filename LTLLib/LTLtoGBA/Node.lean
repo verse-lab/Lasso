@@ -15,6 +15,8 @@ import LTLLib.LTL
 
 namespace LTLLib
 
+-- CHECK `TreeMap` or `HashMap`?
+
 /-- A node in the LTL-to-GBA graph construction.
 
 Corresponds to `'a node` in LTL_to_GBA.thy (lines 102-107).

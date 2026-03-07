@@ -147,61 +147,6 @@ def addAllToSet (s : Std.HashSet (NNF α)) (fs : List (NNF α))
     : Std.HashSet (NNF α) :=
   fs.foldl Std.HashSet.insert s
 
-/-- Fuel-based version of expand for proofs. Returns `none` when fuel runs out.
-Mirrors `expand` exactly but is total, enabling induction on fuel. -/
-def expandFuel : Nat → GBANode α → ExpandState α → Option (Nat × ExpandState α)
-  | 0, _, _ => none
-  | fuel + 1, node, st =>
-  if node.new.isEmpty then
-    match findDuplicate st node with
-    | some existingName =>
-      some (node.name, mergeIncoming st node existingName)
-    | none =>
-      let st := { st with nodes := st.nodes.insert node.name node }
-      let (succName, st) := freshName st
-      let successor : GBANode α := {
-        name := succName
-        incoming := Std.HashSet.emptyWithCapacity 4 |>.insert node.name
-        new := node.next.fold (init := []) fun acc f => f :: acc
-        old := Std.HashSet.emptyWithCapacity 8
-        next := Std.HashSet.emptyWithCapacity 8
-      }
-      expandFuel fuel successor st
-  else
-    let φ := node.new.head!
-    let node := { node with new := node.new.tail! }
-    if isLiteral φ then
-      if node.old.contains (negateLiteral φ) then
-        some (node.name, st)
-      else
-        expandFuel fuel { node with old := node.old.insert φ } st
-    else if φ matches .tt then
-      expandFuel fuel { node with old := node.old.insert φ } st
-    else if φ matches .ff then
-      some (node.name, st)
-    else if isDeterministic φ then
-      expandFuel fuel {
-        node with
-        new := addToNew node (new1 φ)
-        old := node.old.insert φ
-        next := addAllToSet node.next (next1 φ)
-      } st
-    else
-      match expandFuel fuel {
-        node with
-        new := addToNew node (new1 φ)
-        old := node.old.insert φ
-        next := addAllToSet node.next (next1 φ)
-      } st with
-      | none => none
-      | some (nm, st) =>
-        expandFuel fuel {
-          node with
-          name := nm
-          new := addToNew node (new2 φ)
-          old := node.old.insert φ
-        } st
-
 /-- The main expand algorithm.
 
 Corresponds to `expand_body` / `expand` in LTL_to_GBA.thy (lines 232-280).
@@ -213,21 +158,17 @@ This is a recursive worklist algorithm:
       `new := node.next`, and continue.
 2. If `node.new` is non-empty: pick the first formula and case-split.
 
-The function is `partial` because termination depends on the finiteness of
-the subformula closure, which we don't prove here. -/
-partial def expand (node : GBANode α) (st : ExpandState α)
-    : Nat × ExpandState α :=
+Defined using `partial_fixpoint` with `Option` return type, which provides:
+- Equational rewrite rules (`rw [expand]`)
+- A `partial_correctness` theorem for inductive reasoning
+without requiring a termination proof. -/
+def expand (node : GBANode α) (st : ExpandState α)
+    : Option (Nat × ExpandState α) := do
   if node.new.isEmpty then
-    -- All formulas expanded
-    -- Corresponds to `if new n = {}` branch in expand_body (line 235)
     match findDuplicate st node with
     | some existingName =>
-      -- Found a node with the same (old, next) signature: merge incoming edges.
-      -- Corresponds to `RETURN (name n, upd_incoming n ns)` (line 237)
-      (node.name, mergeIncoming st node existingName)
+      pure (node.name, mergeIncoming st node existingName)
     | none =>
-      -- No duplicate: add this node to finished set, create successor.
-      -- Corresponds to lines 239-247 in expand_body.
       let st := { st with nodes := st.nodes.insert node.name node }
       let (succName, st) := freshName st
       let successor : GBANode α := {
@@ -239,65 +180,38 @@ partial def expand (node : GBANode α) (st : ExpandState α)
       }
       expand successor st
   else
-    -- Pick a formula from `new` to expand
-    -- Corresponds to `φ ← SPEC (λx. x∈(new n))` (line 249)
     let φ := node.new.head!
     let node := { node with new := node.new.tail! }
-
     if isLiteral φ then
-      -- Prop or Nprop case
-      -- Corresponds to lines 251-253 in expand_body
       if node.old.contains (negateLiteral φ) then
-        -- Contradiction: discard this node
-        -- Corresponds to `RETURN (name n, ns)` (line 252)
-        (node.name, st)
+        pure (node.name, st)
       else
-        -- Add to old and continue
-        -- Corresponds to `expand (n⟨old := {φ} ∪ old n⟩, ns)` (line 253)
         expand { node with old := node.old.insert φ } st
     else if φ matches .tt then
-      -- True: add to old and continue
-      -- Corresponds to `if φ = true⁼ then expand (n⟨old := {φ} ∪ old n⟩, ns)` (line 254)
       expand { node with old := node.old.insert φ } st
     else if φ matches .ff then
-      -- False: discard this node
-      -- Corresponds to `if φ = false⁼ then RETURN (name n, ns)` (line 255)
-      (node.name, st)
+      pure (node.name, st)
     else if isDeterministic φ then
-      -- Deterministic case: And or Next
-      -- Corresponds to lines 256-263 in expand_body
-      let newFormulas := new1 φ
-      let nextFormulas := next1 φ
       expand {
-        node with
-        new := addToNew node newFormulas
-        old := node.old.insert φ
-        next := addAllToSet node.next nextFormulas
-      } st
-    else
-      -- Non-deterministic case: Or, Until, Release
-      -- Corresponds to lines 264-273 in expand_body.
-      -- Split into two branches:
-      --   Branch 1: explore new1(φ) with next1(φ) obligations
-      --   Branch 2: explore new2(φ) (using the name returned by branch 1)
-
-      -- Branch 1
-      let node1 : GBANode α := {
         node with
         new := addToNew node (new1 φ)
         old := node.old.insert φ
         next := addAllToSet node.next (next1 φ)
-      }
-      let (nm, st) := expand node1 st
-
-      -- Branch 2 (uses the name counter returned by branch 1)
-      let node2 : GBANode α := {
+      } st
+    else do
+      let (nm, st) ← expand {
+        node with
+        new := addToNew node (new1 φ)
+        old := node.old.insert φ
+        next := addAllToSet node.next (next1 φ)
+      } st
+      expand {
         node with
         name := nm
         new := addToNew node (new2 φ)
         old := node.old.insert φ
-      }
-      expand node2 st
+      } st
+partial_fixpoint
 
 /-- Create the full node graph from an LTL formula.
 
@@ -315,7 +229,7 @@ The initial node has:
 - `new = {φ}` (the formula to check)
 - `old = {}, next = {}` (empty)
 -/
-def createGraph (φ : NNF α) : ExpandState α :=
+def createGraph (φ : NNF α) : Option (ExpandState α) :=
   let initNode : GBANode α := {
     name := 1  -- expand_new_name expand_init = Suc 0 = 1
     incoming := Std.HashSet.emptyWithCapacity 4 |>.insert expandInit
@@ -327,23 +241,7 @@ def createGraph (φ : NNF α) : ExpandState α :=
     nextName := 2  -- next available name after 1
     nodes := Std.HashMap.emptyWithCapacity 16
   }
-  let (_, finalState) := expand initNode initState
-  finalState
-
-/-- Fuel-based version of createGraph for proofs. -/
-def createGraphFuel (fuel : Nat) (φ : NNF α) : Option (ExpandState α) :=
-  let initNode : GBANode α := {
-    name := 1
-    incoming := Std.HashSet.emptyWithCapacity 4 |>.insert expandInit
-    new := [φ]
-    old := Std.HashSet.emptyWithCapacity 8
-    next := Std.HashSet.emptyWithCapacity 8
-  }
-  let initState : ExpandState α := {
-    nextName := 2
-    nodes := Std.HashMap.emptyWithCapacity 16
-  }
-  match expandFuel fuel initNode initState with
+  match expand initNode initState with
   | some (_, finalState) => some finalState
   | none => none
 

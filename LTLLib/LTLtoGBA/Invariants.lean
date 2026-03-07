@@ -248,6 +248,7 @@ def NodesPreserved (st st' : ExpandState α) : Prop :=
 
 /-! ### Helper lemmas -/
 
+omit [LawfulBEq α] [LawfulHashable α] in
 private theorem mergeIncoming_nodesPreserved (st : ExpandState α) (node : GBANode α) (targetName : Nat) :
     NodesPreserved st (mergeIncoming st node targetName) := by
   intro k n hk; unfold mergeIncoming; simp only
@@ -261,10 +262,12 @@ private theorem mergeIncoming_nodesPreserved (st : ExpandState α) (node : GBANo
     · exact ⟨n, hk, fun ψ => Iff.rfl, fun ψ => Iff.rfl⟩
   · exact ⟨n, hk, fun ψ => Iff.rfl, fun ψ => Iff.rfl⟩
 
+omit [LawfulBEq α] [LawfulHashable α] in
 private theorem mergeIncoming_nextName (st : ExpandState α) (node : GBANode α) (targetName : Nat) :
     (mergeIncoming st node targetName).nextName = st.nextName := by
   unfold mergeIncoming; split <;> rfl
 
+omit [LawfulBEq α] [LawfulHashable α] in
 private theorem mergeIncoming_preserves_absent (st : ExpandState α) (node : GBANode α)
     (targetName : Nat) (k : Nat) (hk : st.nodes[k]? = none) :
     (mergeIncoming st node targetName).nodes[k]? = none := by
@@ -277,6 +280,7 @@ private theorem mergeIncoming_preserves_absent (st : ExpandState α) (node : GBA
     · exact hk
   · exact hk
 
+omit [LawfulBEq α] [LawfulHashable α] in
 private theorem mergeIncoming_freshInv (st : ExpandState α) (node : GBANode α)
     (targetName : Nat) (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName) :
     ∀ k, (mergeIncoming st node targetName).nodes[k]? ≠ none →
@@ -292,9 +296,11 @@ private theorem mergeIncoming_freshInv (st : ExpandState α) (node : GBANode α)
     · exact h_fresh k hk
   · exact h_fresh k hk
 
+omit [LawfulBEq α] [LawfulHashable α] in
 private theorem NodesPreserved_refl (st : ExpandState α) : NodesPreserved st st :=
   fun _k n hk => ⟨n, hk, fun _ => Iff.rfl, fun _ => Iff.rfl⟩
 
+omit [LawfulBEq α] [LawfulHashable α] in
 private theorem NodesPreserved_trans {st₁ st₂ st₃ : ExpandState α}
     (h₁₂ : NodesPreserved st₁ st₂) (h₂₃ : NodesPreserved st₂ st₃) :
     NodesPreserved st₁ st₃ := by
@@ -303,6 +309,7 @@ private theorem NodesPreserved_trans {st₁ st₂ st₃ : ExpandState α}
   obtain ⟨n'', hk'', ho'', hn''⟩ := h₂₃ k n' hk'
   exact ⟨n'', hk'', fun ψ => (ho'' ψ).trans (ho' ψ), fun ψ => (hn'' ψ).trans (hn' ψ)⟩
 
+omit [LawfulBEq α] [LawfulHashable α] in
 private theorem insert_nodesPreserved (st : ExpandState α) (node : GBANode α)
     (h_not_in : st.nodes[node.name]? = none) :
     NodesPreserved st { st with nodes := st.nodes.insert node.name node } := by
@@ -312,6 +319,7 @@ private theorem insert_nodesPreserved (st : ExpandState α) (node : GBANode α)
   · rename_i heq; exact absurd ((beq_iff_eq (α := Nat)).mp heq).symm hne
   · exact ⟨n, hk, fun ψ => Iff.rfl, fun ψ => Iff.rfl⟩
 
+omit [LawfulBEq α] [LawfulHashable α] in
 private theorem insert_fresh_key (st : ExpandState α) (nodeName : Nat) (node : GBANode α)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
     (h_name : nodeName < st.nextName) :
@@ -320,6 +328,7 @@ private theorem insert_fresh_key (st : ExpandState α) (nodeName : Nat) (node : 
   · rename_i heq; have := (beq_iff_eq (α := Nat)).mp heq; omega
   · by_contra h; exact absurd (h_fresh st.nextName h) (by omega)
 
+omit [LawfulBEq α] [LawfulHashable α] in
 private theorem insert_freshInv (st : ExpandState α) (nodeName : Nat) (node : GBANode α)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
     (h_name : nodeName < st.nextName) :
@@ -332,7 +341,7 @@ private theorem insert_freshInv (st : ExpandState α) (nodeName : Nat) (node : G
 
 /-! ### Combined expansion invariants -/
 
-/-- Combined invariants maintained by expandFuel:
+/-- Combined invariants maintained by expand:
     monotonicity, name freshness, freshness invariant preservation. -/
 structure ExpandInvariants (st st' : ExpandState α) (nm : Nat) : Prop where
   nodesPreserved : NodesPreserved st st'
@@ -341,95 +350,92 @@ structure ExpandInvariants (st st' : ExpandState α) (nm : Nat) : Prop where
   nameBound : nm < st'.nextName
   nextNameMono : st.nextName ≤ st'.nextName
 
-theorem expandFuel_invariants (fuel : Nat) (node : GBANode α)
-    (st : ExpandState α) {nm : Nat} {st' : ExpandState α}
-    (h_result : expandFuel fuel node st = some (nm, st'))
+omit [LawfulBEq α] [LawfulHashable α] in
+theorem expand_invariants (node : GBANode α)
+    (st : ExpandState α) {r : Nat × ExpandState α}
+    (h_result : expand node st = some r)
     (h_not_in : st.nodes[node.name]? = none)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
     (h_name : node.name < st.nextName) :
-    ExpandInvariants st st' nm := by
-  induction fuel generalizing node st nm st' with
-  | zero => simp [expandFuel] at h_result
-  | succ fuel ih =>
-    unfold expandFuel at h_result
+    ExpandInvariants st r.2 r.1 := by
+  revert h_not_in h_fresh h_name
+  apply expand.partial_correctness
+    (motive := fun node st r =>
+      st.nodes[node.name]? = none →
+      (∀ k, st.nodes[k]? ≠ none → k < st.nextName) →
+      node.name < st.nextName →
+      ExpandInvariants st r.2 r.1)
+    _ node st r h_result
+  intro expand_ih ih node st r h_result h_not_in h_fresh h_name
+  split at h_result
+  case isTrue h_empty =>
     split at h_result
-    case isTrue h_empty =>
+    · -- Merge case
+      rename_i existingName _
+      obtain rfl := Option.some.inj h_result
+      exact {
+        nodesPreserved := mergeIncoming_nodesPreserved st node existingName
+        nameFresh := mergeIncoming_preserves_absent st node existingName _ h_not_in
+        freshInv := mergeIncoming_freshInv st node existingName h_fresh
+        nameBound := by rw [mergeIncoming_nextName]; exact h_name
+        nextNameMono := by rw [mergeIncoming_nextName]; omega
+      }
+    · -- Insert + recurse
+      simp only [freshName] at h_result
+      have inv := ih _ _ _ h_result
+        (insert_fresh_key st node.name node h_fresh h_name)
+        (insert_freshInv st node.name node h_fresh h_name)
+        (by show st.nextName < st.nextName + 1; omega)
+      exact {
+        nodesPreserved := NodesPreserved_trans
+          (insert_nodesPreserved st node h_not_in) inv.nodesPreserved
+        nameFresh := inv.nameFresh
+        freshInv := inv.freshInv
+        nameBound := inv.nameBound
+        nextNameMono := Nat.le_trans (Nat.le_succ _) inv.nextNameMono
+      }
+  case isFalse h_not_empty =>
+    simp only [Bool.not_eq_true] at h_not_empty
+    simp only at h_result
+    split at h_result
+    · -- isLiteral
       split at h_result
-      · -- Merge case
-        rename_i existingName _
-        simp only [Option.some.injEq, Prod.mk.injEq] at h_result
-        obtain ⟨rfl, rfl⟩ := h_result
-        exact {
-          nodesPreserved := mergeIncoming_nodesPreserved st node existingName
-          nameFresh := mergeIncoming_preserves_absent st node existingName _ h_not_in
-          freshInv := mergeIncoming_freshInv st node existingName h_fresh
-          nameBound := by rw [mergeIncoming_nextName]; exact h_name
-          nextNameMono := by rw [mergeIncoming_nextName]; omega
-        }
-      · -- Insert + recurse
-        simp only [freshName] at h_result
-        have inv := ih _ _ h_result
-          (insert_fresh_key st node.name node h_fresh h_name)
-          (insert_freshInv st node.name node h_fresh h_name)
-          (by show st.nextName < st.nextName + 1; omega)
-        exact {
-          nodesPreserved := NodesPreserved_trans
-            (insert_nodesPreserved st node h_not_in) inv.nodesPreserved
-          nameFresh := inv.nameFresh
-          freshInv := inv.freshInv
-          nameBound := inv.nameBound
-          nextNameMono := Nat.le_trans (Nat.le_succ _) inv.nextNameMono
-        }
-    case isFalse h_not_empty =>
-      simp only [Bool.not_eq_true] at h_not_empty
-      simp only at h_result
-      split at h_result
-      · -- isLiteral
-        split at h_result
-        · -- contradiction
-          simp only [Option.some.injEq, Prod.mk.injEq] at h_result
-          obtain ⟨rfl, rfl⟩ := h_result
-          exact ⟨NodesPreserved_refl st, h_not_in, h_fresh, h_name, Nat.le.refl⟩
-        · exact ih _ _ h_result h_not_in h_fresh h_name
-      · split at h_result
-        · -- tt
-          try rw [if_pos rfl] at h_result
-          exact ih _ _ h_result h_not_in h_fresh h_name
-        · try rw [if_neg (by decide)] at h_result
-          split at h_result
-          · -- ff
-            try rw [if_pos rfl] at h_result
-            simp only [Option.some.injEq, Prod.mk.injEq] at h_result
-            obtain ⟨rfl, rfl⟩ := h_result
-            exact ⟨NodesPreserved_refl st, h_not_in, h_fresh, h_name, Nat.le.refl⟩
-          · try rw [if_neg (by decide)] at h_result
-            split at h_result
-            · -- deterministic
-              try rw [if_pos rfl] at h_result
-              exact ih _ _ h_result h_not_in h_fresh h_name
-            · -- nondeterministic
-              try rw [if_neg (by decide)] at h_result
-              split at h_result
-              · exact absurd h_result (by simp)
-              · rename_i h_branch1
-                have inv1 := ih _ _ h_branch1 h_not_in h_fresh h_name
-                have inv2 := ih _ _ h_result inv1.nameFresh inv1.freshInv inv1.nameBound
-                exact {
-                  nodesPreserved := NodesPreserved_trans inv1.nodesPreserved inv2.nodesPreserved
-                  nameFresh := inv2.nameFresh
-                  freshInv := inv2.freshInv
-                  nameBound := inv2.nameBound
-                  nextNameMono := Nat.le_trans inv1.nextNameMono inv2.nextNameMono
-                }
+      · -- contradiction
+        obtain rfl := Option.some.inj h_result
+        exact ⟨NodesPreserved_refl st, h_not_in, h_fresh, h_name, Nat.le.refl⟩
+      · exact ih _ _ _ h_result h_not_in h_fresh h_name
+    · -- After isLiteral=false: handle tt/ff/det/nondet
+      -- Chain splits across all goals with try to handle branches needing different depth
+      split at h_result <;> (try split at h_result) <;> (try split at h_result) <;>
+        (try split at h_result) <;> (try split at h_result)
+      all_goals (
+        first
+        | (obtain rfl := Option.some.inj h_result
+           exact ⟨NodesPreserved_refl st, h_not_in, h_fresh, h_name, Nat.le.refl⟩)
+        | exact ih _ _ _ h_result h_not_in h_fresh h_name
+        | (simp only [Bind.bind, Option.bind] at h_result
+           split at h_result
+           · simp at h_result
+           · rename_i h_branch1
+             have inv1 := ih _ _ _ h_branch1 h_not_in h_fresh h_name
+             have inv2 := ih _ _ _ h_result inv1.nameFresh inv1.freshInv inv1.nameBound
+             exact {
+               nodesPreserved := NodesPreserved_trans inv1.nodesPreserved inv2.nodesPreserved
+               nameFresh := inv2.nameFresh
+               freshInv := inv2.freshInv
+               nameBound := inv2.nameBound
+               nextNameMono := Nat.le_trans inv1.nextNameMono inv2.nextNameMono
+             }))
 
-theorem expandFuel_nodes_preserved (fuel : Nat) (node : GBANode α)
-    (st : ExpandState α) {nm : Nat} {st' : ExpandState α}
-    (h_result : expandFuel fuel node st = some (nm, st'))
+omit [LawfulBEq α] [LawfulHashable α] in
+theorem expand_nodes_preserved (node : GBANode α)
+    (st : ExpandState α) {r : Nat × ExpandState α}
+    (h_result : expand node st = some r)
     (h_not_in : st.nodes[node.name]? = none)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
     (h_name : node.name < st.nextName) :
-    NodesPreserved st st' :=
-  (expandFuel_invariants fuel node st h_result h_not_in h_fresh h_name).nodesPreserved
+    NodesPreserved st r.2 :=
+  (expand_invariants node st h_result h_not_in h_fresh h_name).nodesPreserved
 
 /-! ### Helper lemmas for StateInv preservation -/
 
@@ -519,6 +525,7 @@ private theorem reachable_step {node : GBANode α} {φ : NNF α}
     · exact Or.inl h_φ
     · exact Or.inr (h_new ψ hmem)
 
+omit [LawfulBEq α] [LawfulHashable α] in
 private theorem reachable_via_formulas {node : GBANode α}
     (formulas : List (NNF α)) {ψ : NNF α} (h : ψ ∈ formulas)
     {old' : Std.HashSet (NNF α)}
@@ -727,7 +734,7 @@ private theorem processingInv_nondet1 {node : GBANode α}
   · intro μ ψ ha; simp only [GBANode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · have ⟨h1, h2⟩ := h_proc.and_propag μ ψ ha'; exact ⟨reach _ h1, reach _ h2⟩
-    · simp_all [isLiteral, isDeterministic]
+    · simp_all [isDeterministic]
   · intro μ ψ ha; simp only [GBANode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact (h_proc.or_propag μ ψ ha').imp (reach _) (reach _)
@@ -735,7 +742,7 @@ private theorem processingInv_nondet1 {node : GBANode α}
   · intro ψ ha; simp only [GBANode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact h_next_sub ψ (h_proc.next_propag ψ ha')
-    · simp_all [isLiteral, isDeterministic]
+    · simp_all [isDeterministic]
   · intro μ ψ ha; simp only [GBANode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact (h_proc.until_propag μ ψ ha').imp (reach _) (fun ⟨h1, h2⟩ => ⟨reach _ h1, h_next_sub _ h2⟩)
@@ -784,7 +791,7 @@ private theorem processingInv_nondet2 {node : GBANode α}
   · intro μ ψ ha; simp only [GBANode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · have ⟨h1, h2⟩ := h_proc.and_propag μ ψ ha'; exact ⟨reach _ h1, reach _ h2⟩
-    · simp_all [isLiteral, isDeterministic]
+    · simp_all [isDeterministic]
   · intro μ ψ ha; simp only [GBANode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact (h_proc.or_propag μ ψ ha').imp (reach _) (reach _)
@@ -792,7 +799,7 @@ private theorem processingInv_nondet2 {node : GBANode α}
   · intro ψ ha; simp only [GBANode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact h_proc.next_propag ψ ha'
-    · simp_all [isLiteral, isDeterministic]
+    · simp_all [isDeterministic]
   · intro μ ψ ha; simp only [GBANode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact (h_proc.until_propag μ ψ ha').imp (reach _) (fun ⟨h1, h2⟩ => ⟨reach _ h1, h2⟩)
@@ -803,84 +810,81 @@ private theorem processingInv_nondet2 {node : GBANode α}
       exact ⟨reach _ h1, h2.imp (reach _) id⟩
     · exact ⟨reach_new2 ψ (by simp [new2]), Or.inl (reach_new2 μ (by simp [new2]))⟩
 
-theorem expandFuel_preserves_stateInv (fuel : Nat) (node : GBANode α)
-    (st : ExpandState α) {nm : Nat} {st' : ExpandState α}
-    (h_result : expandFuel fuel node st = some (nm, st'))
+theorem expand_preserves_stateInv (node : GBANode α)
+    (st : ExpandState α) {r : Nat × ExpandState α}
+    (h_result : expand node st = some r)
     (h_inv : StateInv st)
     (h_proc : ProcessingInv node) :
-    StateInv st' := by
-  induction fuel generalizing node st nm st' with
-  | zero => simp [expandFuel] at h_result
-  | succ fuel ih =>
-    unfold expandFuel at h_result
+    StateInv r.2 := by
+  revert h_inv h_proc
+  apply expand.partial_correctness
+    (motive := fun node st r => StateInv st → ProcessingInv node → StateInv r.2)
+    _ node st r h_result
+  intro expand_ih ih node st r h_result h_inv h_proc
+  split at h_result
+  case isTrue h_empty =>
+    have h_new_nil : node.new = [] := by
+      cases h : node.new with
+      | nil => rfl
+      | cons _ _ => rw [h] at h_empty; simp [List.isEmpty] at h_empty
     split at h_result
-    case isTrue h_empty =>
-      have h_new_nil : node.new = [] := by
-        cases h : node.new with
-        | nil => rfl
-        | cons _ _ => rw [h] at h_empty; simp [List.isEmpty] at h_empty
+    · rename_i existingName _
+      obtain rfl := Option.some.inj h_result
+      exact mergeIncoming_stateInv st node existingName h_inv
+    · simp only [freshName] at h_result
+      have h_inv' : StateInv { st with nodes := st.nodes.insert node.name node } := by
+        intro k n hk; simp only [Std.HashMap.getElem?_insert] at hk; split at hk
+        · obtain rfl := Option.some.inj hk; exact ⟨h_proc, h_new_nil⟩
+        · exact h_inv k n hk
+      exact ih _ _ _ h_result h_inv' (processingInv_empty_old _ fun ψ => by
+        simp [Std.HashSet.contains_emptyWithCapacity])
+  case isFalse h_not_empty =>
+    simp only [Bool.not_eq_true] at h_not_empty
+    simp only at h_result
+    split at h_result
+    · rename_i h_lit
       split at h_result
-      · rename_i existingName _
-        simp only [Option.some.injEq, Prod.mk.injEq] at h_result
-        obtain ⟨_, rfl⟩ := h_result
-        exact mergeIncoming_stateInv st node existingName h_inv
-      · simp only [freshName] at h_result
-        have h_inv' : StateInv { st with nodes := st.nodes.insert node.name node } := by
-          intro k n hk; simp only [Std.HashMap.getElem?_insert] at hk; split at hk
-          · obtain rfl := Option.some.inj hk; exact ⟨h_proc, h_new_nil⟩
-          · exact h_inv k n hk
-        exact ih _ _ h_result h_inv' (processingInv_empty_old _ fun ψ => by
-          simp [Std.HashSet.contains_emptyWithCapacity])
-    case isFalse h_not_empty =>
-      simp only [Bool.not_eq_true] at h_not_empty
-      simp only at h_result
+      · obtain rfl := Option.some.inj h_result; exact h_inv
+      · rename_i h_no_neg
+        simp only [Bool.not_eq_true] at h_no_neg
+        exact ih _ _ _ h_result h_inv (processingInv_literal h_proc h_not_empty h_lit h_no_neg)
+    · rename_i h_not_lit
+      split at h_result <;> (try split at h_result) <;> (try split at h_result) <;>
+        (try split at h_result) <;> (try split at h_result)
+      all_goals (
+        first
+        | (obtain rfl := Option.some.inj h_result; exact h_inv)
+        | exact ih _ _ _ h_result h_inv (processingInv_tt h_proc h_not_empty ‹_›)
+        | exact ih _ _ _ h_result h_inv (processingInv_deterministic h_proc h_not_empty ‹_›)
+        | simp_all)
+      -- Nondet case remains
+      rename_i _ _ h_nondet
+      have h_ne : node.new.isEmpty = false := by
+        simp only [List.isEmpty]; split <;> simp_all
+      have h_nlit : isLiteral node.new.head! = false := by assumption
+      have h_not_tt_prop : ¬ (node.new.head! matches .tt) := by
+        intro hc; cases node.new.head! <;> simp_all [isLiteral]
+      have h_not_ff_prop : ¬ (node.new.head! matches .ff) := by
+        intro hc; cases node.new.head! <;> simp_all [isLiteral]
+      simp only [Option.bind] at h_result
       split at h_result
-      · rename_i h_lit
-        split at h_result
-        · simp only [Option.some.injEq, Prod.mk.injEq] at h_result
-          obtain ⟨_, rfl⟩ := h_result; exact h_inv
-        · rename_i h_no_neg
-          simp only [Bool.not_eq_true] at h_no_neg
-          exact ih _ _ h_result h_inv (processingInv_literal h_proc h_not_empty h_lit h_no_neg)
-      · rename_i h_not_lit
-        split at h_result
-        · rename_i h_tt_match
-          exact ih _ _ h_result h_inv (processingInv_tt h_proc h_not_empty h_tt_match)
-        · try rw [if_neg (by decide)] at h_result
-          split at h_result
-          · try rw [if_pos rfl] at h_result
-            simp only [Option.some.injEq, Prod.mk.injEq] at h_result
-            obtain ⟨_, rfl⟩ := h_result; exact h_inv
-          · try rw [if_neg (by decide)] at h_result
-            rename_i h_not_ff _
-            split at h_result
-            · rename_i h_det
-              try rw [if_pos rfl] at h_result
-              exact ih _ _ h_result h_inv
-                (processingInv_deterministic h_proc h_not_empty h_det)
-            · rename_i h_nondet
-              simp only [Bool.not_eq_true] at h_nondet h_not_lit
-              try rw [if_neg (by decide)] at h_result
-              split at h_result
-              · exact absurd h_result (by simp)
-              · rename_i h_branch1
-                have h_not_tt_prop : ¬ (node.new.head! matches .tt) := by
-                  intro hc; cases node.new.head! <;> simp_all [isLiteral]
-                have h_not_ff_prop : ¬ (node.new.head! matches .ff) := by
-                  intro hc; cases node.new.head! <;> simp_all [isLiteral]
-                exact ih _ _ h_result
-                  (ih _ _ h_branch1 h_inv
-                    (processingInv_nondet1 h_proc h_not_empty h_nondet h_not_lit
-                      h_not_tt_prop h_not_ff_prop))
-                  (processingInv_nondet2 h_proc h_not_empty h_nondet h_not_lit
-                    h_not_tt_prop h_not_ff_prop _)
+      · simp at h_result
+      · rename_i mid h_branch1
+        obtain ⟨nm', st_mid⟩ := mid
+        simp only [] at h_branch1 h_result
+        have inv1 := ih _ _ _ _ h_branch1 h_inv
+          (processingInv_nondet1 h_proc h_ne h_nondet h_nlit
+            h_not_tt_prop h_not_ff_prop)
+        exact ih _ _ _ _ h_result inv1
+          (processingInv_nondet2 h_proc h_ne h_nondet h_nlit
+            h_not_tt_prop h_not_ff_prop _)
 
 /-! ## Main correctness theorem
 
-The output of `createGraphFuel` satisfies `ExpandSpec`. -/
+The output of `createGraph` satisfies `ExpandSpec`. -/
 
-theorem createGraphFuel_spec (fuel : Nat) (φ : NNF α)
-    (h : createGraphFuel fuel φ = some st) :
+theorem createGraph_spec (φ : NNF α)
+    (h : createGraph φ = some st) :
     ExpandSpec φ st.toNodes := by
   sorry
 
