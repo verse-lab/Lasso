@@ -43,7 +43,7 @@ variable [BEq α] [Hashable α]
 /-- Check if two HashSets have the same elements.
 (Std.HashSet doesn't provide a BEq instance by default.) -/
 private def hashSetEq (s₁ s₂ : Std.HashSet (NNF α)) : Bool :=
-  s₁.size == s₂.size && s₁.all s₂.contains
+  s₁.all s₂.contains && s₂.all s₁.contains
 
 /-- Check if two nodes have the same (old, next) signature.
 Used to detect duplicate nodes during expansion.
@@ -52,6 +52,33 @@ Corresponds to the condition `old n' = old n ∧ next n' = next n`
 in `expand_body` (LTL_to_GBA.thy, line 236). -/
 def sameSignature (n₁ n₂ : GBANode α) : Bool :=
   hashSetEq n₁.old n₂.old && hashSetEq n₁.next n₂.next
+
+variable [LawfulBEq α] [LawfulHashable α]
+
+private theorem hashset_all_mem (s : Std.HashSet (NNF α)) (f : NNF α → Bool)
+    (h : s.all f = true) (x : NNF α) (hx : x ∈ s) : f x = true := by
+  have hlist : x ∈ s.toList := Std.HashSet.mem_toList.mpr hx
+  rw [show s.all f = s.toList.all f from by simp [Std.HashSet.all]] at h
+  exact List.all_eq_true.mp h x hlist
+
+theorem sameSignature_old_left (n₁ n₂ : GBANode α)
+    (h : n₁.sameSignature n₂ = true)
+    (ψ : NNF α) (hψ : n₂.old.contains ψ = true) : n₁.old.contains ψ = true := by
+  unfold sameSignature at h
+  have := Bool.and_eq_true_iff.mp h |>.1
+  have := Bool.and_eq_true_iff.mp this |>.2
+  -- this : n₂.old.all n₁.old.contains = true
+  exact hashset_all_mem n₂.old n₁.old.contains this ψ
+    (Std.HashSet.mem_iff_contains.mpr hψ)
+
+theorem sameSignature_old_right (n₁ n₂ : GBANode α)
+    (h : n₁.sameSignature n₂ = true)
+    (ψ : NNF α) (hψ : n₁.old.contains ψ = true) : n₂.old.contains ψ = true := by
+  unfold sameSignature at h
+  have := Bool.and_eq_true_iff.mp h |>.1
+  have := Bool.and_eq_true_iff.mp this |>.1
+  exact hashset_all_mem n₁.old n₂.old.contains this ψ
+    (Std.HashSet.mem_iff_contains.mpr hψ)
 
 end GBANode
 
