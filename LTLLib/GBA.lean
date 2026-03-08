@@ -84,6 +84,12 @@ def isAccepting (gba : GBA α) (setIdx : Nat) (state : Nat) : Bool :=
   | some aset => aset.contains state
   | none => true  -- if no acceptance sets, all states accept
 
+/-- Well-formedness: initial and successor states are in the state set. -/
+structure WellFormed (gba : GBA α) : Prop where
+  initial_mem : ∀ q, gba.isInitial q → gba.states.contains q
+  succ_mem : ∀ q q', gba.states.contains q → q' ∈ gba.getSuccessors q →
+    gba.states.contains q'
+
 end GBA
 
 end LTLLib

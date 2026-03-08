@@ -345,4 +345,15 @@ def GBA.toSpec [BEq α] [Hashable α] (gba : GBA α) : OASpec Nat α gba.numAcce
     | none => True
   acceptSet i q := gba.isAccepting i.val q
 
+/-- Convert a computational `BA` to a proof-level `OASpec` with 1 acceptance set. -/
+def BA.toSpec [BEq α] [Hashable α] (ba : BA α) : OASpec BAState α 1 where
+  trans s s' := s' ∈ ba.getSuccessors s
+  initial s := ba.initialStates.contains s
+  labelCompat s v :=
+    match ba.labeling[s.gbaState]? with
+    | some (pos, neg) =>
+      (∀ a, pos.contains a → v a) ∧ (∀ a, neg.contains a → ¬ v a)
+    | none => True
+  acceptSet _ s := ba.isAccepting s
+
 end LTLLib

@@ -4,6 +4,22 @@ A standalone Lean 4 library for LTL (Linear Temporal Logic) model checking infra
 
 The core algorithm (LTL-to-GBA via Gerth et al.) is ported from the verified Isabelle/HOL formalization in [LTL_to_GBA](https://www.isa-afp.org/entries/LTL_to_GBA.html), part of the CAVA model checking framework.
 
+## Proof Status
+
+**~5476 lines, 0 sorry.** The following correctness theorems are proved:
+
+| Theorem | Statement | File |
+|---------|-----------|------|
+| `toNNF_correct` | NNF compilation preserves semantics | `LTL/Semantics.lean` |
+| `createGraph_spec` | Graph expansion satisfies structural invariants | `LTLtoGBA/Invariants.lean` |
+| `expandOASpec_soundness` | Abstract GBA accepts ξ → ξ ⊨ φ | `LTLtoGBA/Soundness.lean` |
+| `expandOASpec_completeness` | ξ ⊨ φ → abstract GBA accepts ξ (modulo `GraphComplete`) | `LTLtoGBA/Completeness.lean` |
+| `constructGBA_iff_expandOASpec` | Computational GBA ↔ abstract GBA | `LTLtoGBA/Bridge.lean` |
+| `degeneralize_correct` | Proof-level degeneralization preserves language | `Acceptance.lean` |
+| `degeneralize_bridge` | Computational BA ↔ proof-level degeneralization | `DegeneralBridge.lean` |
+
+**Remaining for end-to-end**: Nested DFS correctness (Phase 5) and optionally `GraphComplete` (Phase 4.3).
+
 ## File Organization
 
 ```
@@ -14,15 +30,19 @@ LTLLib/
     Semantics.lean             -- LTL/NNF denotational semantics via Lentil TLA
     Subformulas.lean           -- Subformula closure and Until-subformula extraction
     Fairness.lean              -- Weak/strong fairness combinators encoded as LTL
-  GBA.lean                     -- Generalized Büchi Automaton type definition
+  GBA.lean                     -- Generalized Büchi Automaton type + WellFormed predicate
   BA.lean                      -- Standard Büchi Automaton type + GBA degeneralization
   Acceptance.lean              -- Proof-level automata specs + degeneralization correctness
+  DegeneralBridge.lean         -- Bridge: computational BA ↔ proof-level degeneralization
   LTLtoGBA/
     FSet.lean                  -- Abstract finite set typeclass (HashSet/TreeSet instances)
     Node.lean                  -- GBANode record for graph construction
     Expand.lean                -- Gerth et al. expand/createGraph algorithm
     Construction.lean          -- GBA construction from expanded node graph
     Invariants.lean            -- Structural invariants of the expand algorithm
+    Soundness.lean             -- Soundness: GBA accepts ξ → ξ ⊨ φ
+    Completeness.lean          -- Completeness: ξ ⊨ φ → GBA accepts ξ (modulo GraphComplete)
+    Bridge.lean                -- Bridge: computational GBA ↔ abstract automaton
   NestedDFS.lean               -- Generic nested DFS emptiness check (CVWY algorithm)
 ```
 
@@ -41,11 +61,13 @@ LTLLib/
 
 **`LTL/Fairness.lean`** — Encodes weak fairness (justice) and strong fairness (compassion) as standard LTL formulas: `weakFairness enabled taken = □◇(¬enabled ∨ taken)` and `strongFairness enabled taken = □(□¬enabled ∨ ◇taken)`. Also provides combinators for conjunctions of fairness constraints and checking properties under fairness assumptions.
 
-**`Acceptance.lean`** — Proof-level automaton specifications (`GBASpec`, `BASpec`) with `isRun`, `isAcceptingRun`, `accepts` definitions. Includes `GBASpec.degeneralize` (counter-cycling construction) and the sorry-free `degeneralize_correct` theorem proving language equivalence between GBA and BA.
+**`Acceptance.lean`** — Proof-level automaton specification `OASpec` (unified for GBA/BA with k acceptance sets). Includes `OASpec.degeneralize` (counter-cycling construction), the sorry-free `degeneralize_correct` theorem proving language equivalence, and `GBA.toSpec`/`BA.toSpec` bridges from computational to proof-level automata.
 
-**`GBA.lean`** — The `GBA α` structure representing a Generalized Büchi Automaton with states, initial states, successor map, labeling (positive/negative propositions per state), and multiple acceptance sets. Corresponds to `create_gba_from_nodes` output in `LTL_to_GBA.thy`.
+**`DegeneralBridge.lean`** — Proves that the computational `BA` produced by `GBA.degeneralize` and the proof-level `OASpec.degeneralize` accept the same ω-words. Key theorem: `degeneralize_bridge`. Uses double-fold HashMap reasoning (outer over states, inner over acceptance counter values).
 
-**`BA.lean`** — The `BA α` structure for a standard (single acceptance set) Büchi Automaton, and `GBA.degeneralize` which converts a GBA to a BA. States become `(gbaState, acceptIdx)` pairs. Accepting states are those with `acceptIdx = 0`. Standard construction from Baier & Katoen, Section 4.3.3.
+**`GBA.lean`** — The `GBA α` structure representing a Generalized Büchi Automaton with states, initial states, successor map, labeling (positive/negative propositions per state), and multiple acceptance sets. Includes `GBA.WellFormed` predicate. Corresponds to `create_gba_from_nodes` output in `LTL_to_GBA.thy`.
+
+**`BA.lean`** — The `BA α` structure for a standard (single acceptance set) Büchi Automaton, and `GBA.degeneralize` which converts a GBA to a BA. States become `BAState = (gbaState, acceptIdx)` pairs. Accepting states are `{(q, 0) | q ∈ F_0}`. Standard construction from Baier & Katoen, Section 4.3.3.
 
 **`LTLtoGBA/FSet.lean`** — Abstract finite set typeclass `FSet α S` with operations (`empty`, `insert`, `contains`, `foldl`, `all`, `toList`) and correctness laws. Instances for `Std.HashSet` and `Std.TreeSet`. Allows swapping set implementations without changing algorithms or proofs.
 
@@ -55,7 +77,13 @@ LTLLib/
 
 **`LTLtoGBA/Construction.lean`** — Assembles a `GBA` from the expanded node graph: builds successor map from incoming edges, acceptance sets from Until-subformulas, and labeling from atomic propositions. Corresponds to `create_gba_from_nodes`, `build_succ`, `build_F`, and `pn_map` in `LTL_to_GBA.thy` / `LTL_to_GBA_impl.thy`.
 
-**`LTLtoGBA/Invariants.lean`** — Structural invariants of the expand algorithm, proved via `partial_correctness` induction. Defines `ExpandSpec` with 9 properties (literal consistency, no false, propagation rules for and/or/next/until/release, successor inheritance, initial formula containment). Main theorem: `createGraph_spec` proves `createGraph φ = some st → ExpandSpec φ st`.
+**`LTLtoGBA/Invariants.lean`** — Structural invariants of the expand algorithm, proved via `partial_correctness` induction. Defines `ExpandSpec` with 11 properties (literal consistency, no false, propagation rules for and/or/next/until/release, successor inheritance, initial formula containment). Main theorem: `createGraph_spec` proves `createGraph φ = some st → ExpandSpec φ st`.
+
+**`LTLtoGBA/Soundness.lean`** — Soundness of the abstract GBA: `expandOASpec_soundness` proves that if the abstract automaton accepts ξ, then ξ ⊨ φ. Core lemma `old_implies_satisfied` (L4_8) by structural induction. Also defines `expandOASpec` (abstract automaton bypassing HashMap reasoning).
+
+**`LTLtoGBA/Completeness.lean`** — Completeness of the abstract GBA: `expandOASpec_completeness` proves that if ξ ⊨ φ (and `GraphComplete` holds), then the abstract automaton accepts ξ. The `GraphComplete` hypothesis is not yet proved from `createGraph`.
+
+**`LTLtoGBA/Bridge.lean`** — Proves `constructGBA_iff_expandOASpec`: the computational `GBA` (built by `constructGBA` using HashMaps) and the abstract `expandOASpec` accept the same words. Reasoning about `HashMap.fold` in `buildSuccessors`/`buildAcceptSets`/`buildLabeling`/`buildInitialStates`.
 
 **`NestedDFS.lean`** — Generic Courcoubetis-Vardi-Wolper-Yannakakis (CVWY) nested DFS algorithm for detecting accepting cycles. Parameterized by state type, successor function, and accepting predicate. Returns either `empty` (property holds) or `nonEmpty stem loop` (lasso-shaped counterexample). Uses explicit stack for the outer DFS and recursive inner DFS with the `innerFinished` optimization.
 
@@ -64,19 +92,19 @@ LTLLib/
 ```
 LTL formula φ  (Formula α, user-facing syntax)
     │
-    ▼  toNNF
+    ▼  toNNF                     ✓ proved correct
 φ (in NNF)     (NNF α, internal IR)
     │
     ▼  neg
 ¬φ (in NNF)
     │
-    ▼  createGraph (Gerth et al. expand)
+    ▼  createGraph                ✓ ExpandSpec proved
 Node graph (ExpandState)
     │
-    ▼  constructGBA
+    ▼  constructGBA               ✓ bridge proved (↔ expandOASpec)
 Generalized Büchi Automaton (GBA)
     │
-    ▼  degeneralize
+    ▼  degeneralize               ✓ bridge proved (↔ OASpec.degeneralize)
 Standard Büchi Automaton (BA)
     │
     ▼  nestedDFS (on product with system)
