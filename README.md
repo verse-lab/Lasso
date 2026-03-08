@@ -6,7 +6,7 @@ The core algorithm (LTL-to-GBA via Gerth et al.) is ported from the verified Isa
 
 ## Proof Status
 
-**~5476 lines, 0 sorry.** The following correctness theorems are proved:
+**~5805 lines, 0 sorry.** The following correctness theorems are proved:
 
 | Theorem | Statement | File |
 |---------|-----------|------|
@@ -17,8 +17,10 @@ The core algorithm (LTL-to-GBA via Gerth et al.) is ported from the verified Isa
 | `constructGBA_iff_expandOASpec` | Computational GBA ↔ abstract GBA | `LTLtoGBA/Bridge.lean` |
 | `degeneralize_correct` | Proof-level degeneralization preserves language | `Acceptance.lean` |
 | `degeneralize_bridge` | Computational BA ↔ proof-level degeneralization | `DegeneralBridge.lean` |
+| `ba_hasAcceptingRun_of_lasso` | Valid lasso → BA has accepting run | `OutputVerify.lean` |
+| `ba_hasAcceptingRun_of_ndfs_output` | nestedDFS output → BA has accepting run | `OutputVerify.lean` |
 
-**Remaining for end-to-end**: Nested DFS correctness (Phase 5) and optionally `GraphComplete` (Phase 4.3).
+**Remaining for end-to-end**: Nested DFS completeness (`empty → no accepting run`, Phase 5b) and optionally `GraphComplete` (Phase 4.3).
 
 ## File Organization
 
@@ -44,6 +46,8 @@ LTLLib/
     Completeness.lean          -- Completeness: ξ ⊨ φ → GBA accepts ξ (modulo GraphComplete)
     Bridge.lean                -- Bridge: computational GBA ↔ abstract automaton
   NestedDFS.lean               -- Generic nested DFS emptiness check (CVWY algorithm)
+  Lasso.lean                   -- Abstract lasso theory (ValidLasso, lassoRun)
+  OutputVerify.lean            -- Bridge: nestedDFS output → ValidLasso → accepting run
 ```
 
 ### Module Descriptions
@@ -86,6 +90,10 @@ LTLLib/
 **`LTLtoGBA/Bridge.lean`** — Proves `constructGBA_iff_expandOASpec`: the computational `GBA` (built by `constructGBA` using HashMaps) and the abstract `expandOASpec` accept the same words. Reasoning about `HashMap.fold` in `buildSuccessors`/`buildAcceptSets`/`buildLabeling`/`buildInitialStates`.
 
 **`NestedDFS.lean`** — Generic Courcoubetis-Vardi-Wolper-Yannakakis (CVWY) nested DFS algorithm for detecting accepting cycles. Parameterized by state type, successor function, and accepting predicate. Returns either `empty` (property holds) or `nonEmpty stem loop` (lasso-shaped counterexample). Uses explicit stack for the outer DFS and recursive inner DFS with the `innerFinished` optimization.
+
+**`Lasso.lean`** — Abstract lasso theory for Büchi automata. Defines `lassoRun` (infinite run from stem + cycle lists), `ValidLasso` (structure capturing validity conditions: initial state, transition chains, overlap, cycle back-edge, acceptance). Proves `run_isRun` (valid transitions), `run_isAccepting` (infinitely often accepting), and `accepts_of_validLasso`. Modular arithmetic reasoning handles cycle wrapping.
+
+**`OutputVerify.lean`** — Bridges computational nestedDFS output to the abstract `ValidLasso` theory. `ba_hasAcceptingRun_of_lasso` takes `Array.contains`/`BA.isAccepting` checks and constructs a `ValidLasso` for `BA.toSpec`. `ba_hasAcceptingRun_of_ndfs_output` handles the raw nestedDFS output format where `loop = [seed, ...seed]` and the actual cycle is `loop.tail`.
 
 ## Algorithm Pipeline
 

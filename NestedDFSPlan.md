@@ -8,37 +8,34 @@ Two directions:
 - **Phase 5a**: `nonEmpty stem loop` → accepting run exists (output verification)
 - **Phase 5b**: `empty` → no accepting run exists (algorithm invariants)
 
-## Phase 5a: Output Verification (~200-400 lines)
+## Phase 5a: Output Verification ✅ DONE (~329 lines)
 
-**Goal**: Given `nestedDFS` returns `nonEmpty stem loop`, verify that `stem ++ loop^ω`
-forms an accepting run of the automaton.
+**Files**: `LTLLib/Lasso.lean` (~232 lines), `LTLLib/OutputVerify.lean` (~97 lines)
 
-**What "accepting run" means** for `BA.toSpec` (OASpec BAState α 1):
-- `isRun σ`: `initial (σ 0) ∧ ∀ n, trans (σ n) (σ (n+1))`
-- `runCompatible σ ξ`: `∀ n, labelCompat (σ n) (ξ n)`
-- `isAcceptingRun σ`: `∀ n, ∃ j, acceptSet (σ (n+j))` (visits accepting states infinitely often)
+### Lasso.lean — Abstract Lasso Theory
 
-**For a lasso `stem ++ loop^ω`**:
-- `stem` is a path from an initial state to an accepting state `q`
-- `loop` is a cycle: starts and ends at `q`, passes through `q`
-- Since `q` is accepting and appears infinitely often, the Büchi condition is satisfied
+- `lassoRun stem cycle default : Nat → State` — infinite run construction
+  - Positions `0` to `stem.length - 2`: from stem
+  - Position `stem.length - 1` onwards: cycles through `cycle`
+- `ValidLasso A stem cycle` — structure with validity conditions:
+  - `stem_nonempty`, `cycle_nonempty`
+  - `stem_initial`: first state is initial
+  - `stem_chain`: consecutive stem states are transitions
+  - `overlap`: `stem.getLast = cycle.head`
+  - `cycle_chain`: consecutive cycle states are transitions
+  - `cycle_back`: last cycle state transitions to first
+  - `cycle_accepting`: cycle head is accepting
+- Key theorems:
+  - `run_isRun`: the constructed run has valid transitions
+  - `run_isAccepting`: the run visits accepting states infinitely often
+  - `accepts_of_validLasso`: valid lasso → automaton accepts
 
-**Proof structure**:
-1. Define `lassoRun : List State → List State → (Nat → State)` that builds the ω-word
-2. Prove `lassoRun_isRun`: valid transitions along stem and loop
-3. Prove `lassoRun_accepting`: accepting state visited infinitely often
-4. Theorem: `nestedDFS_nonEmpty_correct`: `nonEmpty stem loop` → `∃ accepting run`
+### OutputVerify.lean — Connecting nestedDFS Output
 
-**Key properties to verify on the output**:
-- `stem.head` is an initial state
-- Consecutive states in `stem` are successors
-- `stem.getLast = loop.head = loop.getLast` (cycle connects)
-- Consecutive states in `loop` are successors
-- The accepting state (`loop.head`) satisfies `isAccepting`
-
-**Note**: We prove this *abstractly* — given that stem/loop satisfy the above
-properties, an accepting run exists. Whether `nestedDFS` actually produces valid
-stem/loop is a separate (easier) argument from the algorithm structure.
+- `ba_hasAcceptingRun_of_lasso`: given computational checks (Array.contains, isAccepting),
+  constructs a `ValidLasso` and derives `∃ σ, isRun σ ∧ isAcceptingRun σ`
+- `ba_hasAcceptingRun_of_ndfs_output`: takes raw nestedDFS output format
+  (`loop` with duplicate seed, cycle = `loop.tail`) and reduces to the clean lasso theorem
 
 ## Phase 5b: Completeness (~800-1200 lines)
 

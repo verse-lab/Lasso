@@ -57,11 +57,11 @@ BA.toSpec accepts ξ ↔ GBA.toSpec.degeneralize accepts ξ    (DegeneralBridge.
 | Bridge | constructGBA ↔ expandOASpec | **DONE** | `Bridge.lean` |
 | DegBridge | BA.degeneralize ↔ OASpec.degeneralize | **DONE** | `DegeneralBridge.lean` |
 | Phase 4.3 | GraphComplete from createGraph | Not started | — |
-| Phase 5 | Nested DFS Correctness | Not started | — |
+| Phase 5 | Nested DFS Correctness | **Phase 5a done** | `Lasso.lean`, `OutputVerify.lean` |
 | Phase 6 | End-to-end pipeline | Not started | — |
 | Phase 2 | Termination | Not started (not blocking) | — |
 
-**Codebase: ~5476 lines, 0 sorry**
+**Codebase: ~5805 lines, 0 sorry**
 
 ---
 
@@ -186,17 +186,28 @@ Everything from Path A, plus the completeness direction:
 - Double fold reasoning (outer over states, inner over counter values)
 - Requires `GBA.WellFormed` for backward direction
 
-### Phase 5: Emptiness Check Correctness — NOT STARTED
+### Phase 5: Emptiness Check Correctness — IN PROGRESS
 
-Three layers following CAVA's architecture:
+**Phase 5a: Output Verification ✅ DONE**
 
-**Layer 1: Graph theory** — basic directed graph notions (finite/infinite paths,
-reachability, SCCs). May reuse from cslib (`LTS.MTr`, `LTS.ωTr`).
+**File**: `LTLLib/Lasso.lean` (~232 lines, 0 sorry)
 
-**Layer 2: Lasso characterization** — accepting run exists iff a "lasso" (stem + cycle)
-exists. This is the key mathematical bridge.
+- `lassoRun`: infinite run construction from stem + cycle
+- `ValidLasso`: structure capturing validity conditions for a lasso
+- `run_isRun`, `run_isAccepting`: the constructed run is a valid accepting run
+- Modular arithmetic reasoning for cycle wrapping
 
-**Layer 3: Algorithm correctness** — prove `nestedDFS` correctly decides lasso existence.
+**File**: `LTLLib/OutputVerify.lean` (~97 lines, 0 sorry)
+
+- `ba_hasAcceptingRun_of_lasso`: computational lasso checks → accepting run exists
+- `ba_hasAcceptingRun_of_ndfs_output`: raw nestedDFS output → accepting run exists
+- Bridges `Array.contains`/`BA.isAccepting` checks to `ValidLasso`
+
+**Phase 5b: Completeness — NOT STARTED**
+
+- Prove `empty → no accepting run exists`
+- Requires fuel-based reasoning or partial_correctness induction on innerDFS/outerDFSLoop
+- CVWY invariants (outer/inner DFS, innerFinished soundness, DFS ordering)
 
 ### Phase 2: Termination — NOT STARTED (not blocking)
 
@@ -226,8 +237,10 @@ Not required for correctness proofs (using `partial_correctness` induction inste
 | `LTLLib/GBA.lean` | — | **DONE** | ~95 | 0 |
 | `LTLLib/BA.lean` | — | **DONE** | ~159 | 0 |
 | `LTLLib/NestedDFS.lean` | — | **DONE** (partial) | ~175 | 0 |
+| `LTLLib/Lasso.lean` | 5a | **DONE** | ~232 | 0 |
+| `LTLLib/OutputVerify.lean` | 5a | **DONE** | ~97 | 0 |
 
-**Total: ~5476 lines, 0 sorry**
+**Total: ~5805 lines, 0 sorry**
 
 ---
 

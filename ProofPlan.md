@@ -10,7 +10,7 @@ This document outlines the plan for porting correctness proofs from the Isabelle
 - **FSet abstraction** completed — abstract finite set typeclass with HashSet/TreeSet instances
 - **2** `partial` functions remain: `innerDFS` and `outerDFSLoop` (NestedDFS.lean)
 - `expand` uses `partial_fixpoint` (provides equational rewriting + `partial_correctness` induction)
-- **0** `sorry`, **0** warnings, **~5476 lines**
+- **0** `sorry`, **0** warnings, **~5805 lines**
 
 ## What the Isabelle formalization proves
 
@@ -98,14 +98,16 @@ Requires showing the expand algorithm is exhaustive: for every satisfiable
 
 **Difficulty**: High. Requires reasoning about the branching structure of expand.
 
-### Phase 5: Nested DFS Correctness — NOT STARTED
+### Phase 5: Nested DFS Correctness — IN PROGRESS (Phase 5a done)
 
 **Goal**: Prove that `nestedDFS` correctly decides emptiness.
 
-**What's needed**:
-1. Specification of what "accepting cycle" means
-2. Soundness: `nonEmpty stem loop → stem ++ loop^ω is an accepting run`
-3. Completeness: `empty → no accepting run exists`
+**Phase 5a (output verification) — DONE**:
+- `LTLLib/Lasso.lean` (~232 lines): Abstract lasso theory — `ValidLasso` structure, `lassoRun` construction, proofs that valid lassos yield accepting runs
+- `LTLLib/OutputVerify.lean` (~97 lines): Bridge from computational checks to `ValidLasso`, connecting nestedDFS output format to the abstract theory
+
+**What remains**:
+1. Completeness: `empty → no accepting run exists`
 
 ### Phase 6: End-to-end Pipeline — NOT STARTED
 
@@ -126,4 +128,4 @@ Remove `partial`/`partial_fixpoint` from `expand`, `innerDFS`, `outerDFSLoop`.
 
 3. **Bridge proofs**: The Isabelle formalization uses refinement to connect abstract specs to implementations. In Lean, we proved explicit bridge theorems (`Bridge.lean`, `DegeneralBridge.lean`) with ~1200 lines of HashMap/HashSet fold reasoning.
 
-4. **Proof size**: The Isabelle formalization is ~3200 lines. Our Lean port is ~5476 lines (larger due to explicit bridge proofs and less automation for set-theoretic reasoning).
+4. **Proof size**: The Isabelle formalization is ~3200 lines. Our Lean port is ~5805 lines (larger due to explicit bridge proofs and less automation for set-theoretic reasoning).
