@@ -5,198 +5,226 @@
 ```
 LTL formula φ
     │
-    ▼  (toNNF)
+    ▼  (toNNF)                    ✅ proved correct (toNNF_correct)
 NNF formula ψ
     │
-    ▼  (constructGBA)          Phase 3-4: prove this correct
-GBA (generalized Buchi automaton)
+    ▼  (createGraph)              ✅ ExpandSpec proved (createGraph_spec)
+ExpandState (node graph)
     │
-    ▼  (degeneralize)          Phase D: ✅ proved correct
-BA (standard Buchi automaton)
+    ▼  (constructGBA)             computational, bridge NOT yet proved
+GBA (generalized Büchi automaton)
     │
-    ▼  (nestedDFS / emptiness) Phase E: prove this correct
+    ▼  (degeneralize)             ✅ proof-level proved (degeneralize_correct)
+BA (standard Büchi automaton)         computational bridge NOT yet proved
+    │
+    ▼  (nestedDFS / emptiness)    correctness NOT yet proved
 "property holds" or "counterexample"
 ```
 
-## What We're Proving
-
-### Core theorem (Phases 1-4): GBA construction correctness
+### Proof-level parallel track (abstract automaton)
 
 ```
-∀ ξ, (constructGBA φ).toSpec.Accepts ξ ↔ NNF.satisfies ξ φ
+createGraph φ = some st
+    ↓ createGraph_spec            ✅ gives ExpandSpec φ st.toNodes
+ExpandSpec φ st.toNodes
+    ↓ expandOASpec                abstract automaton from NodeData predicates
+OASpec (NodeData α) α k
+    ↓ expandOASpec_soundness      ✅ accepts ξ → ξ ⊨ φ
+    ↓ expandOASpec_completeness   ✅ ξ ⊨ φ → accepts ξ (needs GraphComplete)
+    ↓ expandOASpec_correct        ✅ accepts ξ ↔ ξ ⊨ φ (needs GraphComplete)
 ```
-
-This is the Isabelle LTL_to_GBA formalization. It says: the GBA constructed
-from an NNF formula accepts exactly the ω-words satisfying that formula.
-
-### Extended theorem (Phase D + E): Full pipeline correctness
-
-```
-nestedDFS returns .empty ↔ ∀ ξ, ¬ Formula.satisfies ξ φ
-```
-
-This requires additionally:
-- Degeneralization correctness (GBA → BA preserves language)
-- Emptiness check correctness (nestedDFS correctly decides BA emptiness)
 
 ---
 
-## Phase 1: Semantic Foundations  ✅ DONE
+## Current Status
 
-**Status**: All sorry-free. Builds cleanly.
+| Phase | Description | Status | File(s) |
+|-------|-------------|--------|---------|
+| Phase 1 | Semantic Foundations | **DONE** | `Semantics.lean` |
+| Phase D | Degeneralization Correctness | **DONE** | `Acceptance.lean` |
+| FSet | Abstract Finite Set Interface | **DONE** | `FSet.lean` |
+| Phase 3 | Structural Invariants (ExpandSpec) | **DONE** | `Invariants.lean` |
+| Phase 4.1 | Soundness (L4_8, L4_9) | **DONE** | `Soundness.lean` |
+| Phase 4.2 | Completeness (L4_10) | **DONE** (modulo GraphComplete) | `Completeness.lean` |
+| Phase 4.3 | GraphComplete from createGraph | Not started | — |
+| Phase 5 | Nested DFS Correctness | Not started | — |
+| Phase 6 | End-to-end pipeline | Not started | — |
+| Phase 2 | Termination | Not started (not blocking) | — |
 
-| Item | Status |
-|------|--------|
-| `tla_release`, `NNF.toPred`, `NNF.satisfies` | ✅ |
-| `NNF.neg_correct` | ✅ |
-| `Formula.toNNF_correct` | ✅ |
-| `GBASpec`, `BASpec`, `GBASpec.Accepts` | ✅ |
-| `degeneralize_correct` | ✅ (completed in Phase D) |
-
-## Phase 3: Structural Invariants  ✅ DONE
-
-**Status**: All sorry-free (~1795 lines in `Invariants.lean`).
-
-Proved using `partial_correctness` induction on `expand` — does NOT require
-termination proofs (Phase 2). The `partial_fixpoint` definition provides
-equational rewrite rules and a `partial_correctness` theorem.
-
-9 invariant properties bundled in `ExpandSpec`, including propagation lemmas
-for all NNF constructors, literal consistency, successor inheritance, and
-initial formula containment. Main theorem: `createGraph_spec`.
-
-Also completed: **FSet abstraction** — abstract finite set typeclass (`FSet.lean`)
-with `Std.HashSet` and `Std.TreeSet` instances, applied throughout Node/Expand/
-Construction/Invariants.
-
-## Phase 2: Termination
-
-Remove `partial` from `expand`, `innerDFS`, `outerDFSLoop`.
-
-| Item | Approach |
-|------|----------|
-| `expand` termination | Lexicographic: (possible signatures − current signatures, node.new.length) |
-| `innerDFS` termination | `|reachable| − |innerVisited|` |
-| `outerDFSLoop` termination | Lexicographic on (outerVisited size, stack, remaining successors) |
-
-**Note**: Phase 3 was completed WITHOUT expand termination, using `partial_correctness`
-induction. Phase 4 may also be achievable without termination proofs.
-`innerDFS` and `outerDFSLoop` termination is only needed for Phase E.
-
-## Phase 4: GBA Correctness
-
-**Soundness** (L4_8, L4_9): If the GBA accepts ξ, then ξ satisfies the formula.
-- Core argument: structural induction on NNF subformulas
-- Until case uses Buchi acceptance to prevent indefinite postponement
-
-**Completeness** (L4_10): If ξ satisfies the formula, construct a GBA run.
-- Uses Classical.choice to pick compatible successor nodes at each step
+**Codebase: ~4234 lines, 0 sorry**
 
 ---
 
-## Phase D: Degeneralization Correctness  ✅ DONE
+## Critical Path: End-to-end Proof Certificate
+
+To go from "LTL formula" to "verified model checking result", we need a chain
+of correctness theorems connecting each pipeline stage. There are two paths:
+
+### Path A: Soundness-only (certifies "property holds")
+
+**Goal**: If `nestedDFS` returns `empty`, then every ξ satisfies φ.
+
+This requires only the **soundness** direction at each stage — no `GraphComplete`
+needed. This is the pragmatic path to a useful proof certificate.
 
 ```
-∀ ξ, A.degeneralize.Accepts ξ ↔ A.Accepts ξ
+nestedDFS returns empty
+    → (Nested DFS soundness) no accepting run in BA
+    → (degeneralize bridge) no accepting run in computational GBA
+    → (constructGBA bridge) no accepting run in expandOASpec
+    → (expandOASpec_soundness) no ξ satisfies ¬φ       ← ALREADY PROVED
+    → (toNNF_correct) all ξ satisfy φ                   ← ALREADY PROVED
 ```
 
-**Status**: Sorry-free. Uses counter-cycling argument following CAVA's `Automata.thy`.
+| Step | What's needed | Difficulty | Status |
+|------|--------------|------------|--------|
+| 1. constructGBA bridge | `constructGBA` refines `expandOASpec` | Medium | Not started |
+| 2. degeneralize bridge | Computational `GBA.degeneralize` refines `OASpec.degeneralize` | Medium | Not started |
+| 3. Nested DFS soundness | `empty → ¬∃ accepting cycle` | Medium | Not started |
+| 4. expandOASpec_soundness | accepts ξ → ξ ⊨ φ | — | **DONE** |
+| 5. toNNF_correct | directSatisfies ↔ NNF.satisfies ∘ toNNF | — | **DONE** |
+| 6. Executable entry point | `main` function | Easy | Not started |
 
-Helper lemmas proved: `counterStep_not_accept_gen`, `counterStep_accept_gen`,
-`counter_stays_at`, `counter_advances_from`, `counter_reaches_zero`,
-`counter_advance_to_next`.
+This path certifies "property holds" but cannot certify counterexamples.
 
-Main proofs: `degeneralize_forward` (chains `counter_advance_to_next` by induction
-on acceptance set index) and `degeneralize_backward` (uses `counter_reaches_zero` +
-`Nat.find` + `counter_stays_zero`).
+### Path B: Full biconditional (certifies both directions)
+
+**Goal**: `nestedDFS` returns `empty` ↔ all ξ satisfy φ.
+
+Everything from Path A, plus the completeness direction:
+
+| Additional step | What's needed | Difficulty | Status |
+|-----------------|--------------|------------|--------|
+| GraphComplete | `createGraph` produces all satisfiable types | **Hard** | Not started |
+| Nested DFS completeness | `¬∃ accepting cycle → empty` | Medium | Not started |
+| Bridges (reverse) | Abstract automaton refines computational one | Medium | Not started |
+
+### Recommended execution order
+
+1. **constructGBA bridge** — unblocks connecting expandOASpec results to the real GBA
+2. **degeneralize bridge** — connects computational GBA to computational BA
+3. **Nested DFS soundness** — the final link for Path A
+4. **Executable entry point** — `main` function running the pipeline
+5. (Optional) GraphComplete + nested DFS completeness for Path B
 
 ---
 
-## Phase E: Emptiness Check Correctness
+## Bridge Details
 
-This is the most substantial new work beyond the Isabelle LTL_to_GBA scope.
-Following CAVA's architecture, this decomposes into three layers:
+The bridges connect computational structures (HashMap-based `GBA`, `BA`) to
+abstract proof-level structures (`OASpec`, `expandOASpec`).
 
-### Layer 1: Graph theory foundation
+### constructGBA bridge
 
-Define basic directed graph notions (or reuse from cslib/Mathlib):
+Show that `(constructGBA φ st).toSpec` and `expandOASpec φ st.toNodes φ.untilSubformulas`
+accept the same words. Requires reasoning about `HashMap.fold` in `buildSuccessors`,
+`buildAcceptSets`, `buildLabeling`, `buildInitialStates` — showing they faithfully
+encode the `NodeData` predicates. Tedious but not conceptually hard.
 
-| Concept | cslib availability | Mathlib availability |
-|---------|-------------------|---------------------|
-| Finite path | `LTS.MTr` | `Quiver.Path` |
-| Infinite path | `LTS.ωTr` | — |
-| Reachability | `LTS.CanReach` | `Quiver.Reachable` (undirected only in SimpleGraph) |
-| SCC | — | `Quiver.StronglyConnectedComponent` |
-| Cycle through a set | — | — |
+### degeneralize bridge
 
-### Layer 2: Lasso characterization (following CAVA's Lasso.thy)
-
-**The key mathematical bridge**: an accepting run exists iff a "lasso" exists.
-
-```
-structure Lasso (State : Type) where
-  stem : List State           -- finite path from initial state to cycle entry
-  cycle : List State           -- non-empty cycle
-
-def Lasso.toRun : Lasso State → exec State   -- stem ++ cycle^ω
-
--- Core theorems:
-theorem lasso_implies_accepting : is_lasso L → is_acc_run (L.toRun)
-theorem accepting_implies_lasso : [finite reachability] → is_acc_run r → ∃ L, is_lasso L
-```
-
-This reduces "does the automaton accept any word?" to "does a lasso exist?",
-which is a finite graph property (reachable cycle intersecting all acceptance sets).
-
-### Layer 3: Algorithm correctness
-
-Prove that the nested DFS (or an alternative algorithm) correctly decides
-whether a lasso exists. This is where the algorithm meets the math.
-
-**Option A: Nested DFS** (current implementation)
-- Prove: nestedDFS returns .nonEmpty iff a lasso exists
-- Requires: DFS properties (parenthesis theorem, white-path theorem)
-- Reference: Lammich & Neumann, "A Framework for Verified Depth-First Algorithms"
-- **No Lean 4 DFS framework exists** — would need to build from scratch
-
-**Option B: SCC-based** (Tarjan/Gabow)
-- Prove: Tarjan/Gabow correctly computes SCCs
-- Then: check if any reachable SCC contains an accepting state
-- Reference: "Formal Proofs of Tarjan's SCC Algorithm" (ITP 2019)
-- **No verified SCC algorithm exists in Lean 4**
-
-**Option C: Simple reachability** (pragmatic)
-- Don't verify the specific algorithm
-- Just prove the lasso characterization (Layer 2)
-- Trust the algorithm implementation (partial correctness only)
-- Can verify the algorithm's OUTPUT (if it returns a lasso, check it)
-
-### Recommended approach
-
-Option A or B requires significant new infrastructure (~500-1000 lines).
-Option C is pragmatic but loses full verification.
-
-A middle ground: verify the lasso characterization + a simple BFS/DFS
-reachability checker (much simpler than full nested DFS correctness).
+Show that `GBA.degeneralize` (computational, in `BA.lean`) implements
+`OASpec.degeneralize` (proof-level, in `Acceptance.lean`). Requires showing the
+counter logic matches. Should be straightforward since both follow the same algorithm.
 
 ---
 
-## Dependency Graph
+## Phase Details
 
-```
-Phase 1 (Semantics) ✅ ─────────────────────┐
-                                             ▼
-Phase 3 (Invariants) ✅ ──────────────► Phase 4 (GBA Correctness)
-                                              │
-Phase D (Degeneralization) ✅ ◄──────────────┘  (independent)
-         │
-         ▼
-Phase 2 (Termination of DFS) ──► Phase E (Emptiness Correctness)
-```
+### Phase 1: Semantic Foundations  ✅ DONE
 
-Phase 3 was completed using `partial_correctness` (no termination needed).
-Phase 4 depends on Phases 1 + 3 (both done).
-Phase 2 (termination) is independent — nice to have but not blocking.
+**File**: `LTLLib/LTL/Semantics.lean` (~152 lines, 0 sorry)
+
+- `OmegaWord`, `tla_release`, `NNF.toPred`, `NNF.satisfies`
+- `NNF.neg_correct`, `Formula.toNNF_correct`, `Formula.directSatisfies_eq_satisfies`
+
+### Phase D: Degeneralization Correctness  ✅ DONE
+
+**File**: `LTLLib/Acceptance.lean` (~348 lines, 0 sorry)
+
+- `OASpec` (unified automaton spec with k acceptance sets)
+- `degeneralize_correct`: degeneralized BA accepts ↔ GBA accepts
+- Helper lemmas: `counter_stays_at`, `counter_advances_from`, `counter_reaches_zero`
+
+### FSet: Abstract Finite Set Interface  ✅ DONE
+
+**File**: `LTLLib/LTLtoGBA/FSet.lean` (~167 lines, 0 sorry)
+
+- Typeclass with 6 operations + 6 laws
+- Instances for `Std.HashSet` and `Std.TreeSet`
+
+### Phase 3: Structural Invariants  ✅ DONE
+
+**File**: `LTLLib/LTLtoGBA/Invariants.lean` (~1795 lines, 0 sorry)
+
+- `ExpandSpec` — 11 invariant properties (literal_consistent, no_false, and/or/next/
+  until/release propagation, old_subformula, next_subformula, successor_old, initial_old)
+- `createGraph_spec`: `createGraph φ = some st → ExpandSpec φ st.toNodes`
+- Uses `expand.partial_correctness` (no termination proof needed)
+
+### Phase 4.1: Soundness  ✅ DONE
+
+**File**: `LTLLib/LTLtoGBA/Soundness.lean` (~369 lines, 0 sorry)
+
+- `old_implies_satisfied` (L4_8): ψ ∈ old(σ n) → ξ.drop(n) ⊨ ψ
+- `soundness` (L4_9): valid accepting run → ξ ⊨ φ
+- `expandOASpec`: abstract automaton from NodeData predicates (bypasses constructGBA)
+- `expandOASpec_soundness`: expandOASpec accepts ξ → ξ ⊨ φ
+- `untilSubformulas_complete` / `untilSubformulas_index`
+
+### Phase 4.2: Completeness  ✅ DONE (modulo GraphComplete)
+
+**File**: `LTLLib/LTLtoGBA/Completeness.lean` (~164 lines, 0 sorry)
+
+- `GraphComplete`: for any ξ ⊨ φ, ∃ run σ with old(σ n) = {ψ | subformula ∧ satisfied}
+- `expandOASpec_completeness`: GraphComplete + ξ ⊨ φ → expandOASpec accepts ξ
+- `expandOASpec_correct`: accepts ξ ↔ ξ ⊨ φ (combining soundness + completeness)
+
+### Phase 5: Emptiness Check Correctness — NOT STARTED
+
+Three layers following CAVA's architecture:
+
+**Layer 1: Graph theory** — basic directed graph notions (finite/infinite paths,
+reachability, SCCs). May reuse from cslib (`LTS.MTr`, `LTS.ωTr`).
+
+**Layer 2: Lasso characterization** — accepting run exists iff a "lasso" (stem + cycle)
+exists. This is the key mathematical bridge.
+
+**Layer 3: Algorithm correctness** — prove `nestedDFS` correctly decides lasso existence.
+
+Options:
+- **Nested DFS verification** — prove CVWY algorithm correct (~500-1000 lines)
+- **Output verification** — trust the algorithm, verify its output (pragmatic middle ground)
+- **SCC-based** — Tarjan/Gabow, equivalent effort
+
+### Phase 2: Termination — NOT STARTED (not blocking)
+
+Remove `partial`/`partial_fixpoint` from `expand`, `innerDFS`, `outerDFSLoop`.
+Not required for correctness proofs (using `partial_correctness` induction instead).
+
+---
+
+## File Summary
+
+| File | Phase | Status | Lines | Sorry |
+|------|-------|--------|-------|-------|
+| `LTLLib/LTL/Syntax.lean` | 1 | **DONE** | ~213 | 0 |
+| `LTLLib/LTL/Subformulas.lean` | 1 | **DONE** | ~73 | 0 |
+| `LTLLib/LTL/Fairness.lean` | 1 | **DONE** | ~67 | 0 |
+| `LTLLib/LTL/Semantics.lean` | 1 | **DONE** | ~152 | 0 |
+| `LTLLib/Acceptance.lean` | 1+D | **DONE** | ~348 | 0 |
+| `LTLLib/LTLtoGBA/FSet.lean` | FSet | **DONE** | ~167 | 0 |
+| `LTLLib/LTLtoGBA/Node.lean` | FSet | **DONE** | ~69 | 0 |
+| `LTLLib/LTLtoGBA/Expand.lean` | — | **DONE** (partial_fixpoint) | ~247 | 0 |
+| `LTLLib/LTLtoGBA/Construction.lean` | FSet | **DONE** | ~119 | 0 |
+| `LTLLib/LTLtoGBA/Invariants.lean` | 3 | **DONE** | ~1795 | 0 |
+| `LTLLib/LTLtoGBA/Soundness.lean` | 4.1 | **DONE** | ~369 | 0 |
+| `LTLLib/LTLtoGBA/Completeness.lean` | 4.2 | **DONE** | ~164 | 0 |
+| `LTLLib/GBA.lean` | — | **DONE** | ~89 | 0 |
+| `LTLLib/BA.lean` | — | **DONE** | ~140 | 0 |
+| `LTLLib/NestedDFS.lean` | — | **DONE** (partial) | ~175 | 0 |
+
+**Total: ~4234 lines, 0 sorry**
 
 ---
 
@@ -205,21 +233,6 @@ Phase 2 (termination) is independent — nice to have but not blocking.
 | Library | What it provides | Usefulness |
 |---------|-----------------|------------|
 | **Lentil** | TLA semantics, temporal operators | ✅ Core (Phase 1, 4) |
-| **cslib** | `NA.Buchi`, `NA.Run`, `LTS.CanReach`, `LTS.MTr` | ✅ Useful (Phase E Layer 1) |
-| **Mathlib** | `Quiver.Path`, `Quiver.SCC`, general math | 🟡 Some use (Phase E) |
-| **CAVA (Isabelle)** | Reference architecture for Phases D, E | 📖 Reference only |
-
----
-
-## Estimated Effort
-
-| Phase | Lines (est.) | Difficulty |
-|-------|-------------|------------|
-| ~~Phase 1 (semantics)~~ | ~~150-200~~ | ✅ DONE |
-| ~~Phase D (degeneralization proof)~~ | ~~150-200~~ | ✅ DONE |
-| ~~Phase 3 (invariants + FSet)~~ | ~~500~~ ~1800 actual | ✅ DONE |
-| Phase 2 (expand termination) | ~200 | Hard |
-| Phase 2 (DFS termination) | ~100 | Medium |
-| Phase 4 (soundness + completeness) | ~800 | Hard |
-| Phase E Layer 2 (lasso characterization) | ~300 | Medium |
-| Phase E Layer 3 (algorithm correctness) | 500-1000 | Very Hard |
+| **cslib** | `NA.Buchi`, `NA.Run`, `LTS.CanReach`, `LTS.MTr` | ✅ Useful (Phase 5 Layer 1) |
+| **Mathlib** | `Quiver.Path`, general math | 🟡 Some use (Phase 5) |
+| **CAVA (Isabelle)** | Reference architecture for Phases D, 5 | 📖 Reference only |
