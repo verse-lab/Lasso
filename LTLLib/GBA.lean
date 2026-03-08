@@ -29,7 +29,7 @@ Parametrized by `α`, the type of atomic propositions.
 
 Corresponds to the GBA produced by `create_gba_from_nodes` in LTL_to_GBA.thy.
 After the renaming phase (`gba_rename_ext`), states are identified by Nat (node names). -/
-structure GBA (α : Type) [BEq α] [Hashable α] where
+structure GBA (α : Type u) [BEq α] [Hashable α] where
   /-- All state identifiers.
   Corresponds to `g_V` in the GBA record. -/
   states : Std.HashSet Nat

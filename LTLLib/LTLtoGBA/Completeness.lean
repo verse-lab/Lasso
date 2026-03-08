@@ -18,7 +18,7 @@ namespace LTLLib
 
 open NNF TLA
 
-variable {α : Type}
+variable {α : Type u}
 
 /-! ### Graph completeness hypothesis
 
@@ -124,7 +124,7 @@ theorem expandOASpec_completeness
 
 /-- Top-level completeness combining with `createGraph` and `untilSubformulas`. -/
 theorem gba_abstract_completeness
-    {S : Type} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
+    {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
     {φ : NNF α} {st : ExpandState α S}
     (h_complete : GraphComplete φ st.toNodes)
     {ξ : OmegaWord α}
@@ -150,7 +150,7 @@ theorem expandOASpec_correct
 
 /-- Full correctness via `createGraph`. -/
 theorem gba_abstract_correct
-    {S : Type} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
+    {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
     {φ : NNF α} {st : ExpandState α S}
     (hcg : createGraph φ = some st)
     (h_complete : GraphComplete φ st.toNodes)

@@ -31,7 +31,7 @@ Fields:
 
 The type parameter `S` abstracts the set container used for `old` and `next`.
 Instantiate with `Std.HashSet (NNF α)` or `Std.TreeSet (NNF α)` via `FSet`. -/
-structure GBANode (α : Type) (S : Type) where
+structure GBANode (α : Type u) (S : Type v) where
   name : Nat
   incoming : Std.HashSet Nat
   new : List (NNF α)
@@ -40,7 +40,7 @@ structure GBANode (α : Type) (S : Type) where
 
 namespace GBANode
 
-variable {S : Type} [FSet (NNF α) S]
+variable {S : Type v} [FSet (NNF α) S]
 
 /-- Check if two nodes have the same (old, next) signature.
 Used to detect duplicate nodes during expansion.

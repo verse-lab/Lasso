@@ -36,7 +36,7 @@ States are `BAState` = (GBA state, acceptance counter).
 A state is accepting iff its `acceptIdx = 0`.
 
 This is produced by degeneralizing a GBA. -/
-structure BA (α : Type) [BEq α] [Hashable α] where
+structure BA (α : Type u) [BEq α] [Hashable α] where
   /-- All states. -/
   states : Std.HashSet BAState
 

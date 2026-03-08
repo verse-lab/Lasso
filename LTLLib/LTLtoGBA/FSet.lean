@@ -26,7 +26,7 @@ namespace LTLLib
 - `foldl_eq_foldl_toList` — connects fold to list fold (for inductive proofs)
 - `all_eq_toList_all` — connects `all` to `List.all` (for `sameSignature` proofs)
 - `mem_toList_iff` — connects list membership to `contains` -/
-class FSet (α : outParam Type) (S : Type) where
+class FSet (α : outParam (Type u)) (S : Type v) where
   /-- Empty set. -/
   empty : S
   /-- Insert an element. -/
@@ -34,7 +34,7 @@ class FSet (α : outParam Type) (S : Type) where
   /-- Membership test. -/
   contains : S → α → Bool
   /-- Left fold over elements. Iteration order is implementation-defined. -/
-  foldl {β : Type} : (β → α → β) → β → S → β
+  foldl {β : Type w} : (β → α → β) → β → S → β
   /-- Check if all elements satisfy a predicate. -/
   all : S → (α → Bool) → Bool
   /-- Convert to list (for proofs). Order is implementation-defined. -/
@@ -48,7 +48,7 @@ class FSet (α : outParam Type) (S : Type) where
   contains_insert_other (a b : α) (s : S) : a ≠ b →
     contains (insert s b) a = contains s a
   /-- `foldl` on the set equals `List.foldl` on its `toList`. -/
-  foldl_eq_foldl_toList {β : Type} (f : β → α → β) (init : β) (s : S) :
+  foldl_eq_foldl_toList {β : Type w} (f : β → α → β) (init : β) (s : S) :
     foldl f init s = (toList s).foldl f init
   /-- `all` on the set equals `List.all` on its `toList`. -/
   all_eq_toList_all (s : S) (p : α → Bool) :
@@ -58,7 +58,7 @@ class FSet (α : outParam Type) (S : Type) where
 
 namespace FSet
 
-variable {α : Type} {S : Type} [FSet α S]
+variable {α : Type u} {S : Type v} [FSet α S]
 
 /-- Combined `contains_insert` law (requires `LawfulBEq`).
 Matches the form of `Std.HashSet.contains_insert`. -/

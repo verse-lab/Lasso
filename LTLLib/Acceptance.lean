@@ -30,7 +30,7 @@ open TLA Classical
     When `k = 1`, this is a standard Büchi Automaton (BA).
     When `k > 1`, this is a Generalized Büchi Automaton (GBA).
     When `k = 0`, every run is vacuously accepting. -/
-structure OASpec (State : Type) (α : Type) (k : Nat) where
+structure OASpec (State : Type u) (α : Type v) (k : Nat) where
   /-- Transition relation. -/
   trans : State → State → Prop
   /-- Initial state predicate. -/
@@ -42,7 +42,7 @@ structure OASpec (State : Type) (α : Type) (k : Nat) where
 
 namespace OASpec
 
-variable {State : Type} {α : Type} {k : Nat} (A : OASpec State α k)
+variable {State : Type u} {α : Type v} {k : Nat} (A : OASpec State α k)
 
 /-- An infinite run: initial state and valid transitions. -/
 def isRun (σ : exec State) : Prop :=
@@ -68,7 +68,7 @@ end OASpec
 
 /-- One-step counter update for degeneralization.
     Advances the counter when the current acceptance set is visited. -/
-noncomputable def OASpec.counterStep {State : Type} {α : Type} {k : Nat}
+noncomputable def OASpec.counterStep {State : Type u} {α : Type v} {k : Nat}
     (A : OASpec State α k) (hk : k > 0) (q : State) (c : Fin k) :
     Fin k :=
   if A.acceptSet c q
@@ -76,7 +76,7 @@ noncomputable def OASpec.counterStep {State : Type} {α : Type} {k : Nat}
   else c
 
 /-- Counter sequence for the degeneralized run, starting at 0. -/
-noncomputable def OASpec.mkCounter {State : Type} {α : Type} {k : Nat}
+noncomputable def OASpec.mkCounter {State : Type u} {α : Type v} {k : Nat}
     (A : OASpec State α k) (hk : k > 0) (σ : exec State) : Nat → Fin k
   | 0 => ⟨0, hk⟩
   | n + 1 => A.counterStep hk (σ n) (A.mkCounter hk σ n)
@@ -89,7 +89,7 @@ noncomputable def OASpec.mkCounter {State : Type} {α : Type} {k : Nat}
     The counter advances (mod k) when the current acceptance set is visited.
     The single acceptance set requires counter = 0 AND the state is in
     acceptance set 0. -/
-noncomputable def OASpec.degeneralize {State : Type} {α : Type} {k : Nat}
+noncomputable def OASpec.degeneralize {State : Type u} {α : Type v} {k : Nat}
     (A : OASpec State α k) (hk : k > 0) :
     OASpec (State × Fin k) α 1 where
   trans := fun (q, c) (q', c') =>
@@ -103,7 +103,7 @@ noncomputable def OASpec.degeneralize {State : Type} {α : Type} {k : Nat}
 
 section DegeneralizationCorrectness
 
-variable {State : Type} {α : Type} {k : Nat} (A : OASpec State α k) (hk : k > 0)
+variable {State : Type u} {α : Type v} {k : Nat} (A : OASpec State α k) (hk : k > 0)
 
 /-- When F_c is NOT visited, counter stays at c. -/
 private theorem counterStep_not_accept (q : State)

@@ -34,7 +34,7 @@ inductive NNF.IsSubformula : NNF α → NNF α → Prop where
 
 namespace NNF.IsSubformula
 
-variable {α : Type} {φ ψ χ : NNF α}
+variable {α : Type u} {φ ψ χ : NNF α}
 
 theorem trans (h₁ : IsSubformula ψ χ) (h₂ : IsSubformula χ φ) :
     IsSubformula ψ φ := by
@@ -113,7 +113,7 @@ details of the expand implementation. -/
 
 /-- Spec-level representation of a finished node.
 Uses predicates instead of hash sets for proof convenience. -/
-structure NodeData (α : Type) where
+structure NodeData (α : Type u) where
   name : Nat
   incoming : Nat → Prop
   old : NNF α → Prop
@@ -121,7 +121,7 @@ structure NodeData (α : Type) where
 
 /-- The abstract specification of a valid expansion result for formula φ.
 `nodes` is a predicate selecting the finished nodes. -/
-structure ExpandSpec {α : Type} (φ : NNF α) (nodes : NodeData α → Prop) : Prop where
+structure ExpandSpec {α : Type u} (φ : NNF α) (nodes : NodeData α → Prop) : Prop where
   /-- Literal consistency: no node contains both prop(a) and nprop(a). -/
   literal_consistent :
     ∀ q, nodes q → ∀ a, q.old (.prop a) → ¬ q.old (.nprop a)
@@ -177,7 +177,7 @@ structure ExpandSpec {α : Type} (φ : NNF α) (nodes : NodeData α → Prop) : 
 Convert `GBANode` (with `HashSet`) to `NodeData` (with predicates),
 and `ExpandState` to a predicate on `NodeData`. -/
 
-variable {α : Type} {S : Type} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
+variable {α : Type u} {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
 
 /-- Convert a computational node to its abstract representation. -/
 def GBANode.toNodeData (n : GBANode α S) : NodeData α where

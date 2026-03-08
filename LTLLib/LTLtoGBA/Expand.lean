@@ -73,7 +73,7 @@ def new2 : NNF α → List (NNF α)
   Corresponds to `expand_new_name` in LTL_to_GBA.thy (line 135), which is `Suc`.
 - `nodes`: Map from node name to finished (fully expanded) node.
   Corresponds to the `ns` (node set) parameter threaded through `expand`. -/
-structure ExpandState (α : Type) (S : Type) where
+structure ExpandState (α : Type u) (S : Type v) where
   nextName : Nat
   nodes : Std.HashMap Nat (GBANode α S)
 deriving Inhabited
@@ -82,7 +82,7 @@ deriving Inhabited
 Corresponds to `expand_init ≡ 0` in LTL_to_GBA.thy (line 134). -/
 def expandInit : Nat := 0
 
-variable {S : Type} [FSet (NNF α) S]
+variable {S : Type v} [FSet (NNF α) S]
 
 /-- Generate a fresh node name and advance the counter.
 Corresponds to `expand_new_name ≡ Suc` in LTL_to_GBA.thy (line 135). -/

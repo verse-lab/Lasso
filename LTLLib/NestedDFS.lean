@@ -23,7 +23,7 @@ import Std
 namespace LTLLib
 
 /-- Result of the nested DFS emptiness check. -/
-inductive EmptinessResult (State : Type) where
+inductive EmptinessResult (State : Type u) where
   /-- No accepting cycle found — the automaton's language is empty
   (i.e., the checked property is satisfied). -/
   | empty (exploredStates : Nat)
@@ -35,7 +35,7 @@ inductive EmptinessResult (State : Type) where
 deriving Repr, Inhabited
 
 /-- Internal mutable state for the nested DFS algorithm. -/
-private structure NDFSState (State : Type) [BEq State] [Hashable State] where
+private structure NDFSState (State : Type u) [BEq State] [Hashable State] where
   /-- States visited by the outer DFS. -/
   outerVisited : Std.HashSet State
   /-- States fully processed by completed inner DFS calls.

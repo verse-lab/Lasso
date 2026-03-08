@@ -20,7 +20,7 @@ import LTLLib.LTL
 
 namespace LTLLib
 
-variable {S : Type} [FSet (NNF α) S]
+variable {S : Type v} [FSet (NNF α) S]
 
 /-- Build the successor (adjacency) map from the node graph.
 

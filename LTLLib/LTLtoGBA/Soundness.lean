@@ -20,7 +20,7 @@ namespace LTLLib
 
 open NNF TLA
 
-variable {α : Type}
+variable {α : Type u}
 
 /-! ### Helper lemmas for temporal propagation -/
 
@@ -205,7 +205,7 @@ theorem soundness
     the abstract soundness hypotheses. This is a direct corollary of
     `createGraph_spec` + `soundness`. -/
 theorem concrete_soundness
-    {S : Type} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
+    {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
     {φ : NNF α} {st : ExpandState α S}
     (hcg : createGraph φ = some st)
     {σ : Nat → NodeData α} {ξ : OmegaWord α}
@@ -284,7 +284,7 @@ theorem expandOASpec_soundness
 /-! ### untilSubformulas completeness -/
 
 /-- Helper: the fold function used in `untilSubformulas`. -/
-private abbrev untilFoldFn (α : Type) :=
+private abbrev untilFoldFn (α : Type u) :=
   fun (acc : List (NNF α × NNF α)) (f : NNF α) =>
     match f with | .until a b => (a, b) :: acc | _ => acc
 
@@ -357,7 +357,7 @@ Instantiates `expandOASpec_soundness` with `createGraph_spec` and
 `φ.untilSubformulas` as the until-subformula list. -/
 
 theorem gba_abstract_soundness
-    {S : Type} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
+    {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
     {φ : NNF α} {st : ExpandState α S}
     (hcg : createGraph φ = some st)
     {ξ : OmegaWord α}

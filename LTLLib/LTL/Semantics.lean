@@ -28,7 +28,7 @@ type instantiated at `α → Prop`. -/
 
 /-- An ω-word over atomic propositions `α`. Each time step is a valuation
     `α → Prop` assigning truth values to atoms. -/
-abbrev OmegaWord (α : Type) := exec (α → Prop)
+abbrev OmegaWord (α : Type u) := exec (α → Prop)
 
 /-! ## Release operator
 

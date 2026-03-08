@@ -25,7 +25,7 @@ This is the user-facing type. Use `toNNF` to compile to the internal
 `NNF` representation before passing to the GBA pipeline.
 
 Corresponds to `'a ltln` in the CAVA LTL framework. -/
-inductive Formula (α : Type) where
+inductive Formula (α : Type u) where
   /-- Constant true. -/
   | tt : Formula α
   /-- Constant false. -/
@@ -86,7 +86,7 @@ Negation only appears at the atomic level (`prop` vs `nprop`).
 
 Corresponds to `'a ltlr` in the CAVA LTL framework, used as `'a frml`
 in LTL_to_GBA.thy (line 98). -/
-inductive NNF (α : Type) where
+inductive NNF (α : Type u) where
   /-- Constant true. Corresponds to `true_ltlr` / `True⁼`. -/
   | tt : NNF α
   /-- Constant false. Corresponds to `false_ltlr` / `False⁼`. -/
