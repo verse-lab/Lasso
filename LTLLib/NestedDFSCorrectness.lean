@@ -456,6 +456,119 @@ theorem innerDFS_no_cycle_from_seed (succs : State → Array State) (seed : Stat
       | through hmid hunb _ =>
         exact hunb (hsb _ (Array.mem_toList_iff.mpr hmid)).2
 
+/-- After fold returns none, all states in iv' that are NOT in iv
+    are in st'.innerFinished. -/
+private theorem fold_iv_subset_finished_aux (succs : State → Array State) (seed : State)
+    (fuel : Nat) (current : State) (remaining : List State)
+    (iv : Std.HashSet State) (st : FNDFSState State)
+    (ih_inner : ∀ (curr : State) (iv₀ : Std.HashSet State) (st₀ : FNDFSState State)
+      (iv₁ : Std.HashSet State) (st₁ : FNDFSState State),
+      innerDFS_fuel succs seed fuel curr iv₀ st₀ = some (none, iv₁, st₁) →
+      ∀ s, iv₁.contains s → ¬iv₀.contains s → st₁.innerFinished.contains s)
+    {iv' : Std.HashSet State} {st' : FNDFSState State}
+    (h : innerDFS_fuel_fold succs seed fuel current remaining iv st =
+      some (none, iv', st')) :
+    ∀ s, iv'.contains s → ¬iv.contains s → st'.innerFinished.contains s := by
+  induction remaining generalizing iv st with
+  | nil =>
+    rw [innerDFS_fuel_fold.eq_def] at h
+    simp only [Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨-, rfl, rfl⟩ := h
+    intro s hs hns; exact absurd hs hns
+  | cons s₀ rest ih_rem =>
+    intro s hs hns
+    rw [innerDFS_fuel_fold.eq_def] at h; simp only at h
+    by_cases hse : (s₀ == seed) = true
+    · simp [hse] at h
+    · simp only [hse] at h
+      generalize hm : innerDFS_fuel succs seed fuel s₀ iv st = r at h
+      match r, h with
+      | none, h => simp at h
+      | some (some _, _, _), h => simp at h
+      | some (none, iv_mid, st_mid), h =>
+        by_cases hm_s : iv_mid.contains s
+        · have := ih_inner s₀ iv st iv_mid st_mid hm s hm_s hns
+          have ⟨_, hfin_mono⟩ := innerDFS_fuel_fold_mono succs seed fuel current rest iv_mid st_mid none iv' st' h
+          exact hfin_mono s this
+        · exact ih_rem iv_mid st_mid h s hs hm_s
+
+/-- After fold returns none, current is in st'.innerFinished. -/
+theorem innerDFS_fuel_fold_adds_current (succs : State → Array State) (seed : State)
+    (fuel : Nat) (current : State) (remaining : List State)
+    (iv : Std.HashSet State) (st : FNDFSState State)
+    {iv' : Std.HashSet State} {st' : FNDFSState State}
+    (h : innerDFS_fuel_fold succs seed fuel current remaining iv st =
+      some (none, iv', st')) :
+    st'.innerFinished.contains current := by
+  induction remaining generalizing iv st with
+  | nil =>
+    rw [innerDFS_fuel_fold.eq_def] at h
+    simp only [Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨-, -, rfl⟩ := h
+    show ({ outerVisited := st.outerVisited,
+            innerFinished := st.innerFinished.insert current } : FNDFSState State).innerFinished.contains current
+    simp [Std.HashSet.contains_insert]
+  | cons s₀ rest ih_rem =>
+    rw [innerDFS_fuel_fold.eq_def] at h; simp only at h
+    by_cases hse : (s₀ == seed) = true
+    · simp [hse] at h
+    · simp only [hse] at h
+      generalize hm : innerDFS_fuel succs seed fuel s₀ iv st = r at h
+      match r, h with
+      | none, h => simp at h
+      | some (some _, _, _), h => simp at h
+      | some (none, iv_mid, st_mid), h =>
+        exact ih_rem iv_mid st_mid h
+
+/-- After innerDFS_fuel returns none with fresh current, all new iv states
+    are in st'.innerFinished. -/
+theorem innerDFS_fuel_iv_subset_finished (succs : State → Array State) (seed : State)
+    (fuel : Nat) (current : State)
+    (iv : Std.HashSet State) (st : FNDFSState State)
+    {iv' : Std.HashSet State} {st' : FNDFSState State}
+    (h : innerDFS_fuel succs seed fuel current iv st = some (none, iv', st')) :
+    ∀ s, iv'.contains s → ¬iv.contains s → st'.innerFinished.contains s := by
+  induction fuel generalizing current iv st iv' st' with
+  | zero => simp [innerDFS_fuel.eq_def] at h
+  | succ n ih =>
+    rw [innerDFS_fuel.eq_def] at h; simp only at h
+    split at h
+    · simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨-, rfl, rfl⟩ := h
+      intro s hs hns; exact absurd hs hns
+    · split at h
+      · simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨-, rfl, rfl⟩ := h
+        intro s hs hns; exact absurd hs hns
+      · intro s hs hns
+        by_cases hcur : (iv.insert current).contains s
+        · simp [Std.HashSet.contains_insert] at hcur
+          rcases hcur with rfl | hiv_s
+          · exact innerDFS_fuel_fold_adds_current succs seed n current _ _ st h
+          · exact absurd hiv_s hns
+        · exact fold_iv_subset_finished_aux succs seed n current _ _ st ih h s hs hcur
+
+/-- After innerDFS from seed with empty iv returns none,
+    seed has no self-cycle through st'.innerFinished.
+    This strengthens `innerDFS_no_cycle_from_seed` by eliminating
+    the iv' component from isBlocked, using iv' ⊆ ifin'. -/
+theorem innerDFS_no_cycle_from_seed_finished (succs : State → Array State) (seed : State)
+    (fuel : Nat) (st : FNDFSState State) (cap : Nat)
+    {iv' : Std.HashSet State} {st' : FNDFSState State}
+    (hnotfin : st.innerFinished.contains seed = false)
+    (h : innerDFS_fuel succs seed (fuel + 1) seed
+      (Std.HashSet.emptyWithCapacity cap) st = some (none, iv', st')) :
+    ¬PathTo succs (fun x => st'.innerFinished.contains x) seed seed := by
+  have hno := innerDFS_no_cycle_from_seed succs seed fuel st cap hnotfin h
+  have hiv_sub := innerDFS_fuel_iv_subset_finished succs seed (fuel + 1) seed
+    (Std.HashSet.emptyWithCapacity cap) st h
+  intro hpath
+  apply hno
+  exact hpath.weaken fun x (hblk : isBlocked iv' st'.innerFinished x) => by
+    rcases hblk with hiv | hfin
+    · exact hiv_sub x hiv (by simp [Std.HashSet.contains_emptyWithCapacity])
+    · exact hfin
+
 end InnerCorrectness
 
 /-! ## Outer DFS invariants
@@ -479,13 +592,20 @@ section OuterCorrectness
 
 variable [BEq State] [Hashable State] [LawfulBEq State]
 
-/-- Outer DFS invariant: every accepting state in `outerVisited` that is NOT
-    on the current stack has been processed by inner DFS and added to
-    `innerFinished`.
+omit [LawfulBEq State] in
+/-- `finished_no_cycle` is monotone: if it holds for `ifin` and `ifin ⊆ ifin'`,
+    it still holds for `ifin'`. This is because more blocking means fewer paths. -/
+theorem finished_no_cycle_mono (succs : State → Array State)
+    (ifin ifin' : Std.HashSet State)
+    (hsub : ∀ s, ifin.contains s → ifin'.contains s)
+    (hnc : ∀ s, ifin.contains s →
+      ¬PathTo succs (fun x => ifin.contains x) s s) :
+    ∀ s, ifin.contains s →
+      ¬PathTo succs (fun x => ifin'.contains x) s s := by
+  intro s hs hpath
+  exact hnc s hs (hpath.weaken fun x hx' => hsub x hx')
 
-    This captures the CVWY post-order property: when we pop an accepting state
-    from the outer stack, we run inner DFS and add it to `innerFinished`.
-    States still on the stack haven't been processed yet. -/
+/-- Outer DFS invariant for the CVWY algorithm. -/
 structure OuterInvariant
     (succs : State → Array State) (isAccepting : State → Bool)
     (st : FNDFSState State)
