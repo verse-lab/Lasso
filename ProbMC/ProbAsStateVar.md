@@ -118,6 +118,101 @@ do exactly this in a proof assistant. Related work:
   a *refinement* connecting the two views.
   [Post](https://ahelwer.ca/post/2020-09-11-probabilistic-distsys/)
 
+## Adaptive vs Non-Adaptive Adversaries
+
+A subtle but important distinction in MDP refinement:
+
+### Non-adaptive adversary
+The adversary commits to a fixed action sequence `acts : Fin N → Act` before
+execution begins. The action at step `i` is `acts i`, regardless of the current state.
+
+### Adaptive (Markovian) adversary
+The adversary observes the current state and chooses accordingly:
+`acts : (i : Fin N) → S → Act`. At step `i` in state `s`, it plays `acts i s`.
+
+### The adaptive adversary is strictly more powerful
+
+Counterexample: 2 states `{A, B}`, 2 actions `{0, 1}`, `Good = {B}`, `N = 2`.
+
+```
+step(A, 0) = {A: 3/4, B: 1/4}    step(A, 1) = {A: 1/4, B: 3/4}
+step(B, 0) = {A: 1/4, B: 3/4}    step(B, 1) = {A: 3/4, B: 1/4}
+```
+
+Every **non-adaptive** action sequence achieves `Pr(B at step 2) ≥ 3/8`.
+But the **adaptive** adversary picks action 0 from A and action 1 from B
+(the worst action per state), achieving `Pr(B at step 2) = 1/4 < 3/8`.
+
+The root cause: the non-adaptive adversary must use the same action at step 2
+regardless of whether it's in A or B, while the adaptive adversary picks the
+worst per state. By minimax:
+
+```
+∑_s D(s) · min_a f(s,a)  ≤  min_a ∑_s D(s) · f(s,a)
+   (adaptive)                  (non-adaptive)
+```
+
+### Consequence for the refinement theorem
+
+`probLowerBoundForAll_of_nStep_bound` with hypothesis
+`∀ s, ∀ acts : Fin N → Act, nStepDist(s, N, acts) ≥ p`
+does **NOT** imply the conclusion for adaptive strategies.
+
+The correct formulation uses `nStepDistAdaptive` with
+`∀ s, ∀ acts : (i : Fin N) → S → Act, nStepDistAdaptive(s, N, acts) ≥ p`.
+
+### When non-adaptive suffices
+
+For **action-independent transitions** (`∀ s a₁ a₂, step s a₁ = step s a₂`),
+the adversary's choice doesn't affect transition probabilities, so
+adaptive = non-adaptive. This is the common case for coin-toss protocols
+(Ben-Or, VABA, DAG-Rider) where probabilistic steps are coin flips
+independent of the adversary's scheduling decisions.
+
+See `ProbStateRefinement.lean`:
+- `probLowerBoundForAll_of_adaptive_bound` — general case (adaptive hypothesis)
+- `probLowerBoundForAll_of_stepIndep_bound` — action-independent corollary
+
+### Alternative: implicit adversary via nondeterminism
+
+The adaptive/non-adaptive distinction only arises when the adversary is modeled
+as an explicit `Act` parameter (the `FiniteMDP` approach: `step : S → Act → PMF S`).
+
+In the "prob as state variable" design, adversarial moves are just ordinary
+nondeterministic transitions in the state. There is no separate action space:
+
+```
+-- Adversarial choice: nondeterministic transition, prob unchanged
+(s, p) → (s₁, p)    or    (s, p) → (s₂, p)
+
+-- Probabilistic choice: nondeterministic + multiply weight
+(s, p) → (s₁, p * w₁)    or    (s, p) → (s₂, p * w₂)
+```
+
+In this model, the adversary's "adaptiveness" is implicit — nondeterministic
+transitions are inherently state-dependent (the set of successors depends on
+the current state). A trace `s₀, s₁, s₂, ...` already encodes a particular
+resolution of all nondeterministic choices, and summing `prob` over traces
+reaching `Good` automatically accounts for the worst-case adversary.
+
+The epoch bound becomes:
+
+```
+∀ traces of length N from any state,
+  ∑ (traces reaching Good) trace.final.prob ≥ p
+```
+
+This sums over all nondeterministic resolutions (inherently adaptive), so
+there is no adaptive/non-adaptive gap at the user-facing level.
+
+**Trade-off**: The explicit `Act` model (`FiniteMDP`) is closer to Mathlib's
+`Kernel (S × Act) S` and standard MDP theory, but introduces the
+adaptive/non-adaptive subtlety. The implicit nondeterminism model avoids the
+subtlety entirely but requires its own refinement proof connecting trace-level
+`prob` sums to `MDP.pathMeasure`. The `FiniteMDP` layer and the adaptive
+distinction are internal plumbing — a user working with the nondeterministic
+transition system would never encounter them.
+
 ## Open Questions
 
 1. **Infinite traces**: For liveness (not just finite reachability), need to show
