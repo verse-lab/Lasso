@@ -14,3 +14,6 @@ rev = "2df5ad81825dba80e2613db9b213f99b8febd09d"
 
 [[lean_lib]]
 name = "LTLLib"
+
+[[lean_lib]]
+name = "ProbMC"
