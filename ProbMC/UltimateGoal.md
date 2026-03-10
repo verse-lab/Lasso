@@ -40,8 +40,12 @@ E[rounds to termination] ≤ 1/p
 | ω-regular measurability | `ProbMC/OmegaRegularMeasurable.lean` | Done, sorry-free |
 | Independent epochs (Borel-Cantelli) | `ProbMC/IndependentEpochs.lean` | Done, sorry-free |
 | FiniteMDP (PMF-based MDP) | `ProbMC/FiniteMDP.lean` | Done, sorry-free |
-| N-step distribution | `ProbMC/ProbStateRefinement.lean` | Definitions done |
-| PMF → pathMeasure refinement | `ProbMC/ProbStateRefinement.lean` | 1 sorry |
+| N-step distribution (non-adaptive + adaptive) | `ProbMC/ProbStateRefinement.lean` | Done, sorry-free |
+| PMF → pathMeasure refinement (adaptive) | `ProbMC/ProbStateRefinement.lean` | 1 sorry |
+| Action-independent corollary | `ProbMC/ProbStateRefinement.lean` | Done (modulo main sorry) |
+| Geometric tail bound | `ProbMC/ExpectedTermination.lean` | Done, sorry-free |
+| Expected stopping time ≤ 1/p | `ProbMC/ExpectedTermination.lean` | Done, sorry-free |
+| MDP expected epoch bound | `ProbMC/ExpectedTermination.lean` | Done, sorry-free |
 | TPTL semantics (freeze quantifier) | `leantla/Lentil/Basic.lean` (external) | Formalized, needs porting |
 | `leads_to_within` operator | `leantla/Lentil/Basic.lean:267` (external) | Formalized, needs porting |
 
