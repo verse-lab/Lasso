@@ -143,23 +143,60 @@ theorem nStepDistAdaptive_eq_of_stepIndep (T : FiniteMDP S Act) (s₀ : S)
     · ext s : 1
       exact hstep s _ _
 
-/-! ### Payoff theorems -/
+/-! ### Payoff theorems
+
+The main refinement theorem connects PMF-level bounds to path measure bounds.
+The proof strategy:
+
+1. The hypothesis gives `∀ s acts, nStepDistAdaptive(s, N, acts).toMeasure Good ≥ p`
+2. Therefore `⨅ acts, nStepDistAdaptive(s₀, N, acts).toMeasure Good ≥ p`
+3. The finite-horizon Bellman principle (sorry'd) gives:
+   `pathMeasure π ≥ ⨅ acts, nStepDistAdaptive`
+   i.e., the path measure under any history-dependent strategy is at least the
+   minimum over Markovian strategies (the optimal adversary is Markovian)
+4. Combining: `pathMeasure π ≥ p`
+
+The Bellman principle (step 3) requires decomposing `trajMeasure` via the
+Ionescu-Tulcea construction. The key Mathlib APIs are:
+- `condDistrib_trajMeasure`: Markov property of trajectory measure
+- `integral_traj_partialTraj`: tower law for iterated integrals
+- `traj_map_frestrictLe`: marginals via `partialTraj`
+-/
+
+/-- **Finite-horizon Bellman principle**: the path measure of `{ξ | ξ N ∈ Good}`
+under any history-dependent strategy from `Dirac s₀` is at least the infimum
+over Markovian adaptive strategies of the N-step PMF probability.
+
+This encodes the fact that the optimal adversary for a finite-horizon
+reachability problem is Markovian (state-dependent, not history-dependent).
+
+**Proof idea** (not yet formalized): Define the Bellman value function
+`V(k, s) = ⨅_a ∑_{s'} step(s,a)(s') · V(k+1,s')` with `V(N,s) = 1_{Good}(s)`.
+Then `V(k, ξ(k))` is a submartingale under any strategy (because the strategy
+picks a specific action, which is ≥ the infimum). By the submartingale property:
+`E[V(N, ξ(N))] ≥ E[V(0, ξ(0))] = V(0, s₀) = ⨅_{acts} nStepDistAdaptive(...)`.
+And `E[V(N, ξ(N))] = pathMeasure({ξ | ξ N ∈ Good})`. -/
+theorem pathMeasure_ge_iInf_nStepDistAdaptive
+    (T : FiniteMDP S Act) (s₀ : S) (Good : Set S) (N : ℕ)
+    (π : T.toMDP.Strategy) :
+    T.toMDP.pathMeasure π (Measure.dirac s₀) {ξ : ℕ → S | ξ N ∈ Good} ≥
+    ⨅ (acts : (i : Fin N) → S → Act),
+      (T.nStepDistAdaptive s₀ N acts).toMeasure Good := by
+  sorry
 
 /-- **Main refinement theorem (adaptive version).**
 If for every starting state `s` and every Markovian adaptive action
 sequence `acts`, the N-step probability of reaching `Good` is ≥ `p`,
-then `probLowerBoundForAll` holds for the corresponding MDP.
-
-The hypothesis quantifies over all starting states and all Markovian
-adaptive strategies, which is sufficient because optimal adversaries
-for finite-horizon problems are Markovian. -/
+then `probLowerBoundForAll` holds for the corresponding MDP. -/
 theorem probLowerBoundForAll_of_adaptive_bound
     (T : FiniteMDP S Act) (s₀ : S) (Good : Set S) (N : ℕ) (p : ℝ≥0∞)
     (hbound : ∀ s : S, ∀ acts : (i : Fin N) → S → Act,
       (T.nStepDistAdaptive s N acts).toMeasure Good ≥ p) :
     T.toMDP.probLowerBoundForAll (Measure.dirac s₀)
       {ξ : ℕ → S | ξ N ∈ Good} p := by
-  sorry
+  intro π
+  exact le_trans (le_iInf fun acts => hbound s₀ acts)
+    (pathMeasure_ge_iInf_nStepDistAdaptive T s₀ Good N π)
 
 /-- **Corollary for action-independent transitions.**
 When `T.step s a₁ = T.step s a₂` for all states and actions (transitions

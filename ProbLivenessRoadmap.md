@@ -290,21 +290,22 @@ for MDP theory (Bellman equations, value iteration, policy optimality) is [Put94
 ### Suggested Execution Order
 
 ```
-         Shared Foundation
-┌──────────────────────────────────┐
-│ P1 (DTMC) ✅   P2 (ω-reg) ✅    │
-│         B1 (MDP) ✅              │
-└──────┬───────────────┬───────────┘
-       │               │
-       ▼               ▼
-  PMC Pipeline    Ben-Or Pipeline
-┌──────────────┐ ┌─────────────────┐
-│ P3 (Product) │ │ B2 (Epochs) ✅   │
-│   │          │ │ B3 (Veil DSL)   │
-│   ├→ P4      │ │ B4 (Compile)    │
-│   └→ P5      │ │ B5 (Model)      │
-│      └→ P6   │ │ B6 (Pr=1)       │
-└──────────────┘ └─────────────────┘
+              Shared Foundation
+   ┌──────────────────────────────────┐
+   │ P1 (DTMC) ✅   P2 (ω-reg) ✅    │
+   │         B1 (MDP) ✅              │
+   │         R1 (FiniteMDP) ✅        │
+   └──┬──────────┬──────────┬─────────┘
+      │          │          │
+      ▼          ▼          ▼
+  PMC Pipe   Ben-Or    Refinement (two options)
+ ┌─────────┐ ┌───────┐ ┌──────────────────────────────┐
+ │ P3 (Pr.)│ │ B2 ✅  │ │  Option A          Option B  │
+ │   │     │ │ B3    │ │  (act.-indep.)     (adaptive) │
+ │   ├→ P4 │ │ B4    │ │  R3 ✅ → R4 ✅     R2 ⚠       │
+ │   └→ P5 │ │ B5    │ │  sorry-free!      1 sorry     │
+ │     └P6 │ │ B6    │ └──────────────────────────────┘
+ └─────────┘ └───────┘
 ```
 
 **PMC minimum viable result**: P1 + P2 gives "Pr_s(φ) is well-defined."
@@ -322,6 +323,11 @@ ProbMC/
 ├── OmegaRegularMeasurable.lean (Phase P2) ✅
 ├── MDP.lean                    (Phase B1) ✅
 ├── IndependentEpochs.lean      (Phase B2) ✅
+├── FiniteMDP.lean              (Phase R1) ✅
+├── ProbStateRefinement.lean    (Phase R2) ⚠ 1 sorry (Bellman)
+├── Refinement/
+│   ├── FiniteDTMC.lean         (Phase R3) ✅
+│   └── ActionIndep.lean        (Phase R4) ✅
 ├── BenOrPlan.md                (detailed Ben-Or pipeline plan)
 ├── DRA.lean                    (Phase P3, not started)
 ├── ProductDTMC.lean            (Phase P3, not started)
@@ -461,6 +467,58 @@ termination against that hand-written model. Faster but less reusable.
 | P2: ω-regular measurability | Shared | `ProbMC/OmegaRegularMeasurable.lean` | Sorry-free |
 | B1: MDP definition | Shared | `ProbMC/MDP.lean` | Sorry-free |
 | B2: Independent epochs | Ben-Or | `ProbMC/IndependentEpochs.lean` | Sorry-free |
+| R1: FiniteMDP | Refinement | `ProbMC/FiniteMDP.lean` | Sorry-free |
+| R2: ProbStateRefinement | Refinement | `ProbMC/ProbStateRefinement.lean` | 1 sorry (Bellman) |
+| R3: FiniteDTMC refinement | Refinement | `ProbMC/Refinement/FiniteDTMC.lean` | Sorry-free |
+| R4: Action-independent MDP | Refinement | `ProbMC/Refinement/ActionIndep.lean` | Sorry-free |
+
+### Refinement: PMF-based bounds → measure-theoretic guarantees
+
+Two approaches depending on whether the adversary's actions affect transitions:
+
+```
+                   FiniteMDP (S → Act → PMF S)
+                   R1: ProbMC/FiniteMDP.lean ✅
+                          │
+            ┌─────────────┴─────────────┐
+            │                           │
+    Option A: Non-adaptive        Option B: Adaptive
+    (action-independent)          (actions affect transitions)
+            │                           │
+    R3: FiniteDTMC ✅               R2: ProbStateRefinement ⚠
+    PMF DTMC + marginal =           N-step adaptive dist +
+    kernel power (sorry-free)       Bellman principle (1 sorry)
+            │                           │
+    R4: ActionIndep ✅              Uses R2's Bellman to get
+    All strategies give same        probLowerBoundForAll from
+    path measure → PMF bound        adaptive PMF bound
+    lifts to probLowerBoundForAll
+            │
+    Sorry-free end-to-end!
+```
+
+**Option A (non-adaptive / action-independent)** ✅ sorry-free:
+For protocols where coin flips don't depend on the adversary's scheduling
+(`∀ s a₁ a₂, step s a₁ = step s a₂`), e.g., Ben-Or, VABA, DAG-Rider.
+- R3 (`Refinement/FiniteDTMC.lean`): Defines `FiniteDTMC` (step via `S → PMF S`),
+  converts to `DTMC` via `toDTMC`, proves `pathMeasure_marginal_eq_nStep` (the marginal
+  of `trajMeasure` at step N equals `kernel^N ∘ₘ μ₀`) by induction on N.
+- R4 (`Refinement/ActionIndep.lean`): Since all strategies produce the same path measure,
+  a PMF bound on the DTMC directly gives `probLowerBoundForAll` for the MDP.
+
+**Option B (adaptive)** ⚠ 1 sorry:
+For MDPs where the adversary's action choice affects transition probabilities.
+- R2 (`ProbStateRefinement.lean`): Defines `nStepDistAdaptive` (Markovian adaptive
+  actions) and states the Bellman principle `pathMeasure_ge_iInf_nStepDistAdaptive`
+  (sorry). This is needed to show that the worst-case over Markovian strategies
+  lower-bounds the path measure under any history-dependent strategy.
+
+| Phase | File | Status |
+|-------|------|--------|
+| R1: FiniteMDP (PMF-based MDP + toMDP) | `ProbMC/FiniteMDP.lean` | Sorry-free |
+| R2: ProbStateRefinement (adaptive, Bellman) | `ProbMC/ProbStateRefinement.lean` | 1 sorry (Bellman) |
+| R3: FiniteDTMC (PMF DTMC + marginal thm) | `ProbMC/Refinement/FiniteDTMC.lean` | Sorry-free |
+| R4: ActionIndep (non-adaptive shortcut) | `ProbMC/Refinement/ActionIndep.lean` | Sorry-free |
 
 ### Next Steps ⬅
 

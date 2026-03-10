@@ -5,3 +5,5 @@ import ProbMC.OmegaRegularMeasurable
 import ProbMC.FiniteMDP
 import ProbMC.ProbStateRefinement
 import ProbMC.ExpectedTermination
+import ProbMC.Refinement.FiniteDTMC
+import ProbMC.Refinement.ActionIndep

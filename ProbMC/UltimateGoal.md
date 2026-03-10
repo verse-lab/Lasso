@@ -41,8 +41,9 @@ E[rounds to termination] ≤ 1/p
 | Independent epochs (Borel-Cantelli) | `ProbMC/IndependentEpochs.lean` | Done, sorry-free |
 | FiniteMDP (PMF-based MDP) | `ProbMC/FiniteMDP.lean` | Done, sorry-free |
 | N-step distribution (non-adaptive + adaptive) | `ProbMC/ProbStateRefinement.lean` | Done, sorry-free |
-| PMF → pathMeasure refinement (adaptive) | `ProbMC/ProbStateRefinement.lean` | 1 sorry |
-| Action-independent corollary | `ProbMC/ProbStateRefinement.lean` | Done (modulo main sorry) |
+| PMF → pathMeasure refinement (adaptive) | `ProbMC/ProbStateRefinement.lean` | 1 sorry (Bellman) |
+| FiniteDTMC (PMF DTMC + marginal = kernel power) | `ProbMC/Refinement/FiniteDTMC.lean` | Done, sorry-free |
+| Action-independent MDP refinement | `ProbMC/Refinement/ActionIndep.lean` | Done, sorry-free |
 | Geometric tail bound | `ProbMC/ExpectedTermination.lean` | Done, sorry-free |
 | Expected stopping time ≤ 1/p | `ProbMC/ExpectedTermination.lean` | Done, sorry-free |
 | MDP expected epoch bound | `ProbMC/ExpectedTermination.lean` | Done, sorry-free |
@@ -51,7 +52,7 @@ E[rounds to termination] ≤ 1/p
 
 ## What's Missing (TODOs)
 
-### Layer 1: Expected Value Bounds
+### Layer 1: Expected Value Bounds ✅ DONE
 
 The existing `almostSurelyForAll_of_epoch_bound` gives Pr = 1 (almost-sure termination).
 For "expected O(1) rounds" we need **E[T] ≤ C** where T is the termination round.
@@ -59,39 +60,47 @@ For "expected O(1) rounds" we need **E[T] ≤ C** where T is the termination rou
 **Key insight**: if each epoch succeeds independently with probability ≥ p, then
 Pr(T > k) ≤ (1 - p)^k, so E[T] ≤ ∑ₖ (1-p)^k = 1/p.
 
-- [ ] **TODO E1**: Define `terminationRound` or stopping time for a path
-- [ ] **TODO E2**: Prove `Pr(T > k) ≤ (1 - p)^k` from epoch bound + independence
-- [ ] **TODO E3**: Prove `E[T] ≤ 1/p` via geometric series summation of tail probabilities
+- [x] **E1**: Geometric tail bound (`Pr(T > k) ≤ (1 - p)^k`)
+- [x] **E2**: Expected stopping time ≤ 1/p
+- [x] **E3**: MDP expected epoch bound (quantified over all strategies)
 - [ ] **TODO E4** (optional): Generalize to non-uniform epoch success probabilities
 
-**Difficulty**: Medium. Mostly real-analysis (geometric series) + connecting to existing
-epoch machinery. No new measure theory.
-
-**File**: `ProbMC/ExpectedTermination.lean`
+**File**: `ProbMC/ExpectedTermination.lean` (sorry-free)
 
 ### Layer 2: PMF ↔ pathMeasure Refinement
 
-The `probLowerBoundForAll_of_nStep_bound` theorem (sorry in `ProbStateRefinement.lean`)
-bridges PMF-level arithmetic to MDP path measure bounds. This is the technical core.
+Two approaches, depending on adversary model:
 
-- [ ] **TODO R1**: Prove `trajMeasure` of cylinder `{ξ | ξ N ∈ Good}` equals iterated
-  kernel composition (uniform-state-space specialization of Ionescu-Tulcea)
-- [ ] **TODO R2**: Connect iterated kernel composition to `nStepDist` (PMF.bind iteration)
-  for `FiniteMDP`
-- [ ] **TODO R3**: Close the sorry in `probLowerBoundForAll_of_nStep_bound`
-- [ ] **TODO R4** (optional): Formalize the "prob as state variable" accumulator
-  interpretation (`trace_prob_product_eq_nStepDist`)
+**Option A: Action-independent (non-adaptive adversary)** ✅ DONE, sorry-free
 
-**Difficulty**: R1 is hard (Ionescu-Tulcea API plumbing, type coercions between
-`∀ i : Iic n, S` and `Fin (n+1) → S`). R2–R4 are medium once R1 is done.
+For protocols where coin flips don't depend on the adversary's scheduling
+(`∀ s a₁ a₂, step s a₁ = step s a₂`), e.g., Ben-Or, VABA, DAG-Rider.
+All strategies produce the same path measure, so a PMF bound on the
+underlying DTMC directly gives `probLowerBoundForAll` for the MDP.
 
-**Key Mathlib APIs**:
-- `trajContent_cylinder` — evaluates `trajContent` on cylinder sets via `partialTraj`
-- `partialTraj_succ_of_le` — recursive decomposition
-- `map_partialTraj_succ_self` — pushforward to next coordinate equals `κ n`
-- `Kernel.ofFunOfCountable` — any function becomes a kernel for countable types
+- [x] **R1**: Prove `trajMeasure` marginal at step N = kernel^N ∘ₘ μ₀
+  (`pathMeasure_marginal_eq_nStep` in `Refinement/FiniteDTMC.lean`)
+- [x] **R2**: Connect kernel power to `nStepDist` (PMF.bind iteration)
+  (`nStepDist_eq_toDTMC_nStep` in `Refinement/FiniteDTMC.lean`)
+- [x] **R3**: Sorry-free `probLowerBoundForAll` for action-independent MDPs
+  (`probLowerBoundForAll_of_stepIndep_dtmc` in `Refinement/ActionIndep.lean`)
+
+**Files**: `ProbMC/Refinement/FiniteDTMC.lean`, `ProbMC/Refinement/ActionIndep.lean`
+
+**Option B: Adaptive adversary** ⚠ 1 sorry (Bellman principle)
+
+For MDPs where the adversary's action choice affects transition probabilities.
+Requires the finite-horizon Bellman principle to show that the worst-case over
+Markovian strategies lower-bounds any history-dependent strategy.
+
+- [x] **R1**: (same as above, already proved)
+- [x] **R2**: (same as above, already proved)
+- [ ] **TODO R3'**: Prove Bellman principle `pathMeasure_ge_iInf_nStepDistAdaptive`
 
 **File**: `ProbMC/ProbStateRefinement.lean`
+
+- [ ] **TODO R4** (optional): Formalize the "prob as state variable" accumulator
+  interpretation (`trace_prob_product_eq_nStepDist`)
 
 ### Layer 3: TPTL Integration
 
@@ -135,52 +144,48 @@ Model specific protocols as `FiniteMDP` and prove the epoch bounds.
 ## Critical Path
 
 ```
-Current state
+Current state (refinement done for action-independent case!)
     │
-    ├─ R1–R3: Close the refinement sorry          ← HARD, enables everything
-    │
-    ├─ E1–E3: Expected value bound theorem         ← MEDIUM, independent of R1
+    ├─ E1–E3: Expected value bound theorem         ← DONE (ExpectedTermination.lean)
     │
     ├─ T1–T2: Port TPTL from leantla               ← PORTING, independent
     │
     ▼
-P1–P2: Ben-Or model + epoch bound                  ← needs R3
+P1–P2: Ben-Or model + epoch bound                  ← next major task
     │
     ├─ P3: Pr(termination) = 1                      ← needs P2, already have theorem
     │
-    └─ P4: E[T] ≤ 2^{2n}                           ← needs P2 + E3
+    └─ P4: E[T] ≤ 2^{2n}                           ← needs P2, already have theorem
          │
          ▼
-    T3–T4: TPTL measurability + connection          ← needs T1, R3
+    T3–T4: TPTL measurability + connection          ← needs T1
          │
          ▼
     TPTL-stated result:
     "Pr(□ x.(epoch_start → ◇ y.(decided ∧ y ≤ x + 2^{2n}))) = 1"
 ```
 
-Three workstreams can proceed in parallel:
-1. **Refinement** (R1–R3): the hard Mathlib plumbing
-2. **Expected value** (E1–E3): independent real-analysis work
-3. **TPTL porting** (T1–T2): independent porting work
-
-All three converge at P1–P4 (Ben-Or instantiation).
+The refinement layer (R1–R3) is **no longer a blocker** for action-independent
+protocols like Ben-Or. The remaining workstreams:
+1. **Protocol modeling** (P1–P2): model Ben-Or as `FiniteMDP`, prove epoch bound
+2. **TPTL porting** (T1–T2): independent porting work
 
 ## Feasibility Summary
 
 | Goal | Feasibility | Bottleneck |
 |------|-------------|------------|
-| Pr(Ben-Or terminates) = 1 | High | R1–R3 (refinement sorry) |
-| E[Ben-Or rounds] ≤ 2^{2n} | High | E1–E3 + R1–R3 |
+| Pr(Ben-Or terminates) = 1 | High | P1–P2 (protocol modeling + epoch bound) |
+| E[Ben-Or rounds] ≤ 2^{2n} | High | P1–P2 (E1–E3 already done) |
 | TPTL-stated Ben-Or liveness | High | T1–T4 + above |
 | Pr(VABA terminates) = 1 | Medium | Protocol modeling complexity (P5) |
 | E[VABA time] = O(1) | Medium | P5–P7, epoch success probability proof |
 | E[DAG-Rider rounds] = O(1) | Medium | Similar to VABA |
 
-The framework is architecturally sound. The main risks are:
-- R1 (Ionescu-Tulcea plumbing) being harder than expected
+The framework is architecturally sound. The refinement layer is complete for
+action-independent protocols (sorry-free). The main remaining risks are:
 - Protocol modeling (P1, P5) being tedious regardless of framework
 - TPTL porting from broken leantla requiring repairs
 
-No fundamental obstacles. The "prob as state variable" idea avoids defining new
-transition system types, and the expected value bound is a natural extension
-of the existing Borel-Cantelli infrastructure.
+No fundamental obstacles. For protocols with action-dependent transitions
+(where the adversary's choice affects probabilities), proving the Bellman
+principle (R3' in `ProbStateRefinement.lean`) would be needed.
