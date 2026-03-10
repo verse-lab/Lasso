@@ -28,6 +28,8 @@ The formalization follows the mathematical development in these primary sources:
 | [KSK76] | J.G. Kemeny, J.L. Snell & A.W. Knapp, *Denumerable Markov Chains*, 2nd ed., Springer, 1976. Standard reference for cylinder-set measure construction on countable-state Markov chains. |
 | [Put94] | M.L. Puterman, *Markov Decision Processes: Discrete Stochastic Dynamic Programming*, Wiley, 1994. Standard MDP reference: schedulers, value iteration, policy optimality. |
 | [HN12] | J. Hölzl & T. Nipkow, "Verifying pCTL Model Checking," *TACAS* 2012, LNCS 7214, pp. 347–361. Isabelle/HOL formalization of DTMC trace spaces and pCTL model checking correctness. |
+| [AT12] | M.K. Aguilera & S. Toueg, "The correctness proof of Ben-Or's randomized consensus algorithm," *Distrib. Comput.* 25:371–381, 2012. First complete proof under strong adversary with f < n/2. |
+| [Ben83] | M. Ben-Or, "Another advantage of free choice: completely asynchronous agreement protocols," *PODC* 1983, pp. 27–30. Original randomized consensus algorithm. |
 
 ---
 
@@ -45,7 +47,8 @@ The formalization follows the mathematical development in these primary sources:
 | Irreducibility | `Probability.Kernel.Irreducible` | `Kernel.IsIrreducible` |
 | Martingales | `Probability.Martingale.*` | `Supermartingale`, a.s. convergence |
 | Probability measures | `MeasureTheory.Measure.Typeclasses.Probability` | `IsProbabilityMeasure` |
-| Borel-Cantelli | `Probability.BorelCantelli` | First and second Borel-Cantelli lemmas |
+| Borel-Cantelli | `Probability.BorelCantelli` | `measure_limsup_eq_one` (2nd BC lemma) |
+| Independence | `Probability.Independence.*` | `iIndepSet`, `iIndepFun` |
 
 ## CSLib Inventory (what we can reuse from CSLib)
 
@@ -102,7 +105,9 @@ infrastructure that overlaps significantly with our Phase P2 and P3 needs.
 
 ---
 
-## Phase P1: DTMC as Markov Kernel ✅ DONE
+## Probabilistic Model Checking Pipeline (P1–P6)
+
+### Phase P1: DTMC as Markov Kernel ✅ DONE
 
 **Justification**: The standard definition of a DTMC as a tuple (S, **P**, ι_init, AP, L)
 appears in [BK08, Def. 10.1]. The measure-theoretic construction of the path space
@@ -124,7 +129,7 @@ analogous Isabelle/HOL formalization.
 
 ---
 
-## Phase P2: Measurability of ω-Regular Properties ✅ DONE
+### Phase P2: Measurability of ω-Regular Properties ✅ DONE
 
 **Justification**: The measurability of ω-regular languages in the product
 σ-algebra is established in [Var85, §3] and fully developed in [CY95, §2].
@@ -148,7 +153,7 @@ the condition is a Boolean combination of Büchi (inf. often) and co-Büchi
 
 ---
 
-## Phase P3: Product Construction DTMC ⊗ DRA
+### Phase P3: Product Construction DTMC ⊗ DRA
 
 **Justification**: The product construction is the central technique of the
 automata-theoretic approach to probabilistic model checking, originating in
@@ -182,7 +187,7 @@ including the construction for Rabin acceptance conditions specifically.
 
 ---
 
-## Phase P4: LTL Probabilistic Model Checking Correctness
+### Phase P4: LTL Probabilistic Model Checking Correctness
 
 **Justification**: The characterization of reachability probabilities as the
 least fixpoint of a linear equation system is from [BK08, Theorem 10.19] and
@@ -207,7 +212,7 @@ this linear characterization.
 
 ---
 
-## Phase P5: Qualitative Verification (Pr = 0 or 1)
+### Phase P5: Qualitative Verification (Pr = 0 or 1)
 
 **Justification**: The qualitative theory has two main results:
 
@@ -236,7 +241,7 @@ this linear characterization.
 
 ---
 
-## Phase P6 (Optional): MDP Extension
+### Phase P6 (Optional): MDP Extension
 
 **Justification**: The extension to MDPs follows [BdA95] for the logic PCTL* and
 [CY95, §5] for the LTL case. The key concept is the **scheduler** (or adversary/policy),
@@ -250,7 +255,7 @@ verification to reachability in the product [CY95, §5], with complexity
 of [SEJK16] avoids determinization for the MDP case. The standard reference
 for MDP theory (Bellman equations, value iteration, policy optimality) is [Put94].
 
-**File**: `ProbMC/MDP.lean`
+**File**: `ProbMC/MDPExtension.lean`
 
 **Key theorems**:
 - `mdp_maxProb_attained_by_memoryless`: [Put94, Ch. 6], [BK08, Thm 10.100]
@@ -262,7 +267,7 @@ for MDP theory (Bellman equations, value iteration, policy optimality) is [Put94
 
 ---
 
-## Suggested Execution Order
+### Suggested Execution Order
 
 ```
 Phase P1 (DTMC definition)              ✅ DONE
@@ -289,18 +294,22 @@ Phase P3 (Product DTMC ⊗ DRA, BSCC reduction)
 ## File Layout
 
 ```
-LTLLib/
-├── Prob/
-│   ├── DTMC.lean              (Phase P1) ✅
-│   ├── OmegaRegularMeasurable.lean  (Phase P2) ✅
-│   ├── DRA.lean               (Phase P3, automaton definition)
-│   ├── ProductDTMC.lean       (Phase P3)
-│   ├── BSCC.lean              (Phase P3, graph theory)
-│   ├── ProbModelCheck.lean    (Phase P4)
-│   ├── Qualitative.lean       (Phase P5)
-│   └── MDP.lean               (Phase P6, optional)
-├── Prob.lean                  (imports all Prob/ modules)
-└── ... (existing files unchanged)
+ProbMC/
+├── DTMC.lean                   (Phase P1) ✅
+├── OmegaRegularMeasurable.lean (Phase P2) ✅
+├── MDP.lean                    (Phase B1) ✅
+├── IndependentEpochs.lean      (Phase B2) ✅
+├── BenOrPlan.md                (detailed Ben-Or pipeline plan)
+├── DRA.lean                    (Phase P3, not started)
+├── ProductDTMC.lean            (Phase P3, not started)
+├── BSCC.lean                   (Phase P3, not started)
+├── ProbModelCheck.lean         (Phase P4, not started)
+├── Qualitative.lean            (Phase P5, not started)
+├── MDPExtension.lean           (Phase P6, not started)
+└── BenOr/                      (Phase B5–B6, not started)
+    ├── Model.lean              (protocol as MDP)
+    ├── Safety.lean             (agreement, validity)
+    └── Termination.lean        (probabilistic liveness)
 ```
 
 ---
@@ -315,6 +324,8 @@ LTLLib/
 | BSCC theory requires substantial graph theory | Leverage cslib's `LTS.CanReach`; or define BSCCs directly for finite graphs |
 | Linear equation characterization is deep | Phase P4 can be deferred; P1+P2+P3 already gives the main reduction |
 | MDP scheduler optimization is very hard | Phase P6 is explicitly optional |
+| Veil DSL extension is complex (Ben-Or) | Bypass with manual MDP definition for Ben-Or |
+| FavorableToss definition is intricate (Ben-Or) | Follow [AT12] proof structure closely |
 
 ---
 
@@ -336,3 +347,112 @@ probabilistic verification, we need:
 3. **Reuse `NNF.satisfies`** from `Semantics.lean` as the ground truth for
    what "ξ ⊨ φ" means — the bridge theorem becomes:
    `Pr{ξ | NNF.satisfies ξ (toNNF φ)} = Pr(reach accepting BSCC in D ⊗ A_{¬φ})`
+
+---
+
+## Ben-Or Probabilistic Liveness Pipeline (B1–B6)
+
+A second track, orthogonal to the general P3–P6 pipeline above, targeting the
+first proof-assistant-verified probabilistic liveness proof for a distributed
+protocol. Uses a three-layer pipeline: Veil DSL → MDP compilation → Borel-Cantelli.
+
+See `ProbMC/BenOrPlan.md` for the detailed design.
+
+### Three-Layer Pipeline
+
+```
+Layer 1: Veil DSL (user writes protocol with coin_toss)
+    │  coin_toss compiled specially; pick stays adversarial
+    ▼
+Layer 2: MDP (compiled artifact)
+    │  fix adversary strategy → path measure via Ionescu-Tulcea
+    ▼
+Layer 3: Probabilistic reasoning (user proves bounds)
+    │  independent epochs + Borel-Cantelli → Pr = 1
+    ▼
+Result: Ben-Or terminates with probability 1
+```
+
+### Phase B1: MDP Definition ✅ DONE
+
+**File**: `ProbMC/MDP.lean`
+
+- `MDP S Act`: structure with `step : Kernel (S × Act) S`
+- `MemorylessStrategy`: stationary policy `S → Act`, yields DTMC via `resolveKernel`
+- `Strategy`: history-dependent policy `(n : ℕ) → (∀ _ : Iic n, S) → Act`
+  (for strong adversaries that see full history)
+- `MDP.pathMeasure π μ₀`: path measure under any strategy via Ionescu-Tulcea
+- `probLowerBoundForAll` / `almostSurelyForAll`: probability properties quantified
+  over all adversary strategies
+
+### Phase B2: Independent Epochs Theorem ✅ DONE
+
+**File**: `ProbMC/IndependentEpochs.lean`
+
+- `ENNReal.tsum_eq_top_of_pos_lower_bound`: tsum divergence from uniform bound
+- `almostSure_of_independent_events`: second Borel-Cantelli + limsup ⊆ union
+- `MDP.almostSurelyForAll_of_epoch_bound`: if independent epoch events each have
+  probability ≥ p > 0 under all strategies, their union has probability 1 under
+  all strategies. This is the key reusable pattern for randomized protocol termination.
+
+### Phase B3: Veil DSL Extension ⬜ NEXT
+
+**Location**: Veil repo (`veil-dev-clean-3/`)
+
+- Add `coin_toss` and `sample` primitives alongside `pick`
+- `pick` = adversarial (∀-quantified); `coin_toss` = probabilistic (measured)
+- Extend `NonDetT` monad with a third mode ("probabilistic")
+
+**Estimated effort**: ~1 week.
+
+### Phase B4: MDP Compilation from Veil Spec ⬜
+
+- Compile Veil `RelationalTransitionSystem` + probabilistic annotations → `MDP`
+- `pick` choices → `Act`; `coin_toss` choices → kernel in `step`
+- Compilation correctness theorem
+
+**Estimated effort**: 2–3 weeks. **Dependencies**: B3.
+
+### Phase B5: Ben-Or Model + Safety ⬜
+
+- Model Ben-Or in extended Veil DSL
+- Safety proofs (agreement, validity) via Veil SMT [AT12, §5.1]
+- Epoch structure: epoch r = rounds (2r, 2r+1)
+
+**Estimated effort**: 2–3 weeks. **Dependencies**: B3, B4.
+
+### Phase B6: Probabilistic Termination ⬜
+
+- Define FavorableToss function (Fig. 2 of [AT12])
+- Prove: lucky epoch → value locked (Lemma 6 of [AT12])
+- Prove: ≤ 2n coins per epoch → Pr(lucky) ≥ 2^{-2n} (Lemma 7)
+- Prove: disjoint coins → independent epochs
+- Instantiate `MDP.almostSurelyForAll_of_epoch_bound` → Pr(termination) = 1
+
+**Estimated effort**: 2–3 weeks. **Dependencies**: B2, B5.
+
+### Alternative: bypass Veil
+
+If Veil modification is deferred, define Ben-Or's state and transitions
+as an `MDP` directly in ProbMC (bypassing the DSL), then prove probabilistic
+termination against that hand-written model. Faster but less reusable.
+
+---
+
+## Current Status
+
+### Completed ✅
+
+| Phase | File | Status |
+|-------|------|--------|
+| P1: DTMC | `ProbMC/DTMC.lean` | Sorry-free |
+| P2: ω-regular measurability | `ProbMC/OmegaRegularMeasurable.lean` | Sorry-free |
+| B1: MDP definition | `ProbMC/MDP.lean` | Sorry-free |
+| B2: Independent epochs | `ProbMC/IndependentEpochs.lean` | Sorry-free |
+
+### Next Step ⬅
+
+**Probabilistic model checking (P1–P6)**: Phase P3 (Product DTMC ⊗ DRA) — hard, requires graph theory for BSCCs.
+
+**Ben-Or liveness (B1–B6)**: Phase B3 (Veil DSL extension) — the enabling step for all
+downstream Ben-Or work. Critical path: `B1 ✅ → B2 ✅ → B3 ⬜ → B4 ⬜ → B5 ⬜ → B6 ⬜`
