@@ -105,7 +105,9 @@ infrastructure that overlaps significantly with our Phase P2 and P3 needs.
 
 ---
 
-## Probabilistic Model Checking Pipeline (P1–P6)
+## Shared Foundation (P1, P2, B1) ✅ ALL DONE
+
+These phases are shared by both downstream pipelines.
 
 ### Phase P1: DTMC as Markov Kernel ✅ DONE
 
@@ -126,8 +128,6 @@ analogous Isabelle/HOL formalization.
 - `pathMeasure μ₀`: probability measure on `ℕ → S` via `trajMeasure`
 - `pathMeasureFrom s`: path measure from single state (Dirac)
 - `nStep n`: n-step transition `κ^n` with Chapman-Kolmogorov (`nStep_add`)
-
----
 
 ### Phase P2: Measurability of ω-Regular Properties ✅ DONE
 
@@ -151,7 +151,27 @@ the condition is a Boolean combination of Büchi (inf. often) and co-Büchi
 - `measurableSet_finitelyOftenSet`: "visit F finitely often" is F_σ
 - `measurableSet_rabinAcceptSet`: Rabin acceptance is measurable
 
+### Phase B1: MDP Definition ✅ DONE
+
+**File**: `ProbMC/MDP.lean`
+
+- `MDP S Act`: structure with `step : Kernel (S × Act) S`
+- `MemorylessStrategy`: stationary policy `S → Act`, yields DTMC via `resolveKernel`
+- `Strategy`: history-dependent policy `(n : ℕ) → (∀ _ : Iic n, S) → Act`
+  (for strong adversaries that see full history)
+- `MDP.pathMeasure π μ₀`: path measure under any strategy via Ionescu-Tulcea
+- `probLowerBoundForAll` / `almostSurelyForAll`: probability properties quantified
+  over all adversary strategies
+
+B1 generalizes P1: fixing a strategy in an MDP gives a DTMC. B1 is used by the
+Ben-Or pipeline (B2–B6) and could also serve P6 (MDP extension) if pursued.
+
 ---
+
+## Probabilistic Model Checking Pipeline (P3–P6)
+
+Uses the shared foundation (P1, P2) to formalize the automata-theoretic approach
+to probabilistic LTL model checking.
 
 ### Phase P3: Product Construction DTMC ⊗ DRA
 
@@ -270,24 +290,27 @@ for MDP theory (Bellman equations, value iteration, policy optimality) is [Put94
 ### Suggested Execution Order
 
 ```
-Phase P1 (DTMC definition)              ✅ DONE
-    │
-    ├──→ Phase P2 (ω-regular measurability)  ✅ DONE
-    │         │
-    ▼         ▼
-Phase P3 (Product DTMC ⊗ DRA, BSCC reduction)
-    │
-    ├──→ Phase P4 (Quantitative: linear equations)
-    │
-    └──→ Phase P5 (Qualitative: Pr=1 ↔ fair paths)
-              │
-              ▼
-        Phase P6 (MDP extension, optional)
+         Shared Foundation
+┌──────────────────────────────────┐
+│ P1 (DTMC) ✅   P2 (ω-reg) ✅    │
+│         B1 (MDP) ✅              │
+└──────┬───────────────┬───────────┘
+       │               │
+       ▼               ▼
+  PMC Pipeline    Ben-Or Pipeline
+┌──────────────┐ ┌─────────────────┐
+│ P3 (Product) │ │ B2 (Epochs) ✅   │
+│   │          │ │ B3 (Veil DSL)   │
+│   ├→ P4      │ │ B4 (Compile)    │
+│   └→ P5      │ │ B5 (Model)      │
+│      └→ P6   │ │ B6 (Pr=1)       │
+└──────────────┘ └─────────────────┘
 ```
 
-**Minimum viable result**: P1 + P2 gives "Pr_s(φ) is well-defined."
-**Core result**: P1 + P2 + P3 gives "Pr_s(φ) = Pr(reach accepting BSCC in product)."
-**Full result**: P1–P5 gives both quantitative and qualitative model checking correctness.
+**PMC minimum viable result**: P1 + P2 gives "Pr_s(φ) is well-defined."
+**PMC core result**: + P3 gives "Pr_s(φ) = Pr(reach accepting BSCC in product)."
+**PMC full result**: + P4–P5 gives both quantitative and qualitative model checking.
+**Ben-Or result**: B1–B6 gives "Ben-Or terminates with probability 1."
 
 ---
 
@@ -350,11 +373,12 @@ probabilistic verification, we need:
 
 ---
 
-## Ben-Or Probabilistic Liveness Pipeline (B1–B6)
+## Ben-Or Probabilistic Liveness Pipeline (B2–B6)
 
 A second track, orthogonal to the general P3–P6 pipeline above, targeting the
 first proof-assistant-verified probabilistic liveness proof for a distributed
 protocol. Uses a three-layer pipeline: Veil DSL → MDP compilation → Borel-Cantelli.
+Builds on the shared foundation (P1, P2, B1).
 
 See `ProbMC/BenOrPlan.md` for the detailed design.
 
@@ -372,18 +396,6 @@ Layer 3: Probabilistic reasoning (user proves bounds)
     ▼
 Result: Ben-Or terminates with probability 1
 ```
-
-### Phase B1: MDP Definition ✅ DONE
-
-**File**: `ProbMC/MDP.lean`
-
-- `MDP S Act`: structure with `step : Kernel (S × Act) S`
-- `MemorylessStrategy`: stationary policy `S → Act`, yields DTMC via `resolveKernel`
-- `Strategy`: history-dependent policy `(n : ℕ) → (∀ _ : Iic n, S) → Act`
-  (for strong adversaries that see full history)
-- `MDP.pathMeasure π μ₀`: path measure under any strategy via Ionescu-Tulcea
-- `probLowerBoundForAll` / `almostSurelyForAll`: probability properties quantified
-  over all adversary strategies
 
 ### Phase B2: Independent Epochs Theorem ✅ DONE
 
@@ -443,16 +455,16 @@ termination against that hand-written model. Faster but less reusable.
 
 ### Completed ✅
 
-| Phase | File | Status |
-|-------|------|--------|
-| P1: DTMC | `ProbMC/DTMC.lean` | Sorry-free |
-| P2: ω-regular measurability | `ProbMC/OmegaRegularMeasurable.lean` | Sorry-free |
-| B1: MDP definition | `ProbMC/MDP.lean` | Sorry-free |
-| B2: Independent epochs | `ProbMC/IndependentEpochs.lean` | Sorry-free |
+| Phase | Section | File | Status |
+|-------|---------|------|--------|
+| P1: DTMC | Shared | `ProbMC/DTMC.lean` | Sorry-free |
+| P2: ω-regular measurability | Shared | `ProbMC/OmegaRegularMeasurable.lean` | Sorry-free |
+| B1: MDP definition | Shared | `ProbMC/MDP.lean` | Sorry-free |
+| B2: Independent epochs | Ben-Or | `ProbMC/IndependentEpochs.lean` | Sorry-free |
 
-### Next Step ⬅
+### Next Steps ⬅
 
-**Probabilistic model checking (P1–P6)**: Phase P3 (Product DTMC ⊗ DRA) — hard, requires graph theory for BSCCs.
+**PMC pipeline**: Phase P3 (Product DTMC ⊗ DRA) — hard, requires graph theory for BSCCs.
 
-**Ben-Or liveness (B1–B6)**: Phase B3 (Veil DSL extension) — the enabling step for all
-downstream Ben-Or work. Critical path: `B1 ✅ → B2 ✅ → B3 ⬜ → B4 ⬜ → B5 ⬜ → B6 ⬜`
+**Ben-Or pipeline**: Phase B3 (Veil DSL extension) — the enabling step for all
+downstream Ben-Or work. Critical path: `B2 ✅ → B3 ⬜ → B4 ⬜ → B5 ⬜ → B6 ⬜`
