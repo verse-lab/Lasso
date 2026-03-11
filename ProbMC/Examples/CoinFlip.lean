@@ -38,45 +38,52 @@ def coinAction : NonDetT BaseM Unit :=
   .pickCont Bool (fun _ => True) fun b =>
     if b then setState .s0 else setState .s1
 
-/-- Running `StateT S Id` is always deterministic (never fails). -/
-def runBaseM {β : Type} (x : BaseM β) (s : S) : Option (β × S) :=
-  some (StateT.run x s)
+/-- Lift `StateT.set s'` into `VeilProbM`: deterministically set the state. -/
+noncomputable def setStateVPM (s' : S) : VeilProbM Unit S Unit :=
+  fun _r _s => PMF.pure ((), s')
 
-/-- The PMF for `setState s'` from any state `s`: it's deterministic at `s'`. -/
-theorem setState_constraint (s s' : S) :
-    ProbConstraint (setState s') s (PMF.pure s') := by
-  exact .vis_ok _ _ () s' .pure
+/-- `setState s'` corresponds to `setStateVPM s' >>= pure` under ProbConstraint.
+    This is: vis (StateT.set s') (fun () => .pure ()) maps to (setStateVPM s') >>= (fun () => pure ()). -/
+theorem setState_constraint (s' : S) :
+    ProbConstraint (setState s') (setStateVPM s' >>= fun () => Pure.pure ()) :=
+  .vis (StateT.set s') (fun () => .pure ()) (fun () => Pure.pure ()) (setStateVPM s')
+    (fun () => .pure ())
 
 /-- Helper: `Bool` satisfying `fun _ => True` is all of `Bool`. -/
-private theorem bool_filter_true :
-    Finset.univ.filter (fun (_ : Bool) => True) = Finset.univ := by
-  ext x; simp
-
 private theorem bool_filter_true_nonempty :
-    (Finset.univ.filter (fun (_ : Bool) => True)).Nonempty := by
-  rw [bool_filter_true]; exact Finset.univ_nonempty
+    (Finset.univ.filter (fun (_ : Bool) => True)).Nonempty :=
+  ⟨true, by simp⟩
 
-/-- The coin action produces a uniform distribution over {s0, s1}. -/
-theorem coinAction_constraint (s : S) :
-    ProbConstraint coinAction s
-      ((PMF.uniformOfFinset (Finset.univ.filter (fun (_ : Bool) => True))
+/-- The coin action corresponds to a uniform distribution over {s0, s1}. -/
+theorem coinAction_constraint :
+    ProbConstraint (m := BaseM) (ρ := Unit) (σ := S) coinAction
+      (fun r s => (PMF.uniformOfFinset (Finset.univ.filter (fun (_ : Bool) => True))
         bool_filter_true_nonempty).bind
-        (fun b => if b then PMF.pure S.s0 else PMF.pure S.s1)) := by
+        (fun b => (if b then setStateVPM .s0 >>= fun () => Pure.pure ()
+                   else setStateVPM .s1 >>= fun () => Pure.pure ()) r s)) := by
   unfold coinAction
-  exact .pickCont _ bool_filter_true_nonempty
-    (fun b => if b then PMF.pure S.s0 else PMF.pure S.s1)
-    (fun t _ => by cases t <;> simp [setState] <;> exact .vis_ok _ _ () _ .pure)
+  apply ProbConstraint.pickCont
+    (fun b => if b then setState .s0 else setState .s1)
+    (fun b => if b then setStateVPM .s0 >>= fun () => Pure.pure ()
+              else setStateVPM .s1 >>= fun () => Pure.pure ())
+    bool_filter_true_nonempty
+  intro b; cases b
+  · exact setState_constraint .s1
+  · exact setState_constraint .s0
 
-/-- Build `ConstrainedProbResult` for every state. -/
-noncomputable def coinResult (s : S) : ConstrainedProbResult coinAction s :=
-  ⟨_, coinAction_constraint s⟩
+/-- Build `ConstrainedProbResult` for the coin action. -/
+noncomputable def coinResult : ConstrainedProbResult (m := BaseM) (ρ := Unit) (σ := S) coinAction :=
+  ⟨_, coinAction_constraint⟩
 
 /-- The `FiniteDTMC` for the coin flip action. -/
 noncomputable def coinDTMC : FiniteDTMC S :=
-  toFiniteDTMC coinAction coinResult
+  toFiniteDTMC coinAction () coinResult
 
 /-- The step function of the coin DTMC is independent of the starting state
 (both states lead to the same uniform distribution). -/
-theorem coinDTMC_step_eq (s s' : S) : coinDTMC.step s = coinDTMC.step s' := rfl
+theorem coinDTMC_step_eq (s s' : S) : coinDTMC.step s = coinDTMC.step s' := by
+  unfold coinDTMC toFiniteDTMC VeilProbM.toPMF coinResult
+  ext ⟨⟩ <;> simp [PMF.map_apply, PMF.bind_apply, setStateVPM, PMF.pure_apply,
+    PMF.uniformOfFinset_apply]
 
 end ProbMC.Examples.CoinFlip
