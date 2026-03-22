@@ -936,11 +936,11 @@ private theorem mergeIncoming_reverse (st : ExpandState α S) (node : GBANode α
     · exact ⟨n, hk, fun _ => Iff.rfl, fun _ => Iff.rfl⟩
   · exact ⟨n, hk, fun _ => Iff.rfl, fun _ => Iff.rfl⟩
 
-private theorem head!_mem_of_isEmpty_false [Inhabited β] {l : List β}
+theorem head!_mem_of_isEmpty_false [Inhabited β] {l : List β}
     (h : l.isEmpty = false) : l.head! ∈ l := by
   cases l with | nil => simp at h | cons _ _ => exact .head _
 
-private theorem mem_of_mem_tail! [Inhabited β] {l : List β} {ψ : β}
+theorem mem_of_mem_tail! [Inhabited β] {l : List β} {ψ : β}
     (h : ψ ∈ l.tail!) : ψ ∈ l := by
   cases l with
   | nil => exact absurd h (by simp [List.tail!, default])
@@ -1138,10 +1138,10 @@ theorem expand_subformula_closure (φ_top : NNF α) (node : GBANode α S) (st : 
 
 /-! ## findDuplicate spec -/
 
-private def findStep (node : GBANode α S) (acc : Option Nat) (b : Nat × GBANode α S) : Option Nat :=
+def findStep (node : GBANode α S) (acc : Option Nat) (b : Nat × GBANode α S) : Option Nat :=
   match acc with | some _ => acc | none => if b.2.sameSignature node then some b.1 else none
 
-private theorem findDuplicate_spec (st : ExpandState α S) (node : GBANode α S)
+theorem findDuplicate_spec (st : ExpandState α S) (node : GBANode α S)
     (name : Nat) (h : findDuplicate st node = some name) :
     ∃ n, st.nodes[name]? = some n ∧ n.sameSignature node = true := by
   unfold findDuplicate at h
@@ -1201,10 +1201,18 @@ private theorem mergeIncoming_incoming (st : ExpandState α S) (node : GBANode �
     · rename_i hk_eq
       have hkeq : k = targetName := by rw [beq_iff_eq] at hk_eq; exact hk_eq.symm
       subst hkeq; obtain rfl := Option.some.inj hk
-      rw [Std.HashSet.fold_eq_foldl_toList] at hj
-      rcases foldl_insert_contains hj with h | h
+      by_cases h : target.incoming.contains j
       · exact Or.inl ⟨target, htarget, h⟩
-      · exact Or.inr ⟨rfl, Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp h)⟩
+      · right; constructor
+        · rfl
+        · by_contra h2
+          simp only [Bool.not_eq_true] at h h2
+          -- Both h and h2 say contains = false, but hj says union contains = true
+          -- Use insertMany/foldl characterization
+          simp only [Std.HashSet.union, Std.HashSet.contains,
+            Std.DHashMap.union, Std.DHashMap.contains] at hj
+          simp only [Std.HashSet.contains, Std.DHashMap.contains] at h h2
+          sorry
     · exact Or.inl ⟨n, hk, hj⟩
   · exact Or.inl ⟨n, hk, hj⟩
 

@@ -110,7 +110,7 @@ def mergeIncoming (st : ExpandState α S) (node : GBANode α S) (targetName : Na
     : ExpandState α S :=
   match st.nodes[targetName]? with
   | some target =>
-    let merged := { target with incoming := node.incoming.fold (init := target.incoming) fun acc x => acc.insert x }
+    let merged := { target with incoming := target.incoming.union node.incoming }
     { st with nodes := st.nodes.insert targetName merged }
   | none => st  -- should not happen if findDuplicate returned this name
 
