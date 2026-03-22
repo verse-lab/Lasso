@@ -787,4 +787,103 @@ theorem createGraph_weakGraphComplete (φ : NNF α) {st : ExpandState α S}
   · -- ∀ n η μ, (σ n).old (until μ η) → satisfies (ξ.drop n) η → (σ n).old η
     intro n η μ hμη hη; exact (seq n).2.2.until_rhs η μ hμη hη
 
+/-! ## Completeness from WeakGraphComplete
+
+Replaces `expandOASpec_completeness` (which uses `GraphComplete`)
+with a version that uses `WeakGraphComplete` + `ExpandSpec`.
+The key difference: the acceptance argument uses `until_rhs` + `ExpandSpec.until_propag`
+instead of the full `old ↔ (subformula ∧ satisfied)` biconditional. -/
+
+/-- One step of until propagation: if `μ U η ∈ old(σ n)` and `η ∉ old(σ n)`,
+    then `μ ∈ old(σ n)` and `μ U η ∈ old(σ(n+1))`. -/
+private theorem until_step_weak
+    {φ : NNF α} {nodes : NodeData α → Prop}
+    (spec : ExpandSpec φ nodes)
+    {σ : Nat → NodeData α}
+    (h_nodes : ∀ n, nodes (σ n))
+    (h_succ : ∀ n, (σ (n + 1)).incoming (σ n).name)
+    {μ η : NNF α} {n : Nat}
+    (h_old : (σ n).old (.until μ η))
+    (h_no_eta : ¬(σ n).old η) :
+    (σ n).old μ ∧ (σ (n + 1)).old (.until μ η) := by
+  rcases spec.until_propag _ (h_nodes n) _ _ h_old with h | ⟨hμ, h_next⟩
+  · exact absurd h h_no_eta
+  · exact ⟨hμ, spec.successor_old _ (h_nodes n) _ (h_nodes (n+1)) (h_succ n) _ h_next⟩
+
+/-- Completeness from `WeakGraphComplete` + `ExpandSpec`:
+    if `WeakGraphComplete` holds, then the abstract automaton accepts ξ.
+    This replaces `expandOASpec_completeness` which required `GraphComplete`. -/
+theorem expandOASpec_completeness_weak
+    {φ : NNF α} {nodes : NodeData α → Prop}
+    {untils : List (NNF α × NNF α)}
+    (spec : ExpandSpec φ nodes)
+    (h_complete : WeakGraphComplete φ nodes)
+    {ξ : OmegaWord α}
+    (hsat : NNF.satisfies ξ φ)
+    : (expandOASpec φ nodes untils).accepts ξ := by
+  obtain ⟨σ, h_nodes, h_init, h_succ, h_old_sat, h_until_rhs⟩ := h_complete ξ hsat
+  refine ⟨σ, ?_, ?_, ?_⟩
+  · -- isRun
+    exact ⟨⟨h_nodes 0, h_init⟩, fun n => ⟨h_nodes n, h_nodes (n + 1), h_succ n⟩⟩
+  · -- runCompatible: label compatibility
+    intro n; constructor
+    · -- prop a ∈ old → ξ(n)(a)
+      intro a hold
+      have := h_old_sat n (.prop a) hold
+      simp [NNF.satisfies, NNF.toPred, state_pred, exec.drop] at this
+      exact this
+    · -- nprop a ∈ old → ¬ξ(n)(a)
+      intro a hold
+      have := h_old_sat n (.nprop a) hold
+      simp [NNF.satisfies, NNF.toPred, state_pred, exec.drop] at this
+      exact this
+  · -- isAcceptingRun
+    intro i n
+    by_cases h : (σ n).old (.until (untils[i]).1 (untils[i]).2)
+    · -- until formula IS in old(σ n)
+      -- By old_sat: ξ.drop n ⊨ μ U η
+      have hsat_u := h_old_sat n _ h
+      -- Unfold until semantics: ∃ j, η satisfied at n+j
+      obtain ⟨j, hη_sat, _⟩ : ∃ j, NNF.satisfies (ξ.drop (n + j)) (untils[i]).2 ∧
+          ∀ i_1, i_1 < j → NNF.satisfies (ξ.drop (n + i_1)) (untils[i]).1 := by
+        simp only [NNF.satisfies, NNF.toPred, tla_until] at hsat_u
+        obtain ⟨j, hη, hμ⟩ := hsat_u
+        refine ⟨j, ?_, fun k hk => ?_⟩
+        · show (untils[i]).2.toPred (ξ.drop (n + j))
+          have : ξ.drop (n + j) = (ξ.drop n).drop j := by rw [exec.drop_drop]
+          rw [this]; exact hη
+        · show (untils[i]).1.toPred (ξ.drop (n + k))
+          have : ξ.drop (n + k) = (ξ.drop n).drop k := by rw [exec.drop_drop]
+          rw [this]; exact hμ k hk
+      -- Instead of showing until persists to exactly position n+j,
+      -- find the FIRST position where η ∈ old (which may be before j)
+      -- Either μ U η stays in old until we find η in old, or η appears in old along the way
+      -- Key: if μ U η ∈ old and η ∉ old, then μ U η carries to next step (until_step_weak)
+      -- If η ∈ old, we're immediately in the acceptance set
+      suffices ∃ j', (σ (n + j')).old (untils[i]).2 by
+        obtain ⟨j', hη_old⟩ := this
+        exact ⟨j', by simp only [expandOASpec]; right; exact hη_old⟩
+      -- Prove: ∃ j', η ∈ old(σ(n + j'))
+      -- Argument: μ U η ∈ old persists (or η appears) until position n+j,
+      -- then at n+j, ξ.drop(n+j) ⊨ η and μ U η ∈ old, so by until_rhs, η ∈ old
+      -- Show: for all k ≤ j, either ∃ k' < k with η ∈ old(σ(n+k')), or μ U η ∈ old(σ(n+k))
+      have h_persist : ∀ k, k ≤ j →
+          (∃ k' : Nat, k' < k ∧ (σ (n + k')).old (untils[i]).2) ∨
+          (σ (n + k)).old (.until (untils[i]).1 (untils[i]).2) := by
+        intro k hk; induction k with
+        | zero => right; simpa
+        | succ k ih_k =>
+          rcases ih_k (by omega) with ⟨k', hk', hη'⟩ | h_u_k
+          · left; exact ⟨k', by omega, hη'⟩
+          · by_cases h_eta_k : (σ (n + k)).old (untils[i]).2
+            · left; exact ⟨k, by omega, h_eta_k⟩
+            · right
+              have ⟨_, h_carry⟩ := until_step_weak spec h_nodes h_succ h_u_k h_eta_k
+              rwa [show n + k + 1 = n + (k + 1) from by omega] at h_carry
+      rcases h_persist j le_rfl with ⟨k', _, hη'⟩ | h_u_j
+      · exact ⟨k', hη'⟩
+      · exact ⟨j, h_until_rhs (n + j) _ _ h_u_j hη_sat⟩
+    · -- until formula NOT in old(σ n)
+      exact ⟨0, by simp only [expandOASpec, Nat.add_zero]; left; exact h⟩
+
 end LTLLib
