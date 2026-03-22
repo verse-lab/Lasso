@@ -473,10 +473,22 @@ private theorem expand_exist_aux (ξ : OmegaWord α) (node : GBANode α S) (st :
           }⟩
         · exact ih_result.2
     · -- NOT LITERAL (tt / ff / det / nondet)
-      --
-      split at h_result <;> (try split at h_result) <;> (try split at h_result) <;>
-        (try split at h_result) <;> (try split at h_result)
-      all_goals sorry
+      split at h_result
+      · -- tt case
+        have ih_result := ih _ _ _ h_result h_not_in h_fresh h_name
+        exact ⟨fun h_assm => by
+          have h_assm' := mk_assm_insert h_assm h_not_empty
+            (h_assm.new_sat _ (head!_mem_of_isEmpty_false h_not_empty))
+            node.new.tail! (fun _ h => h)
+            (fun ψ hψ => h_assm.new_sat ψ (mem_of_mem_tail! hψ))
+            (fun η μ heq _ => by grind [isLiteral, isDeterministic])
+          exact (ih_result.1 h_assm').imp fun k ⟨nd, hnd, hp⟩ => ⟨nd, hnd,
+            ⟨hp.incoming_sub, hp.old_sat, hp.next_sat, hp.until_rhs⟩⟩,
+          ih_result.2⟩
+      · split at h_result
+        · -- ff case
+          sorry
+        · sorry -- det + nondet cases
 
 
 theorem expand_exist (ξ : OmegaWord α) (node : GBANode α S) (st : ExpandState α S)
