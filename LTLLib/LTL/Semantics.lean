@@ -53,7 +53,7 @@ theorem release_iff_not_until_neg {α : Type u} (p q : pred α) :
 
 /-- Until is the dual of release: `p U q ↔ ¬(¬p R ¬q)`. -/
 theorem until_iff_not_release_neg {α : Type u} (p q : pred α) :
-  ((p 𝑈 q)) =tla= (¬ (tla_release (tla_not p) (tla_not q))) := by
+  ((p 𝑈 q)) =tla= (¬ (¬ p 𝑅 ¬ q)) := by
   funext e ; unfold tla_release ; tla_unfold_simp
 
 /-- □ p = ⊥ R p. -/
