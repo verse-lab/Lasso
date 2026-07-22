@@ -79,7 +79,7 @@ theorem old_implies_satisfied
   | tt =>
     intro n _
     dsimp [NNF.satisfies, NNF.toPred]
-    tla_unfold_simp
+    tunfold_simp
   | ff =>
     intro n h
     exact absurd h (spec.no_false _ (h_nodes n))
@@ -97,12 +97,12 @@ theorem old_implies_satisfied
     intro n h
     have ⟨hμ, hψ⟩ := spec.and_propag _ (h_nodes n) _ _ h
     dsimp [NNF.satisfies, NNF.toPred] at ih_μ ih_ψ ⊢
-    tla_unfold_simp
+    tunfold_simp
     exact ⟨ih_μ n hμ, ih_ψ n hψ⟩
   | or μ ψ ih_μ ih_ψ =>
     intro n h
     dsimp [NNF.satisfies, NNF.toPred] at ih_μ ih_ψ ⊢
-    tla_unfold_simp
+    tunfold_simp
     rcases spec.or_propag _ (h_nodes n) _ _ h with hμ | hψ
     · exact Or.inl (ih_μ n hμ)
     · exact Or.inr (ih_ψ n hψ)
@@ -111,12 +111,12 @@ theorem old_implies_satisfied
     have h_next := spec.next_propag _ (h_nodes n) _ h
     have h_old := spec.successor_old _ (h_nodes n) _ (h_nodes (n+1)) (h_succ n) _ h_next
     dsimp [NNF.satisfies, NNF.toPred] at ih ⊢
-    tla_unfold_simp
+    tunfold_simp
     exact ih (n + 1) h_old
   | «until» μ η ih_μ ih_η =>
     intro n h_old
     dsimp [NNF.satisfies, NNF.toPred] at ih_μ ih_η ⊢
-    tla_unfold_simp
+    tunfold_simp
     have hsub := spec.old_subformula _ (h_nodes n) _ h_old
     have hex := h_accept μ η hsub n
     classical

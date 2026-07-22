@@ -49,17 +49,17 @@ macro_rules
 /-- Release is the dual of Until: `p R q ↔ ¬(¬p U ¬q)`. -/
 theorem release_iff_not_until_neg {α : Type u} (p q : pred α) :
   ((p 𝑅 q)) =tla= (¬ (¬ p 𝑈 ¬ q)) := by
-  funext e ; unfold tla_release ; tla_unfold_simp ; grind
+  funext e ; unfold tla_release ; tunfold_simp ; grind
 
 /-- Until is the dual of release: `p U q ↔ ¬(¬p R ¬q)`. -/
 theorem until_iff_not_release_neg {α : Type u} (p q : pred α) :
   ((p 𝑈 q)) =tla= (¬ (¬ p 𝑅 ¬ q)) := by
-  funext e ; unfold tla_release ; tla_unfold_simp
+  funext e ; unfold tla_release ; tunfold_simp
 
 /-- □ p = ⊥ R p. -/
 theorem always_eq_release_false {α : Type u} (p : pred α) :
   (□ p) =tla= (⊥ 𝑅 p) := by
-  funext e ; unfold tla_release ; tla_unfold_simp
+  funext e ; unfold tla_release ; tunfold_simp
 
 /-! ## NNF denotation -/
 
@@ -92,7 +92,7 @@ theorem NNF.satisfies_drop_drop (ξ : OmegaWord α) (k l : Nat) (φ : NNF α) :
 /-- Negating an NNF formula flips satisfaction. -/
 theorem NNF.neg_correct (ξ : OmegaWord α) (φ : NNF α) :
   φ.neg.satisfies ξ ↔ ¬ φ.satisfies ξ := by
-  induction φ generalizing ξ <;> dsimp [satisfies, NNF.neg, NNF.toPred, tla_release] at * <;> tla_unfold_simp <;> try grind
+  induction φ generalizing ξ <;> dsimp [satisfies, NNF.neg, NNF.toPred, tla_release] at * <;> tunfold_simp <;> try grind
 
 /-! ## Formula-level semantics
 
@@ -137,7 +137,7 @@ which avoids issues with `simp` not fully reducing Bool if-then-else. -/
 private theorem Formula.toNNF_correct_aux (ξ : OmegaWord α) (φ : Formula α) :
     (φ.directSatisfies ξ ↔ (φ.toNNF true).satisfies ξ) ∧
     (¬ φ.directSatisfies ξ ↔ (φ.toNNF false).satisfies ξ) := by
-  induction φ generalizing ξ <;> dsimp [toNNF, directSatisfies, NNF.satisfies, NNF.toPred, state_pred, tla_release] at * <;> tla_unfold_simp' <;> try grind
+  induction φ generalizing ξ <;> dsimp [toNNF, directSatisfies, NNF.satisfies, NNF.toPred, state_pred, tla_release] at * <;> tunfold_simp' <;> try grind
 
 /-- Converting to NNF preserves satisfaction. -/
 theorem Formula.toNNF_correct (ξ : OmegaWord α) (φ : Formula α) :

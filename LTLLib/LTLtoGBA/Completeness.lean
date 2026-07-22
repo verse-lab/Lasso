@@ -54,13 +54,13 @@ private theorem satisfies_until_iff (ξ : OmegaWord α) (μ η : NNF α) :
 private theorem satisfies_prop_iff (ξ : OmegaWord α) (a : α) :
     NNF.satisfies ξ (.prop a) ↔ (ξ 0) a := by
   dsimp [NNF.satisfies, NNF.toPred]
-  tla_unfold_simp
+  tunfold_simp
 
 /-- Characterize `NNF.satisfies` for nprop. -/
 private theorem satisfies_nprop_iff (ξ : OmegaWord α) (a : α) :
     NNF.satisfies ξ (.nprop a) ↔ ¬(ξ 0) a := by
   dsimp [NNF.satisfies, NNF.toPred]
-  tla_unfold_simp
+  tunfold_simp
 
 /-! ### Core completeness theorem -/
 
