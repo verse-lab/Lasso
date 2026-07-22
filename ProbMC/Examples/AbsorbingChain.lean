@@ -4,7 +4,6 @@ Released under Apache 2.0 license as described in the file LICENSE.
 -/
 import ProbMC.Refinement.FiniteDTMC
 import ProbMC.Refinement.TraceProduct
-import ProbMC.Veil.TransitionSystem
 import Mathlib.Probability.ProbabilityMassFunction.Constructions
 
 /-!
@@ -36,14 +35,20 @@ namespace ProbMC.Examples
 
 variable (n : ℕ)
 
-/-! ### Layer 1: Veil-style RelationalTransitionSystem with `prob` -/
+/-! ### Layer 1: Relational transition system with `prob` as state variable -/
+
+/-- Minimal relational transition system (no Veil dependency). -/
+structure SimpleRTS (ρ σ l : Type) where
+  assumptions : ρ → Prop
+  init : ρ → σ → Prop
+  tr : ρ → σ → l → σ → Prop
 
 /-- State of the absorbing chain, including the probability accumulator. -/
 structure ACState (n : ℕ) where
   v : Fin (n + 2)
   prob : ℝ≥0∞
 
-/-- The absorbing chain as a `RelationalTransitionSystem`.
+/-- The absorbing chain as a relational transition system.
 - Background theory: `Unit` (no parameters beyond `n`)
 - State: `ACState n` (value + probability accumulator)
 - Labels: `Unit` (single transition type)
@@ -52,7 +57,7 @@ When `v ≠ 0`, the successor's `v` is unconstrained (nondeterministic, modeling
 the uniform random choice), and `prob` is divided by `n+2` (the number of branches).
 When `v = 0`, the state is absorbing. -/
 noncomputable def absorbingChainRTS :
-    Veil.RelationalTransitionSystem Unit (ACState n) Unit where
+    SimpleRTS Unit (ACState n) Unit where
   assumptions := fun _ => True
   init := fun _ s => s.prob = 1
   tr := fun _ s _ s' =>

@@ -12,10 +12,6 @@ scope = "leanprover"
 git = "https://github.com/leanprover/cslib.git"
 rev = "2df5ad81825dba80e2613db9b213f99b8febd09d"
 
-[[require]]
-name = "loom"
-path = "../loom-dev-bump"
-
 [[lean_lib]]
 name = "LTLLib"
 
