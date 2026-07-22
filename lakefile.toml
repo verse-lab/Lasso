@@ -4,13 +4,13 @@ defaultTargets = ["LTLLib"]
 
 [[require]]
 name = "lentil"
-path = "../Lentil"
+git = "https://github.com/verse-lab/Lentil.git"
+rev = "v4.28.0"
 
 [[require]]
-name = "cslib"
-scope = "leanprover"
-git = "https://github.com/leanprover/cslib.git"
-rev = "2df5ad81825dba80e2613db9b213f99b8febd09d"
+name = "mathlib"
+git = "https://github.com/leanprover-community/mathlib4.git"
+rev = "v4.28.0"
 
 [[lean_lib]]
 name = "LTLLib"
