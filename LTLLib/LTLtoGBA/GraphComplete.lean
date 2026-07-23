@@ -264,6 +264,21 @@ private theorem addAllToSet_contains_of_mem (s : S) (fs : List (NNF α)) (ψ : N
     · apply addAllToSet_contains; simp [FSet.contains_insert]
     · exact ih _ h
 
+private theorem addAllToSet_inv (s : S) (fs : List (NNF α)) (ψ : NNF α) :
+    FSet.contains (addAllToSet s fs) ψ → FSet.contains s ψ ∨ ψ ∈ fs := by
+  unfold addAllToSet
+  induction fs generalizing s with
+  | nil => exact fun h => Or.inl h
+  | cons f rest ih =>
+    intro h
+    simp only [List.foldl] at h
+    rcases ih (FSet.insert s f) h with h1 | h2
+    · rw [FSet.contains_insert] at h1
+      rcases Bool.or_eq_true_iff.mp h1 with heq | hs
+      · rw [beq_iff_eq] at heq; exact Or.inr (heq ▸ .head _)
+      · exact Or.inl hs
+    · exact Or.inr (.tail _ h2)
+
 /-! ### Helper: oldHas for FSet.insert -/
 
 private theorem oldHas_insert_cases {s : S} {ψ φ : NNF α}
@@ -339,6 +354,28 @@ private theorem expand_exist_aux (ξ : OmegaWord α) (node : GBANode α S) (st :
       · exact h_assm.old_sat ψ hold
       · exact hhead_sat
     next_sat := h_assm.next_sat
+    until_rhs := fun η μ hμη hη => by
+      rcases oldHas_insert_cases hμη with hold | heq
+      · exact until_rhs_transfer h_assm hne η μ hold hη new' hsub
+      · exact h_until_head η μ heq hη
+  }
+  -- Same as `mk_assm_insert`, but also extends `next` (needed for the deterministic case,
+  -- which can add obligations to `next` via `next1`).
+  have mk_assm_insert_next (h_assm : ExpandAssmExist ξ node) (hne : node.new.isEmpty = false)
+      (hhead_sat : NNF.satisfies ξ node.new.head!)
+      (new' : List (NNF α)) (hsub : ∀ ψ, ψ ∈ node.new.tail! → ψ ∈ new')
+      (hnew_sat : ∀ ψ, ψ ∈ new' → NNF.satisfies ξ ψ)
+      (next' : S) (hnext_sat : ∀ ψ, FSet.contains next' ψ → NNF.satisfies (ξ.drop 1) ψ)
+      (h_until_head : ∀ η μ, NNF.until μ η = node.new.head! → NNF.satisfies ξ η →
+          FSet.contains (FSet.insert node.old node.new.head!) η ∨ η ∈ new') :
+      ExpandAssmExist ξ
+        { node with new := new', old := FSet.insert node.old node.new.head!, next := next' } := {
+    new_sat := hnew_sat
+    old_sat := fun ψ hψ => by
+      rcases oldHas_insert_cases hψ with hold | rfl
+      · exact h_assm.old_sat ψ hold
+      · exact hhead_sat
+    next_sat := hnext_sat
     until_rhs := fun η μ hμη hη => by
       rcases oldHas_insert_cases hμη with hold | heq
       · exact until_rhs_transfer h_assm hne η μ hold hη new' hsub
@@ -473,6 +510,7 @@ private theorem expand_exist_aux (ξ : OmegaWord α) (node : GBANode α S) (st :
           }⟩
         · exact ih_result.2
     · -- NOT LITERAL (tt / ff / det / nondet)
+      rename_i h_notlit
       split at h_result
       · -- tt case
         have ih_result := ih _ _ _ h_result h_not_in h_fresh h_name
@@ -485,10 +523,300 @@ private theorem expand_exist_aux (ξ : OmegaWord α) (node : GBANode α S) (st :
           exact (ih_result.1 h_assm').imp fun k ⟨nd, hnd, hp⟩ => ⟨nd, hnd,
             ⟨hp.incoming_sub, hp.old_sat, hp.next_sat, hp.until_rhs⟩⟩,
           ih_result.2⟩
-      · split at h_result
-        · -- ff case
-          sorry
-        · sorry -- det + nondet cases
+      · rename_i h_nottt
+        split at h_result
+        · -- unreachable: auxiliary matcher artifact (h : false = true)
+          rename_i h
+          exact absurd h (by decide)
+        · split at h_result
+          · -- real ff case
+            rename_i heq
+            obtain rfl := Option.some.inj h_result
+            refine ⟨fun h_assm => absurd (h_assm.new_sat node.new.head!
+              (head!_mem_of_isEmpty_false h_not_empty))
+              (by rw [heq]; exact not_satisfies_ff ξ),
+              NodesPreservedInc_refl st, h_not_in, h_fresh, h_name, Nat.le.refl⟩
+          · rename_i h_notff
+            split at h_result
+            · -- unreachable: auxiliary matcher artifact
+              rename_i h
+              exact absurd h (by decide)
+            · -- real isDeterministic split
+              split at h_result
+              · -- det case (and / next)
+                rename_i hdet
+                have ih_result := ih _ _ _ h_result h_not_in h_fresh h_name
+                refine ⟨fun h_assm => ?_, ih_result.2⟩
+                have h_head_sat := h_assm.new_sat _ (head!_mem_of_isEmpty_false h_not_empty)
+                have h_assm' : ExpandAssmExist ξ
+                    { node with
+                      new := addToNew { node with new := node.new.tail! } (new1 node.new.head!)
+                      old := FSet.insert node.old node.new.head!
+                      next := addAllToSet node.next (next1 node.new.head!) } := by
+                  apply mk_assm_insert_next h_assm h_not_empty h_head_sat
+                  · -- hsub : tail ⊆ new'
+                    exact fun ψ hψ => addToNew_mem_preserves { node with new := node.new.tail! }
+                      (new1 node.new.head!) ψ hψ
+                  · -- hnew_sat : new' satisfied by ξ
+                    intro ψ hψ
+                    rcases addToNew_mem_inv { node with new := node.new.tail! }
+                        (new1 node.new.head!) ψ hψ with hold | hnew
+                    · exact h_assm.new_sat ψ (mem_of_mem_tail! hold)
+                    · revert hnew h_head_sat hdet
+                      generalize node.new.head! = φ
+                      intro hdet h_head_sat hnew
+                      cases φ with
+                      | and μ η =>
+                        obtain ⟨hμ, hη⟩ := (satisfies_and_iff ξ μ η).mp h_head_sat
+                        simp only [new1, List.mem_cons, List.not_mem_nil, _root_.or_false] at hnew
+                        rcases hnew with rfl | rfl
+                        · exact hμ
+                        · exact hη
+                      | next η => simp [new1] at hnew
+                      | _ => simp [isDeterministic] at hdet
+                  · -- hnext_sat : next' satisfied by ξ.drop 1
+                    intro ψ hψ
+                    rcases addAllToSet_inv node.next (next1 node.new.head!) ψ hψ
+                        with hold | hnew
+                    · exact h_assm.next_sat ψ hold
+                    · revert hnew h_head_sat hdet
+                      generalize node.new.head! = φ
+                      intro hdet h_head_sat hnew
+                      cases φ with
+                      | next η =>
+                        simp only [next1, List.mem_cons, List.not_mem_nil, _root_.or_false] at hnew
+                        subst hnew
+                        exact (satisfies_next_iff ξ ψ).mp h_head_sat
+                      | and μ η => simp [next1] at hnew
+                      | _ => simp [isDeterministic] at hdet
+                  · -- until_rhs: head! is deterministic, so .until μ η = head! is impossible
+                    intro η μ heq _
+                    rw [← heq] at hdet
+                    simp [isDeterministic] at hdet
+                exact (ih_result.1 h_assm').imp fun k ⟨nd, hnd, hp⟩ => ⟨nd, hnd,
+                  ⟨hp.incoming_sub, hp.old_sat, hp.next_sat, hp.until_rhs⟩⟩
+              · -- nondet case (or / until / release)
+                rename_i hndet
+                simp only [Bind.bind, Option.bind] at h_result
+                split at h_result
+                · simp at h_result
+                · rename_i p heq1
+                  have ih1 := ih _ _ _ heq1 h_not_in h_fresh h_name
+                  have ih2 := ih _ _ _ h_result ih1.2.nameFresh ih1.2.freshInv ih1.2.nameBound
+                  refine ⟨fun h_assm => ?_, ⟨NodesPreservedInc_trans ih1.2.npi ih2.2.npi,
+                    ih2.2.nameFresh, ih2.2.freshInv, ih2.2.nameBound,
+                    Nat.le_trans ih1.2.nextNameMono ih2.2.nextNameMono⟩⟩
+                  have h_head_sat := h_assm.new_sat _ (head!_mem_of_isEmpty_false h_not_empty)
+                  have transport1 : ∀ {k : Nat} {nd : GBANode α S},
+                      p.snd.nodes[k]? = some nd → ExpandRsltExistProp ξ node nd →
+                      ∃ (k' : Nat) (nd' : GBANode α S), r.snd.nodes[k']? = some nd' ∧
+                        ExpandRsltExistProp ξ node nd' := by
+                    intro k nd hnd hp
+                    obtain ⟨nd', hnd', hold', hnext', hinc'⟩ := ih2.2.npi k nd hnd
+                    exact ⟨k, nd', hnd', {
+                      incoming_sub := fun j hj => hinc' j (hp.incoming_sub j hj)
+                      old_sat := fun ψ hψ => hp.old_sat ψ ((hold' ψ).mp hψ)
+                      next_sat := fun ψ hψ => hp.next_sat ψ ((hnext' ψ).mp hψ)
+                      until_rhs := fun η μ hμη hη' =>
+                        (hold' η).mpr (hp.until_rhs η μ ((hold' _).mp hμη) hη')
+                    }⟩
+                  cases hφ : node.new.head! with
+                  | tt => exact absurd hφ h_nottt
+                  | ff => exact absurd hφ h_notff
+                  | prop a => simp [hφ, isLiteral] at h_notlit
+                  | nprop a => simp [hφ, isLiteral] at h_notlit
+                  | and μ η => simp [hφ, isDeterministic] at hndet
+                  | or μ η =>
+                    have h_head_sat' : NNF.satisfies ξ (NNF.or μ η) := hφ ▸ h_head_sat
+                    by_cases hη : NNF.satisfies ξ η
+                    · -- x2 branch (selector true): new2(or μ η) = [η]
+                      have h_assm2 : ExpandAssmExist ξ
+                          { node with
+                            new := addToNew { node with new := node.new.tail! }
+                              (new2 node.new.head!)
+                            old := FSet.insert node.old node.new.head! } := by
+                        apply mk_assm_insert h_assm h_not_empty h_head_sat
+                        · exact fun ψ hψ => addToNew_mem_preserves
+                            { node with new := node.new.tail! } (new2 node.new.head!) ψ hψ
+                        · intro ψ hψ
+                          rcases addToNew_mem_inv { node with new := node.new.tail! }
+                              (new2 node.new.head!) ψ hψ with hold | hnew
+                          · exact h_assm.new_sat ψ (mem_of_mem_tail! hold)
+                          · rw [hφ] at hnew; simp only [new2, List.mem_singleton] at hnew
+                            exact hnew ▸ hη
+                        · intro η' μ' heq _
+                          rw [hφ] at heq; simp at heq
+                      have h_assm2' : ExpandAssmExist ξ
+                          { node with
+                            name := p.fst
+                            new := addToNew { node with new := node.new.tail! }
+                              (new2 node.new.head!)
+                            old := FSet.insert node.old node.new.head! } :=
+                        ⟨h_assm2.new_sat, h_assm2.old_sat, h_assm2.next_sat, h_assm2.until_rhs⟩
+                      obtain ⟨k, nd, hnd, hp⟩ := ih2.1 h_assm2'
+                      exact ⟨k, nd, hnd, ⟨hp.incoming_sub, hp.old_sat, hp.next_sat, hp.until_rhs⟩⟩
+                    · -- x1 branch (selector false): μ must hold
+                      have hμ : NNF.satisfies ξ μ :=
+                        ((satisfies_or_iff ξ μ η).mp h_head_sat').resolve_right hη
+                      have h_assm1 : ExpandAssmExist ξ
+                          { node with
+                            new := addToNew { node with new := node.new.tail! }
+                              (new1 node.new.head!)
+                            old := FSet.insert node.old node.new.head!
+                            next := addAllToSet node.next (next1 node.new.head!) } := by
+                        apply mk_assm_insert_next h_assm h_not_empty h_head_sat
+                        · exact fun ψ hψ => addToNew_mem_preserves
+                            { node with new := node.new.tail! } (new1 node.new.head!) ψ hψ
+                        · intro ψ hψ
+                          rcases addToNew_mem_inv { node with new := node.new.tail! }
+                              (new1 node.new.head!) ψ hψ with hold | hnew
+                          · exact h_assm.new_sat ψ (mem_of_mem_tail! hold)
+                          · rw [hφ] at hnew; simp only [new1, List.mem_singleton] at hnew
+                            exact hnew ▸ hμ
+                        · intro ψ hψ
+                          rcases addAllToSet_inv node.next (next1 node.new.head!) ψ hψ
+                              with hold | hnew
+                          · exact h_assm.next_sat ψ hold
+                          · rw [hφ] at hnew; simp [next1] at hnew
+                        · intro η' μ' heq _
+                          rw [hφ] at heq; simp at heq
+                      obtain ⟨k, nd, hnd, hp⟩ := ih1.1 h_assm1
+                      exact transport1 hnd
+                        ⟨hp.incoming_sub, hp.old_sat, hp.next_sat, hp.until_rhs⟩
+                  | next η => simp [hφ, isDeterministic] at hndet
+                  | «until» μ η =>
+                    have h_head_sat' : NNF.satisfies ξ (NNF.until μ η) := hφ ▸ h_head_sat
+                    by_cases hη : NNF.satisfies ξ η
+                    · -- x2 branch (selector true): new2(until μ η) = [η]
+                      have h_assm2 : ExpandAssmExist ξ
+                          { node with
+                            new := addToNew { node with new := node.new.tail! }
+                              (new2 node.new.head!)
+                            old := FSet.insert node.old node.new.head! } := by
+                        apply mk_assm_insert h_assm h_not_empty h_head_sat
+                        · exact fun ψ hψ => addToNew_mem_preserves
+                            { node with new := node.new.tail! } (new2 node.new.head!) ψ hψ
+                        · intro ψ hψ
+                          rcases addToNew_mem_inv { node with new := node.new.tail! }
+                              (new2 node.new.head!) ψ hψ with hold | hnew
+                          · exact h_assm.new_sat ψ (mem_of_mem_tail! hold)
+                          · rw [hφ] at hnew; simp only [new2, List.mem_singleton] at hnew
+                            exact hnew ▸ hη
+                        · intro η' μ' heq hη'
+                          rw [hφ] at heq
+                          injection heq with hμeq hηeq
+                          rw [hηeq] at hη' ⊢
+                          by_cases hold : FSet.contains node.old η = true
+                          · exact Or.inl (by simp [FSet.contains_insert, hold])
+                          · refine Or.inr ?_
+                            rw [hφ]
+                            exact addToNew_mem_adds { node with new := node.new.tail! }
+                              (new2 (NNF.until μ η)) η (by simp [new2])
+                              (by simpa using hold)
+                      have h_assm2' : ExpandAssmExist ξ
+                          { node with
+                            name := p.fst
+                            new := addToNew { node with new := node.new.tail! }
+                              (new2 node.new.head!)
+                            old := FSet.insert node.old node.new.head! } :=
+                        ⟨h_assm2.new_sat, h_assm2.old_sat, h_assm2.next_sat, h_assm2.until_rhs⟩
+                      obtain ⟨k, nd, hnd, hp⟩ := ih2.1 h_assm2'
+                      exact ⟨k, nd, hnd, ⟨hp.incoming_sub, hp.old_sat, hp.next_sat, hp.until_rhs⟩⟩
+                    · -- x1 branch (selector false): from unfold, μ ∧ next-obligation
+                      obtain ⟨hμ, hnext_obl⟩ :=
+                        (satisfies_until_expand ξ μ η h_head_sat').resolve_left hη
+                      have h_assm1 : ExpandAssmExist ξ
+                          { node with
+                            new := addToNew { node with new := node.new.tail! }
+                              (new1 node.new.head!)
+                            old := FSet.insert node.old node.new.head!
+                            next := addAllToSet node.next (next1 node.new.head!) } := by
+                        apply mk_assm_insert_next h_assm h_not_empty h_head_sat
+                        · exact fun ψ hψ => addToNew_mem_preserves
+                            { node with new := node.new.tail! } (new1 node.new.head!) ψ hψ
+                        · intro ψ hψ
+                          rcases addToNew_mem_inv { node with new := node.new.tail! }
+                              (new1 node.new.head!) ψ hψ with hold | hnew
+                          · exact h_assm.new_sat ψ (mem_of_mem_tail! hold)
+                          · rw [hφ] at hnew; simp only [new1, List.mem_singleton] at hnew
+                            exact hnew ▸ hμ
+                        · intro ψ hψ
+                          rcases addAllToSet_inv node.next (next1 node.new.head!) ψ hψ
+                              with hold | hnew
+                          · exact h_assm.next_sat ψ hold
+                          · rw [hφ] at hnew; simp only [next1, List.mem_singleton] at hnew
+                            exact hnew ▸ hnext_obl
+                        · intro η' μ' heq hη'
+                          exfalso; apply hη
+                          rw [hφ] at heq
+                          injection heq with hμeq hηeq
+                          subst hμeq; subst hηeq
+                          exact hη'
+                      obtain ⟨k, nd, hnd, hp⟩ := ih1.1 h_assm1
+                      exact transport1 hnd
+                        ⟨hp.incoming_sub, hp.old_sat, hp.next_sat, hp.until_rhs⟩
+                  | release μ η =>
+                    have h_head_sat' : NNF.satisfies ξ (NNF.release μ η) := hφ ▸ h_head_sat
+                    obtain ⟨hη_now, hdisj⟩ := satisfies_release_expand ξ μ η h_head_sat'
+                    by_cases hμ : NNF.satisfies ξ μ
+                    · -- x2 branch (selector true): new2(release μ η) = [μ, η]
+                      have h_assm2 : ExpandAssmExist ξ
+                          { node with
+                            new := addToNew { node with new := node.new.tail! }
+                              (new2 node.new.head!)
+                            old := FSet.insert node.old node.new.head! } := by
+                        apply mk_assm_insert h_assm h_not_empty h_head_sat
+                        · exact fun ψ hψ => addToNew_mem_preserves
+                            { node with new := node.new.tail! } (new2 node.new.head!) ψ hψ
+                        · intro ψ hψ
+                          rcases addToNew_mem_inv { node with new := node.new.tail! }
+                              (new2 node.new.head!) ψ hψ with hold | hnew
+                          · exact h_assm.new_sat ψ (mem_of_mem_tail! hold)
+                          · rw [hφ] at hnew
+                            simp only [new2, List.mem_cons, List.not_mem_nil,
+                              _root_.or_false] at hnew
+                            rcases hnew with rfl | rfl
+                            · exact hμ
+                            · exact hη_now
+                        · intro η' μ' heq _
+                          rw [hφ] at heq; simp at heq
+                      have h_assm2' : ExpandAssmExist ξ
+                          { node with
+                            name := p.fst
+                            new := addToNew { node with new := node.new.tail! }
+                              (new2 node.new.head!)
+                            old := FSet.insert node.old node.new.head! } :=
+                        ⟨h_assm2.new_sat, h_assm2.old_sat, h_assm2.next_sat, h_assm2.until_rhs⟩
+                      obtain ⟨k, nd, hnd, hp⟩ := ih2.1 h_assm2'
+                      exact ⟨k, nd, hnd, ⟨hp.incoming_sub, hp.old_sat, hp.next_sat, hp.until_rhs⟩⟩
+                    · -- x1 branch (selector false): next-obligation must hold
+                      have hnext_obl := hdisj.resolve_left hμ
+                      have h_assm1 : ExpandAssmExist ξ
+                          { node with
+                            new := addToNew { node with new := node.new.tail! }
+                              (new1 node.new.head!)
+                            old := FSet.insert node.old node.new.head!
+                            next := addAllToSet node.next (next1 node.new.head!) } := by
+                        apply mk_assm_insert_next h_assm h_not_empty h_head_sat
+                        · exact fun ψ hψ => addToNew_mem_preserves
+                            { node with new := node.new.tail! } (new1 node.new.head!) ψ hψ
+                        · intro ψ hψ
+                          rcases addToNew_mem_inv { node with new := node.new.tail! }
+                              (new1 node.new.head!) ψ hψ with hold | hnew
+                          · exact h_assm.new_sat ψ (mem_of_mem_tail! hold)
+                          · rw [hφ] at hnew; simp only [new1, List.mem_singleton] at hnew
+                            exact hnew ▸ hη_now
+                        · intro ψ hψ
+                          rcases addAllToSet_inv node.next (next1 node.new.head!) ψ hψ
+                              with hold | hnew
+                          · exact h_assm.next_sat ψ hold
+                          · rw [hφ] at hnew; simp only [next1, List.mem_singleton] at hnew
+                            exact hnew ▸ hnext_obl
+                        · intro η' μ' heq _
+                          rw [hφ] at heq; simp at heq
+                      obtain ⟨k, nd, hnd, hp⟩ := ih1.1 h_assm1
+                      exact transport1 hnd
+                        ⟨hp.incoming_sub, hp.old_sat, hp.next_sat, hp.until_rhs⟩
 
 
 theorem expand_exist (ξ : OmegaWord α) (node : GBANode α S) (st : ExpandState α S)
