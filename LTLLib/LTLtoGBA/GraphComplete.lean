@@ -285,6 +285,29 @@ private theorem oldHas_insert_cases {s : S} {ψ φ : NNF α}
     (h : FSet.contains (FSet.insert s φ) ψ) : FSet.contains s ψ ∨ ψ = φ := by
   simp [FSet.contains_insert] at h; exact h.symm.imp_left id
 
+/-! ### Helper: the `fun acc f => f :: acc`-fold used to build the successor's `new` list -/
+
+private theorem foldl_cons_subset {β : Type _} (l : List β) :
+    ∀ init : List β, ∀ ψ,
+      ψ ∈ List.foldl (fun acc f => f :: acc) init l → ψ ∈ init ∨ ψ ∈ l := by
+  induction l with
+  | nil => intro _ _ h; exact Or.inl h
+  | cons x xs ih =>
+    intro init ψ h
+    rcases ih _ _ h with h | h
+    · rcases List.mem_cons.mp h with rfl | h
+      · exact Or.inr (.head _)
+      · exact Or.inl h
+    · exact Or.inr (.tail _ h)
+
+private theorem fset_fold_cons_mem (s : S) :
+    ∀ ψ, ψ ∈ FSet.foldl (fun acc f => f :: acc) [] s → FSet.contains s ψ = true := by
+  intro ψ hψ
+  rw [FSet.foldl_eq_foldl_toList] at hψ
+  have hmem : ψ ∈ FSet.toList s :=
+    (foldl_cons_subset (FSet.toList s) [] ψ hψ).resolve_left (by intro h; exact nomatch h)
+  exact (FSet.mem_toList_iff ψ s).mp hmem
+
 /-! ### Main theorem: expand_exist -/
 
 set_option maxHeartbeats 800000 in
@@ -940,6 +963,93 @@ theorem expand_nodesPreservedInc (node : GBANode α S) (st : ExpandState α S)
     NodesPreservedInc st r.2 :=
   (expand_npi_result node st h_result h_not_in h_fresh h_name).npi
 
+/-! ## Key-equals-name invariant
+
+`expand` always stores finished nodes at the key equal to their own `.name`
+field (every insertion in `Expand.lean` uses `<value>.name` as the key). This
+is what lets injectivity of `.name` among stored nodes (`h_name_ident`, used by
+`expand_all` below) be re-established at each recursive step: instead of
+threading injectivity directly (which isn't preserved by insertion without
+knowing the fresh key doesn't collide with some *other* key's stored name), we
+track this stronger, purely structural fact and derive injectivity from it
+wherever needed. Corresponds to (a strengthening of) what `expand_name_propag`
+buys us in the Isabelle set-based development, where nodes carry no separate
+key at all. -/
+
+omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
+private theorem expand_key_eq_name (node : GBANode α S) (st : ExpandState α S)
+    {r : Nat × ExpandState α S}
+    (h_result : expand node st = some r)
+    (h_key_eq : ∀ k (n : GBANode α S), st.nodes[k]? = some n → n.name = k) :
+    ∀ k (n : GBANode α S), r.2.nodes[k]? = some n → n.name = k := by
+  revert h_key_eq
+  apply expand.partial_correctness
+    (motive := fun node st r =>
+      (∀ k (n : GBANode α S), st.nodes[k]? = some n → n.name = k) →
+      ∀ k (n : GBANode α S), r.2.nodes[k]? = some n → n.name = k)
+    _ node st r h_result
+  intro expand_ih ih node st r h_result h_key_eq
+  split at h_result
+  case isTrue h_empty =>
+    split at h_result
+    · -- Merge
+      obtain rfl := Option.some.inj h_result
+      intro k n hk
+      unfold mergeIncoming at hk
+      split at hk
+      · rename_i target htarget
+        simp only [Std.HashMap.getElem?_insert] at hk
+        split at hk
+        · rename_i heq
+          obtain rfl := Option.some.inj hk
+          have hkeq := (beq_iff_eq (α := Nat)).mp heq
+          rw [← hkeq]
+          exact h_key_eq _ target htarget
+        · exact h_key_eq k n hk
+      · exact h_key_eq k n hk
+    · -- Insert + recurse
+      simp only [freshName] at h_result
+      apply ih _ _ _ h_result
+      intro k n hk
+      simp only [Std.HashMap.getElem?_insert] at hk
+      split at hk
+      · rename_i heq
+        obtain rfl := Option.some.inj hk
+        exact (beq_iff_eq (α := Nat)).mp heq
+      · exact h_key_eq k n hk
+  case isFalse h_not_empty =>
+    simp only [Bool.not_eq_true] at h_not_empty
+    simp only at h_result
+    split at h_result
+    · -- isLiteral
+      split at h_result
+      · obtain rfl := Option.some.inj h_result; exact h_key_eq
+      · exact ih _ _ _ h_result h_key_eq
+    · split at h_result <;> (try split at h_result) <;> (try split at h_result) <;>
+        (try split at h_result) <;> (try split at h_result)
+      all_goals (
+        first
+        | (obtain rfl := Option.some.inj h_result; exact h_key_eq)
+        | exact ih _ _ _ h_result h_key_eq
+        | (simp only [Bind.bind, Option.bind] at h_result
+           split at h_result
+           · simp at h_result
+           · rename_i h_branch1
+             exact ih _ _ _ h_result (ih _ _ _ h_branch1 h_key_eq)))
+
+-- Corollary: injectivity of `.name` among stored nodes is preserved through
+-- `expand`, derived from `expand_key_eq_name`.
+omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
+private theorem expand_name_ident_preserved (node : GBANode α S) (st : ExpandState α S)
+    {r : Nat × ExpandState α S}
+    (h_result : expand node st = some r)
+    (h_key_eq : ∀ k (n : GBANode α S), st.nodes[k]? = some n → n.name = k) :
+    ∀ (k₁ k₂ : Nat) (n₁ n₂ : GBANode α S),
+      r.2.nodes[k₁]? = some n₁ → r.2.nodes[k₂]? = some n₂ → n₁.name = n₂.name → k₁ = k₂ := by
+  have hke := expand_key_eq_name node st h_result h_key_eq
+  intro k₁ k₂ n₁ n₂ hk₁ hk₂ hname
+  rw [← hke k₁ n₁ hk₁, ← hke k₂ n₂ hk₂, hname]
+
 /-! ## Theorem 3: expand_all
 
 For every newly added finished node in the output, if its old formulas
@@ -962,8 +1072,7 @@ theorem expand_all (ξ : OmegaWord α) (node : GBANode α S) (st : ExpandState �
     (h_not_in : st.nodes[node.name]? = none)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
     (h_name : node.name < st.nextName)
-    (h_name_ident : ∀ (k₁ k₂ : Nat) (n₁ n₂ : GBANode α S),
-      st.nodes[k₁]? = some n₁ → st.nodes[k₂]? = some n₂ → n₁.name = n₂.name → k₁ = k₂) :
+    (h_key_eq : ∀ k (n : GBANode α S), st.nodes[k]? = some n → n.name = k) :
     ∀ (k : Nat) (nd : GBANode α S),
       r.2.nodes[k]? = some nd →
       st.nodes[k]? = none →
@@ -972,7 +1081,282 @@ theorem expand_all (ξ : OmegaWord α) (node : GBANode α S) (st : ExpandState �
         r.2.nodes[k']? = some nd' ∧
         nd'.incoming.contains k ∧
         NodeSemanticValid (ξ.drop 1) nd' := by
-  sorry
+  have combined :
+      expand node st = some r ∧
+      (st.nodes[node.name]? = none →
+      (∀ k, st.nodes[k]? ≠ none → k < st.nextName) →
+      node.name < st.nextName →
+      (∀ k (n : GBANode α S), st.nodes[k]? = some n → n.name = k) →
+      ∀ (k : Nat) (nd : GBANode α S),
+        r.2.nodes[k]? = some nd →
+        st.nodes[k]? = none →
+        NodeSemanticValid ξ nd →
+        ∃ (k' : Nat) (nd' : GBANode α S),
+          r.2.nodes[k']? = some nd' ∧
+          nd'.incoming.contains k ∧
+          NodeSemanticValid (ξ.drop 1) nd') := by
+    apply expand.partial_correctness
+      (motive := fun node st r =>
+        -- Bundle the *real* `expand` equation for this (node, st, r) alongside the
+        -- desired property. `expand.partial_correctness`'s own induction only ever
+        -- hands us `expand_ih`-typed equations for recursive sub-calls, and those
+        -- can't be fed to already-proven lemmas about the real `expand` (like
+        -- `expand_exist`/`expand_nodesPreservedInc`) without this bundled fact.
+        expand node st = some r ∧
+        (st.nodes[node.name]? = none →
+        (∀ k, st.nodes[k]? ≠ none → k < st.nextName) →
+        node.name < st.nextName →
+        (∀ k (n : GBANode α S), st.nodes[k]? = some n → n.name = k) →
+        ∀ (k : Nat) (nd : GBANode α S),
+          r.2.nodes[k]? = some nd →
+          st.nodes[k]? = none →
+          NodeSemanticValid ξ nd →
+          ∃ (k' : Nat) (nd' : GBANode α S),
+            r.2.nodes[k']? = some nd' ∧
+            nd'.incoming.contains k ∧
+            NodeSemanticValid (ξ.drop 1) nd'))
+      _ node st r h_result
+    intro expand_ih ih node st r h_result
+    -- Helpers for insert case (same as expand_npi_result / expand_exist_aux)
+    have mk_succ_not_in (st' : ExpandState α S) (nn : Nat) (nd : GBANode α S)
+        (hni : st'.nodes[nn]? = none) (hfr : ∀ k, st'.nodes[k]? ≠ none → k < st'.nextName)
+        (hlt : nn < st'.nextName) :
+        (st'.nodes.insert nn nd)[st'.nextName]? = none := by
+      simp only [Std.HashMap.getElem?_insert]; split
+      · rename_i heq; have := (beq_iff_eq (α := Nat)).mp heq; omega
+      · by_contra h; exact absurd (hfr st'.nextName h) (by omega)
+    have mk_succ_fresh (st' : ExpandState α S) (nn : Nat) (nd : GBANode α S)
+        (hfr : ∀ k, st'.nodes[k]? ≠ none → k < st'.nextName) (hlt : nn < st'.nextName) :
+        ∀ k, (st'.nodes.insert nn nd)[k]? ≠ none → k < st'.nextName + 1 := by
+      intro k hk; simp only [Std.HashMap.getElem?_insert] at hk; split at hk
+      · rename_i heq; have := (beq_iff_eq (α := Nat)).mp heq; omega
+      · exact Nat.lt_succ_of_lt (hfr k hk)
+    have mk_succ_key_eq (st' : ExpandState α S) (nn : Nat) (nd : GBANode α S)
+        (hnn : nd.name = nn) (hke : ∀ k (n : GBANode α S), st'.nodes[k]? = some n → n.name = k) :
+        ∀ k (n : GBANode α S), (st'.nodes.insert nn nd)[k]? = some n → n.name = k := by
+      intro k n hk
+      simp only [Std.HashMap.getElem?_insert] at hk; split at hk
+      · rename_i heq; obtain rfl := Option.some.inj hk
+        rw [hnn]; exact (beq_iff_eq (α := Nat)).mp heq
+      · exact hke k n hk
+    split at h_result
+    case isTrue h_empty =>
+      generalize h_fd : findDuplicate st node = fd at h_result
+      cases fd with
+      | some existingName =>
+        -- MERGE CASE: vacuous for all_prop (merge never adds a new key to st.nodes)
+        obtain ⟨target, htarget, hsig⟩ := findDuplicate_spec st node existingName h_fd
+        refine ⟨?_, ?_⟩
+        · show expand node st = some r
+          unfold expand
+          rw [if_pos h_empty, h_fd]
+          exact h_result
+        · obtain rfl := Option.some.inj h_result
+          intro h_not_in h_fresh h_name h_key_eq
+          intro k nd hnd hnew_k hvalid
+          exfalso
+          unfold mergeIncoming at hnd
+          rw [htarget] at hnd
+          simp only [Std.HashMap.getElem?_insert] at hnd
+          split at hnd
+          · rename_i heq
+            rw [← (beq_iff_eq (α := Nat)).mp heq] at hnew_k
+            rw [htarget] at hnew_k
+            simp at hnew_k
+          · rw [hnew_k] at hnd; simp at hnd
+      | none =>
+        -- INSERT + RECURSE CASE
+        simp only [freshName] at h_result
+        refine ⟨?_, ?_⟩
+        · show expand node st = some r
+          unfold expand
+          rw [if_pos h_empty, h_fd]
+          simp only [freshName]
+          exact (ih _ _ _ h_result).1
+        · intro h_not_in h_fresh h_name h_key_eq
+          intro k nd hnd hnew_k hvalid
+          have h_real : expand _ _ = some r := (ih _ _ _ h_result).1
+          by_cases hkeq : k = node.name
+          · -- k = node.name: the just-finished node itself; use `expand_exist` on its
+            -- successor (whose `new` is `node.next`) at `ξ.drop 1`.
+            subst hkeq
+            have hnpi := expand_nodesPreservedInc _ _ h_real
+              (mk_succ_not_in st node.name node h_not_in h_fresh h_name)
+              (mk_succ_fresh st node.name node h_fresh h_name)
+              (by show st.nextName < st.nextName + 1; omega)
+            obtain ⟨nd0, hnd0, hold0, hnext0, hinc0⟩ := hnpi node.name node
+              (by simp only [Std.HashMap.getElem?_insert, beq_self_eq_true, ↓reduceIte])
+            have hnd_eq : nd0 = nd := by rw [hnd0] at hnd; exact Option.some.inj hnd
+            have h_assm_succ : ExpandAssmExist (ξ.drop 1)
+                ({ name := st.nextName
+                   incoming := Std.HashSet.emptyWithCapacity 4 |>.insert node.name
+                   new := FSet.foldl (fun acc f => f :: acc) [] node.next
+                   old := FSet.empty
+                   next := FSet.empty } : GBANode α S) := by
+              constructor
+              · intro ψ hψ
+                have hcontains := fset_fold_cons_mem node.next ψ hψ
+                have hnd0_next := (hnext0 ψ).mpr hcontains
+                rw [hnd_eq] at hnd0_next
+                exact hvalid.next_sat ψ hnd0_next
+              · intro ψ hψ; simp [FSet.contains_empty] at hψ
+              · intro ψ hψ; simp [FSet.contains_empty] at hψ
+              · intro η μ hμη; simp [FSet.contains_empty] at hμη
+            obtain ⟨k'', nd'', hk'', hprop⟩ := expand_exist (ξ.drop 1) _ _ h_real
+              (mk_succ_not_in st node.name node h_not_in h_fresh h_name)
+              (mk_succ_fresh st node.name node h_fresh h_name)
+              (by show st.nextName < st.nextName + 1; omega)
+              h_assm_succ
+            refine ⟨k'', nd'', hk'', ?_, ⟨hprop.old_sat, hprop.next_sat, hprop.until_rhs⟩⟩
+            exact hprop.incoming_sub node.name (by simp)
+          · -- k ≠ node.name: propagate via `ih`
+            have hst'_none : (st.nodes.insert node.name node)[k]? = none := by
+              simp only [Std.HashMap.getElem?_insert]; split
+              · rename_i heq; exact absurd ((beq_iff_eq (α := Nat)).mp heq).symm hkeq
+              · exact hnew_k
+            exact (ih _ _ _ h_result).2
+              (mk_succ_not_in st node.name node h_not_in h_fresh h_name)
+              (mk_succ_fresh st node.name node h_fresh h_name)
+              (by show st.nextName < st.nextName + 1; omega)
+              (mk_succ_key_eq st node.name node rfl h_key_eq)
+              k nd hnd hst'_none hvalid
+    case isFalse h_not_empty =>
+      simp only [Bool.not_eq_true] at h_not_empty
+      simp only at h_result
+      have hnot_empty' : ¬ node.new.isEmpty = true := by simp [h_not_empty]
+      split at h_result
+      · -- isLiteral
+        rename_i hlit
+        split at h_result
+        · -- LITERAL CONTRADICTION CASE: terminal, r.2 = st unchanged, vacuous
+          rename_i hcontra
+          refine ⟨?_, ?_⟩
+          · show expand node st = some r
+            unfold expand
+            rw [if_neg hnot_empty']
+            simp only
+            rw [if_pos hlit, if_pos hcontra]
+            exact h_result
+          · obtain rfl := Option.some.inj h_result
+            intro h_not_in h_fresh h_name h_key_eq
+            intro k nd hnd hnew_k hvalid
+            simp_all
+        · -- LITERAL NO-CONTRADICTION CASE: single recursive call, st unchanged
+          rename_i hcontra
+          refine ⟨?_, ?_⟩
+          · show expand node st = some r
+            unfold expand
+            rw [if_neg hnot_empty']
+            simp only
+            rw [if_pos hlit, if_neg hcontra]
+            exact (ih _ _ _ h_result).1
+          · exact (ih _ _ _ h_result).2
+      · -- NOT LITERAL (tt / ff / det / nondet)
+        rename_i h_notlit
+        split at h_result
+        · -- tt case: single recursive call, st unchanged
+          rename_i htt
+          refine ⟨?_, ?_⟩
+          · show expand node st = some r
+            unfold expand
+            rw [if_neg hnot_empty']
+            simp only
+            rw [if_neg h_notlit]
+            split
+            · exact (ih _ _ _ h_result).1
+            · rename_i h; exact absurd htt h
+          · exact (ih _ _ _ h_result).2
+        · rename_i h_nottt
+          split at h_result
+          · -- unreachable: auxiliary matcher artifact (h : false = true)
+            rename_i h
+            exact absurd h (by decide)
+          · split at h_result
+            · -- real ff case: terminal, r.2 = st unchanged, vacuous
+              rename_i hff
+              refine ⟨?_, ?_⟩
+              · show expand node st = some r
+                unfold expand
+                rw [if_neg hnot_empty']
+                simp only
+                rw [if_neg h_notlit]
+                split
+                · rename_i h; exact absurd h (by decide)
+                · split
+                  · exact h_result
+                  · rename_i h; exact absurd hff h
+              · obtain rfl := Option.some.inj h_result
+                intro h_not_in h_fresh h_name h_key_eq
+                intro k nd hnd hnew_k hvalid
+                simp_all
+            · rename_i h_notff
+              split at h_result
+              · -- unreachable: auxiliary matcher artifact
+                rename_i h
+                exact absurd h (by decide)
+              · -- real isDeterministic split
+                split at h_result
+                · -- det case (and / next): single recursive call, st unchanged
+                  rename_i hdet
+                  refine ⟨?_, ?_⟩
+                  · show expand node st = some r
+                    unfold expand
+                    rw [if_neg hnot_empty']
+                    simp only
+                    rw [if_neg h_notlit]
+                    split
+                    · rename_i h; exact absurd h (by decide)
+                    · exact (ih _ _ _ h_result).1
+                  · exact (ih _ _ _ h_result).2
+                · -- nondet case (or / until / release)
+                  simp only [Bind.bind, Option.bind] at h_result
+                  split at h_result
+                  · simp at h_result
+                  · rename_i p heq1
+                    have ih1 := ih _ _ _ heq1
+                    have ih2 := ih _ _ _ h_result
+                    refine ⟨?_, ?_⟩
+                    · -- fact (a): expand node st = some r
+                      show expand node st = some r
+                      unfold expand
+                      rw [if_neg hnot_empty']
+                      simp only
+                      rw [if_neg h_notlit]
+                      split
+                      · rename_i h; exact absurd h (by decide)
+                      · simp only [Bind.bind, Option.bind]
+                        rw [ih1.1]
+                        exact ih2.1
+                    · -- all_prop
+                      intro h_not_in h_fresh h_name h_key_eq
+                      intro k nd hnd hnew_k hvalid
+                      have res1 := expand_npi_result _ st ih1.1 h_not_in h_fresh h_name
+                      have hkeq1 := expand_key_eq_name _ st ih1.1 h_key_eq
+                      have hnpi2 := expand_nodesPreservedInc _ p.snd ih2.1
+                        res1.nameFresh res1.freshInv res1.nameBound
+                      by_cases hk : p.snd.nodes[k]? = none
+                      · -- k genuinely new only during phase 2: use ih2's own all_prop
+                        exact ih2.2 res1.nameFresh res1.freshInv res1.nameBound hkeq1
+                          k nd hnd hk hvalid
+                      · -- k already populated after phase 1: use ih1's all_prop,
+                        -- then transport the witness through phase 2 via hnpi2
+                        obtain ⟨nd0, hnd0⟩ := Option.ne_none_iff_exists'.mp hk
+                        obtain ⟨nd', hnd', hold', hnext', _⟩ := hnpi2 k nd0 hnd0
+                        have hnd_eq : nd = nd' := by rw [hnd] at hnd'; exact Option.some.inj hnd'
+                        have hvalid0 : NodeSemanticValid ξ nd0 :=
+                          ⟨fun ψ hψ => hvalid.old_sat ψ (hnd_eq ▸ (hold' ψ).mpr hψ),
+                           fun ψ hψ => hvalid.next_sat ψ (hnd_eq ▸ (hnext' ψ).mpr hψ),
+                           fun η μ hμη hη => (hold' η).mp (hnd_eq ▸
+                             hvalid.until_rhs η μ (hnd_eq ▸ (hold' _).mpr hμη) hη)⟩
+                        obtain ⟨k', nd'', hk'', hinc'', hvalid''⟩ :=
+                          ih1.2 h_not_in h_fresh h_name h_key_eq k nd0 hnd0 hnew_k hvalid0
+                        obtain ⟨nd''', hnd''', hold''', hnext''', hincsub'''⟩ := hnpi2 k' nd'' hk''
+                        exact ⟨k', nd''', hnd''', hincsub''' k hinc'',
+                          ⟨fun ψ hψ => hvalid''.old_sat ψ ((hold''' ψ).mp hψ),
+                           fun ψ hψ => hvalid''.next_sat ψ ((hnext''' ψ).mp hψ),
+                           fun η μ hμη hη => (hold''' η).mpr
+                             (hvalid''.until_rhs η μ ((hold''' _).mp hμη) hη)⟩⟩
+  exact combined.2 h_not_in h_fresh h_name h_key_eq
 
 /-! ## Lifting to createGraph level -/
 
@@ -1025,7 +1409,7 @@ theorem createGraph_all (φ : NNF α) {st : ExpandState α S}
       (by simp)
       (fun k hk => by simp at hk)
       (by omega : (1 : Nat) < 2)
-      (fun k₁ k₂ n₁ n₂ hk₁ hk₂ _ => by simp at hk₁)
+      (fun k n hk => by simp at hk)
       k nd hnd (by simp) hvalid
   · simp at hcg
 
