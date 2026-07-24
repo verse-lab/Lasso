@@ -4,6 +4,13 @@ This document outlines the plan for porting correctness proofs from the Isabelle
 
 ## Current state
 
+- **Build integrity**: `LTLLib.lean` now imports all 23 source files (previously only 13 — see
+  "Build-integrity fix" note under Phase 6 below for what that was hiding). A clean rebuild (stale
+  `.lake/build` artifacts removed first) succeeds with 0 errors, 0 sorry, 394 build jobs.
+- **Phase 2 (Termination) is partially done**: the inner-DFS half of nested-DFS fuel-sufficiency is
+  proved (`innerDFS_fuel_sufficient`, `NestedDFSTermination.lean`, 0 sorry). The outer-DFS half and
+  `expand`'s termination are not — see Phase 2's write-up below for the detailed design, the
+  fuel-based attempt that was tried and abandoned, and the recommended `termination_by` redirect.
 - Phases 1 (Semantics), D (Degeneralization), 4.1 (Soundness), 4.2 (Completeness) are **DONE** — sorry-free
 - **Phase 4.3 (GraphComplete) is now fully DONE** — `GraphComplete.lean` is entirely sorry-free, and
   `expandOASpec_completeness_weak` is a **fully unconditional completeness theorem** (no longer
@@ -39,6 +46,32 @@ This document outlines the plan for porting correctness proofs from the Isabelle
   write-up for what that would still need.
 - **0** `sorry` total in the whole codebase — **fully sorry-free**,
   **0** warnings, **~10034 lines**
+
+**Build-integrity fix (2026-07-24)**: discovered that `LTLLib.lean` (the
+library root) only transitively imported 13 of 23 `.lean` files — everything
+from Phase 3 onward (`Invariants.lean`, `Soundness.lean`, `Completeness.lean`,
+`GraphComplete.lean`, `Bridge.lean`, `DegeneralBridge.lean`, `Lasso.lean`,
+`OutputVerify.lean`, `NestedDFSCorrectness.lean`) was **never actually checked
+by `lake build`** — `.lake/build/lib/lean/LTLLib/` only had 6 `.olean` files on
+disk. `lake build`'s "success" and the sorry-grep were both true but vacuous
+for that majority of the codebase. Standalone `lake env lean <file>` checks
+(bypassing the build cache) confirmed every orphaned file compiles clean
+**except** `NestedDFSCorrectness.lean`, which had a real error: in
+`fold_cyclePath_chain_aux`'s cons-case (Phase 5c), `simp only [hse, if_false]
+at h` silently failed to collapse `if (succ == seed) then _ else _` (wrong
+simp lemma for a `Prop`-decidable `ite`, not the `Bool.cond` form `if_false`
+matches), leaving a stale `if` wrapping the match whose branches then produced
+unreachable/misnamed pattern variables (`iv_mid`/`st_mid`/`heq2` reported as
+"unknown identifier" a few lines later — a parsing-adjacent symptom of the
+same class of compiled-match fragility already documented in Phase 4.3's
+gotchas, just triggered via a different mechanism this time: a dead `if`, not
+a dead `match` arm). Fixed by replacing `simp only [hse, if_false] at h` +
+`generalize hm : ... = r at h; match r, h with ...` with `rw [if_neg hse] at
+h` + a direct `rcases hres : innerDFS_fuel ... with _ | ⟨cp, iv_mid,
+st_mid⟩` (nesting a second `rcases cp with _ | cyclePath0`) — no change to the
+underlying mathematical argument, purely a Lean-tactics fix. `LTLLib.lean` now
+imports all 23 files; a clean rebuild (`.lake/build` artifacts removed first)
+succeeds with 0 errors, 0 sorry, 394 build jobs (up from 384).
 
 ## What the Isabelle formalization proves
 
@@ -749,9 +782,115 @@ mechanical; (4) an actual `def` chaining `createGraph → constructGBA →
 GBA.degeneralize → nestedDFS_fuel` together — none exists currently, every
 stage is a free-standing function never composed.
 
-### Phase 2: Termination — NOT STARTED (not blocking)
+### Phase 2: Termination — IN PROGRESS (not blocking)
 
 Remove `partial`/`partial_fixpoint` from `expand`, `innerDFS`, `outerDFSLoop`.
+
+**Isabelle source studied**: AFP `Param_DFS.thy` (`param_dfs_variant`, the
+generic DFS framework's termination proof) and `LTL_to_GBA.thy`'s "Termination
+proof" section (`expand_ord`). CAVA proves termination from a single finiteness
+hypothesis in each case — `fb_graph` (finite reachable-state locale assumption)
+for the DFS framework, and the finite subformula-closure `subfrmlsr φ` for
+`expand`. We port the same strategy: assume finiteness explicitly (a
+`FiniteReach` structure below), rather than trying to prove termination
+unconditionally (which is simply false for `innerDFS`/`outerDFSLoop` — a
+`State`/`successors` pair with an infinite reachable set never terminates;
+CAVA doesn't claim otherwise either).
+
+**Key realization (nested DFS, `NestedDFSTermination.lean`)**: the two
+`partial` functions in `NestedDFS.lean` don't need equally-hard termination
+arguments. `innerDFS_fuel`'s `fuel : Nat` argument is *not* a depleting
+total-work counter — every sibling call inside `innerDFS_fuel_fold` (one per
+successor of `current`) gets the *same* fuel value, not a further-decremented
+share, because `fuel` is a plain value, not a threaded/returned resource. So
+fuel there acts as a *maximum recursion depth* cap, reusable across branches:
+`universe.size + 1` uniformly suffices for any call, proved by a strong
+induction on `universe.size - iv.size`. This is now **done** —
+`innerDFS_fuel_sufficient` in `NestedDFSTermination.lean`, 0 sorry, following
+the same fuel/fold double-induction template used throughout
+`NestedDFSCorrectness.lean`.
+
+This reuse phenomenon does **not** carry over to `outerDFSLoop_fuel`: its own
+recursion is a single non-branching chain (no fold over siblings), so fuel
+there really is consumed once per actual step of the whole outer traversal.
+
+**Outer-DFS: fuel-based attempt tried and abandoned (2026-07-24)**. Bounding
+`outerDFSLoop_fuel`'s fuel needs the *full* CAVA-style lexicographic potential
+function `(discovered, pending, stack-length)` from `param_dfs_variant`. A
+proof was attempted in `NestedDFSTermination.lean` (`OuterFuelInv`, `pendingSum`,
+nested `Nat.strongRecOn` on `(A, B) := (univ.size - outerVisited.size,
+pendingSum stack + stack.length)`, mirroring the file's usual fuel/fold
+induction style) but hit a genuine circularity: the "accepting leaf, launch
+inner DFS, then continue the outer traversal" branch needs to combine two
+sub-obligations — `innerDFS_fuel_sufficient`'s concrete bound (fine, it's a
+closed formula) and the *outer* induction's own recursively-obtained
+threshold for the state *after* the inner-DFS call runs. But that
+post-inner-DFS state isn't known until a fuel value is already fixed, and
+picking that fuel value is exactly what the threshold is supposed to
+determine — combining two independently-quantified `∃ threshold, ∀
+fuel≥threshold, ...` facts via `max` silently assumed a monotonicity property
+("succeeds at fuel F ⟹ succeeds at any F′≥F") that hadn't been proved. This
+attempt was reverted; `NestedDFSTermination.lean` now contains only the
+completed, verified inner-DFS half (`innerDFS_fuel_sufficient`,
+`innerDFS_fuel_fold_sufficient_aux`, plus small `Std.HashSet` cardinality
+helpers: `size_le_of_subset`, `size_pos_of_contains`, `size_lt_of_ssubset`,
+`length_le_size_of_pairwise_subset` — the last needs Mathlib's `LawfulBEq`
+only, reusable elsewhere if a nodup-list/`HashSet`-cardinality bound is ever
+needed again).
+
+**Root cause, and the redirect this points to**: re-checking CAVA at the
+point of that circularity showed it doesn't hit this at all — Isabelle's
+`RECT`/well-founded-recursion package uses `wf param_dfs_variant` *directly*
+to justify the recursive definition, with **no separate fuel parameter ever
+threaded through the code**. Each recursive call (including "outer calls
+inner, then continues") is checked individually against the measure at
+definition time; there is nothing to *combine* across calls afterward. The
+fuel-based encoding was the right tool for Phase 5b/5c (proving *correctness*
+of a total stand-in function, deliberately avoiding termination as a separate
+concern) but is the wrong tool for termination itself — using it means
+manually reconstructing exactly the bookkeeping `termination_by`/
+`decreasing_by` already does natively.
+
+**Planned next step (not started): convert `innerDFS`/`outerDFSLoop`
+directly via `termination_by`**, using the same measure design (validated
+above), instead of fuel-threading a parallel copy:
+
+- Add a `FiniteReach` structure to `NestedDFS.lean` itself (`univ :
+  Std.HashSet State`, `closed : ∀ s, univ.contains s → ∀ t ∈ succs s,
+  univ.contains t`) — no `initialStates` field needed there (that's only
+  relevant at `nestedDFS`'s level); `nestedDFS` additionally needs `∀ i ∈
+  initialStates, univ.contains i`.
+- `innerDFS`/`outerDFSLoop`/`nestedDFS` all gain this as a genuine **explicit
+  parameter** — a real, visible API change (confirmed with the user before
+  starting), matching how CAVA's own functions live inside a locale carrying
+  the same assumption. `hcur : univ.contains current`-style membership
+  hypotheses are *load-bearing* for the measure to actually decrease (a state
+  outside `univ` could be visited with no bound), so these can't be optional
+  or derived after the fact — they must be real parameters threaded through
+  every recursive call.
+- **The hard part**: because a membership/closure hypothesis about a
+  recursive call's *result* (e.g. "the returned `innerVisited` is still ⊆
+  `univ`") is needed to type the *next* recursive call, and no correctness
+  theorem about the not-yet-defined function can supply it, the invariant
+  must be bundled *into the function's own return type* (a `Subtype`/sigma
+  return rather than a plain tuple). This is legitimate — Lean's WF-recursion
+  induction principle lets a recursive call on a strictly smaller argument
+  assume the *full* signature of the function being defined, invariant
+  included, exactly like any other structural IH — but it means `innerDFS`/
+  `outerDFSLoop`'s return types become subtype-wrapped internally.
+  `nestedDFS` (the public entry point) should unwrap this at the very end so
+  its own external signature stays a plain `EmptinessResult`.
+- Also still not started: `expand`'s termination (a genuine rewrite from
+  `partial_fixpoint` to well-founded recursion with the two-part `expand_ord`
+  measure, which risks needing changes to the induction principle used
+  throughout `Invariants.lean`/`Bridge.lean`/`GraphComplete.lean`).
+
+**Scope estimate**: this `termination_by` conversion — mutual well-founded
+recursion returning dependent/subtype values, for two functions with two
+different measures, in a less common Lean pattern than anything used
+elsewhere in this codebase — is a substantial undertaking, realistically
+comparable in size to Phase 5b's Phases D–F. Explicitly deferred
+(2026-07-24) rather than started partially.
 
 ---
 

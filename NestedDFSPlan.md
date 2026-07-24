@@ -94,6 +94,13 @@ Phases 5a, 5b, and 5c (soundness of a `nonEmpty` result — see `ProofPlan.md`
 for the detailed writeup) are now all done; `NestedDFSCorrectness.lean` is
 sorry-free and proves both directions of `nestedDFS_fuel`'s correctness.
 
+**Termination (Phase 2, see `ProofPlan.md`)**: the inner-DFS half of
+fuel-sufficiency is done (`innerDFS_fuel_sufficient`,
+`NestedDFSTermination.lean`). The outer-DFS half needs a genuine
+`termination_by` conversion of `innerDFS`/`outerDFSLoop` themselves (fuel-based
+threshold-combining hit a real circularity and was abandoned) — see
+`ProofPlan.md`'s Phase 2 section for the full design and resume plan.
+
 ## Future work (TODO): Schwoon-Esparza back-edge optimization
 
 Our `innerDFS`/`outerDFSLoop` only implement the classic CVWY algorithm: a

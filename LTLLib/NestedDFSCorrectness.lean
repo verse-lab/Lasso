@@ -1271,24 +1271,24 @@ theorem fold_cyclePath_chain_aux (succs : State → Array State) (seed : State)
       refine ⟨by simp, fun _ => rfl, fun i hi => by simp at hi, fun _ => ?_⟩
       rw [List.getLast_singleton]
       exact hseq' ▸ hsucc_edge
-    · simp only [hse, if_false] at h
-      generalize hm : innerDFS_fuel succs seed fuel succ iv st = r at h
-      match r, h with
-      | none, h => simp at h
-      | some (some cyclePath0, iv_mid, st_mid), h =>
-        simp only [Option.some.injEq, Prod.mk.injEq] at h
-        obtain ⟨heq2, -, -⟩ := h
-        obtain ⟨hlen0, hhead0, hchain0, hback0⟩ := ih_inner succ iv st cyclePath0 iv_mid st_mid hm
-        have hne0 : cyclePath0 ≠ [] := by
-          intro hcontra; rw [hcontra] at hlen0; simp at hlen0
-        subst heq2
-        refine ⟨by simp, fun _ => rfl, ?_, ?_⟩
-        · exact chain_cons current cyclePath0 hne0 hchain0 (hhead0 hne0 ▸ hsucc_edge)
-        · intro _
-          rw [List.getLast_cons hne0]
-          exact hback0 hne0
-      | some (none, iv_mid, st_mid), h =>
-        exact ih_rem (fun x hx => hremaining x (List.mem_cons_of_mem _ hx)) iv_mid st_mid h
+    · rw [if_neg hse] at h
+      rcases hres : innerDFS_fuel succs seed fuel succ iv st with _ | ⟨cp, iv_mid, st_mid⟩
+      · rw [hres] at h; simp at h
+      · rcases cp with _ | cyclePath0
+        · rw [hres] at h
+          exact ih_rem (fun x hx => hremaining x (List.mem_cons_of_mem _ hx)) iv_mid st_mid h
+        · rw [hres] at h
+          simp only [Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨heq2, -, -⟩ := h
+          obtain ⟨hlen0, hhead0, hchain0, hback0⟩ := ih_inner succ iv st cyclePath0 iv_mid st_mid hres
+          have hne0 : cyclePath0 ≠ [] := by
+            intro hcontra; rw [hcontra] at hlen0; simp at hlen0
+          subst heq2
+          refine ⟨by simp, fun _ => rfl, ?_, ?_⟩
+          · exact chain_cons current cyclePath0 hne0 hchain0 (hhead0 hne0 ▸ hsucc_edge)
+          · intro _
+            rw [List.getLast_cons hne0]
+            exact hback0 hne0
 
 /-- If `innerDFS_fuel` finds a cycle back to `seed`, the returned `cyclePath`
     is a genuine `succs`-chain starting at `current` and ending with an edge

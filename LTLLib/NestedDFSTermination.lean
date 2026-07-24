@@ -1,0 +1,236 @@
+/-
+  Phase 2 (partial): fuel-sufficiency for the nested DFS emptiness check.
+
+  `innerDFS`/`outerDFSLoop` (`NestedDFS.lean`) are marked `partial`. CAVA proves
+  termination of the analogous generic DFS framework (`Param_DFS.thy`) from a
+  single locale assumption: the set of states reachable from the roots is
+  finite (`fb_graph`; finite branching is free there too, since `E x` is
+  required finite per-state). The well-founded measure used is
+
+    `param_dfs_variant ≡ inv_image
+       (finite_psupset reachable <*lex*> finite_psubset <*lex*> less_than)
+       (λs. (dom (discovered s), pending s, length (stack s)))`
+
+  i.e. a *lexicographic* order: (1) the discovered-state set, growing inside
+  the fixed finite `reachable` univ: (2) the pending-successor multiset at
+  the top stack frame, shrinking; (3) stack length, as a final tie-break.
+
+  We port the finiteness hypothesis as `FiniteReach` below (a finite `univ`
+  closed under `succs`, containing `initialStates` — this is exactly what
+  `constructGBA`'s or a degeneralized `BA`'s state set gives for free, since
+  those are `Std.HashMap`/`Std.HashSet`-backed by construction).
+
+  This file proves the *inner* DFS half of fuel-sufficiency. A key structural
+  fact makes this half easy, and is worth recording: `innerDFS_fuel`'s fuel
+  argument is *not* a depleting total-work counter. Every sibling call inside
+  `innerDFS_fuel_fold` (one per successor of `current`) receives the *same*
+  fuel value, not a further-decremented share of it — Lean's `fuel : Nat`
+  argument is a plain value, not a resource that is threaded/returned, so
+  each sibling call — and each *continuation* after a sub-call resolves —
+  gets to reuse the full numeral its caller had. Consequently fuel here plays
+  the role of a *maximum recursion depth* cap, reusable across branches, not
+  a total-step budget: `univ.size + 1` uniformly suffices for any
+  `innerDFS_fuel` call, regardless of how many successors `current` (or any
+  state reachable from it) has.
+
+  This reuse phenomenon does *not* carry over to `outerDFSLoop_fuel`: its own
+  recursion is a single non-branching chain (no fold over siblings), so fuel
+  there really is consumed once per actual step of the whole outer traversal.
+  A fuel-sufficiency proof was attempted here and abandoned: combining the
+  "launch inner DFS" and "continue the outer traversal" sub-obligations via
+  `max` of two independently-obtained existential thresholds hit a genuine
+  circularity (the second threshold depends on the post-inner-DFS state,
+  which isn't known until a fuel value — the very thing being chosen — is
+  fixed). Re-checking CAVA at that point showed it doesn't hit this at all:
+  Isabelle's `RECT`/WF-recursion package uses `wf param_dfs_variant` *directly*
+  to justify the recursive definition, with no separate fuel parameter ever
+  threaded through the code, so there is nothing to "combine" across nested
+  calls in the first place. The fuel-based encoding (right tool for Phase
+  5b/5c's *correctness*-modulo-termination proofs) is the wrong tool for
+  termination itself — using it forces reconstructing, by hand, exactly the
+  bookkeeping `termination_by`/`decreasing_by` already provides natively.
+  Current plan (not yet done): convert `innerDFS`/`outerDFSLoop`
+  (`NestedDFS.lean`) directly to well-founded recursion via `termination_by`,
+  using the same `(A, B) := (univ.size - visited.size, pendingSum + stack
+  length)` measure, matching `param_dfs_variant` structurally — see
+  `NestedDFSPlan.md` for the up-to-date plan.
+-/
+import LTLLib.NestedDFSCorrectness
+
+namespace LTLLib
+
+section HashSetCard
+
+variable {α : Type u} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
+
+/-- If every element of `s` is in `t`, `s` is no bigger than `t`. Std's
+`HashSet` doesn't expose a `Subset`-implies-`size≤` lemma directly, so we
+derive it from the `inter`/`diff` size identities it does provide. -/
+theorem HashSet.size_le_of_subset {s t : Std.HashSet α}
+    (h : ∀ x, s.contains x → t.contains x) : s.size ≤ t.size := by
+  have heq : (t ∩ s).size = s.size := Std.HashSet.size_inter_eq_size_right h
+  have hle : (t ∩ s).size ≤ t.size := Std.HashSet.size_inter_le_size_left
+  omega
+
+theorem HashSet.size_pos_of_contains {s : Std.HashSet α} {k : α}
+    (h : s.contains k) : 0 < s.size := by
+  rcases Nat.eq_zero_or_pos s.size with hz | hp
+  · exfalso
+    have hempty : s.isEmpty = true := by
+      rw [Std.HashSet.isEmpty_eq_size_eq_zero, hz]
+      rfl
+    have hfalse := Std.HashSet.contains_of_isEmpty (a := k) hempty
+    rw [hfalse] at h
+    exact absurd h (by decide)
+  · exact hp
+
+/-- A strict-subset cardinality bound: if `s ⊆ t` (via `contains`) and some
+element of `t` is not in `s`, then `s` is strictly smaller than `t`. -/
+theorem HashSet.size_lt_of_ssubset {s t : Std.HashSet α}
+    (hsub : ∀ x, s.contains x → t.contains x)
+    {k : α} (hk : t.contains k) (hks : ¬ s.contains k) : s.size < t.size := by
+  have hd : (t \ s).size + (t ∩ s).size = t.size :=
+    Std.HashSet.size_diff_add_size_inter_eq_size_left
+  have hi : (t ∩ s).size = s.size := Std.HashSet.size_inter_eq_size_right hsub
+  have hmemdiff : (t \ s).contains k := by
+    simp [Std.HashSet.contains_diff, hk, hks]
+  have hpos : 0 < (t \ s).size := HashSet.size_pos_of_contains hmemdiff
+  omega
+
+end HashSetCard
+
+/-! ## Finite-reachability hypothesis
+
+Lean analogue of CAVA's `fb_graph` locale assumption. Any concrete automaton
+built by `constructGBA`/`GBA.degeneralize` satisfies this with `univ :=`
+its own (finite, `Std.HashMap`-backed) state set. -/
+structure FiniteReach {State : Type u} [BEq State] [Hashable State]
+    (succs : State → Array State) (initialStates : List State) where
+  univ : Std.HashSet State
+  initial_mem : ∀ i ∈ initialStates, univ.contains i
+  closed : ∀ s, univ.contains s → ∀ t ∈ succs s, univ.contains t
+
+section InnerFuelSufficiency
+
+variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
+  (succs : State → Array State) (seed : State) (univ : Std.HashSet State)
+
+/-- Sufficient-fuel measure: how many more univ-members could still be
+freshly visited from here. Decreases by exactly 1 each time a fresh state is
+inserted into `iv` (or `st.innerFinished`, which is always a superset of the
+call's own `iv` by the time it's inserted — see `innerDFS_fuel`'s body). -/
+private def innerFuelMeasure (iv : Std.HashSet State) : Nat := univ.size - iv.size
+
+/-- Fold half, proved by induction on `remaining`, taking `innerDFS_fuel`
+sufficiency at the *same* fuel level as a hypothesis (`ih_inner`) — the same
+fuel/fold double-induction template used throughout `NestedDFSCorrectness.lean`.
+
+The conclusion bundles the closure invariant (`iv₁`/`st₁.innerFinished ⊆
+univ`) alongside "returns `some`", since later sibling calls in the fold
+need it to keep applying `ih_inner`. -/
+private theorem innerDFS_fuel_fold_sufficient_aux
+    (fuel : Nat) (current : State) (remaining : List State)
+    (iv : Std.HashSet State) (st : FNDFSState State)
+    (ih_inner : ∀ (curr : State) (iv₀ : Std.HashSet State) (st₀ : FNDFSState State),
+      univ.contains curr → (∀ x, iv₀.contains x → univ.contains x) →
+      (∀ x, st₀.innerFinished.contains x → univ.contains x) →
+      fuel ≥ innerFuelMeasure univ iv₀ + 1 →
+      ∃ result iv₁ st₁, innerDFS_fuel succs seed fuel curr iv₀ st₀ = some (result, iv₁, st₁) ∧
+        (∀ x, iv₁.contains x → univ.contains x) ∧
+        (∀ x, st₁.innerFinished.contains x → univ.contains x))
+    (hcurrent : univ.contains current)
+    (hrem : ∀ x ∈ remaining, univ.contains x)
+    (hiv : ∀ x, iv.contains x → univ.contains x)
+    (hfin : ∀ x, st.innerFinished.contains x → univ.contains x)
+    (hfuel : fuel ≥ innerFuelMeasure univ iv + 1) :
+    ∃ result iv₁ st₁, innerDFS_fuel_fold succs seed fuel current remaining iv st =
+        some (result, iv₁, st₁) ∧
+      (∀ x, iv₁.contains x → univ.contains x) ∧
+      (∀ x, st₁.innerFinished.contains x → univ.contains x) := by
+  induction remaining generalizing iv st with
+  | nil =>
+    rw [innerDFS_fuel_fold.eq_def]
+    refine ⟨none, iv, _, rfl, hiv, fun x hx => ?_⟩
+    simp only [Std.HashSet.contains_insert, Bool.or_eq_true] at hx
+    rcases hx with hx | hx
+    · have hxc : current = x := by simpa using hx
+      exact hxc ▸ hcurrent
+    · exact hfin x hx
+  | cons succ rest ih_rem =>
+    rw [innerDFS_fuel_fold.eq_def]
+    simp only []
+    split
+    · exact ⟨some [current], iv, st, rfl, hiv, hfin⟩
+    · rename_i hne
+      have hsucc : univ.contains succ := hrem succ (List.mem_cons_self ..)
+      obtain ⟨result, iv₁, st₁, heq1, hiv1, hfin1⟩ :=
+        ih_inner succ iv st hsucc hiv hfin hfuel
+      rw [heq1]
+      rcases result with _ | cyclePath
+      · have hrem' : ∀ x ∈ rest, univ.contains x :=
+          fun x hx => hrem x (List.mem_cons_of_mem _ hx)
+        have hmono := innerDFS_fuel_mono succs seed fuel succ iv st _ _ _ heq1
+        have hsize : iv.size ≤ iv₁.size := HashSet.size_le_of_subset hmono.1
+        have hfuel' : fuel ≥ innerFuelMeasure univ iv₁ + 1 := by
+          unfold innerFuelMeasure at *
+          omega
+        exact ih_rem iv₁ st₁ hrem' hiv1 hfin1 hfuel'
+      · exact ⟨_, iv₁, st₁, rfl, hiv1, hfin1⟩
+
+/-- Inner DFS never runs out of fuel once `fuel ≥ innerFuelMeasure univ iv
++ 1`, given `current`/`iv`/`st.innerFinished` all stay within a `succs`-closed
+finite `univ`. Proved by induction on `fuel`, mirroring
+`innerDFS_fuel_mono`'s own structure: the recursive case hands the previous
+fuel level's instance of this very theorem to
+`innerDFS_fuel_fold_sufficient_aux` as `ih_inner`. -/
+theorem innerDFS_fuel_sufficient
+    (fuel : Nat) (current : State) (iv : Std.HashSet State) (st : FNDFSState State)
+    (hcurrent : univ.contains current)
+    (hiv : ∀ x, iv.contains x → univ.contains x)
+    (hfin : ∀ x, st.innerFinished.contains x → univ.contains x)
+    (hclosed : ∀ s, univ.contains s → ∀ t ∈ succs s, univ.contains t)
+    (hfuel : fuel ≥ innerFuelMeasure univ iv + 1) :
+    ∃ result iv₁ st₁, innerDFS_fuel succs seed fuel current iv st = some (result, iv₁, st₁) ∧
+      (∀ x, iv₁.contains x → univ.contains x) ∧
+      (∀ x, st₁.innerFinished.contains x → univ.contains x) := by
+  induction fuel generalizing current iv st with
+  | zero => unfold innerFuelMeasure at hfuel; omega
+  | succ n ih =>
+    rw [innerDFS_fuel.eq_def]
+    split
+    · exact absurd (by assumption) (by omega)
+    · rename_i fuel' heq0
+      have hfe : fuel' = n := by omega
+      rw [hfe]
+      split
+      · exact ⟨none, iv, st, rfl, hiv, hfin⟩
+      · split
+        · exact ⟨none, iv, st, rfl, hiv, hfin⟩
+        · rename_i hnotfin hnotiv
+          have hnotmem : ¬ iv.contains current := by simpa using hnotiv
+          have hiv' : ∀ x, (iv.insert current).contains x → univ.contains x := by
+            intro x hx
+            simp only [Std.HashSet.contains_insert, Bool.or_eq_true] at hx
+            rcases hx with hx | hx
+            · have hxc : current = x := by simpa using hx
+              exact hxc ▸ hcurrent
+            · exact hiv x hx
+          have hrem : ∀ x ∈ (succs current).toList, univ.contains x := by
+            intro x hx
+            exact hclosed current hcurrent x (by simpa using hx)
+          have hfuel' : n ≥ innerFuelMeasure univ (iv.insert current) + 1 := by
+            have hsize : (iv.insert current).size = iv.size + 1 := by
+              rw [Std.HashSet.size_insert]
+              simp [Std.HashSet.mem_iff_contains, hnotmem]
+            unfold innerFuelMeasure at *
+            have hivlt : iv.size < univ.size :=
+              HashSet.size_lt_of_ssubset hiv hcurrent hnotmem
+            omega
+          exact innerDFS_fuel_fold_sufficient_aux succs seed univ n current
+            (succs current).toList (iv.insert current) st
+            (fun curr iv₀ st₀ hc hi hf hfl => ih curr iv₀ st₀ hc hi hf hfl)
+            hcurrent hrem hiv' hfin hfuel'
+
+end InnerFuelSufficiency
+
+end LTLLib
