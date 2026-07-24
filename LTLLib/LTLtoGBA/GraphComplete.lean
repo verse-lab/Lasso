@@ -1610,4 +1610,46 @@ theorem expandOASpec_completeness_weak
     · -- until formula NOT in old(σ n)
       exact ⟨0, by simp only [expandOASpec, Nat.add_zero]; left; exact h⟩
 
+/-! ## Phase 6: unconditional end-to-end GBA correctness
+
+Combines `constructGBA_iff_expandOASpec` (Bridge.lean) with the soundness
+direction (`expandOASpec_soundness`, needs only `ExpandSpec`) and the
+completeness direction proved in *this* file (`expandOASpec_completeness_weak`
++ `createGraph_weakGraphComplete`, needing only `WeakGraphComplete` — which,
+unlike the original `GraphComplete`, is proved unconditionally from
+`createGraph` above). This is the Lean analogue of Isabelle's
+`create_name_gba_correct`'s accept-iff clause:
+
+```isabelle
+theorem create_name_gba_correct:
+  "create_name_gba φ ≤ SPEC(λ𝔄. gba 𝔄 ∧ finite (g_V 𝔄) ∧
+    (∀ξ. gba.accept 𝔄 ξ ↔ ξ ⊨ᵣ φ))"
+```
+
+`gba 𝔄` (well-formedness) and `finite (g_V 𝔄)` don't need a separate proof
+obligation in the Lean port the way they do in Isabelle's abstract
+`graph_rec_scheme` locale: `GBA.states`/`GBA.successors` are concrete
+`Std.HashSet`/`Std.HashMap` values by construction, so they're finite
+unconditionally (no infinite-cardinality states are representable at all),
+and `GBA.WellFormed` (`GBA.lean`) is a separate, independent structural fact
+not needed for this accept-iff correspondence. -/
+
+/-- Full, unconditional correctness of the computational GBA construction:
+    it accepts exactly the ω-words satisfying `φ`. Unlike `constructGBA_correct`
+    (`Bridge.lean`), this needs no `GraphComplete` hypothesis — completeness
+    comes from `createGraph_weakGraphComplete` (this file), which holds
+    unconditionally for any `createGraph φ = some st`. This is the Lean
+    analogue of Isabelle's `create_name_gba_correct`. -/
+theorem constructGBA_correct_weak
+    [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+    {φ : NNF α} {st : ExpandState α S}
+    (hcg : createGraph φ = some st)
+    (ξ : OmegaWord α) :
+    (constructGBA φ st).toSpec.accepts ξ ↔ NNF.satisfies ξ φ := by
+  rw [constructGBA_iff_expandOASpec hcg]
+  exact ⟨expandOASpec_soundness (createGraph_spec φ hcg)
+           (fun μ η hsub => untilSubformulas_index φ μ η hsub),
+         expandOASpec_completeness_weak (createGraph_spec φ hcg)
+           (createGraph_weakGraphComplete φ hcg)⟩
+
 end LTLLib

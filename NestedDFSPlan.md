@@ -87,3 +87,31 @@ Phase 5a alone doesn't complete Path A (soundness-only end-to-end), but it
 certifies counterexamples, which is independently useful.
 
 Phase 5b is what's needed for Path A: `empty → all ξ satisfy φ`.
+
+## Status update
+
+Phases 5a, 5b, and 5c (soundness of a `nonEmpty` result — see `ProofPlan.md`
+for the detailed writeup) are now all done; `NestedDFSCorrectness.lean` is
+sorry-free and proves both directions of `nestedDFS_fuel`'s correctness.
+
+## Future work (TODO): Schwoon-Esparza back-edge optimization
+
+Our `innerDFS`/`outerDFSLoop` only implement the classic CVWY algorithm: a
+cycle is detected exclusively by the *inner* DFS finding its way back to the
+seed after backtracking from an accepting state. CAVA's Isabelle
+implementation additionally has the Schwoon & Esparza (2005) shortcut: the
+*outer* DFS can detect a cycle directly when it hits a back-edge to a state
+already on the stack, without ever launching the inner DFS for that case
+(`se_back_edge`/`on_back_edge` in CAVA's `Nested_DFS.thy`).
+
+This is a performance optimization, not a correctness one — it lets the
+algorithm terminate faster on graphs where cycles show up via back-edges,
+without changing what counts as an accepting cycle. Adding it would mean:
+- implementing the back-edge check in `outerDFSLoop`/`outerDFSLoop_fuel`,
+- porting the `back_edge` case of CAVA's `lasso_inv` maintenance proof
+  (`Nested_DFS.thy` ~437–489, the `se_back_edge_lasso_inv` lemma) alongside
+  the `finish`-case we already have, for the soundness direction, and
+- re-checking the completeness direction (Phase 5b) still holds with the new
+  code path.
+
+Not started; no immediate blocker, purely a future enhancement.

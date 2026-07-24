@@ -1189,6 +1189,7 @@ private theorem foldl_insert_contains {l : List Nat} {base : Std.HashSet Nat} {j
       · exact Or.inl h
     · exact Or.inr (.tail _ h)
 
+omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] in
 private theorem mergeIncoming_incoming (st : ExpandState α S) (node : GBANode α S)
     (targetName k j : Nat) (n : GBANode α S)
     (hk : (mergeIncoming st node targetName).nodes[k]? = some n)
@@ -1207,12 +1208,10 @@ private theorem mergeIncoming_incoming (st : ExpandState α S) (node : GBANode �
         · rfl
         · by_contra h2
           simp only [Bool.not_eq_true] at h h2
-          -- Both h and h2 say contains = false, but hj says union contains = true
-          -- Use insertMany/foldl characterization
-          simp only [Std.HashSet.union, Std.HashSet.contains,
-            Std.DHashMap.union, Std.DHashMap.contains] at hj
-          simp only [Std.HashSet.contains, Std.DHashMap.contains] at h h2
-          sorry
+          -- `target.incoming.union node.incoming` is `target.incoming ∪ node.incoming`;
+          -- `Std.HashSet.contains_union` gives contains-of-union as a boolean `||`,
+          -- which `h`/`h2` (both `= false`) then collapse to `false = true`.
+          simp [Std.HashSet.union_eq, h, h2] at hj
     · exact Or.inl ⟨n, hk, hj⟩
   · exact Or.inl ⟨n, hk, hj⟩
 
