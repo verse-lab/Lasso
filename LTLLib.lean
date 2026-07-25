@@ -22,3 +22,4 @@ import LTLLib.Lasso
 import LTLLib.OutputVerify
 import LTLLib.NestedDFSCorrectness
 import LTLLib.NestedDFSTermination
+import LTLLib.LTLtoGBA.ExpandTermination

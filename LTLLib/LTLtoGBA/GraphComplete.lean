@@ -264,21 +264,6 @@ private theorem addAllToSet_contains_of_mem (s : S) (fs : List (NNF α)) (ψ : N
     · apply addAllToSet_contains; simp [FSet.contains_insert]
     · exact ih _ h
 
-private theorem addAllToSet_inv (s : S) (fs : List (NNF α)) (ψ : NNF α) :
-    FSet.contains (addAllToSet s fs) ψ → FSet.contains s ψ ∨ ψ ∈ fs := by
-  unfold addAllToSet
-  induction fs generalizing s with
-  | nil => exact fun h => Or.inl h
-  | cons f rest ih =>
-    intro h
-    simp only [List.foldl] at h
-    rcases ih (FSet.insert s f) h with h1 | h2
-    · rw [FSet.contains_insert] at h1
-      rcases Bool.or_eq_true_iff.mp h1 with heq | hs
-      · rw [beq_iff_eq] at heq; exact Or.inr (heq ▸ .head _)
-      · exact Or.inl hs
-    · exact Or.inr (.tail _ h2)
-
 /-! ### Helper: oldHas for FSet.insert -/
 
 private theorem oldHas_insert_cases {s : S} {ψ φ : NNF α}
@@ -299,14 +284,6 @@ private theorem foldl_cons_subset {β : Type _} (l : List β) :
       · exact Or.inr (.head _)
       · exact Or.inl h
     · exact Or.inr (.tail _ h)
-
-private theorem fset_fold_cons_mem (s : S) :
-    ∀ ψ, ψ ∈ FSet.foldl (fun acc f => f :: acc) [] s → FSet.contains s ψ = true := by
-  intro ψ hψ
-  rw [FSet.foldl_eq_foldl_toList] at hψ
-  have hmem : ψ ∈ FSet.toList s :=
-    (foldl_cons_subset (FSet.toList s) [] ψ hψ).resolve_left (by intro h; exact nomatch h)
-  exact (FSet.mem_toList_iff ψ s).mp hmem
 
 /-! ### Main theorem: expand_exist -/
 

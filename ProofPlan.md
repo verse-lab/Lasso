@@ -16,7 +16,13 @@ This document outlines the plan for porting correctness proofs from the Isabelle
   inheriting Phase 5's correctness theorems (`nestedDFSWF_empty_no_cycle`/`nestedDFSWF_nonEmpty_valid`)
   for free — see Phase 2's write-up below for the full design, the fuel-based attempt that was tried
   and abandoned, the CAVA-verified corrected plan, both conversions' own measure-choice write-ups, and
-  the final wiring/bridge write-up. `expand`'s termination is separately scoped and not yet started.
+  the final wiring/bridge write-up. **`expand`'s termination is now also DONE** (`ExpandTermination.lean`,
+  0 sorry, 2026-07-26) — `expand_term` (well-founded-recursive, mirroring `expand_body`'s 8 branches and
+  CAVA's `expand_ord`/`expand_inv_impl` measure exactly) plus `createGraph_term` (totality of the whole
+  construction, mirroring `create_graph_finite`); see its write-up below for the full design, including a
+  genuine CAVA-vs-Lean divergence (a name-freshness invariant CAVA doesn't need, required here only because
+  `ExpandState.nodes` is a name-keyed `Std.HashMap` rather than CAVA's set-of-records) and a couple of
+  Lean-elaborator-specific traps (unrelated to the math) hit and fixed along the way.
 - Phases 1 (Semantics), D (Degeneralization), 4.1 (Soundness), 4.2 (Completeness) are **DONE** — sorry-free
 - **Phase 4.3 (GraphComplete) is now fully DONE** — `GraphComplete.lean` is entirely sorry-free, and
   `expandOASpec_completeness_weak` is a **fully unconditional completeness theorem** (no longer
@@ -1601,6 +1607,159 @@ now the verified, total, actually-usable nested-DFS emptiness check —
 callers supply a `FiniteReach succs` witness and get back a result with a
 proof obligation-free correctness guarantee, matching CAVA's own
 `nested_dfs_code`/`ASSERT (fb_graph G)` shape.
+
+### `expand`'s termination — ✅ DONE (2026-07-25/26, `ExpandTermination.lean`)
+
+Started by reading CAVA's full termination proof (`LTL_to_GBA.thy:836-1229`)
+end to end before writing anything, per explicit instruction to understand it
+fully first, given the size of the undertaking.
+
+**CAVA's exact strategy** (`expand_ord`, `expand_inv`, `expand_inv_impl`,
+`expand_term_prop`, `expand_eq_expand⇩T`, `create_graph_finite`): a lex
+measure — primary component `old_next_pair `` ns` (the set of `(old,next)`
+signatures already used by finished nodes), ordered by `finite_psupset`
+toward the fixed finite bound `Pow(subfrmlsr φ) × Pow(subfrmlsr φ)`; secondary
+`size_set (new n) = Σ (2·size(x)+1)` over the node's pending formulas — a
+**weighted syntactic-size sum**, not cardinality (an initial misreading,
+caught by checking `LTL.thy:519`'s actual definition — weighting each
+element is what makes splitting a compound formula into smaller immediate
+parts strictly decrease the sum even though the *set* can grow). Proved via
+`RECT_rule` (Noetherian induction dressed in the SPEC-monad) against a
+*separate* `expand⇩T := RECT expand_body`, bridged back to the abstract
+`expand := REC expand_body` via the generic library lemma `RECT_eq_REC`.
+
+**Checked what Lean's `partial_fixpoint` offers before assuming the
+nested-DFS fuel-mirror playbook would carry over — it doesn't need to.**
+`Lean.Order` (`Init/Internal/Order/`) is architecturally the same idea as
+CAVA's `REC` (both least fixpoints over a CCPO), but has no `RECT`/
+`RECT_eq_REC` analogue: `partial_fixpoint`'s generated induction principle
+(`expand.partial_correctness`, already used ~13 places in this codebase) is
+Scott/fixpoint induction, and is *structurally* conditional
+(`Option.admissible_eq_some : admissible (x = some y → P)`) — provably
+incapable of establishing totality, only "if it succeeds, then P" (the same
+reason CAVA itself needs the separate `RECT` layer, not a Lean-specific
+gap). What Lean *does* give unconditionally is `expand`'s own one-step
+unfolding equation (`unfold expand`, already used throughout
+`GraphComplete.lean`) — enough to prove totality *directly* by well-founded
+induction on the same measure, without a fuel-indexed mirror function at
+all: written as a recursive `theorem` with `termination_by
+(expandMeasure1 topFormula st, expandMeasure2 node)` / `decreasing_by`, the
+exact same lex-pair idiom already proved out for `innerDFSCore`/
+`outerDFSLoopWF`.
+
+**Built so far, all compiling, 0 sorry**: the `Pow(subfrmlsr φ)` universe
+ported directly via Mathlib's `Finset.powerset`/`Finset.card_powerset`
+(Mathlib is an actual project dependency — `lakefile.toml`, already used in
+`Acceptance.lean`/`Soundness.lean` — so no hand-rolled encoding needed); the
+`IsSubformula ↔ subformulas`-list bridge (`new1_subformula`/`new2_subformula`/
+`next1_subformula` already existed from Phase 4 and needed no changes — only
+their target, `subformulas`, needed a fresh finiteness argument via a small
+`NNF.fold` monotonicity lemma family); `weightedSize` + `new1_less_sum`/
+`new2_less_sum` (Lean's own auto-derived `sizeOf` behaves exactly like
+Isabelle's auto-generated `size` — closed by `cases φ <;> simp [...] <;>
+omega` per constructor, no surprises); `ExpandInv`/`NodeBounded`/
+`NodesBounded` (mirrors `expand_inv` — Lean drops CAVA's explicit
+`finite(...)` conjuncts entirely, since `List`/`Std.HashSet`/`Std.HashMap`
+are automatically finite); `expandMeasure1`/`expandMeasure2` plus
+`nodeSignature`/`signatureUniverse`/`usedSignatures` and their bounding
+lemmas; a `findDuplicate`-returns-`none` negative spec
+(`findDuplicate_spec_none`, needed since Lean has no automatic negation from
+an `if`/`else` split on a `∃`-statement the way CAVA's `expand_inv_impl`
+gets one for free) plus a `nodeSignature`/`sameSignature` bridge, giving
+`nodeSignature_fresh_of_findDuplicate_none` — the direct analogue of what
+CAVA calls inline in `expand_term_prop`'s own case 2.
+
+**Name-freshness gap, resolved — confirmed to be a Lean/HashMap artifact, not
+a CAVA requirement.** Writing `expand_term`'s body hit a real gap in the
+"fresh successor" case: needs `st.nodes[node.name]? = none`, propagated
+through recursion (needed again for the second half of the nondeterministic
+split, where the recursed-into node's *name* comes from the first call's own
+result). Re-reading `expand_inv_impl`/`expand_term_prop` closely confirmed
+**CAVA's own measure and proof never depend on node names at all** —
+`expand_ord`'s primary component is purely the `(old,next)` signature set,
+and `ns : 'a node set` is a genuine mathematical set of full records, so
+`insert n ns` can never silently overwrite/lose data. This project's
+`ExpandState.nodes : Std.HashMap Nat (GBANode α S)` is a *name-keyed* map
+(a pre-existing `Expand.lean` design choice, presumably for O(1) lookup) —
+`st.nodes.insert node.name node` genuinely *can* overwrite a previously
+finished node if the name were reused, which would break both
+`usedSignatures` monotonicity and the measure-decrease argument itself. So
+the freshness invariant is real and necessary, but it's a
+**representation-compensating patch**, not a mistranslation of CAVA — it
+restores, for the HashMap encoding, a guarantee CAVA's set encoding gets for
+free. Resolved as planned: `expand_term` takes the same three hypotheses
+`expand_invariants` (`Invariants.lean:346-428`, Phase 4, unchanged) needs,
+and at the nondeterministic split's second call — the one place a later
+call's precondition depends on an earlier call's *output* — invokes
+`expand_invariants` as a black box on the first call's `h_result` to extract
+exactly the needed `nameFresh`/`freshInv`/`nameBound` facts. Everywhere else
+the three hypotheses just carry over unchanged (same `st`, same
+`node.name`) or come from the already-proven `insert_fresh_key`/
+`insert_freshInv` (un-privatized from `Invariants.lean` for reuse, along
+with `mergeIncoming_preserves_absent`/`mergeIncoming_freshInv`/
+`mergeIncoming_nextName`, `oldHas_insert`, `addAllToSet_inv`,
+`addToNew_inv`, `fset_fold_cons_mem` — all pre-existing Phase-4 lemmas that
+just needed their `private` modifier dropped, not reproving).
+
+**Invariant vocabulary switched from `subformulas`-list membership to
+`NNF.IsSubformula`**, matching an existing, fully-proven theorem discovered
+mid-session: `expand_subformula_closure` (`Invariants.lean:997-1138`) already
+establishes, case-by-case across all of `expand_body`'s branches, exactly the
+`old`/`next` boundedness-propagation facts `expand_term` needs — phrased via
+`IsSubformula`, the vocabulary `new1_subformula`/`new2_subformula`/
+`next1_subformula` already use throughout this file. Refactoring
+`NodeBounded`/`NodesBounded` to use `IsSubformula` directly (keeping
+`Finset.powerset`/`subformulas.toFinset` only where the *measure* needs a
+genuine `Finset`, bridged once via `IsSubformula.mem_subformulas`) let
+`expand_term`'s per-branch reasoning mirror `expand_subformula_closure`'s
+existing case analysis directly (same `h_old_ins`-style insert-preserves-
+bound argument, same `(new1_subformula h2).trans hφ_sub`/`(new2_subformula
+h2).trans hφ_sub`/`(next1_subformula h2).trans hφ_sub` composition for the
+det/nondet cases) rather than re-deriving it from scratch.
+
+**A Lean elaborator performance/correctness trap, unrelated to CAVA,
+root-caused and fixed**: `rw [if_pos h]`/`rw [if_neg h]` against a
+`by_cases h : x matches Ctor`-obtained hypothesis intermittently produced
+either a `(deterministic) timeout at whnf` (up to 4,000,000 heartbeats) or a
+silent "did not find an occurrence" failure, depending on what else was in
+local context. Root cause, confirmed via scratch-file bisection: Lean's
+`matches` sugar, elaborated in a context where *other* hypotheses mention
+the same scrutinee, can spuriously generalize over those unrelated
+hypotheses, producing a differently-shaped (but pretty-prints identically)
+match term — so two syntactically-identical-looking `x matches Ctor`
+occurrences at different call sites are not always the same term. Fix:
+never `by_cases`/`rw` on a raw `matches` proposition once other φ-dependent
+hypotheses are in scope; use plain `x = Ctor` (decidable equality, immune to
+this) for control flow, and close the resulting goal with `simp only
+[htt_eq, if_true]`/`simp only [htt_eq, hff_eq, Bool.false_eq_true,
+if_false]` instead of `rw [if_pos/if_neg]` — `simp`'s congruence-based
+matching isn't affected the same way. Separately, a genuinely expensive
+`rfl` (the *original* reported timeout, in the merge branch) was caused by
+leaving an application argument as `_` and expecting unification to infer
+it by reducing through `mergeIncoming`'s `match` on a *stuck* (opaque local
+variable) scrutinee — fixed by proving the `mergeIncoming = {st with ...}`
+equation explicitly first (via the `Prop`-level hypothesis `htarget`, which
+sidesteps the stuck reduction) and supplying every argument concretely
+afterward. Both lessons are pure Lean-elaboration issues, not modeling
+detours — see `ExpandTerminationPlan.md` for the full scratch-file
+reproduction trail.
+
+**Final state**: `expand_term` (`ExpandTermination.lean`) is a complete,
+`sorry`-free, well-founded-recursive `theorem` — all 8 branches (empty-new
+merge/fresh-successor; literal-contradiction/insert; tt-insert; ff;
+deterministic-split; both halves of the nondeterministic split) plus their
+`decreasing_by` obligations, mirroring `expand_body`'s exact structure and
+`expand_inv_impl`'s exact case-2/case-3 measure arguments
+(`new1_less_sum`/`new2_less_sum`). `createGraph_term` assembles this at the
+concrete initial node (mirroring `create_graph_finite`/`create_graph_nofail`)
+with trivially-satisfiable freshness hypotheses (`initState.nodes` empty),
+giving `∃ st, createGraph φ = some st ∧ NodesBounded φ st`. Whole project
+builds clean (758 jobs, 0 sorry, 0 errors) — the only knock-on change was
+removing two now-duplicate `private` lemmas from `GraphComplete.lean`
+(`addAllToSet_inv`/`fset_fold_cons_mem`) that collided with the
+newly-public `Invariants.lean` originals once un-privatized; all of
+`GraphComplete.lean`'s call sites work unchanged against the public
+versions (identical signatures, just already existed).
 
 ---
 

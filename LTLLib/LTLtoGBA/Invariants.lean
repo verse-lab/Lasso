@@ -249,7 +249,7 @@ def NodesPreserved (st st' : ExpandState α S) : Prop :=
 /-! ### Helper lemmas -/
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem mergeIncoming_nodesPreserved (st : ExpandState α S) (node : GBANode α S) (targetName : Nat) :
+theorem mergeIncoming_nodesPreserved (st : ExpandState α S) (node : GBANode α S) (targetName : Nat) :
     NodesPreserved st (mergeIncoming st node targetName) := by
   intro k n hk; unfold mergeIncoming; simp only
   split
@@ -262,13 +262,13 @@ private theorem mergeIncoming_nodesPreserved (st : ExpandState α S) (node : GBA
     · exact ⟨n, hk, fun ψ => Iff.rfl, fun ψ => Iff.rfl⟩
   · exact ⟨n, hk, fun ψ => Iff.rfl, fun ψ => Iff.rfl⟩
 
-omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem mergeIncoming_nextName (st : ExpandState α S) (node : GBANode α S) (targetName : Nat) :
+omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] in
+theorem mergeIncoming_nextName (st : ExpandState α S) (node : GBANode α S) (targetName : Nat) :
     (mergeIncoming st node targetName).nextName = st.nextName := by
   unfold mergeIncoming; split <;> rfl
 
-omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem mergeIncoming_preserves_absent (st : ExpandState α S) (node : GBANode α S)
+omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] in
+theorem mergeIncoming_preserves_absent (st : ExpandState α S) (node : GBANode α S)
     (targetName : Nat) (k : Nat) (hk : st.nodes[k]? = none) :
     (mergeIncoming st node targetName).nodes[k]? = none := by
   unfold mergeIncoming; split
@@ -280,8 +280,8 @@ private theorem mergeIncoming_preserves_absent (st : ExpandState α S) (node : G
     · exact hk
   · exact hk
 
-omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem mergeIncoming_freshInv (st : ExpandState α S) (node : GBANode α S)
+omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] in
+theorem mergeIncoming_freshInv (st : ExpandState α S) (node : GBANode α S)
     (targetName : Nat) (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName) :
     ∀ k, (mergeIncoming st node targetName).nodes[k]? ≠ none →
       k < (mergeIncoming st node targetName).nextName := by
@@ -310,7 +310,7 @@ private theorem NodesPreserved_trans {st₁ st₂ st₃ : ExpandState α S}
   exact ⟨n'', hk'', fun ψ => (ho'' ψ).trans (ho' ψ), fun ψ => (hn'' ψ).trans (hn' ψ)⟩
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem insert_nodesPreserved (st : ExpandState α S) (node : GBANode α S)
+theorem insert_nodesPreserved (st : ExpandState α S) (node : GBANode α S)
     (h_not_in : st.nodes[node.name]? = none) :
     NodesPreserved st { st with nodes := st.nodes.insert node.name node } := by
   intro k n hk
@@ -319,8 +319,8 @@ private theorem insert_nodesPreserved (st : ExpandState α S) (node : GBANode α
   · rename_i heq; exact absurd ((beq_iff_eq (α := Nat)).mp heq).symm hne
   · exact ⟨n, hk, fun ψ => Iff.rfl, fun ψ => Iff.rfl⟩
 
-omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem insert_fresh_key (st : ExpandState α S) (nodeName : Nat) (node : GBANode α S)
+omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] in
+theorem insert_fresh_key (st : ExpandState α S) (nodeName : Nat) (node : GBANode α S)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
     (h_name : nodeName < st.nextName) :
     (st.nodes.insert nodeName node)[st.nextName]? = none := by
@@ -328,8 +328,8 @@ private theorem insert_fresh_key (st : ExpandState α S) (nodeName : Nat) (node 
   · rename_i heq; have := (beq_iff_eq (α := Nat)).mp heq; omega
   · by_contra h; exact absurd (h_fresh st.nextName h) (by omega)
 
-omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem insert_freshInv (st : ExpandState α S) (nodeName : Nat) (node : GBANode α S)
+omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] in
+theorem insert_freshInv (st : ExpandState α S) (nodeName : Nat) (node : GBANode α S)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
     (h_name : nodeName < st.nextName) :
     ∀ k, (st.nodes.insert nodeName node)[k]? ≠ none →
@@ -439,7 +439,7 @@ theorem expand_nodes_preserved (node : GBANode α S)
 
 /-! ### Helper lemmas for StateInv preservation -/
 
-private theorem oldHas_insert {s : S} {φ ψ : NNF α}
+theorem oldHas_insert {s : S} {φ ψ : NNF α}
     (h : FSet.contains (FSet.insert s φ) ψ = true) :
     FSet.contains s ψ = true ∨ ψ = φ := by
   rw [FSet.contains_insert, Bool.or_eq_true, beq_iff_eq] at h
@@ -470,7 +470,7 @@ private theorem addAllToSet_mem (s : S) (fs : List (NNF α)) :
     | inl heq => subst heq; exact addAllToSet_subset _ rest ψ (mem_insert_self' s ψ)
     | inr hmem => exact ih _ ψ hmem
 
-private theorem addAllToSet_inv (s : S) (fs : List (NNF α)) :
+theorem addAllToSet_inv (s : S) (fs : List (NNF α)) :
     ∀ ψ, FSet.contains (addAllToSet s fs) ψ = true → FSet.contains s ψ = true ∨ ψ ∈ fs := by
   induction fs generalizing s with
   | nil => intro ψ h; exact Or.inl h
@@ -523,7 +523,7 @@ private theorem addToNew_foldl_inv (old : S)
     · exact Or.inr (List.mem_cons_of_mem _ h2)
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem addToNew_inv (node : GBANode α S) (formulas : List (NNF α)) :
+theorem addToNew_inv (node : GBANode α S) (formulas : List (NNF α)) :
     ∀ ψ, ψ ∈ addToNew node formulas → ψ ∈ node.new ∨ ψ ∈ formulas :=
   addToNew_foldl_inv node.old formulas node.new
 
@@ -985,7 +985,8 @@ private theorem fset_fold_cons_complete (s : S) :
   rw [FSet.foldl_eq_foldl_toList]
   exact foldl_cons_complete (FSet.toList s) [] ψ ((FSet.mem_toList_iff ψ s).mpr hψ)
 
-private theorem fset_fold_cons_mem (s : S) :
+omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
+theorem fset_fold_cons_mem (s : S) :
     ∀ ψ, ψ ∈ FSet.foldl (fun acc f => f :: acc) [] s → FSet.contains s ψ = true := by
   intro ψ hψ
   rw [FSet.foldl_eq_foldl_toList] at hψ
