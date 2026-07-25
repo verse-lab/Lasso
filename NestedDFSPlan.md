@@ -240,10 +240,34 @@ resurrected here). `NestedDFSCorrectness.lean` was never touched throughout
 any of this — still 0 sorry, still ~2000 lines, exactly as planned from the
 start of Phase 2. See `ProofPlan.md`'s Phase 2 section for the full
 write-up. **Current sorry count in `NestedDFSTermination.lean`: 0.**
-`outerDFSLoopWF`'s own bridge to `outerDFSLoop_fuel` is still not started,
-expected simpler — same operational shape from the start (no
-traversal-order mismatch to bridge), and can reuse the now-completed
-`innerDFS_fuel_eq_innerDFSWF` directly at its accepting-leaf call site.
+
+**Update (2026-07-25, continued): `outerDFSLoopWF ↔ outerDFSLoop_fuel`
+bridge done — Phase 2's nested-DFS termination work is complete.**
+Re-checking CAVA first (per standing instruction) surfaced two pre-existing
+issues in `outerDFSLoopWF`, both fixed before the bridge itself: (1) it still
+carried `hstack_states`/`hstack_remaining` as proof-carrying arguments,
+unlike the already-fixed `innerDFSCore` — stripped, matching CAVA's own
+`step`/`DFS_invar` separation (`Param_DFS.thy`'s `param_dfs_variant_step`
+takes the invariant only as a side hypothesis, never in `step`'s type); (2)
+its accepting-leaf branch called `innerDFSCore` directly instead of
+`innerDFSWF`, skipping the `innerFinished` short-circuit and omitting the
+`current ::` prepend on the found cycle — both fixed (now calls `innerDFSWF`,
+matching `outerDFSLoop_fuel`'s own call, and prepends `current`, matching
+`outerDFSLoop_fuel_nonEmpty_witness`'s documented `loop[0]`-is-redundant
+convention). With those fixed, the bridge itself was exactly as simple as
+anticipated: same explicit-stack shape on both sides, so a direct
+`induction ... using outerDFSLoopWF.induct` (7 cases) sufficed, no
+`_chain`-style reindexing needed. One new subtlety: `outerDFSLoop_fuel`
+spends fuel per *iteration*, not per *descend* (unlike inner), so there's no
+closed-form fuel formula — resolved by proving fuel *existence* via
+induction on the same lex measure `outerDFSLoopWF` already uses for
+termination, mirroring how CAVA's own `it_dfsT_eq_it_dfs` never computes a
+numeral bound either. Needed one new lemma, `outerDFSLoop_fuel_add_preserves`
+(fuel monotonicity), for the one branch with two independent fuel
+requirements sharing a slot. See `ProofPlan.md`'s Phase 2 section for the
+full write-up. **`NestedDFSTermination.lean`: 0 sorry, 0 warnings, whole
+project builds clean (394 jobs) — Phase 2's nested-DFS termination work is
+done.** Remaining: `expand`'s own termination conversion, separately scoped.
 
 ## Future work (TODO): Schwoon-Esparza back-edge optimization
 

@@ -1426,15 +1426,102 @@ supporting infrastructure) alone, preserving the existing correctness proof
 exactly as planned from the start of Phase 2. **Current sorry count in
 `NestedDFSTermination.lean`: 0.** Whole project builds clean (394 jobs).
 
-`outerDFSLoopWF`'s own bridge to `outerDFSLoop_fuel` remains not yet
-started. Expected simpler than the inner bridge just completed:
-`outerDFSLoopWF` and `outerDFSLoop_fuel` already share the *same*
-operational shape (both explicit-stack from the start — `outerDFSLoop` was
-never fold-based, unlike `innerDFS`), so there should be no
-traversal-order mismatch to bridge, and — per `outerDFSLoopWF`'s call into
-`innerDFSCore` at its accepting-leaf branch — the now-completed
-`innerDFS_fuel_eq_innerDFSWF` is available to reuse directly rather than
-needing its own inner-DFS reasoning redone.
+### `outerDFSLoopWF ↔ outerDFSLoop_fuel` bridge — ✅ DONE (2026-07-25, continued)
+
+Completed the same session, after re-checking CAVA's `Param_DFS.thy` once
+more before starting (per standing instruction to always re-verify against
+CAVA before diverging). Two findings from that re-check, both acted on:
+
+1. **`outerDFSLoopWF` still carried `hstack_states`/`hstack_remaining` as
+   proof-carrying arguments** (unlike the already-fixed `innerDFSCore`).
+   Re-reading `Param_DFS.thy` confirmed this was the wrong shape, not just a
+   style nit: CAVA's own `step : ('v,'es) state_scheme ⇒ ('v,'es) state_scheme
+   nres` carries no invariant in its type either — `DFS_invar` is proved as a
+   wholly external SPEC-level fact, and `param_dfs_variant_step` takes
+   `DFS_invar G param s` only as a *side hypothesis* when proving the
+   variant decreases, never as part of `step`'s own signature. Fixed by
+   stripping both hypotheses from `outerDFSLoopWF`'s signature entirely,
+   replacing the `fr.univ` membership check with a runtime `dite` (mirroring
+   `innerDFSCore`'s own `hsucc_univ` check) with a defensive
+   "treat as already-visited" fallback branch — dead code under `fr.closed`,
+   exactly like `innerDFSCore`'s analogous fallback. The two closure facts
+   now live only in the bridge theorem's own hypotheses, exactly as
+   `DFS_invar` lives only in CAVA's separate correctness lemmas about `step`.
+
+2. **`outerDFSLoopWF`'s accepting-leaf branch called `innerDFSCore` directly**
+   (bypassing `innerDFSWF`'s blocked-check and `iv.insert current` step) —
+   pre-existing, from before this session. Two consequences, both fixed:
+   - It skipped the "already `innerFinished`" short-circuit that
+     `innerDFSWF`/`innerDFS_fuel` both have, diverging from `outerDFSLoop_fuel`'s
+     own call (`innerDFS_fuel succs current fuel current innerVisited st`,
+     which *does* go through the check internally). Fixed by calling
+     `innerDFSWF succs fr current current innerVisited st` instead — this is
+     also what makes the bridge reuse `innerDFS_fuel_eq_innerDFSWF` directly
+     rather than needing fresh inner-DFS reasoning. Needed one new one-line
+     lemma, `innerDFSWF_outerVisited_pres` (thin wrapper around
+     `innerDFSCore_outerVisited_pres`), for `outerDFSLoopWF`'s own
+     `decreasing_by`.
+   - It omitted the `current ::` prepend that `outerDFSLoop_fuel` applies to
+     the found `cyclePath` before wrapping it in `.nonEmpty`. Tracing both
+     `innerDFS_fuel_fold`'s equations and `innerDFSCore`'s stack-based
+     accumulation by hand confirmed `outerDFSLoop_fuel`'s prepend is
+     *not* a bug to route around: `outerDFSLoop_fuel_nonEmpty_witness`'s own
+     docstring confirms `loop = current :: cyclePath` deliberately carries a
+     redundant duplicate at `loop[0]` (`cyclePath` already starts with
+     `current`), matching `OutputVerify.lean`'s existing convention of
+     indexing the loop from `loop[1]`. Fixed by adding the same prepend to
+     `outerDFSLoopWF`'s branch, restoring bit-for-bit agreement with
+     `outerDFSLoop_fuel`.
+
+With both fixed, the bridge (`outerDFSLoop_fuel_eq_outerDFSLoopWF`) turned
+out exactly as simple as anticipated: `outerDFSLoopWF` and `outerDFSLoop_fuel`
+share the same explicit-stack shape from the start (`outerDFSLoop` was never
+fold-based, unlike `innerDFS`), so a direct `induction ... using
+outerDFSLoopWF.induct` sufficed — no `_chain`-style reindexing function
+needed, unlike the inner bridge. `outerDFSLoopWF.induct` produces 7 cases
+(one more than `innerDFSCore`'s 6, since the accepting-leaf branch's
+`innerDFSWF` call further splits into found/not-found); the 7th
+(defensive "successor not in `fr.univ`" fallback) is vacuous given the
+bridge's own closure hypotheses, closed via `fr.closed`.
+
+One genuinely new subtlety, flagged and resolved without needing to pause:
+`outerDFSLoop_fuel` spends exactly one fuel unit per *loop iteration*
+(every recursive call pattern-matches `fuel = _ + 1` and passes the
+decremented value on), unlike `innerDFS_fuel`/`innerDFS_fuel_fold` which
+only spent fuel on a *descend* — so there is no single closed-form `Nat`
+measure playing `innerFuelMeasure`'s role (the iteration count isn't bounded
+by `(fr.univ \ outerVisited).size` alone; backtrack/skip transitions leave it
+unchanged while still costing fuel). Re-checking CAVA confirmed this is
+expected: `it_dfsT_eq_it_dfs` never computes a numeral fuel bound either —
+it transports `WHILET` to `WHILE` via `WHILET_eq_WHILE_tproof`, an abstract
+well-founded argument keyed on `param_dfs_variant`'s lex order directly, no
+step-count formula anywhere. Followed the same approach: the bridge proves
+*existence* of a sufficient fuel by induction on `outerDFSLoopWF`'s own
+recursion (i.e. on the same lex measure), never a formula in `fuel` — which
+is exactly what's needed, since the existing fuel-based correctness theorems
+in `NestedDFSCorrectness.lean` (e.g. `nestedDFS_fuel_empty_no_cycle`) already
+take an arbitrary implicit `fuel` and assume only *success*, never a lower
+bound. Every branch of the induction has exactly one nested computation to
+solve for fuel, except the "accepting, cycle not found" branch, which has
+two independent ones (the `innerDFS_fuel` call and the "continue with `rest`"
+recursive call) sharing the same fuel slot — needed its own new
+fuel-monotonicity fact, `outerDFSLoop_fuel_add_preserves` (structural
+induction on `fuel`, proved first via a small family of one-step unfolding
+equation lemmas mirroring `innerDFS_fuel_blocked`/`innerDFS_fuel_fresh`;
+same `conv => lhs; rw [...]`-restricted-to-LHS discipline as before, needed
+whenever an equation lemma's RHS also mentions the function being unfolded),
+to reconcile the two to a shared value, exactly mirroring
+`innerDFS_fuel_add_preserves`'s earlier role in the inner bridge.
+
+**Current sorry count in `NestedDFSTermination.lean`: 0.** Whole project
+builds clean (394 jobs). This completes Phase 2's nested-DFS termination
+work in full — both `innerDFS` and `outerDFSLoop` are now well-founded,
+sorry-free, and proven equal (for sufficient fuel) to the pre-existing
+fuel-based definitions whose correctness `NestedDFSCorrectness.lean` already
+establishes, so every existing correctness theorem there transfers across
+the bridge for free. Remaining Phase 2 scope: `expand`'s own termination
+conversion (`partial_fixpoint` → well-founded recursion via an
+`expand_ord`-style measure) — separately scoped, untouched by this work.
 
 ---
 
