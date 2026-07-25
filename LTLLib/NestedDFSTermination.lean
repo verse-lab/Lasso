@@ -296,11 +296,29 @@ lets `innerDFS` below stay a thin, non-recursive wrapper: the "already
 finished"/"already visited" check for `current` happens once, at the top,
 not once per fold level.
 
-The returned Subtype bundles exactly the one fact the "continue with `rest`
-after a fresh successor's exploration" call needs: `(fr.univ \ ·).size`
-(evaluated at the returned `iv`) is no bigger than it was at this call's own
-`iv` argument — plain non-strict monotonicity of the measure, nothing about
-`iv ⊆ univ` or any other closure property.
+The returned Subtype bundles two facts, both needed by *later* callers (not
+by `innerDFSCore` itself — this is exactly the "no external theorem about a
+not-yet-defined function can supply it" situation, so both have to be
+established here, alongside the definition, rather than as separate lemmas
+afterward):
+- `(fr.univ \ ·).size` (evaluated at the returned `iv`) is no bigger than it
+  was at this call's own `iv` argument — plain non-strict monotonicity of
+  the measure, needed by the "continue with `rest` after a fresh successor's
+  exploration" call, immediately below.
+- the returned state's `outerVisited` field equals the input state's —
+  `innerDFSCore` never touches it (only `innerFinished`) — needed by
+  `outerDFSLoop`'s *own* future well-founded conversion (step 2), whose
+  measure is defined purely from `outerVisited`/the outer stack: without
+  this fact bundled here, `outerDFSLoop` would need a *separate* induction
+  principle for `innerDFSCore`, which the auto-derived `innerDFSCore.induct`
+  cannot supply (its generation fails outright — a Lean elaborator
+  limitation hit when prototyping step 2, `omega`-produced proof terms
+  inside a `Subtype`-returning well-founded recursion don't reduce far
+  enough for the functional-induction-principle deriver). Bundling it here,
+  proven directly from local branch facts (no induction needed, since every
+  branch either doesn't recurse or recurses into `innerDFSCore` itself,
+  whose *own* bundled fact is available via the recursive call's Subtype),
+  sidesteps that limitation entirely.
 
 `succs`/`fr`/`seed` are written as explicit parameters *on this def itself*
 (rather than left to `variable`-section auto-binding) so their argument
@@ -315,13 +333,14 @@ def innerDFSCore (succs : State → Array State) (fr : FiniteReach succs) (seed 
     (hcurrent : fr.univ.contains current)
     (hremaining : ∀ x ∈ remaining, x ∈ succs current)
     : {p : Option (List State) × Std.HashSet State × FNDFSState State //
-        (fr.univ \ p.2.1).size ≤ (fr.univ \ iv).size} :=
+        (fr.univ \ p.2.1).size ≤ (fr.univ \ iv).size ∧ p.2.2.outerVisited = st.outerVisited} :=
   match remaining with
   | [] =>
-    ⟨(none, iv, { st with innerFinished := st.innerFinished.insert current }), Nat.le_refl _⟩
+    ⟨(none, iv, { st with innerFinished := st.innerFinished.insert current }),
+      Nat.le_refl _, rfl⟩
   | succ :: rest =>
     if succ == seed then
-      ⟨(some [current], iv, st), Nat.le_refl _⟩
+      ⟨(some [current], iv, st), Nat.le_refl _, rfl⟩
     else if hblocked : st.innerFinished.contains succ || iv.contains succ then
       innerDFSCore succs fr seed current rest iv st hcurrent
         (fun x hx => hremaining x (List.mem_cons_of_mem _ hx))
@@ -341,13 +360,15 @@ def innerDFSCore (succs : State → Array State) (fr : FiniteReach succs) (seed 
       | (some cyclePath, iv'', st'') =>
         ⟨(some (current :: cyclePath), iv'', st''), by
           have hr2 := r.2; simp only [hr] at hr2
-          exact Nat.le_trans hr2 hlt⟩
+          exact ⟨Nat.le_trans hr2.1 hlt, hr2.2⟩⟩
       | (none, iv'', st'') =>
+        have hst''_eq : st''.outerVisited = st.outerVisited := by
+          have hr2 := r.2; simp only [hr] at hr2; exact hr2.2
         let r2 := innerDFSCore succs fr seed current rest iv'' st'' hcurrent
           (fun x hx => hremaining x (List.mem_cons_of_mem _ hx))
         ⟨r2.1, by
           have hr2 := r.2; simp only [hr] at hr2
-          exact Nat.le_trans r2.2 (Nat.le_trans hr2 hlt)⟩
+          exact ⟨Nat.le_trans r2.2.1 (Nat.le_trans hr2.1 hlt), hst''_eq ▸ r2.2.2⟩⟩
 termination_by ((fr.univ \ iv).size, remaining.length)
 decreasing_by
   · exact Prod.Lex.right _ (by simp)
@@ -376,5 +397,140 @@ def innerDFSWF (succs : State → Array State) (fr : FiniteReach succs) (seed : 
       hcurrent (fun _ hx => Array.mem_toList_iff.mp hx)).1
 
 end InnerDFSWellFounded
+
+/-! ## Well-founded `outerDFSLoop` (Phase 2, `outerDFSLoop` half, 2026-07-25)
+
+The second, independent conversion — CAVA's own blue DFS, matching
+`param_dfs_variant`'s `(discovered, pending, stack-length)` triple about as
+directly as `outerDFSLoop`'s explicit-stack representation allows: primary
+component `(fr.univ \ st.outerVisited).size` (`discovered` growth, same
+`sdiff`-based measure and reasoning as `innerDFSCore`'s own `iv`), secondary
+`pendingSum stack + stack.length` (CAVA's `pending`+stack-length tie-break,
+combined into one `Nat` since both only ever need to *weakly* decrease
+together as one unit here — see the "skip already-visited successor" branch
+below, which decreases `pendingSum` by exactly 1 while leaving `stack.length`
+untouched).
+
+Confirms the corrected Phase 2 plan's step-2 prediction: **no Subtype-bundled
+return type is needed here**, unlike `innerDFSCore`. `outerDFSLoop` has no
+fold over siblings (a single self-call per branch, never two in sequence
+within one equation), and the one place it calls into the *other* well-
+founded function (`innerDFSCore`, at the accepting-leaf branch) only needs
+the `outerVisited`-preservation fact already bundled into *that* function's
+own return type (see `innerDFSCore`'s docstring) — no new induction
+principle, no circularity. This is the Lean-native mirror of CAVA gluing
+blue/red DFS via ordinary composition rather than a joint measure. -/
+
+/-- Total pending-successor count across every stack frame — the Lean
+analogue of CAVA's `pending s` (`Param_DFS.thy`'s `param_dfs_variant`). No
+typeclass assumptions needed (generic over `State`), so this lives outside
+`OuterDFSWellFounded`'s `variable` section entirely rather than needing
+`omit ... in` on every lemma. -/
+def pendingSum {State : Type u} (stack : List (State × List State)) : Nat :=
+  (stack.map (fun p => p.2.length)).sum
+
+@[simp] theorem pendingSum_nil {State : Type u} :
+    pendingSum ([] : List (State × List State)) = 0 := rfl
+
+@[simp] theorem pendingSum_cons {State : Type u}
+    (p : State × List State) (rest : List (State × List State)) :
+    pendingSum (p :: rest) = p.2.length + pendingSum rest := rfl
+
+section OuterDFSWellFounded
+
+variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
+
+/-- Well-founded `outerDFSLoop`. Takes `fr : FiniteReach succs` plus two
+threaded closure hypotheses (mirroring `NestedDFSCorrectness.lean`'s
+`OuterReachClosed.stack_remaining_subset`-style bookkeeping, needed here
+purely for termination rather than full correctness): every stack state is
+a `fr.univ` member, and every frame's `remaining` list only contains genuine
+successors of that frame's own state. Both are re-derived structurally at
+each call site (never needing a fact about a *previous* call's result — the
+key structural difference from `innerDFSCore`), so — as anticipated — no
+Subtype-bundled return type is needed. -/
+def outerDFSLoopWF (succs : State → Array State) (isAccepting : State → Bool)
+    (fr : FiniteReach succs)
+    (stack : List (State × List State))
+    (pathStack : List State)
+    (st : FNDFSState State)
+    (hstack_states : ∀ p ∈ stack, fr.univ.contains p.1)
+    (hstack_remaining : ∀ p ∈ stack, ∀ x ∈ p.2, x ∈ succs p.1)
+    : EmptinessResult State × FNDFSState State :=
+  match stack with
+  | [] => (.empty st.outerVisited.size, st)
+  | (current, remaining) :: rest =>
+    have hcurrent_univ : fr.univ.contains current :=
+      hstack_states (current, remaining) (List.mem_cons_self ..)
+    have hcurrent_remaining : ∀ x ∈ remaining, x ∈ succs current :=
+      hstack_remaining (current, remaining) (List.mem_cons_self ..)
+    have hrest_states : ∀ p ∈ rest, fr.univ.contains p.1 :=
+      fun p hp => hstack_states p (List.mem_cons_of_mem _ hp)
+    have hrest_remaining : ∀ p ∈ rest, ∀ x ∈ p.2, x ∈ succs p.1 :=
+      fun p hp => hstack_remaining p (List.mem_cons_of_mem _ hp)
+    match remaining with
+    | [] =>
+      if hacc : isAccepting current then
+        let innerVisited := Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)
+        let r := innerDFSCore succs fr current current (succs current).toList innerVisited st
+          hcurrent_univ (fun _ hx => Array.mem_toList_iff.mp hx)
+        match hr : r.1 with
+        | (some cyclePath, _, st') =>
+          (.nonEmpty pathStack (current :: cyclePath), st')
+        | (none, _, st') =>
+          have hst'_eq : st'.outerVisited = st.outerVisited := by
+            have hr2 := r.2; simp only [hr] at hr2; exact hr2.2
+          outerDFSLoopWF succs isAccepting fr rest pathStack.dropLast st'
+            hrest_states hrest_remaining
+      else
+        outerDFSLoopWF succs isAccepting fr rest pathStack.dropLast st
+          hrest_states hrest_remaining
+    | succ :: remainingTail =>
+      have hsucc_mem : succ ∈ succs current :=
+        hcurrent_remaining succ (List.mem_cons_self ..)
+      have hremainingTail : ∀ x ∈ remainingTail, x ∈ succs current :=
+        fun x hx => hcurrent_remaining x (List.mem_cons_of_mem _ hx)
+      let stack' := (current, remainingTail) :: rest
+      have hstack'_states : ∀ p ∈ stack', fr.univ.contains p.1 := by
+        intro p hp
+        rcases List.mem_cons.mp hp with rfl | hp'
+        · exact hcurrent_univ
+        · exact hrest_states p hp'
+      have hstack'_remaining : ∀ p ∈ stack', ∀ x ∈ p.2, x ∈ succs p.1 := by
+        intro p hp
+        rcases List.mem_cons.mp hp with rfl | hp'
+        · exact hremainingTail
+        · exact hrest_remaining p hp'
+      if hvis : st.outerVisited.contains succ then
+        outerDFSLoopWF succs isAccepting fr stack' pathStack st
+          hstack'_states hstack'_remaining
+      else
+        have hsucc_univ : fr.univ.contains succ := fr.closed current hcurrent_univ succ hsucc_mem
+        have hsucc_niv : st.outerVisited.contains succ = false := by
+          simpa using hvis
+        let st2 := { st with outerVisited := st.outerVisited.insert succ }
+        let succChildren := (succs succ).toList
+        let stack2 := (succ, succChildren) :: stack'
+        have hstack2_states : ∀ p ∈ stack2, fr.univ.contains p.1 := by
+          intro p hp
+          rcases List.mem_cons.mp hp with rfl | hp'
+          · exact hsucc_univ
+          · exact hstack'_states p hp'
+        have hstack2_remaining : ∀ p ∈ stack2, ∀ x ∈ p.2, x ∈ succs p.1 := by
+          intro p hp
+          rcases List.mem_cons.mp hp with rfl | hp'
+          · exact fun x hx => Array.mem_toList_iff.mp hx
+          · exact hstack'_remaining p hp'
+        outerDFSLoopWF succs isAccepting fr stack2 (pathStack ++ [succ]) st2
+          hstack2_states hstack2_remaining
+termination_by ((fr.univ \ st.outerVisited).size, pendingSum stack + stack.length)
+decreasing_by
+  · rw [hst'_eq]
+    exact Prod.Lex.right _ (by simp)
+  · exact Prod.Lex.right _ (by simp)
+  · exact Prod.Lex.right _ (by simp)
+  · exact Prod.Lex.left _ _ (HashSet.sdiff_insert_lt hsucc_univ hsucc_niv)
+
+end OuterDFSWellFounded
 
 end LTLLib

@@ -133,7 +133,28 @@ subtraction) as guessed there — found while implementing, this avoids ever
 needing `iv ⊆ univ` as a maintained invariant, which in turn makes the
 still-needed Subtype-bundled return type far lighter than expected (one `≤`
 fact, not a closure invariant). See `ProofPlan.md`'s Phase 2 section for the
-full write-up. `outerDFSLoop`'s conversion (step 2) is next; not started.
+full write-up.
+
+**Update (2026-07-25, later still): `outerDFSLoop` converted too.**
+`outerDFSLoopWF` in `NestedDFSTermination.lean`, 0 sorry, 0 warnings, whole
+project still builds. Confirmed simpler than `innerDFS`'s conversion as
+predicted — no Subtype-bundled return type needed at all, since
+`outerDFSLoop` has no fold over siblings. One wrinkle found while
+implementing: proving "`innerDFSCore` never touches `outerVisited`" as a
+*separate* lemma (via `innerDFSCore.induct`) doesn't work — Lean's
+functional-induction-principle deriver fails outright on `innerDFSCore`
+("Cannot derive functional induction principle... Internal error in
+`foldAndCollect`"), apparently choking on the `omega`-generated proof terms
+inside its `Subtype`-returning well-founded definition. Fixed by bundling
+that fact directly into `innerDFSCore`'s own return type instead (a second
+Subtype conjunct alongside step 1's measure-monotonicity fact) rather than
+proving it afterward — cheap to add since the needed reasoning was already
+in scope at each of `innerDFSCore`'s own definition sites. See
+`ProofPlan.md`'s Phase 2 section for the full write-up. Both nested-DFS
+functions are now off `partial`; next up is the fuel-bridge step
+(`innerDFS = innerDFS_fuel N` / `outerDFSLoop = outerDFSLoop_fuel N`, to
+transport `NestedDFSCorrectness.lean` without redoing it) and, separately,
+`expand`'s termination. Neither started yet.
 
 ## Future work (TODO): Schwoon-Esparza back-edge optimization
 

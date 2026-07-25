@@ -7,16 +7,16 @@ This document outlines the plan for porting correctness proofs from the Isabelle
 - **Build integrity**: `LTLLib.lean` now imports all 23 source files (previously only 13 — see
   "Build-integrity fix" note under Phase 6 below for what that was hiding). A clean rebuild (stale
   `.lake/build` artifacts removed first) succeeds with 0 errors, 0 sorry, 394 build jobs.
-- **Phase 2 (Termination) is partially done**: the inner-DFS half of nested-DFS fuel-sufficiency is
-  proved (`innerDFS_fuel_sufficient`, `NestedDFSTermination.lean`, 0 sorry), **and (2026-07-25)
-  `innerDFS` itself is now genuinely well-founded-recursive** (`innerDFSWF`/`innerDFSCore`,
-  `NestedDFSTermination.lean`, 0 sorry, 0 warnings) — the first of the two DFS functions converted
-  off `partial`. `outerDFSLoop` and `expand`'s termination are not yet done — see Phase 2's write-up
-  below for the detailed design, the fuel-based attempt that was tried and abandoned, the
-  CAVA-verified (2026-07-25, read directly from the AFP sources) corrected plan (`innerDFS`/
-  `outerDFSLoop` are **not** mutually recursive in CAVA's own termination argument — two independent
-  single-measure recursions, glued by an ordinary function call, not a combined bound), and the
-  `innerDFS` conversion's own write-up for a measure-choice correction found while implementing it.
+- **Phase 2 (Termination) is substantially done for nested DFS**: both `innerDFS` and `outerDFSLoop`
+  are now genuinely well-founded-recursive (`innerDFSWF`/`innerDFSCore` and `outerDFSLoopWF`,
+  `NestedDFSTermination.lean`, 0 sorry, 0 warnings, 2026-07-25) — converted as two **independent**
+  single-measure recursions (not mutual), exactly matching CAVA's own blue/red DFS structure once the
+  actual AFP sources were read. `expand`'s termination is not yet done, and the fuel-bridge step
+  (transporting `NestedDFSCorrectness.lean`'s ~2000 sorry-free lines from the fuel-based functions
+  onto these real ones) hasn't started either — see Phase 2's write-up below for the detailed design,
+  the fuel-based attempt that was tried and abandoned, the CAVA-verified corrected plan, and both
+  conversions' own write-ups for the measure-choice correction and a Lean functional-induction-
+  principle limitation found while implementing them.
 - Phases 1 (Semantics), D (Degeneralization), 4.1 (Soundness), 4.2 (Completeness) are **DONE** — sorry-free
 - **Phase 4.3 (GraphComplete) is now fully DONE** — `GraphComplete.lean` is entirely sorry-free, and
   `expandOASpec_completeness_weak` is a **fully unconditional completeness theorem** (no longer
@@ -1049,25 +1049,50 @@ definition:
      before its own conversion (step 2) is actually ready; the rename/swap-in
      happens together with step 2.
 2. **`outerDFSLoop` second, using the now-total `innerDFS` as a plain
-   helper call** — this is the step the corrected understanding actually
-   simplifies. `outerDFSLoop` also takes `FiniteReach` (or reuses the
-   `univ`/`closed` fields), with CAVA's own `(discovered, pending,
-   stack-length)`-style measure — concretely `(univ.size -
-   outerVisited.size, pendingSum stack + stack.length)`, lexicographic.
-   Two structural facts make this call *not* need return-type bundling the
-   way `innerDFS` did: (a) `outerDFSLoop` has **no fold over siblings** —
-   it's a single, non-branching tail-recursive call per invocation (already
-   noted in `NestedDFSTermination.lean`'s file comment), so there's no
-   "previous sibling's result" dependency chain; (b) the outer measure is
-   defined purely from `outerVisited`/`stack`, and `innerDFS` provably never
-   touches `outerVisited` (already proved once, as `innerDFS_fuel_outerVisited_eq`
-   for the fuel version — needs re-proving for the real `innerDFS`, but is
-   the same short argument). So the "accepting leaf, call `innerDFS`, then
-   recurse" branch's decrease proof never needs to know anything about
-   `innerDFS`'s *internal* recursion at all — only that it returns *some*
-   result (guaranteed, since by this point `innerDFS` is already total) and
-   that it leaves `outerVisited` fixed. This is the Lean-native mirror of
-   CAVA gluing blue/red via `nres` refinement instead of a joint measure.
+   helper call — ✅ DONE (2026-07-25), `outerDFSLoopWF`,
+   `NestedDFSTermination.lean`, 0 sorry, 0 warnings, whole project still
+   builds (394 jobs).** Confirmed exactly as this note predicted: this step
+   *is* simpler than `innerDFS`'s. `outerDFSLoopWF` takes `FiniteReach` plus
+   two threaded closure hypotheses (`hstack_states`/`hstack_remaining`,
+   mirroring `NestedDFSCorrectness.lean`'s `OuterReachClosed.
+   stack_remaining_subset` bookkeeping), re-derived structurally at every
+   call site — never needing a fact about a *previous* call's *result*, so
+   (as anticipated) **no Subtype-bundled return type at all**, unlike
+   `innerDFSCore`. Measure: `((fr.univ \ st.outerVisited).size, pendingSum
+   stack + stack.length)` — same `\`-based (not `Nat`-subtraction-based)
+   design as `innerDFSCore`'s, for the same reason (no `outerVisited ⊆ univ`
+   invariant needs to be maintained). `pendingSum` (CAVA's `pending s`) is a
+   straightforward `List.sum` over each stack frame's remaining-successors
+   length.
+
+   Both structural predictions held: (a) **no fold over siblings** — a
+   single, non-branching self-call per branch (four call sites total: leaf
+   backtrack × {accepting, non-accepting}, successor × {already-visited,
+   fresh}), so there's never a "previous sibling's result" dependency chain
+   within one equation; (b) the outer measure depends only on
+   `outerVisited`/`stack`, and `innerDFSCore` provably never touches
+   `outerVisited` — but *this* fact turned out to need one adjustment from
+   the plan: rather than a **separate** lemma
+   (`innerDFS_fuel_outerVisited_eq`-style, proved by induction *after* the
+   fact), it had to be **bundled directly into `innerDFSCore`'s own return
+   type** (as a second Subtype conjunct, alongside the measure-monotonicity
+   fact from step 1) — attempting the "separate lemma via
+   `innerDFSCore.induct`" route first, Lean's functional-induction-principle
+   deriver **failed outright** ("Cannot derive functional induction
+   principle... Internal error in `foldAndCollect`") on `innerDFSCore`,
+   apparently unable to reduce through the `omega`-generated proof terms
+   inside a `Subtype`-returning well-founded definition. Bundling the fact
+   at definition time (where the needed local reasoning was already in
+   scope from step 1's own proof obligations) sidesteps that limitation
+   entirely — a small but real "no free lunch" correction to (b)'s framing:
+   the fact was still cheap to get, just not via the *route* originally
+   envisioned. With that fact directly available via `r.2.2` at the call
+   site (no induction needed), the "accepting leaf, call `innerDFSCore`,
+   then recurse" branch's decrease proof never needs anything about
+   `innerDFSCore`'s *internal* recursion — only that it returns *some*
+   result (guaranteed, already total) and that `outerVisited` is unchanged.
+   This is the Lean-native mirror of CAVA gluing blue/red via `nres`
+   refinement instead of a joint measure.
 3. **Bridge to the existing correctness proofs, instead of re-proving
    them.** `NestedDFSCorrectness.lean` (~2000 sorry-free lines) is proved
    against `innerDFS_fuel`/`outerDFSLoop_fuel`, not the real functions.
