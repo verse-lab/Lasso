@@ -223,18 +223,27 @@ Whole project builds clean (394 jobs); `innerDFSCore`,
 `outerDFSLoopWF` are all 0 sorry. See `ProofPlan.md`'s Phase 2 section for
 the full write-up, including the CAVA source excerpts.
 
-**What's left**: the fold-level fuel bridge (`innerDFS_fuel_fold_eq_innerDFSCore`,
-previously 3.5-of-4-branches proved against the *old* fold-shaped
-`innerDFSCore`) no longer typechecks against the new stack-shaped one and
-was removed rather than patched — it needs a genuinely fresh design relating
-two structurally different traversal orders (recursive-descent-with-fold vs.
-explicit-stack), left as a documented TODO. `NestedDFSCorrectness.lean`
-itself is untouched (still 0 sorry, still fold-shaped `innerDFS_fuel`) — only
-the bridge lemma needs redesigning, not the ~2000 lines of existing
-correctness proof. Current sorry count in `NestedDFSTermination.lean`: **1**
-(`innerDFS_fuel_eq_innerDFSWF`, the top-level bridge). `outerDFSLoopWF`'s own
-bridge to `outerDFSLoop_fuel` is still not started, expected simpler (no
-traversal-order mismatch there).
+**Update (2026-07-25, later still): fold-level bridge redesigned and fully
+proved — `NestedDFSTermination.lean` is now 0 sorry.** The redesign
+(`innerDFS_fuel_chain`, a new stack-chaining auxiliary function, plus
+`pathStack`-based rewrapping for its "found" case — verified algebraically
+before implementing) bridges cleanly to `innerDFSCore` via
+`innerDFS_fuel_chain_eq_innerDFSCore` (6 cases, `induction ... using
+innerDFSCore.induct`). Along the way this surfaced one more genuine
+subtlety — `innerDFS_fuel_chain` reuses fuel uniformly across stack frames,
+while the real nested-call semantics decrements it once per "descend into a
+fresh successor" — resolved with two more self-contained lemmas:
+`innerDFS_fuel_add_preserves` (more fuel can't change a successful result)
+and `innerDFS_fuel_exists` (sufficient fuel guarantees success — this is
+the *content* of the very first, deleted `innerDFS_fuel_sufficient`,
+resurrected here). `NestedDFSCorrectness.lean` was never touched throughout
+any of this — still 0 sorry, still ~2000 lines, exactly as planned from the
+start of Phase 2. See `ProofPlan.md`'s Phase 2 section for the full
+write-up. **Current sorry count in `NestedDFSTermination.lean`: 0.**
+`outerDFSLoopWF`'s own bridge to `outerDFSLoop_fuel` is still not started,
+expected simpler — same operational shape from the start (no
+traversal-order mismatch to bridge), and can reuse the now-completed
+`innerDFS_fuel_eq_innerDFSWF` directly at its accepting-leaf call site.
 
 ## Future work (TODO): Schwoon-Esparza back-edge optimization
 

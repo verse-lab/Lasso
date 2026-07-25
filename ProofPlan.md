@@ -1366,20 +1366,75 @@ longer exist in the file — deleted, not patched. The `InnerFuelBridge`
 section's fold-level lemma (`innerDFS_fuel_fold_eq_innerDFSCore`, which
 related the *old* fold-shaped `innerDFSCore` to `innerDFS_fuel`) was removed
 too, since its statement no longer typechecks against the new stack-shaped
-`innerDFSCore` — this needs a **fresh design**, not a port, because it must
-now relate two *structurally different* traversal orders (`innerDFS_fuel`'s
-recursive-descent-with-fold vs. `innerDFSCore`'s explicit-stack), a genuine
-(though standard — "iterative DFS = recursive DFS") equivalence, rather than
-the previous "same shape, different totality mechanism" bridge. Left as a
-documented `-- TODO` in `NestedDFSTermination.lean`; `NestedDFSCorrectness.lean`
-itself is untouched (still the fold-shaped `innerDFS_fuel`, still 0 sorry) —
-the redesign is scoped to the bridge lemma alone, preserving the ~2000 lines
-of existing correctness proof exactly as planned. Current sorry count in
-`NestedDFSTermination.lean`: **1** (`innerDFS_fuel_eq_innerDFSWF`, the
-top-level bridge, not yet attempted against the new design).
-`outerDFSLoopWF`'s own bridge to `outerDFSLoop_fuel` also remains
-not-yet-started, still expected to be simpler (same operational shape as
-`outerDFSLoop_fuel` already, no traversal-order mismatch to bridge).
+`innerDFSCore` — this needed a **fresh design**, not a port, because it had
+to relate two *structurally different* traversal orders (`innerDFS_fuel`'s
+recursive-descent-with-fold vs. `innerDFSCore`'s explicit-stack).
+
+**Update (2026-07-25, later still): the fold-level bridge redesigned and
+proved — `NestedDFSTermination.lean` is now completely `sorry`-free.**
+The redesign (`innerDFS_fuel_chain`, a new auxiliary function) chains
+`innerDFS_fuel_fold` calls across an explicit stack of pending frames — the
+fuel-side companion to `innerDFSCore`'s own `stack` argument. Its "found"
+case needed care: `innerDFS_fuel_fold`'s own "found" result is always
+*relative* to its own frame (`current :: suffix`, built by the pre-existing
+nested-call wrapping), not the absolute witness path, so `innerDFS_fuel_chain`
+carries a `pathStack` (mirroring `innerDFSCore`'s own bookkeeping) and
+replaces the leading `current` with the full `pathStack` on propagation —
+verified algebraically for both the "descend"/"backtrack" transitions before
+implementing, and both checked out exactly.
+
+Bridging `innerDFS_fuel_chain` to `innerDFSCore` (`innerDFS_fuel_chain_eq_innerDFSCore`,
+driven by `induction ... using innerDFSCore.induct`, 6 cases matching
+`innerDFSCore`'s own branches) surfaced one further, genuine subtlety not
+anticipated in the design phase: **fuel bookkeeping across stack frames.**
+`innerDFS_fuel_chain` reuses one *uniform* fuel value throughout (matching
+how the bridge theorem's own induction keeps `fuel` fixed across all cases
+— needed for the induction to even typecheck), but the *actual*
+`innerDFS_fuel`/`innerDFS_fuel_fold` semantics genuinely decrement fuel by
+one on every "descend into a fresh successor" (confirmed via the
+`innerDFS_fuel_fresh` unfolding lemma). Reconciling a uniform fuel value
+against the naturally-decremented one needed two more self-contained
+lemmas, both added to `NestedDFSTermination.lean`:
+- `innerDFS_fuel_add_preserves`/`innerDFS_fuel_fold_add_preserves`: more
+  fuel than needed can't change an already-successful result (proved by the
+  same fuel/fold mutual-induction template `innerDFS_fuel_mono` already
+  uses in `NestedDFSCorrectness.lean`).
+- `innerDFS_fuel_exists`/`innerDFS_fuel_fold_exists_aux`: sufficient fuel
+  (per `innerFuelMeasure`) *guarantees* success — the existence
+  counterpart, resurrecting the *content* of the very first (deleted)
+  `innerDFS_fuel_sufficient` from this file's original fold-based attempt,
+  now in the mutual-aux style used throughout this section.
+
+Together these let the "fresh push" case show that the uniform-fuel value
+`innerDFS_fuel_chain` hands to a pushed frame computes the *same* result as
+the naturally-decremented amount the real nested call would have used
+(given the decremented amount was already sufficient, which
+`innerDFuelMeasure`'s own monotonicity under `iv`'s growth guarantees). A
+handful of small helper facts rounded this out: one-step unfolding lemmas
+for `innerDFS_fuel`/`innerDFS_fuel_fold`/`innerDFS_fuel_chain` (ordinary
+structural/fuel recursion, so these go through by plain
+`unfold`/`rw [.eq_def]` reliably, unlike the old fold-shaped `innerDFSCore`),
+and `innerDFS_fuel_fold_cyclePath_head`/`innerDFS_fuel_chain_singleton`
+(needed to align `innerDFSWF`'s own singleton-stack entry point with
+`innerDFS_fuel`'s top-level call in the final composition,
+`innerDFS_fuel_eq_innerDFSWF`).
+
+`NestedDFSCorrectness.lean` itself was never touched — still the
+fold-shaped `innerDFS_fuel`, still 0 sorry, still ~2000 lines exactly as
+before; the entire redesign was scoped to the bridge lemma (plus its
+supporting infrastructure) alone, preserving the existing correctness proof
+exactly as planned from the start of Phase 2. **Current sorry count in
+`NestedDFSTermination.lean`: 0.** Whole project builds clean (394 jobs).
+
+`outerDFSLoopWF`'s own bridge to `outerDFSLoop_fuel` remains not yet
+started. Expected simpler than the inner bridge just completed:
+`outerDFSLoopWF` and `outerDFSLoop_fuel` already share the *same*
+operational shape (both explicit-stack from the start — `outerDFSLoop` was
+never fold-based, unlike `innerDFS`), so there should be no
+traversal-order mismatch to bridge, and — per `outerDFSLoopWF`'s call into
+`innerDFSCore` at its accepting-leaf branch — the now-completed
+`innerDFS_fuel_eq_innerDFSWF` is available to reuse directly rather than
+needing its own inner-DFS reasoning redone.
 
 ---
 
