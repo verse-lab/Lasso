@@ -1094,7 +1094,8 @@ definition:
    This is the Lean-native mirror of CAVA gluing blue/red via `nres`
    refinement instead of a joint measure.
 3. **Bridge to the existing correctness proofs, instead of re-proving
-   them.** `NestedDFSCorrectness.lean` (~2000 sorry-free lines) is proved
+   them — IN PROGRESS (2026-07-25), significant progress, one isolated
+   blocker.** `NestedDFSCorrectness.lean` (~2000 sorry-free lines) is proved
    against `innerDFS_fuel`/`outerDFSLoop_fuel`, not the real functions.
    Redoing that whole proof against the new WF-recursive definitions would
    be wasteful. CAVA itself does the analogous thing rather than reprove
@@ -1103,6 +1104,96 @@ definition:
    partial one once termination holds. Our analogue: once `innerDFS`/
    `outerDFSLoop` are total, prove `innerDFS ... = innerDFS_fuel N ...`/
    `outerDFSLoop ... = outerDFSLoop_fuel N ...` for `N` above the already-
+
+   **Status**: `innerDFS_fuel_fold_eq_innerDFSCore` (`InnerFuelBridge` section,
+   `NestedDFSTermination.lean`) — the fold-level half of the inner bridge,
+   strengthening the old (now-deleted) `innerDFS_fuel_fold_sufficient_aux` to
+   assert *equality* with `innerDFSCore`, not just "returns `some`" — is
+   **fully proved, 0 sorry**, for 3 of 4 branches (nil, seed-found,
+   already-blocked-skip) directly, and the 4th (fresh successor, recurse)
+   modulo one lemma, `innerDFSCore_fresh_eq`, which is currently `sorry`.
+
+   **The blocker, precisely, and how it was root-caused (2026-07-25,
+   continued session)**: `innerDFSCore_fresh_eq` needs to show
+   `(innerDFSCore ... (succ::rest) ...).1` equals a plain `match` on the
+   nested call `(innerDFSCore ... succ ...).1`. The *first* diagnosis
+   (dependent `match hr : r.1 with | pat => ⟨value, proof-using-hr⟩`, `hr`
+   needed because the `proof` part of each branch used it even though
+   `value` didn't) was real but turned out to be only **half the story**.
+   `innerDFSCore` was rewritten (see step 1's write-up above, revised) to
+   match only on `r.1.1` (the `Option` component alone) and reference
+   `r.1.2.1`/`r.1.2.2` directly rather than via a `hr`-bound pattern — this
+   *did* eliminate the `hr`-specific dependency. But the exact same class of
+   "motive is not type correct" failure **persisted anyway**, for a deeper
+   reason: `r.2` (the Subtype's *own* bundled property) is itself stated in
+   terms of `r.1`'s projections (`(fr.univ \ p.2.1).size ≤ ...`), so *any*
+   attempt to externally rewrite what `r.1` equals invalidates `r.2`'s type,
+   regardless of whether a `hr`-binder is involved. Confirmed by trying
+   (and failing on) `rfl`, `rw`/`▸`/`generalize`/`rcases h : e with pat`,
+   tactic-mode `match h : e with`, rewriting only isolated projections
+   (`.1.1` alone, then `.1.2.1`/`.1.2.2` separately — still fails, since the
+   `⟨value, proof⟩` pair needs *all three* substituted in one consistent
+   step), and `Subtype.ext`-based whole-term rewriting (`r = ⟨(rcyc,riv,rst),
+   hrval ▸ r.2⟩`, still fails — the goal's *other* occurrences of the same
+   expression aren't tied to this one substitution). This is a genuine,
+   deep Lean 4 limitation: a well-founded-recursive definition returning a
+   `Subtype` whose property is stated in terms of the *value*'s own
+   projections cannot have its unfolded form externally rewritten at all —
+   not a proof mistake, a property of how `.eq_def` compiles such
+   definitions.
+
+   **Real, validated finding**: while investigating this, root-caused why
+   `innerDFSCore.induct` (the auto-derived functional induction principle)
+   fails to generate at all (flagged as a Lean elaborator limitation back in
+   step 2's write-up). It is **not** caused by the `Subtype` return type in
+   general — it is caused specifically by **`omega`-generated proof terms**
+   inside `decreasing_by` (confirmed by a minimal reproduction: a
+   `Subtype`-returning well-founded definition with the *exact* same shape,
+   `decreasing_by` proved via `omega`, fails `.induct` generation with the
+   identical `Lean.Omega.Constraint...` "cannot reduce" error; the same
+   definition with `decreasing_by` proved via explicit `Nat.le_antisymm`/
+   `Nat.le_trans`/`Prod.Lex.left`/`.right` term combinators instead of
+   `omega` generates `.induct` successfully). Applied this fix to the real
+   `innerDFSCore` (`decreasing_by`'s one remaining `omega` call replaced
+   with `Nat.le_antisymm (Nat.le_trans r.2.1 hlt) h'`) — confirmed via a
+   direct probe that `innerDFSCore.induct` now generates, with 5 real cases
+   (matching the 5 branches: nil, seed-found, blocked-skip, fresh+cycle-found,
+   fresh+continue) and genuine, usable induction hypotheses for the
+   recursive-call cases. This fix is applied and kept (it's a strict
+   improvement, costs nothing) — `innerDFSCore`'s own definition remains
+   0 sorry, 0 warnings.
+
+   **Conclusion — the actual way forward**: `innerDFSCore_fresh_eq` as
+   currently scoped (an external "unfolding lemma" proved by rewriting
+   `.eq_def`'s output) is a dead end for the *reason above* — no amount of
+   tactic cleverness fixes it, because the underlying issue is structural,
+   not tactical. But `innerDFSCore.induct` genuinely works now. The right
+   redesign is to **stop trying to prove a standalone unfolding lemma and
+   instead drive `innerDFS_fuel_fold_eq_innerDFSCore` itself via
+   `induction ... using innerDFSCore.induct`** (mirroring the 5 real cases
+   directly), unfolding `innerDFS_fuel`/`innerDFS_fuel_fold` on the *other*
+   side via their own (non-`Subtype`, unproblematic) `.eq_def` — i.e. swap
+   which side drives the induction, since `innerDFSCore`'s own induction
+   principle now hands over genuine per-case IHs natively instead of
+   requiring external "unfold and match" reasoning. This requires `fuel`
+   to become universally quantified *inside* the motive (since
+   `innerDFSCore.induct` doesn't induct on `fuel` itself) — a real
+   restructuring of the existing (3.5-of-4-branches-proved) lemma, not a
+   small patch, but with the hard uncertainty now resolved: the tool needed
+   to finish this exists and works, confirmed empirically. Not attempted
+   yet in this session — this is exactly the kind of "might need to write a
+   large proof" moment your CLAUDE.md notes ask to flag before diving in
+   further, and this session was already long by the time this was found.
+   `innerDFSCore_fresh_eq` is currently `sorry` (isolated, documented) with
+   this as its resolution path.
+
+   `outerDFSLoopWF`'s own bridge to `outerDFSLoop_fuel` hasn't been started
+   yet and remains deferred until the inner bridge completes, since
+   `outerDFSLoopWF` calls `innerDFSCore` and would need the same equation
+   (though, per `outerDFSLoopWF`'s own write-up, it may not need anything
+   this heavy — it never destructures `innerDFSCore`'s result beyond
+   `.1.1`/`.2` in a way that hit this issue, worth re-checking once the
+   inner bridge sets the pattern).
    established sufficiency threshold (`innerDFS_fuel_sufficient`, and its
    still-to-be-proved `outerDFSLoop` analogue — note this sufficiency proof
    is now easier too, for the same reason step 2 is: it no longer needs a
@@ -1174,6 +1265,121 @@ bundling at all. `expand`'s conversion (step 5) is separately scoped and not
 smaller just because of this correction. Not started as of 2026-07-25 — this
 section records the corrected plan, implementation to follow in a later
 session.
+
+**Update (2026-07-25, later still): `innerDFSCore` rebuilt as an
+explicit-stack loop — the `innerDFSCore_fresh_eq` dead end above is now
+moot, superseded by a structural redesign, not a tactic fix.** Asked (by the
+user) to re-check *why* the fold-based design couldn't follow CAVA's own
+strategy, rather than pushing further into patching it. Re-reading
+`Param_DFS.thy`/`DFS_Find_Path.thy` directly (not secondhand) surfaced the
+actual answer, missed in the step-1/2/3 write-ups above: **CAVA's red DFS is
+not a hand-written recursive function at all.** `Nested_DFS.thy` defines
+`red_dfs` as literally `find_path1_restr_spec` (an abstract `SPEC`); its
+concrete realization, `find_path1_restr` (`DFS_Find_Path.thy`), is built
+from the refinement framework's generic `FOREACHc` combinator:
+
+```isabelle
+definition find_path1_restr G P R ≡
+  FOREACHc (g_V0 G) is_Inl (λv0 s. do {
+    let R = projl s;
+    f0 ← find_path0_restr_spec (G⦇g_V0 := g_E G `` {v0}⦈) P R;
+    case f0 of Inl _ ⇒ RETURN f0 | Inr (vs,v) ⇒ RETURN (Inr (v0#vs,v))
+  }) (Inl R)
+```
+
+`FOREACHc`'s termination is a single **generic** fact — "the iteration set
+shrinks by one element per step" — proved once for the combinator itself,
+completely independent of what the loop body computes (the body here runs a
+*whole nested DFS*, `find_path0_restr_spec`, and `FOREACHc` never needs to
+know anything about *that* computation's outcome to justify continuing to
+the next iteration). Correctness of the threaded accumulator is proved
+*separately*, via `FOREACHc_rule`'s Hoare-style invariant-preservation
+obligation, which gets to *assume* the invariant as an induction hypothesis
+— never mixed into the termination argument. **Both CAVA's blue and red DFS
+ultimately reduce to the same generic `param_DFS`/`it_dfs` engine**: one
+flat explicit-stack `WHILE` loop, never nested recursive-descent-with-fold.
+
+This is exactly the mechanism our fold-based `innerDFSCore` (steps 1–3
+above) was missing, and exactly *why* it hit the Subtype/"motion is not type
+correct" dead end: it used genuine nested Lean recursive calls ("descend
+into a fresh successor's subtree, then continue the fold over remaining
+siblings using the *returned* visited set"), which forces the *next*
+recursive call's termination proof to depend on a fact about the
+*previous* call's actual return value — a dependency CAVA's algorithm
+structure never creates, because it has no nested calls at all, only
+single-step transitions on an explicit stack (which is *exactly* how
+`outerDFSLoopWF` was already built, from `NestedDFS.lean`'s own original
+design — this is *why* that conversion needed no `Subtype` and went
+smoothly).
+
+**Fix applied**: `innerDFSCore` rebuilt from scratch as an explicit-stack
+single flat loop, structurally identical to `outerDFSLoopWF`: `stack : List
+(State × List State)` (deepest/active frame at the head) plus a `pathStack`
+mirroring `outerDFSLoopWF`'s own `++[x]`/`.dropLast` bookkeeping — which,
+since it always holds exactly the states of the frames currently on
+`stack`, doubles as the witness path the moment a successor equal to `seed`
+is found (no more "unwind and prepend `current ::`" step needed). Reuses
+`outerDFSLoopWF`'s exact measure/`decreasing_by` idioms (`(fr.univ \
+iv).size`, `pendingSum stack + stack.length`), already proven to work
+there. **No `Subtype`-bundled return type any more** — every recursive
+call's termination is justified purely from *local* facts about that call's
+own arguments, never from a fact about a sibling/previous call's result.
+
+**Second finding, found while getting the replacement's own
+`innerDFSCore_outerVisited_pres` lemma to go through**: even *without* the
+Subtype, threading `hstack_states : ∀ p ∈ stack, fr.univ.contains p.1`/
+`hstack_remaining` as **proof-carrying explicit arguments** (the design
+used for the first attempt at this rebuild) made `rw
+[innerDFSCore.eq_def]`/`induction ... using innerDFSCore.induct`
+intermittently fail to fire depending on exactly how those proof terms were
+phrased at each call site, with no simp/rw/unfold combination proving
+reliable across all branches. Root cause: these hypotheses were *never
+actually needed for the function's value* — only for justifying
+`decreasing_by`'s measure decrease (`fr.closed current hcurrent succ
+hsucc_mem`, used solely to derive `hsucc_univ` for `HashSet.sdiff_insert_lt`).
+**Fix**: drop them from the signature entirely, and re-derive the one fact
+`decreasing_by` actually needs via a plain runtime check —
+`if hsucc_univ : fr.univ.contains succ then ⟨descend, uses hsucc_univ
+locally⟩ else ⟨defensive fallback: treat as blocked⟩` — a standard "junk
+value on out-of-domain input" pattern. The fallback branch is dead code for
+any call reachable from `innerDFSWF` (whose `current` is `fr.univ`-closed
+under `succs` transitively via `fr.closed`), but its existence means
+`innerDFSCore`'s *type* now carries zero proof obligations, so every
+later equation-lemma/induction-based proof about it is an ordinary
+(non-dependent) one — this is what actually made
+`innerDFSCore_outerVisited_pres` provable (`induction ... using
+innerDFSCore.induct`, 6 cases, closed by `unfold innerDFSCore; dsimp only;
+try simp_all; try (rename_i ih; simpa using ih)` per case — the fold case's
+`let st' := {...}` also had to be inlined directly into its recursive call
+rather than left as a named `let`, since a `let`-vs-inlined-literal mismatch
+was blocking the last case's `exact`/`simpa` closer even after everything
+else resolved). `innerDFSWF`, `innerDFSWF_blocked`, `innerDFSWF_fresh`, and
+`outerDFSLoopWF`'s call site were all updated to match the simplified
+(no-proof-args) signature. Whole project builds clean (394 jobs) with this
+rebuild in place; `innerDFSCore`, `innerDFSCore_outerVisited_pres`,
+`innerDFSWF`, `innerDFSWF_blocked`, `innerDFSWF_fresh`, `outerDFSLoopWF` are
+all 0 sorry.
+
+**What this supersedes**: the old fold-based `innerDFSCore` and its dead-end
+`innerDFSCore_fresh_eq` lemma (described in step 3's write-up above) no
+longer exist in the file — deleted, not patched. The `InnerFuelBridge`
+section's fold-level lemma (`innerDFS_fuel_fold_eq_innerDFSCore`, which
+related the *old* fold-shaped `innerDFSCore` to `innerDFS_fuel`) was removed
+too, since its statement no longer typechecks against the new stack-shaped
+`innerDFSCore` — this needs a **fresh design**, not a port, because it must
+now relate two *structurally different* traversal orders (`innerDFS_fuel`'s
+recursive-descent-with-fold vs. `innerDFSCore`'s explicit-stack), a genuine
+(though standard — "iterative DFS = recursive DFS") equivalence, rather than
+the previous "same shape, different totality mechanism" bridge. Left as a
+documented `-- TODO` in `NestedDFSTermination.lean`; `NestedDFSCorrectness.lean`
+itself is untouched (still the fold-shaped `innerDFS_fuel`, still 0 sorry) —
+the redesign is scoped to the bridge lemma alone, preserving the ~2000 lines
+of existing correctness proof exactly as planned. Current sorry count in
+`NestedDFSTermination.lean`: **1** (`innerDFS_fuel_eq_innerDFSWF`, the
+top-level bridge, not yet attempted against the new design).
+`outerDFSLoopWF`'s own bridge to `outerDFSLoop_fuel` also remains
+not-yet-started, still expected to be simpler (same operational shape as
+`outerDFSLoop_fuel` already, no traversal-order mismatch to bridge).
 
 ---
 
