@@ -267,7 +267,41 @@ numeral bound either. Needed one new lemma, `outerDFSLoop_fuel_add_preserves`
 requirements sharing a slot. See `ProofPlan.md`'s Phase 2 section for the
 full write-up. **`NestedDFSTermination.lean`: 0 sorry, 0 warnings, whole
 project builds clean (394 jobs) — Phase 2's nested-DFS termination work is
-done.** Remaining: `expand`'s own termination conversion, separately scoped.
+done.**
+
+**Update (2026-07-25, continued): wiring finished — total `nestedDFSWF` +
+top-level bridge, both correctness theorems transferred.** Checked CAVA on
+two questions before starting. (1) Multi-root handling: `Nested_DFS.thy`'s
+`nested_dfs ≡ do { s ← it_dfs G accpt; RETURN (lasso s) }` is a *single*
+fused loop (root-selection folded into `step` via `get_new_root`, same
+measure as everything else) — different from our `nestedDFS_fuel`/
+`nestedDFS_fuel.go`'s two-loop split. Diagnosed this as a consequence of not
+porting CAVA's generic `param_DFS` locale (out of scope), not a deviation in
+the algorithm — so `nestedDFSWF` mirrors `nestedDFS_fuel`'s *existing*
+two-loop shape rather than reopening Phase 5's already-proven ~2000 lines
+for a purely organizational match. (2) Whether to delete the old `partial
+def`s: checked CAVA's own `nested_dfs`/`nested_dfs_code` split —  CAVA never
+deletes the abstract spec once the concrete, refined, `ASSERT (fb_graph G)`-
+gated implementation exists; both are kept, linked by a refinement theorem.
+Same here: `NestedDFS.lean`'s `partial def`s stay (docstring updated to
+point at `nestedDFSWF`), not deleted.
+
+Built: `nestedDFSWF` (plain structural recursion on `initialStates`, no
+fuel/measure needed — only its one `outerDFSLoopWF` call per root needs the
+already-built well-founded machinery); a `nestedDFS_fuel.go` equation-lemma
+family + `nestedDFS_fuel_go_add_preserves` (mirroring the outer bridge's
+fuel-monotonicity lemma, same reason: two independent fuel needs sharing one
+slot on the "fresh root" branch); the main bridge
+`nestedDFS_fuel_go_eq_nestedDFSWF_go` by induction on `remaining` directly
+(no `.induct`, no fuel induction — simplest bridge in the file, since
+`nestedDFSWF.go` has no well-founded recursion of its own at all); and the
+top-level `nestedDFS_fuel_eq_nestedDFSWF`, from which
+`nestedDFSWF_empty_no_cycle`/`nestedDFSWF_nonEmpty_valid` fall out for free
+by substitution into the existing Phase 5 theorems. See `ProofPlan.md`'s
+Phase 2 section for the full write-up. **`NestedDFSTermination.lean`: 0
+sorry, whole project builds clean (394 jobs) — Phase 2's nested-DFS work,
+including wiring, is done.** Remaining: `expand`'s own termination
+conversion, separately scoped.
 
 ## Future work (TODO): Schwoon-Esparza back-edge optimization
 

@@ -1388,4 +1388,305 @@ theorem outerDFSLoop_fuel_eq_outerDFSLoopWF
 
 end OuterFuelBridge
 
+/-! ## Top-level `nestedDFS`, well-founded (Phase 2, wiring, 2026-07-25 continued)
+
+CAVA's actual top-level assembly (`Nested_DFS.thy`): `nested_dfs G accpt ≡ do
+{ s ← it_dfs G accpt; RETURN (lasso s) }` — a *single* call into the generic
+`it_dfs` engine, which handles the entire `V0` (multi-root) traversal
+internally via `get_new_root`/`do_new_root`, folded into `step` itself and
+covered by the *same* well-founded `param_dfs_variant` measure used for
+ordinary successor discovery (picking a new root is just another kind of
+"discover a new state" transition, per `step`'s own `is_empty_stack s then
+get_new_root ...` branch).
+
+Our own `nestedDFS_fuel`/`nestedDFS_fuel.go` (`NestedDFSCorrectness.lean`,
+Phase 5, ✅ done, ~2000 sorry-free lines) does *not* mirror this exactly: it
+factors multi-root handling as a second, outer structural loop over
+`initialStates`, calling `outerDFSLoop_fuel` once per unvisited root, rather
+than folding root-selection into one generic engine. That's a consequence of
+not having ported CAVA's generic, reusable `param_DFS` locale (a
+substantially larger undertaking, well out of scope here) — not a deviation
+from the *algorithm* CAVA describes (CVWY nested DFS over multiple initial
+states), which is identical either way; CAVA's single-engine shape is a
+framework-engineering artifact of `param_DFS` being shared across many
+different DFS-based algorithms, not a property of nested DFS itself.
+Rebuilding `nestedDFS_fuel`/`outerDFSLoop_fuel` to match CAVA's single-loop
+code shape would mean reopening and re-proving all of Phase 5's already-
+complete, already-verified correctness proof for a purely organizational
+gain — so `nestedDFSWF` below instead mirrors `nestedDFS_fuel`'s *existing*
+two-loop shape exactly, keeping faithful to the algorithm without touching
+already-finished work.
+
+`nestedDFSWF.go`'s own recursion is *plain* structural recursion on
+`remaining : List State` (`init :: rest → rest`, strictly smaller) — no
+fuel, no well-founded measure, no `termination_by` needed at all; only the
+*single* call it makes into `outerDFSLoopWF` per root needs the well-founded
+machinery, already built above. -/
+
+section TopLevelWF
+
+variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
+
+/-- Well-founded top-level nested DFS emptiness check. Mirrors
+`nestedDFS_fuel`'s exact shape (see this section's docstring for why),
+using `outerDFSLoopWF` in place of `outerDFSLoop_fuel`. -/
+def nestedDFSWF (succs : State → Array State) (fr : FiniteReach succs)
+    (isAccepting : State → Bool) (initialStates : List State) : EmptinessResult State :=
+  let st : FNDFSState State := {
+    outerVisited := Std.HashSet.emptyWithCapacity 1024
+    innerFinished := Std.HashSet.emptyWithCapacity 1024
+  }
+  nestedDFSWF.go succs fr isAccepting initialStates st
+where
+  go (succs : State → Array State) (fr : FiniteReach succs) (isAccepting : State → Bool)
+      (remaining : List State) (st : FNDFSState State) : EmptinessResult State :=
+    match remaining with
+    | [] => .empty st.outerVisited.size
+    | init :: rest =>
+      if st.outerVisited.contains init then go succs fr isAccepting rest st
+      else
+        let st := { st with outerVisited := st.outerVisited.insert init }
+        let succsList := (succs init).toList
+        match outerDFSLoopWF succs isAccepting fr [(init, succsList)] [init] st with
+        | (.nonEmpty stem loop, _) => .nonEmpty stem loop
+        | (.empty _, st') => go succs fr isAccepting rest st'
+
+end TopLevelWF
+
+/-! ## Fuel ↔ well-founded bridge, top level (Phase 2, wiring, continued)
+
+Mirrors `OuterFuelBridge` one level up: `nestedDFS_fuel.go`'s own recursion
+spends exactly one fuel unit per *iteration* over `initialStates`, same
+"per-iteration, not per-descend" shape as `outerDFSLoop_fuel`, so the same
+recipe applies verbatim — one-step unfolding equations, a fuel-monotonicity
+lemma, then an existence-style bridge by induction (here on `remaining`
+directly, matching `nestedDFSWF.go`'s own *plain* structural recursion,
+rather than on `fuel` or on a `.induct` principle — there is no well-founded
+recursion on the top-level loop at all, so this is the simplest bridge in
+the file). -/
+
+section TopLevelFuelBridge
+
+variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
+
+theorem nestedDFS_fuel_go_nil (succs : State → Array State) (isAccepting : State → Bool)
+    (st : FNDFSState State) (fuel : Nat) :
+    nestedDFS_fuel.go succs isAccepting [] st (fuel + 1) = some (.empty st.outerVisited.size) := by
+  unfold nestedDFS_fuel.go
+  rfl
+
+theorem nestedDFS_fuel_go_skip (succs : State → Array State) (isAccepting : State → Bool)
+    (init : State) (rest : List State) (st : FNDFSState State) (fuel : Nat)
+    (hvis : st.outerVisited.contains init = true) :
+    nestedDFS_fuel.go succs isAccepting (init :: rest) st (fuel + 1) =
+      nestedDFS_fuel.go succs isAccepting rest st fuel := by
+  conv => lhs; rw [nestedDFS_fuel.go.eq_def]
+  simp [hvis]
+
+theorem nestedDFS_fuel_go_none (succs : State → Array State) (isAccepting : State → Bool)
+    (init : State) (rest : List State) (st : FNDFSState State) (fuel : Nat)
+    (hvis : st.outerVisited.contains init = false)
+    (houter : outerDFSLoop_fuel succs isAccepting fuel
+        [(init, (succs init).toList)] [init] { st with outerVisited := st.outerVisited.insert init } =
+      none) :
+    nestedDFS_fuel.go succs isAccepting (init :: rest) st (fuel + 1) = none := by
+  unfold nestedDFS_fuel.go
+  simp [hvis, houter]
+
+theorem nestedDFS_fuel_go_nonEmpty (succs : State → Array State) (isAccepting : State → Bool)
+    (init : State) (rest : List State) (st : FNDFSState State) (fuel : Nat)
+    (hvis : st.outerVisited.contains init = false)
+    (stem loop : List State) (st'' : FNDFSState State)
+    (houter : outerDFSLoop_fuel succs isAccepting fuel
+        [(init, (succs init).toList)] [init] { st with outerVisited := st.outerVisited.insert init } =
+      some (.nonEmpty stem loop, st'')) :
+    nestedDFS_fuel.go succs isAccepting (init :: rest) st (fuel + 1) = some (.nonEmpty stem loop) := by
+  unfold nestedDFS_fuel.go
+  simp [hvis, houter]
+
+theorem nestedDFS_fuel_go_continue (succs : State → Array State) (isAccepting : State → Bool)
+    (init : State) (rest : List State) (st : FNDFSState State) (fuel : Nat)
+    (hvis : st.outerVisited.contains init = false)
+    (m : Nat) (st' : FNDFSState State)
+    (houter : outerDFSLoop_fuel succs isAccepting fuel
+        [(init, (succs init).toList)] [init] { st with outerVisited := st.outerVisited.insert init } =
+      some (.empty m, st')) :
+    nestedDFS_fuel.go succs isAccepting (init :: rest) st (fuel + 1) =
+      nestedDFS_fuel.go succs isAccepting rest st' fuel := by
+  conv => lhs; rw [nestedDFS_fuel.go.eq_def]
+  simp [hvis, houter]
+
+/-- Fuel-increase preserves a successful `nestedDFS_fuel.go` result. Mirrors
+`outerDFSLoop_fuel_add_preserves`; needs it directly at the "fresh root"
+branch, since that branch's nested `outerDFSLoop_fuel` call also receives
+the same bumped fuel. -/
+theorem nestedDFS_fuel_go_add_preserves (succs : State → Array State) (isAccepting : State → Bool)
+    (extra fuel : Nat) (remaining : List State) (st : FNDFSState State)
+    (result : EmptinessResult State)
+    (h : nestedDFS_fuel.go succs isAccepting remaining st fuel = some result) :
+    nestedDFS_fuel.go succs isAccepting remaining st (fuel + extra) = some result := by
+  induction fuel generalizing remaining st result with
+  | zero => simp [nestedDFS_fuel.go.eq_def] at h
+  | succ n ih =>
+    rw [show n + 1 + extra = (n + extra) + 1 by omega]
+    match remaining with
+    | [] =>
+      rw [nestedDFS_fuel_go_nil] at h
+      rw [nestedDFS_fuel_go_nil]
+      exact h
+    | init :: rest =>
+      by_cases hvis : st.outerVisited.contains init = true
+      · rw [nestedDFS_fuel_go_skip succs isAccepting init rest st n hvis] at h
+        rw [nestedDFS_fuel_go_skip succs isAccepting init rest st (n + extra) hvis]
+        exact ih rest st result h
+      · simp only [Bool.not_eq_true] at hvis
+        cases houter : outerDFSLoop_fuel succs isAccepting n
+            [(init, (succs init).toList)] [init]
+            { st with outerVisited := st.outerVisited.insert init } with
+        | none =>
+          rw [nestedDFS_fuel_go_none succs isAccepting init rest st n hvis houter] at h
+          exact absurd h (by simp)
+        | some val =>
+          obtain ⟨res, st'⟩ := val
+          cases res with
+          | nonEmpty stem loop =>
+            rw [nestedDFS_fuel_go_nonEmpty succs isAccepting init rest st n hvis stem loop st'
+                houter] at h
+            rw [nestedDFS_fuel_go_nonEmpty succs isAccepting init rest st (n + extra) hvis stem loop
+                st'
+                (outerDFSLoop_fuel_add_preserves succs isAccepting extra n
+                  [(init, (succs init).toList)] [init]
+                  { st with outerVisited := st.outerVisited.insert init }
+                  (.nonEmpty stem loop) st' houter)]
+            exact h
+          | empty m =>
+            rw [nestedDFS_fuel_go_continue succs isAccepting init rest st n hvis m st' houter] at h
+            rw [nestedDFS_fuel_go_continue succs isAccepting init rest st (n + extra) hvis m st'
+                (outerDFSLoop_fuel_add_preserves succs isAccepting extra n
+                  [(init, (succs init).toList)] [init]
+                  { st with outerVisited := st.outerVisited.insert init }
+                  (.empty m) st' houter)]
+            exact ih rest st' result h
+
+variable (succs : State → Array State) (fr : FiniteReach succs) (isAccepting : State → Bool)
+
+/-- Top-level bridge: for a suitable `remaining`/`st`, there is a fuel value
+for which `nestedDFS_fuel.go` succeeds and agrees exactly with
+`nestedDFSWF.go`. Proved by induction on `remaining` directly — matching
+`nestedDFSWF.go`'s own plain structural recursion — rather than on `fuel` or
+via a `.induct` principle. -/
+theorem nestedDFS_fuel_go_eq_nestedDFSWF_go
+    (remaining : List State) (st : FNDFSState State)
+    (hfin : ∀ x, st.innerFinished.contains x → fr.univ.contains x)
+    (hremaining : ∀ x ∈ remaining, fr.univ.contains x) :
+    ∃ fuel result, nestedDFS_fuel.go succs isAccepting remaining st fuel = some result ∧
+      result = nestedDFSWF.go succs fr isAccepting remaining st := by
+  induction remaining generalizing st with
+  | nil =>
+    refine ⟨1, .empty st.outerVisited.size, nestedDFS_fuel_go_nil succs isAccepting st 0, ?_⟩
+    unfold nestedDFSWF.go
+    rfl
+  | cons init rest ih =>
+    have hinit : fr.univ.contains init := hremaining init (List.mem_cons_self ..)
+    have hrest : ∀ x ∈ rest, fr.univ.contains x :=
+      fun x hx => hremaining x (List.mem_cons_of_mem _ hx)
+    by_cases hvis : st.outerVisited.contains init = true
+    · obtain ⟨fuel2, result2, heq2, heqC2⟩ := ih st hfin hrest
+      refine ⟨fuel2 + 1, result2, ?_, ?_⟩
+      · rw [nestedDFS_fuel_go_skip succs isAccepting init rest st fuel2 hvis]
+        exact heq2
+      · unfold nestedDFSWF.go
+        simp only [hvis]
+        exact heqC2
+    · simp only [Bool.not_eq_true] at hvis
+      let st2 := { st with outerVisited := st.outerVisited.insert init }
+      have hfin2 : ∀ x, st2.innerFinished.contains x → fr.univ.contains x := hfin
+      have hstack_states : ∀ p ∈ [(init, (succs init).toList)], fr.univ.contains p.1 :=
+        fun p hp => by rw [List.mem_singleton] at hp; subst hp; exact hinit
+      have hstack_remaining :
+          ∀ p ∈ [(init, (succs init).toList)], ∀ x ∈ p.2, x ∈ succs p.1 :=
+        fun p hp x hx => by
+          rw [List.mem_singleton] at hp; subst hp; exact Array.mem_toList_iff.mp hx
+      obtain ⟨fuelI, resultI, stI, heqI, hfinI, heqCI⟩ :=
+        outerDFSLoop_fuel_eq_outerDFSLoopWF succs fr isAccepting [(init, (succs init).toList)]
+          [init] st2 hfin2 hstack_states hstack_remaining
+      cases resultI with
+      | nonEmpty stem loop =>
+        refine ⟨fuelI + 1, .nonEmpty stem loop, ?_, ?_⟩
+        · exact nestedDFS_fuel_go_nonEmpty succs isAccepting init rest st fuelI hvis stem loop stI
+            heqI
+        · unfold nestedDFSWF.go
+          have heqCI' : (EmptinessResult.nonEmpty stem loop, stI) =
+              outerDFSLoopWF succs isAccepting fr [(init, (succs init).toList)] [init]
+                { st with outerVisited := st.outerVisited.insert init } := by
+            simpa only [st2] using heqCI
+          rw [if_neg (by simp [hvis])]
+          show EmptinessResult.nonEmpty stem loop =
+              match outerDFSLoopWF succs isAccepting fr [(init, (succs init).toList)] [init]
+                  { st with outerVisited := st.outerVisited.insert init } with
+              | (EmptinessResult.nonEmpty stem loop, _) => EmptinessResult.nonEmpty stem loop
+              | (EmptinessResult.empty _, st') => nestedDFSWF.go succs fr isAccepting rest st'
+          rw [← heqCI']
+      | empty m =>
+        obtain ⟨fuelR, resultR, heqR, heqCR⟩ := ih stI hfinI hrest
+        have heqI' : outerDFSLoop_fuel succs isAccepting (max fuelI fuelR)
+            [(init, (succs init).toList)] [init] st2 = some (.empty m, stI) := by
+          rw [show max fuelI fuelR = fuelI + (max fuelI fuelR - fuelI) by omega]
+          exact outerDFSLoop_fuel_add_preserves succs isAccepting _ fuelI
+            [(init, (succs init).toList)] [init] st2 (.empty m) stI heqI
+        have heqR' : nestedDFS_fuel.go succs isAccepting rest stI (max fuelI fuelR) =
+            some resultR := by
+          rw [show max fuelI fuelR = fuelR + (max fuelI fuelR - fuelR) by omega]
+          exact nestedDFS_fuel_go_add_preserves succs isAccepting _ fuelR rest stI resultR heqR
+        refine ⟨max fuelI fuelR + 1, resultR, ?_, ?_⟩
+        · rw [nestedDFS_fuel_go_continue succs isAccepting init rest st (max fuelI fuelR) hvis m stI
+              heqI']
+          exact heqR'
+        · unfold nestedDFSWF.go
+          simp only [hvis, st2] at heqCI ⊢
+          rw [← heqCI]
+          exact heqCR
+
+/-- Top-level bridge: for well-founded-reachable `initialStates`, there is a
+fuel value for which `nestedDFS_fuel` succeeds and agrees exactly with
+`nestedDFSWF`. -/
+theorem nestedDFS_fuel_eq_nestedDFSWF
+    (initialStates : List State)
+    (hinitial : ∀ x ∈ initialStates, fr.univ.contains x) :
+    ∃ fuel, nestedDFS_fuel initialStates succs isAccepting fuel =
+      some (nestedDFSWF succs fr isAccepting initialStates) := by
+  unfold nestedDFS_fuel nestedDFSWF
+  obtain ⟨fuel, result, heq, heqC⟩ :=
+    nestedDFS_fuel_go_eq_nestedDFSWF_go succs fr isAccepting initialStates
+      { outerVisited := Std.HashSet.emptyWithCapacity 1024
+        innerFinished := Std.HashSet.emptyWithCapacity 1024 }
+      (fun x hx => absurd hx (by simp [Std.HashSet.contains_emptyWithCapacity])) hinitial
+  exact ⟨fuel, heqC ▸ heq⟩
+
+/-- `nestedDFSWF`'s `.empty` case implies no accepting cycle exists — the
+well-founded mirror of `nestedDFS_fuel_empty_no_cycle`, obtained for free by
+transporting across `nestedDFS_fuel_eq_nestedDFSWF`. -/
+theorem nestedDFSWF_empty_no_cycle
+    (initialStates : List State) (n : Nat)
+    (hinitial : ∀ x ∈ initialStates, fr.univ.contains x)
+    (h : nestedDFSWF succs fr isAccepting initialStates = .empty n) :
+    ¬∃ _ac : AcceptingCycle initialStates succs isAccepting, True := by
+  obtain ⟨fuel, heq⟩ := nestedDFS_fuel_eq_nestedDFSWF succs fr isAccepting initialStates hinitial
+  rw [h] at heq
+  exact nestedDFS_fuel_empty_no_cycle heq
+
+/-- `nestedDFSWF`'s `.nonEmpty` case yields a genuine accepting-cycle witness
+— the well-founded mirror of `nestedDFS_fuel_nonEmpty_valid`. -/
+theorem nestedDFSWF_nonEmpty_valid
+    (initialStates : List State) (stem loop : List State)
+    (hinitial : ∀ x ∈ initialStates, fr.univ.contains x)
+    (h : nestedDFSWF succs fr isAccepting initialStates = .nonEmpty stem loop) :
+    ∃ ac : AcceptingCycle initialStates succs isAccepting,
+      ac.stem = stem ∧ ac.cycle = loop.tail := by
+  obtain ⟨fuel, heq⟩ := nestedDFS_fuel_eq_nestedDFSWF succs fr isAccepting initialStates hinitial
+  rw [h] at heq
+  exact nestedDFS_fuel_nonEmpty_valid heq
+
+end TopLevelFuelBridge
+
 end LTLLib

@@ -12,6 +12,26 @@
   include the emptiness check (it only produces the GBA). The emptiness check
   is part of the broader CAVA model checking framework.
 
+  This file's `nestedDFS`/`innerDFS`/`outerDFSLoop` are the *abstract
+  reference* definitions — `partial def`, unverified termination, kept for
+  readability. This mirrors CAVA's own two-layer split (`Nested_DFS.thy`):
+  the abstract `nested_dfs ≡ do { s ← it_dfs G accpt; RETURN (lasso s) }` is
+  never deleted once the concrete, generated `nested_dfs_code` exists —
+  both are kept, connected by a refinement theorem (`nested_dfs_impl`,
+  `nested_dfs_code.refine`), and `nested_dfs_code`'s own precondition is an
+  explicit `ASSERT (fb_graph G)` (finite/bounded-degree graph), threaded
+  through rather than internally re-derived.
+
+  The verified, total, actually-terminating counterpart here is
+  `nestedDFSWF` (`NestedDFSTermination.lean`), playing `nested_dfs_code`'s
+  role: it requires a `FiniteReach succs` witness as an explicit argument
+  (the Lean analogue of `ASSERT (fb_graph G)`), is proven equal to
+  `nestedDFS_fuel` for sufficient fuel (`nestedDFS_fuel_eq_nestedDFSWF`),
+  and inherits both of Phase 5's correctness theorems for free
+  (`nestedDFSWF_empty_no_cycle`, `nestedDFSWF_nonEmpty_valid`). Use
+  `nestedDFSWF`, not this file's `nestedDFS`, wherever a verified result is
+  needed.
+
   References:
   - Courcoubetis, Vardi, Wolper, Yannakakis: "Memory-efficient algorithms
     for the verification of temporal properties" (1992)

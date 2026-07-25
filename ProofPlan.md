@@ -7,16 +7,16 @@ This document outlines the plan for porting correctness proofs from the Isabelle
 - **Build integrity**: `LTLLib.lean` now imports all 23 source files (previously only 13 — see
   "Build-integrity fix" note under Phase 6 below for what that was hiding). A clean rebuild (stale
   `.lake/build` artifacts removed first) succeeds with 0 errors, 0 sorry, 394 build jobs.
-- **Phase 2 (Termination) is substantially done for nested DFS**: both `innerDFS` and `outerDFSLoop`
-  are now genuinely well-founded-recursive (`innerDFSWF`/`innerDFSCore` and `outerDFSLoopWF`,
+- **Phase 2 (Termination) is DONE for nested DFS, fully wired**: both `innerDFS` and `outerDFSLoop`
+  are genuinely well-founded-recursive (`innerDFSWF`/`innerDFSCore` and `outerDFSLoopWF`,
   `NestedDFSTermination.lean`, 0 sorry, 0 warnings, 2026-07-25) — converted as two **independent**
   single-measure recursions (not mutual), exactly matching CAVA's own blue/red DFS structure once the
-  actual AFP sources were read. `expand`'s termination is not yet done, and the fuel-bridge step
-  (transporting `NestedDFSCorrectness.lean`'s ~2000 sorry-free lines from the fuel-based functions
-  onto these real ones) hasn't started either — see Phase 2's write-up below for the detailed design,
-  the fuel-based attempt that was tried and abandoned, the CAVA-verified corrected plan, and both
-  conversions' own write-ups for the measure-choice correction and a Lean functional-induction-
-  principle limitation found while implementing them.
+  actual AFP sources were read. Both are bridged (for sufficient fuel) to the pre-existing,
+  already-verified fuel-based definitions, and a total top-level `nestedDFSWF` composes them,
+  inheriting Phase 5's correctness theorems (`nestedDFSWF_empty_no_cycle`/`nestedDFSWF_nonEmpty_valid`)
+  for free — see Phase 2's write-up below for the full design, the fuel-based attempt that was tried
+  and abandoned, the CAVA-verified corrected plan, both conversions' own measure-choice write-ups, and
+  the final wiring/bridge write-up. `expand`'s termination is separately scoped and not yet started.
 - Phases 1 (Semantics), D (Degeneralization), 4.1 (Soundness), 4.2 (Completeness) are **DONE** — sorry-free
 - **Phase 4.3 (GraphComplete) is now fully DONE** — `GraphComplete.lean` is entirely sorry-free, and
   `expandOASpec_completeness_weak` is a **fully unconditional completeness theorem** (no longer
@@ -29,15 +29,19 @@ This document outlines the plan for porting correctness proofs from the Isabelle
 - **constructGBA bridge** completed — computational GBA ↔ abstract automaton (Bridge.lean, ~777 lines)
 - **degeneralize bridge** completed — computational BA ↔ proof-level degeneralization (DegeneralBridge.lean, ~429 lines)
 - **FSet abstraction** completed — abstract finite set typeclass with HashSet/TreeSet instances
-- **2** `partial` functions remain: `innerDFS` and `outerDFSLoop` (NestedDFS.lean)
+- **2** `partial` functions remain in `NestedDFS.lean` (`innerDFS`, `outerDFSLoop`) — kept
+  deliberately, as the abstract reference layer, mirroring CAVA's own choice to keep `nested_dfs`
+  around once `nested_dfs_code` exists (see Phase 2's wiring write-up). The verified, total,
+  actually-usable entry point is `nestedDFSWF` (`NestedDFSTermination.lean`), not this file.
 - `expand` uses `partial_fixpoint` (provides equational rewriting + `partial_correctness` induction)
 - **Phase 5 (Nested DFS Correctness) is now fully DONE, both directions** —
   `NestedDFSCorrectness.lean` is sorry-free and unconditionally proves both
   `.empty` result ⟹ no accepting cycle exists (`nestedDFS_fuel_empty_no_cycle`,
   Phase 5b) and `.nonEmpty stem loop` result ⟹ `(stem, loop.tail)` is a
-  genuine accepting cycle (`nestedDFS_fuel_nonEmpty_valid`, Phase 5c). The
-  fuel-based nested DFS is a fully verified decision procedure (modulo
-  Phase 2's not-yet-proved termination/finiteness). `OutputVerify.lean`'s
+  genuine accepting cycle (`nestedDFS_fuel_nonEmpty_valid`, Phase 5c), and both now transfer to the
+  well-founded `nestedDFSWF` too (`nestedDFSWF_empty_no_cycle`/`nestedDFSWF_nonEmpty_valid`, Phase 2's
+  wiring). `nestedDFSWF` is a fully verified, terminating decision procedure (given a `FiniteReach`
+  witness). `OutputVerify.lean`'s
   `ba_hasAcceptingRun_of_lasso`/`ba_hasAcceptingRun_of_ndfs_output` remain
   unwired (they take the chain facts as hypotheses rather than deriving them
   from a real run) — connecting them to `nestedDFS_fuel_nonEmpty_valid` for a
@@ -1522,6 +1526,81 @@ establishes, so every existing correctness theorem there transfers across
 the bridge for free. Remaining Phase 2 scope: `expand`'s own termination
 conversion (`partial_fixpoint` → well-founded recursion via an
 `expand_ord`-style measure) — separately scoped, untouched by this work.
+
+### Wiring: total `nestedDFSWF` + top-level fuel bridge — ✅ DONE (2026-07-25, continued)
+
+Closes the "finish wiring nested DFS" follow-up: a total, well-founded
+top-level entry point, bridged to `NestedDFSCorrectness.lean`'s existing
+Phase 5 correctness theorems, so they now hold of a *real, terminating*
+function rather than only of the fuel-indexed proof device.
+
+**Checked CAVA first, as instructed, on two separate questions:**
+
+1. **Does `nested_dfs` handle multiple initial states as one fused loop, or
+   two nested loops (matching our `nestedDFS_fuel`/`nestedDFS_fuel.go`
+   split)?** `Nested_DFS.thy`: `nested_dfs G accpt ≡ do { s ← it_dfs G accpt;
+   RETURN (lasso s) }` — a *single* call into the generic `it_dfs` engine,
+   which folds root-selection into `step` itself via `get_new_root`/
+   `do_new_root` (fired whenever the stack is empty), covered by the *same*
+   `param_dfs_variant` measure used for ordinary successor discovery. So
+   CAVA's real architecture is one fused loop, not two — our own
+   `nestedDFS_fuel`/`nestedDFS_fuel.go` two-loop split (Phase 5, ✅ done,
+   ~2000 sorry-free lines) doesn't match this literally. Diagnosed why: it's
+   a consequence of not having ported CAVA's generic, reusable `param_DFS`
+   locale (a substantially larger undertaking, out of scope), not a
+   deviation from the CVWY algorithm itself, which is identical either way.
+   Rebuilding `nestedDFS_fuel`/`outerDFSLoop_fuel` to match CAVA's
+   single-loop *code shape* would mean reopening and re-proving all of
+   Phase 5's already-complete work for a purely organizational gain, so
+   `nestedDFSWF` mirrors `nestedDFS_fuel`'s *existing* two-loop shape
+   instead — matching the algorithm CAVA proves, not necessarily CAVA's
+   specific code organization where that organization is a
+   framework-engineering artifact rather than part of the algorithm.
+   `nestedDFSWF.go`'s own recursion is *plain* structural recursion on
+   `remaining : List State` — no fuel, no well-founded measure needed at
+   all; only its one call into `outerDFSLoopWF` per root needs the
+   well-founded machinery already built.
+
+2. **Should the old `partial def innerDFS`/`outerDFSLoop`/`nestedDFS` be
+   deleted/replaced once `nestedDFSWF` exists?** Checked CAVA's own
+   treatment of this exact question: CAVA never deletes its abstract
+   `nested_dfs` once the concrete, Autoref-generated `nested_dfs_code`
+   exists — both are kept permanently, connected by a refinement theorem
+   (`nested_dfs_impl`/`nested_dfs_code.refine`), and `nested_dfs_code`'s own
+   precondition is an explicit `ASSERT (fb_graph G)` (finite/bounded graph)
+   threaded through as an argument-level assumption, not internally
+   re-derived — exactly the role `FiniteReach succs` plays for `nestedDFSWF`.
+   So: **not deleted.** `NestedDFS.lean`'s `partial def`s are kept as the
+   abstract reference layer (readable, unverified termination), with a new
+   docstring pointing to `nestedDFSWF` as the verified, total counterpart —
+   mirroring CAVA's own two-layer split precisely, rather than inventing a
+   new one.
+
+**What was built** (`NestedDFSTermination.lean`, `TopLevelWF` +
+`TopLevelFuelBridge` sections): `nestedDFSWF` (total, mirrors
+`nestedDFS_fuel`'s shape per finding 1 above); a `nestedDFS_fuel.go`
+one-step-unfolding equation-lemma family plus `nestedDFS_fuel_go_add_preserves`
+(fuel monotonicity, mirroring `outerDFSLoop_fuel_add_preserves` — needed for
+the same reason: `nestedDFS_fuel.go`'s "continue to next root" and the
+`outerDFSLoop_fuel` call it makes share one fuel slot); the main bridge
+`nestedDFS_fuel_go_eq_nestedDFSWF_go`, proved by induction on `remaining`
+directly (not on `fuel`, not via a `.induct` principle — there's no
+well-founded recursion at this level at all, so this is the simplest bridge
+in the file); and the top-level `nestedDFS_fuel_eq_nestedDFSWF`, composing
+straight through. Two corollaries, `nestedDFSWF_empty_no_cycle` and
+`nestedDFSWF_nonEmpty_valid`, transport Phase 5's `nestedDFS_fuel_empty_no_cycle`/
+`nestedDFS_fuel_nonEmpty_valid` across the bridge essentially for free —
+`nestedDFS_fuel_empty_no_cycle` itself takes an *arbitrary* implicit `fuel`
+and only assumes success, no lower bound, so existence of *some* sufficient
+fuel (not a closed formula) is exactly what's needed, same pattern as the
+outer bridge.
+
+**Current sorry count in `NestedDFSTermination.lean`: 0.** Whole project
+builds clean (394 jobs). `nestedDFSWF` + its two correctness theorems are
+now the verified, total, actually-usable nested-DFS emptiness check —
+callers supply a `FiniteReach succs` witness and get back a result with a
+proof obligation-free correctness guarantee, matching CAVA's own
+`nested_dfs_code`/`ASSERT (fb_graph G)` shape.
 
 ---
 
