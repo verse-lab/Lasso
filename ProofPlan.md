@@ -8,9 +8,15 @@ This document outlines the plan for porting correctness proofs from the Isabelle
   "Build-integrity fix" note under Phase 6 below for what that was hiding). A clean rebuild (stale
   `.lake/build` artifacts removed first) succeeds with 0 errors, 0 sorry, 394 build jobs.
 - **Phase 2 (Termination) is partially done**: the inner-DFS half of nested-DFS fuel-sufficiency is
-  proved (`innerDFS_fuel_sufficient`, `NestedDFSTermination.lean`, 0 sorry). The outer-DFS half and
-  `expand`'s termination are not — see Phase 2's write-up below for the detailed design, the
-  fuel-based attempt that was tried and abandoned, and the recommended `termination_by` redirect.
+  proved (`innerDFS_fuel_sufficient`, `NestedDFSTermination.lean`, 0 sorry), **and (2026-07-25)
+  `innerDFS` itself is now genuinely well-founded-recursive** (`innerDFSWF`/`innerDFSCore`,
+  `NestedDFSTermination.lean`, 0 sorry, 0 warnings) — the first of the two DFS functions converted
+  off `partial`. `outerDFSLoop` and `expand`'s termination are not yet done — see Phase 2's write-up
+  below for the detailed design, the fuel-based attempt that was tried and abandoned, the
+  CAVA-verified (2026-07-25, read directly from the AFP sources) corrected plan (`innerDFS`/
+  `outerDFSLoop` are **not** mutually recursive in CAVA's own termination argument — two independent
+  single-measure recursions, glued by an ordinary function call, not a combined bound), and the
+  `innerDFS` conversion's own write-up for a measure-choice correction found while implementing it.
 - Phases 1 (Semantics), D (Degeneralization), 4.1 (Soundness), 4.2 (Completeness) are **DONE** — sorry-free
 - **Phase 4.3 (GraphComplete) is now fully DONE** — `GraphComplete.lean` is entirely sorry-free, and
   `expandOASpec_completeness_weak` is a **fully unconditional completeness theorem** (no longer
@@ -787,8 +793,12 @@ stage is a free-standing function never composed.
 Remove `partial`/`partial_fixpoint` from `expand`, `innerDFS`, `outerDFSLoop`.
 
 **Isabelle source studied**: AFP `Param_DFS.thy` (`param_dfs_variant`, the
-generic DFS framework's termination proof) and `LTL_to_GBA.thy`'s "Termination
-proof" section (`expand_ord`). CAVA proves termination from a single finiteness
+generic DFS framework's termination proof), `Nested_DFS.thy`/`DFS_Find_Path.thy`
+(how the blue/red DFS pair is actually wired together), and `LTL_to_GBA.thy`'s
+"Termination proof" section (`expand_ord`). Sources fetched directly from the
+AFP GitHub mirror (`isabelle-prover/mirror-afp-devel`) and read in full for
+this section — see the two write-ups below, which quote the relevant
+definitions/lemmas verbatim. CAVA proves termination from a single finiteness
 hypothesis in each case — `fb_graph` (finite reachable-state locale assumption)
 for the DFS framework, and the finite subformula-closure `subfrmlsr φ` for
 `expand`. We port the same strategy: assume finiteness explicitly (a
@@ -796,6 +806,126 @@ for the DFS framework, and the finite subformula-closure `subfrmlsr φ` for
 unconditionally (which is simply false for `innerDFS`/`outerDFSLoop` — a
 `State`/`successors` pair with an infinite reachable set never terminates;
 CAVA doesn't claim otherwise either).
+
+**Correction (2026-07-25)**: an earlier version of this section claimed
+CAVA's `RECT`/WF-recursion package "uses `wf param_dfs_variant` directly...
+with no separate fuel parameter ever threaded through the code" and concluded
+from that alone that there was "nothing to combine across nested calls." That
+conclusion was right, but the stated reason was incomplete — re-reading the
+actual sources (below) shows the *real* reason is structural, not just "no
+fuel": CAVA never defines one jointly-recursive function containing "outer
+calls inner, then continues." This distinction matters for the Lean port —
+see "Planned next step," which changes as a result.
+
+**`expand`'s termination (`LTL_to_GBA.thy`), verified**: `expand` itself is
+defined with the *partial*-correctness combinator `REC` (no termination
+proof needed to define it — this is the Isabelle analogue of our
+`partial_fixpoint`). A second, *total*-correctness version `expand⇩T` is
+defined with `RECT`, and that is what the termination section actually
+proves well-founded, via:
+
+```isabelle
+abbreviation "old_next_pair n ≡ (old n, next n)"
+abbreviation "old_next_limit φ ≡ Pow (subfrmlsr φ) × Pow (subfrmlsr φ)"
+lemma old_next_limit_finite: "finite (old_next_limit φ)"
+  using subfrmlsr_finite by auto
+
+definition expand_ord where
+  "expand_ord φ ≡ inv_image (finite_psupset (old_next_limit φ) <*lex*> less_than)
+                             (λ(n, ns). (old_next_pair ` ns, size_set (new n)))"
+lemma expand_ord_wf[simp]: "wf (expand_ord φ)"
+  using finite_psupset_wf[OF old_next_limit_finite] unfolding expand_ord_def by auto
+```
+
+i.e. a lexicographic `inv_image`: (1) primary — the set of `(old,next)`
+signatures across already-finished nodes, ordered by strict superset,
+well-founded because it's bounded by the finite universe
+`Pow(subfrmlsr φ) × Pow(subfrmlsr φ)` (`finite_psupset`, the standard
+"bounded-by-a-finite-set, strict-superset" WF relation from
+`Refine_Monadic`); (2) secondary tie-break — `size_set (new n)`, the current
+node's still-to-expand formulas' total AST size under plain `<`, which
+strictly shrinks every time a formula is split into its (structurally
+smaller) sub-formulas:
+
+```isabelle
+lemma new1_less_sum: "size_set (new1 φ) < size_set {φ}"
+lemma new2_less_sum: "size_set (new2 φ) < size_set {φ}"
+```
+
+An invariant `expand_inv` (`new/old/next ⊆ subfrmlsr φ`, all finite) is
+carried alongside, needed so the state stays inside the bounded universe. A
+single per-recursive-call-site lemma, `expand_inv_impl`, discharges both
+"argument decreases in `expand_ord φ`" and "invariant preserved" together for
+all three of `expand`'s recursive-call shapes (finish-a-node / split via
+`new1`+`next1` / split via `new2`) in one shot. The whole proof is then
+`RECT_rule[pre, V]` + `wf V` (`expand_ord_wf`) + `expand_inv_impl` at each
+call site. Location: `thys/LTL_to_GBA/LTL_to_GBA.thy` lines 279 (`expand`
+def), 836–1130 (termination section).
+
+This maps onto our codebase directly: `NNF.subformulas` (`Subformulas.lean`)
+is already the Lean `subfrmlsr`, and `Invariants.lean`'s `old_subformula`/
+`next_subformula` `ExpandSpec` fields already establish (for the *partial*
+`expand`, via `partial_correctness`) exactly the subset-closure fact
+`expand_inv` needs — this groundwork transfers to the termination proof
+essentially unchanged; the new work is the measure itself (signature-set
+superset growth + `new`'s AST-size shrink) and the per-branch decrease
+proof.
+
+**Nested DFS termination, verified — structurally different from what was
+previously assumed here**: the important discovery is that CAVA does **not**
+define one jointly-recursive function where "outer DFS calls inner DFS, then
+continues the outer traversal" is a single recursive definition needing a
+combined measure. Instead:
+
+- The generic DFS (`Param_DFS.thy`) is an ordinary `WHILE`/`WHILET` loop
+  (`it_dfs`/`it_dfsT`), terminating via its own self-contained measure:
+  ```isabelle
+  definition "param_dfs_variant ≡ inv_image
+    (finite_psupset reachable <*lex*> finite_psubset <*lex*> less_than)
+    (λs. (dom (discovered s), pending s, length (stack s)))"
+  ```
+  a 3-way lexicographic order: discovered-set growth (bounded by the
+  `finite reachable` hypothesis, i.e. `fb_graph`), then pending-successor
+  shrinkage, then stack-length as a final tie-break. Proved well-founded via
+  `param_dfs_variant_wf`, then plugged into the library's
+  `WHILET_eq_WHILE_tproof` to get total correctness of the loop.
+- `Nested_DFS.thy`'s outer ("blue") DFS is *one more instantiation* of this
+  same generic `param_DFS` locale — its `on_finish` hook (called when
+  backtracking from an accepting state) is `run_red_dfs`, which invokes the
+  inner ("red") DFS not as a concrete recursive call but as an **abstract
+  monadic oracle**, `find_path1_restr_spec` — a `SPEC(...)` postcondition,
+  not a program:
+  ```isabelle
+  definition find_path1_restr_spec G P R ≡ do {
+    ASSERT (fb_graph (graph_restrict G R)); SPEC (find_path1_restr_pred G P R) }
+  ```
+  The outer loop's own termination proof (`param_dfs_variant_step`) only has
+  to show that after `step` — which may invoke this oracle — the *outer*
+  state's `(discovered, pending, stack)` triple has strictly decreased. It
+  treats the oracle's result opaquely via its postcondition; it never
+  inspects how many internal steps the inner DFS took. **This is exactly
+  what avoids the "combine two independently-derived bounds" problem** we
+  hit with the fuel-based attempt below.
+- The *concrete* red DFS realizing that oracle (`find_path1_restr`,
+  `DFS_Find_Path.thy`) is proved terminating completely separately: it's
+  *yet another*, wholly independent `param_DFS` instantiation (locale `fp0`)
+  over its *own* graph/state, with its *own* `param_dfs_variant`, and is
+  then shown, via Isabelle's refinement-calculus order `≤` on the `nres`
+  monad, to *refine* the abstract spec `find_path1_restr_spec` — a separate
+  lemma, in a separate theory, with no shared measure whatsoever with the
+  blue DFS's proof.
+- The two proofs are glued only by `nres`/refinement-calculus composition
+  (`≤` is monotone w.r.t. `bind`, so "outer computation treating inner as an
+  oracle satisfying `SPEC`" composes for free with "inner computation
+  refines that `SPEC`" — termination/`nofail` included, no joint measure
+  needed).
+
+Locations: `thys/DFS_Framework/Param_DFS.thy` lines 342–343 (`it_dfs`/
+`it_dfsT`), 1042–1132 (`param_dfs_variant` + `wf` + `WHILET_eq_WHILE_tproof`
+application); `thys/DFS_Framework/Examples/Nested_DFS.thy` lines 48–133
+(`BlueDFS_defs`, `run_red_dfs`, requires `fb_graph G`);
+`thys/DFS_Framework/Examples/DFS_Find_Path.thy` lines 33–70, 336–430 (`fp0`
+locale, `find_path1_restr_spec`/`find_path1_restr`, the refinement lemma).
 
 **Key realization (nested DFS, `NestedDFSTermination.lean`)**: the two
 `partial` functions in `NestedDFS.lean` don't need equally-hard termination
@@ -838,59 +968,187 @@ helpers: `size_le_of_subset`, `size_pos_of_contains`, `size_lt_of_ssubset`,
 only, reusable elsewhere if a nodup-list/`HashSet`-cardinality bound is ever
 needed again).
 
-**Root cause, and the redirect this points to**: re-checking CAVA at the
-point of that circularity showed it doesn't hit this at all — Isabelle's
-`RECT`/well-founded-recursion package uses `wf param_dfs_variant` *directly*
-to justify the recursive definition, with **no separate fuel parameter ever
-threaded through the code**. Each recursive call (including "outer calls
-inner, then continues") is checked individually against the measure at
-definition time; there is nothing to *combine* across calls afterward. The
-fuel-based encoding was the right tool for Phase 5b/5c (proving *correctness*
-of a total stand-in function, deliberately avoiding termination as a separate
-concern) but is the wrong tool for termination itself — using it means
-manually reconstructing exactly the bookkeeping `termination_by`/
-`decreasing_by` already does natively.
+**Root cause, and the redirect this points to (corrected 2026-07-25)**: the
+circularity came from treating `innerDFS`/`outerDFSLoop` as if they needed a
+*single, combined* well-founded measure — i.e. from implicitly assuming
+CAVA's termination argument is "mutual." Having now actually read
+`Nested_DFS.thy`/`Param_DFS.thy`/`DFS_Find_Path.thy` (previous version of
+this note relied on secondhand description, not the source), that assumption
+was wrong: **CAVA's blue and red DFS are two separately-terminating
+functions**, each with its own self-contained measure, and the outer one
+calls the inner one as an ordinary (already-total) function whose internal
+step count is irrelevant to the outer measure. There is no combined bound to
+construct in the first place. The fuel-based encoding failed not because
+fuel is the wrong *technique* in general, but because our fuel attempt kept
+`innerDFS_fuel`'s and `outerDFSLoop_fuel`'s fuel arguments coupled (needing a
+`max` of two existentially-quantified thresholds); CAVA's structure shows the
+fix is to decouple them completely, matching the source.
 
-**Planned next step (not started): convert `innerDFS`/`outerDFSLoop`
-directly via `termination_by`**, using the same measure design (validated
-above), instead of fuel-threading a parallel copy:
+**Planned next step (not started): convert `innerDFS`, then `outerDFSLoop`,
+separately** via `termination_by`, in that order — not as a mutual
+definition:
 
-- Add a `FiniteReach` structure to `NestedDFS.lean` itself (`univ :
-  Std.HashSet State`, `closed : ∀ s, univ.contains s → ∀ t ∈ succs s,
-  univ.contains t`) — no `initialStates` field needed there (that's only
-  relevant at `nestedDFS`'s level); `nestedDFS` additionally needs `∀ i ∈
-  initialStates, univ.contains i`.
-- `innerDFS`/`outerDFSLoop`/`nestedDFS` all gain this as a genuine **explicit
-  parameter** — a real, visible API change (confirmed with the user before
-  starting), matching how CAVA's own functions live inside a locale carrying
-  the same assumption. `hcur : univ.contains current`-style membership
-  hypotheses are *load-bearing* for the measure to actually decrease (a state
-  outside `univ` could be visited with no bound), so these can't be optional
-  or derived after the fact — they must be real parameters threaded through
-  every recursive call.
-- **The hard part**: because a membership/closure hypothesis about a
-  recursive call's *result* (e.g. "the returned `innerVisited` is still ⊆
-  `univ`") is needed to type the *next* recursive call, and no correctness
-  theorem about the not-yet-defined function can supply it, the invariant
-  must be bundled *into the function's own return type* (a `Subtype`/sigma
-  return rather than a plain tuple). This is legitimate — Lean's WF-recursion
-  induction principle lets a recursive call on a strictly smaller argument
-  assume the *full* signature of the function being defined, invariant
-  included, exactly like any other structural IH — but it means `innerDFS`/
-  `outerDFSLoop`'s return types become subtype-wrapped internally.
-  `nestedDFS` (the public entry point) should unwrap this at the very end so
-  its own external signature stays a plain `EmptinessResult`.
-- Also still not started: `expand`'s termination (a genuine rewrite from
-  `partial_fixpoint` to well-founded recursion with the two-part `expand_ord`
-  measure, which risks needing changes to the induction principle used
-  throughout `Invariants.lean`/`Bridge.lean`/`GraphComplete.lean`).
+1. **`innerDFS` becomes a standalone well-founded recursion first — ✅ DONE
+   (2026-07-25), `NestedDFSTermination.lean`, 0 sorry, 0 warnings, whole
+   project still builds (394 jobs).** `FiniteReach` (`univ : Std.HashSet
+   State`, `closed : ∀ s, univ.contains s → ∀ t ∈ succs s, univ.contains t`)
+   was added there (not `NestedDFS.lean` itself yet — see below) as a
+   genuine **explicit parameter**, our analogue of `fb_graph`/CAVA's own
+   `finite reachable` hypothesis, assumed rather than derived, exactly as
+   planned.
 
-**Scope estimate**: this `termination_by` conversion — mutual well-founded
-recursion returning dependent/subtype values, for two functions with two
-different measures, in a less common Lean pattern than anything used
-elsewhere in this codebase — is a substantial undertaking, realistically
-comparable in size to Phase 5b's Phases D–F. Explicitly deferred
-(2026-07-24) rather than started partially.
+   **Correction found empirically while implementing this**: the measure is
+   **not** `univ.size - iv.size` (`Nat` subtraction) as this note originally
+   proposed — that measure needs `iv ⊆ univ` maintained as an inductive
+   invariant just to stay well-defined (Nat subtraction truncates), which is
+   exactly what reintroduces "the hard part" below in its *worst* form. The
+   actual measure used is **`(fr.univ \ iv).size`** (`Std.HashSet`
+   set-difference size) — well-defined and meaningful regardless of whether
+   `iv` has elements outside `univ`, so no closure invariant on `iv` itself
+   is ever needed, only a one-line fact (`HashSet.sdiff_insert_lt`, reusing
+   the already-proved `HashSet.size_lt_of_ssubset` directly, no fresh
+   extensionality argument — `Std.HashSet` doesn't expose one) that
+   inserting a fresh (`univ`-member, not-yet-`iv`) state strictly shrinks
+   `univ \ iv`.
+
+   **The hard part correctly anticipated, but overstated in scope**:
+   `innerDFS` folds over `current`'s successors, and the "continue with the
+   rest of the list after exploring a fresh successor" call needs a fact
+   about the *previous* recursive call's *result* — specifically, that
+   exploring that successor didn't *increase* the measure (plain, non-strict
+   monotonicity) — and no correctness theorem about the not-yet-defined
+   function can supply that externally. The fix is exactly what this note
+   already said: bundle the fact into `innerDFSCore`'s own return type
+   (`Subtype`, `{p // (fr.univ \ p.2.1).size ≤ (fr.univ \ iv).size}`) rather
+   than a plain tuple — but the bundled fact itself is *much lighter* than
+   originally feared (one `≤` on a `Nat`, not a full `⊆`-style closure
+   invariant), a direct consequence of the measure correction above.
+
+   **Structure actually implemented** (`NestedDFSTermination.lean`, new
+   section `InnerDFSWellFounded`): two definitions, not one, mirroring the
+   file's own established fuel/fold split:
+   - `innerDFSCore succs fr seed current remaining iv st hcurrent hremaining`
+     — the real recursive engine. Takes `current` as **already known-fresh
+     and already inserted into `iv`** by its caller (this is what keeps the
+     "already finished/already visited" checks to a single place rather than
+     once per fold level). `hcurrent : fr.univ.contains current` and
+     `hremaining : ∀ x ∈ remaining, x ∈ succs current` are threaded explicit
+     hypotheses (erased at runtime, not bundled in the return type — they're
+     only ever *consumed*, never *produced*, so there's no circularity in
+     passing them as ordinary parameters). `termination_by ((fr.univ \
+     iv).size, remaining.length)` — Lean picks up `Prod.instWellFoundedRelation`
+     (genuinely lexicographic) automatically for a `Nat × Nat` measure
+     expression, no manual `WellFoundedRelation` instance needed.
+   - `innerDFSWF succs fr seed current hcurrent iv st` — thin, **non-recursive**
+     wrapper matching the original `partial def innerDFS`'s public shape
+     (does the top-level "already finished"/"already visited" check once,
+     then inserts `current` and delegates to `innerDFSCore`). Named `...WF`
+     rather than `innerDFS` as a deliberate staging choice — it lives
+     alongside (not yet in place of) `NestedDFS.lean`'s still-`partial`
+     `innerDFS`, to avoid forcing `outerDFSLoop`'s signature to change
+     before its own conversion (step 2) is actually ready; the rename/swap-in
+     happens together with step 2.
+2. **`outerDFSLoop` second, using the now-total `innerDFS` as a plain
+   helper call** — this is the step the corrected understanding actually
+   simplifies. `outerDFSLoop` also takes `FiniteReach` (or reuses the
+   `univ`/`closed` fields), with CAVA's own `(discovered, pending,
+   stack-length)`-style measure — concretely `(univ.size -
+   outerVisited.size, pendingSum stack + stack.length)`, lexicographic.
+   Two structural facts make this call *not* need return-type bundling the
+   way `innerDFS` did: (a) `outerDFSLoop` has **no fold over siblings** —
+   it's a single, non-branching tail-recursive call per invocation (already
+   noted in `NestedDFSTermination.lean`'s file comment), so there's no
+   "previous sibling's result" dependency chain; (b) the outer measure is
+   defined purely from `outerVisited`/`stack`, and `innerDFS` provably never
+   touches `outerVisited` (already proved once, as `innerDFS_fuel_outerVisited_eq`
+   for the fuel version — needs re-proving for the real `innerDFS`, but is
+   the same short argument). So the "accepting leaf, call `innerDFS`, then
+   recurse" branch's decrease proof never needs to know anything about
+   `innerDFS`'s *internal* recursion at all — only that it returns *some*
+   result (guaranteed, since by this point `innerDFS` is already total) and
+   that it leaves `outerVisited` fixed. This is the Lean-native mirror of
+   CAVA gluing blue/red via `nres` refinement instead of a joint measure.
+3. **Bridge to the existing correctness proofs, instead of re-proving
+   them.** `NestedDFSCorrectness.lean` (~2000 sorry-free lines) is proved
+   against `innerDFS_fuel`/`outerDFSLoop_fuel`, not the real functions.
+   Redoing that whole proof against the new WF-recursive definitions would
+   be wasteful. CAVA itself does the analogous thing rather than reprove
+   `it_dfs`'s properties from scratch for `it_dfsT`: `WHILET_eq_WHILE_tproof`
+   /`it_dfsT_eq_it_dfs` show the total-correctness loop *equals* the
+   partial one once termination holds. Our analogue: once `innerDFS`/
+   `outerDFSLoop` are total, prove `innerDFS ... = innerDFS_fuel N ...`/
+   `outerDFSLoop ... = outerDFSLoop_fuel N ...` for `N` above the already-
+   established sufficiency threshold (`innerDFS_fuel_sufficient`, and its
+   still-to-be-proved `outerDFSLoop` analogue — note this sufficiency proof
+   is now easier too, for the same reason step 2 is: it no longer needs a
+   combined bound, just the outer-only measure). Every existing theorem in
+   `NestedDFSCorrectness.lean` then transports across this equation for
+   free — no proof content needs to be redone, only restated.
+
+   **Verified precisely (2026-07-25), and worth recording exactly**: read
+   `Nested_DFS.thy`'s actual top-level theorem, `blue_dfs_correct`, to check
+   this bridge-lemma idea against CAVA's own practice, not just against
+   `Param_DFS.thy`'s generic machinery in isolation.
+   ```isabelle
+   lemma blue_dfs_correct:
+     assumes NC: "¬ cond s"
+     shows "case lasso s of
+       None ⇒ ¬(∃v0∈V0. ∃v. (v0,v) ∈ E⁺ ∧ accpt v ∧ (v,v) ∈ E⁺)
+     | Some (pr,pl) ⇒ (∃v0∈V0. ∃v.
+         path E v0 pr v ∧ accpt v ∧ pl≠[] ∧ path E v pl v)"
+   ```
+   Its proof (`nc_finished_eq_reachable` + the file's own
+   `no_accpt_cycle_in_finish`/`s_lasso_inv`) is stated and proved entirely
+   at the abstract "state `s` satisfies `¬cond s`" level — termination-
+   agnostic, exactly matching how our `nestedDFS_fuel_empty_no_cycle`/
+   `nestedDFS_fuel_nonEmpty_valid` don't need termination either. The
+   executable function is separately:
+   ```isabelle
+   definition "nested_dfs G accpt ≡ do {
+     ASSERT (fb_graph G); s ← it_dfs TYPE('a) G accpt; RETURN (lasso s) }"
+   ```
+   So the precise shape is: **`blue_dfs_correct` itself never invokes
+   `it_dfsT_eq_it_dfs`** — the termination bridge is applied one layer
+   further out, at `nested_dfs`'s definition/refinement level (`ASSERT
+   (fb_graph G)` licenses `param_dfs_variant`'s well-foundedness; a further
+   `impl`/`tailrec_impl` refinement layer produces actual generated code).
+   The overall shape we want to port still holds — invariant-based
+   correctness proved once, termination-agnostic; executability bridged in
+   separately, never re-proved against it — but CAVA realizes it as a
+   multi-step `nres`-refinement chain (nofail-under-`fb_graph`, then
+   `it_dfs`/`it_dfsT` equivalence, then code-level refinement) because
+   that's the vocabulary its monadic framework has. We have no such
+   refinement calculus and don't need one: a single direct equation
+   `innerDFS = innerDFS_fuel N` does the same job as CAVA's whole chain in
+   one step, since Lean functions are already "code" — there's no separate
+   code-generation refinement layer to route through.
+4. **`nestedDFS`** (the public entry point) unwraps `innerDFS`/
+   `outerDFSLoop`'s internal `Subtype`/invariant-bundled return values at
+   the very end, so its own external signature stays a plain
+   `EmptinessResult` and callers don't see `FiniteReach` leak through
+   unnecessarily deep — though `nestedDFS` itself does need `∀ i ∈
+   initialStates, univ.contains i` alongside `FiniteReach`, matching
+   `BlueDFS`'s own locale assumption.
+5. **`expand`'s termination is fully independent of 1–4** and can be done
+   before, after, or in parallel — a genuine rewrite from
+   `partial_fixpoint` to well-founded recursion with the `expand_ord`
+   measure (verified above: signature-set superset growth, then `new`'s
+   AST-size shrink as tie-break), which risks needing changes to the
+   induction principle used throughout `Invariants.lean`/`Bridge.lean`/
+   `GraphComplete.lean` (those currently rely on `expand.partial_correctness`).
+
+**Scope estimate (revised 2026-07-25)**: no longer "mutual" well-founded
+recursion — `innerDFS` and `outerDFSLoop` are two *independent*
+single-measure conversions, chained by an ordinary function call plus (for
+step 3) an equality bridge to already-proved fuel-based results. Still a
+real undertaking (step 1's subtype-bundled return in particular is a less
+common Lean pattern), but meaningfully smaller than the previous "comparable
+to Phase 5b's Phases D–F" estimate, since step 3 reuses ~2000 lines of
+existing proof rather than redoing it, and step 2 no longer needs invariant
+bundling at all. `expand`'s conversion (step 5) is separately scoped and not
+smaller just because of this correction. Not started as of 2026-07-25 — this
+section records the corrected plan, implementation to follow in a later
+session.
 
 ---
 

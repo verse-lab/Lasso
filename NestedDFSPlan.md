@@ -97,9 +97,43 @@ sorry-free and proves both directions of `nestedDFS_fuel`'s correctness.
 **Termination (Phase 2, see `ProofPlan.md`)**: the inner-DFS half of
 fuel-sufficiency is done (`innerDFS_fuel_sufficient`,
 `NestedDFSTermination.lean`). The outer-DFS half needs a genuine
-`termination_by` conversion of `innerDFS`/`outerDFSLoop` themselves (fuel-based
+`termination_by` conversion of `innerDFS`/`outerDFSLoop` (fuel-based
 threshold-combining hit a real circularity and was abandoned) — see
 `ProofPlan.md`'s Phase 2 section for the full design and resume plan.
+
+**Update (2026-07-25)**: read CAVA's actual Isabelle sources
+(`Param_DFS.thy`, `Nested_DFS.thy`, `DFS_Find_Path.thy`) directly rather than
+relying on secondhand description. Corrected finding: CAVA's blue (outer) and
+red (inner) DFS are **two independently-terminating functions**, each with
+its own self-contained well-founded measure — not one mutually-recursive
+definition needing a combined bound. The outer loop calls the inner one only
+as an ordinary (already-total, in Isabelle: abstract `SPEC`-level oracle)
+function call; its own termination proof never inspects the inner call's
+step count. This is exactly what resolves the circularity the fuel-based
+attempt hit, and it means the Lean port should convert `innerDFS` (own
+measure `univ.size - iv.size`, needs a `FiniteReach` param and a
+subtype-bundled return type because of its sibling-fold structure) and
+*then* `outerDFSLoop` (own measure, calls the now-total `innerDFS` as a
+plain helper — no subtype bundling needed here, since `outerDFSLoop` has no
+sibling fold and its measure doesn't depend on `innerFinished` at all) as
+two **separate** conversions, not a mutual one — followed by bridge lemmas
+(`innerDFS = innerDFS_fuel N`, `outerDFSLoop = outerDFSLoop_fuel N`,
+mirroring CAVA's own `it_dfsT_eq_it_dfs`) to transport the existing
+~2000-line `NestedDFSCorrectness.lean` proof onto the real functions instead
+of redoing it. See `ProofPlan.md`'s Phase 2 section for the full write-up,
+including the verbatim Isabelle snippets. Not started; this is a plan
+correction only.
+
+**Update (2026-07-25, later same day): `innerDFS` converted.**
+`innerDFSWF`/`innerDFSCore` in `NestedDFSTermination.lean`, 0 sorry, 0
+warnings, whole project still builds (394 jobs). One correction to the note
+directly above: the measure actually used is `Std.HashSet` set-difference
+size (`(fr.univ \ iv).size`), *not* `univ.size - iv.size` (`Nat`
+subtraction) as guessed there — found while implementing, this avoids ever
+needing `iv ⊆ univ` as a maintained invariant, which in turn makes the
+still-needed Subtype-bundled return type far lighter than expected (one `≤`
+fact, not a closure invariant). See `ProofPlan.md`'s Phase 2 section for the
+full write-up. `outerDFSLoop`'s conversion (step 2) is next; not started.
 
 ## Future work (TODO): Schwoon-Esparza back-edge optimization
 

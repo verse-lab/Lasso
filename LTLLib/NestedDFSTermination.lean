@@ -103,11 +103,14 @@ end HashSetCard
 
 Lean analogue of CAVA's `fb_graph` locale assumption. Any concrete automaton
 built by `constructGBA`/`GBA.degeneralize` satisfies this with `univ :=`
-its own (finite, `Std.HashMap`-backed) state set. -/
+its own (finite, `Std.HashMap`-backed) state set.
+
+No `initialStates` field here — that's only relevant at `nestedDFS`'s own
+level (as a separate hypothesis `∀ i ∈ initialStates, univ.contains i`),
+not at `innerDFS`/`outerDFSLoop`'s. -/
 structure FiniteReach {State : Type u} [BEq State] [Hashable State]
-    (succs : State → Array State) (initialStates : List State) where
+    (succs : State → Array State) where
   univ : Std.HashSet State
-  initial_mem : ∀ i ∈ initialStates, univ.contains i
   closed : ∀ s, univ.contains s → ∀ t ∈ succs s, univ.contains t
 
 section InnerFuelSufficiency
@@ -232,5 +235,146 @@ theorem innerDFS_fuel_sufficient
             hcurrent hrem hiv' hfin hfuel'
 
 end InnerFuelSufficiency
+
+/-! ## Well-founded `innerDFS` (Phase 2, `innerDFS` half — first genuinely
+terminating conversion, 2026-07-25)
+
+Direct well-founded-recursion port, matching CAVA's own architecture: this
+converts `innerDFS` to a genuinely terminating function *on its own*,
+independent of `outerDFSLoop` — see `ProofPlan.md`'s corrected Phase 2
+write-up: CAVA's blue/red DFS are two *independently*-terminating functions,
+not one mutually recursive definition, and there's no need to combine a
+"how much fuel does the inner call need" bound with an "outer" one.
+
+**Key design choice, found empirically while implementing this (not fully
+anticipated by the original plan draft)**: the measure is
+`(fr.univ \ iv).size` (`HashSet` set-difference size), *not*
+`univ.size - iv.size` (`Nat` subtraction, `InnerFuelSufficiency`'s own
+`innerFuelMeasure`). The `\`-based measure is well-defined and usable
+regardless of whether `iv` has elements outside `univ` — no `iv ⊆ univ`
+invariant ever needs to be *maintained* across the recursion for the measure
+itself to make sense. This sidesteps most of what the original plan called
+"the hard part."
+
+A *much lighter* Subtype-bundled fact is still genuinely needed, though —
+this part of the earlier plan's diagnosis was correct in spirit, just
+overstated in scope: within the fold over `current`'s successors, the
+"continue with `rest` after having just explored a fresh successor" call
+needs to know that exploring that successor didn't *increase* the measure
+(weak monotonicity), and that fact can only be obtained from the recursive
+call's own return value — no external theorem about a not-yet-defined
+function can supply it externally. Hence `innerDFSCore`'s return type. -/
+
+section InnerDFSWellFounded
+
+variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
+
+/-- `sdiff`-based analogue of `HashSet.size_lt_of_ssubset`: inserting a
+fresh (not-yet-in-`iv`, but `univ`-member) state into `iv` strictly shrinks
+`univ \ iv`. Reuses `HashSet.size_lt_of_ssubset` directly — no fresh
+extensionality argument needed (`Std.HashSet` doesn't expose one; this is
+exactly why the measure is phrased via `\` and `size_lt_of_ssubset`'s
+subset-of-`contains` hypothesis, rather than via reconstructing set
+equalities). -/
+theorem HashSet.sdiff_insert_lt {univ iv : Std.HashSet State} {x : State}
+    (hx_univ : univ.contains x) (hx_niv : iv.contains x = false) :
+    (univ \ (iv.insert x)).size < (univ \ iv).size := by
+  apply HashSet.size_lt_of_ssubset (s := univ \ (iv.insert x)) (t := univ \ iv) (k := x)
+  · intro y hy
+    simp only [Std.HashSet.contains_diff, Bool.and_eq_true, Bool.not_eq_true'] at hy ⊢
+    obtain ⟨hyu, hyni⟩ := hy
+    refine ⟨hyu, ?_⟩
+    simp only [Std.HashSet.contains_insert, Bool.or_eq_false_iff] at hyni
+    exact hyni.2
+  · simp [Std.HashSet.contains_diff, hx_univ, hx_niv]
+  · simp [Std.HashSet.contains_diff, Std.HashSet.contains_insert]
+
+/-- The well-founded engine. Explores `remaining` (a suffix of `current`'s
+own successor list, tracked via `hremaining`), assuming `current` itself is
+*already* known-fresh and inserted into `iv` by the caller — this is what
+lets `innerDFS` below stay a thin, non-recursive wrapper: the "already
+finished"/"already visited" check for `current` happens once, at the top,
+not once per fold level.
+
+The returned Subtype bundles exactly the one fact the "continue with `rest`
+after a fresh successor's exploration" call needs: `(fr.univ \ ·).size`
+(evaluated at the returned `iv`) is no bigger than it was at this call's own
+`iv` argument — plain non-strict monotonicity of the measure, nothing about
+`iv ⊆ univ` or any other closure property.
+
+`succs`/`fr`/`seed` are written as explicit parameters *on this def itself*
+(rather than left to `variable`-section auto-binding) so their argument
+position at every recursive call site is unambiguous — `variable`-based
+auto-inclusion orders parameters by first syntactic use, which (since
+`succs`/`fr` are first mentioned inside `hcurrent`/`hremaining`'s *types*,
+and `seed` only appears in the *body*) does not put them where a
+straightforwardly-written recursive call would expect them. -/
+def innerDFSCore (succs : State → Array State) (fr : FiniteReach succs) (seed : State)
+    (current : State) (remaining : List State)
+    (iv : Std.HashSet State) (st : FNDFSState State)
+    (hcurrent : fr.univ.contains current)
+    (hremaining : ∀ x ∈ remaining, x ∈ succs current)
+    : {p : Option (List State) × Std.HashSet State × FNDFSState State //
+        (fr.univ \ p.2.1).size ≤ (fr.univ \ iv).size} :=
+  match remaining with
+  | [] =>
+    ⟨(none, iv, { st with innerFinished := st.innerFinished.insert current }), Nat.le_refl _⟩
+  | succ :: rest =>
+    if succ == seed then
+      ⟨(some [current], iv, st), Nat.le_refl _⟩
+    else if hblocked : st.innerFinished.contains succ || iv.contains succ then
+      innerDFSCore succs fr seed current rest iv st hcurrent
+        (fun x hx => hremaining x (List.mem_cons_of_mem _ hx))
+    else
+      have hsucc_mem : succ ∈ succs current := hremaining succ (List.mem_cons_self ..)
+      have hsucc_univ : fr.univ.contains succ := fr.closed current hcurrent succ hsucc_mem
+      have hsucc_niv : iv.contains succ = false := by
+        rw [Bool.eq_false_iff]
+        simp only [Bool.or_eq_true, not_or] at hblocked
+        exact hblocked.2
+      let iv' := iv.insert succ
+      let r := innerDFSCore succs fr seed succ (succs succ).toList iv' st
+        hsucc_univ (fun x hx => Array.mem_toList_iff.mp hx)
+      have hlt : (fr.univ \ iv').size ≤ (fr.univ \ iv).size :=
+        Nat.le_of_lt (HashSet.sdiff_insert_lt hsucc_univ hsucc_niv)
+      match hr : r.1 with
+      | (some cyclePath, iv'', st'') =>
+        ⟨(some (current :: cyclePath), iv'', st''), by
+          have hr2 := r.2; simp only [hr] at hr2
+          exact Nat.le_trans hr2 hlt⟩
+      | (none, iv'', st'') =>
+        let r2 := innerDFSCore succs fr seed current rest iv'' st'' hcurrent
+          (fun x hx => hremaining x (List.mem_cons_of_mem _ hx))
+        ⟨r2.1, by
+          have hr2 := r.2; simp only [hr] at hr2
+          exact Nat.le_trans r2.2 (Nat.le_trans hr2 hlt)⟩
+termination_by ((fr.univ \ iv).size, remaining.length)
+decreasing_by
+  · exact Prod.Lex.right _ (by simp)
+  · exact Prod.Lex.left _ _ (HashSet.sdiff_insert_lt hsucc_univ hsucc_niv)
+  · have hr2 := r.2; simp only [hr] at hr2
+    rcases Nat.lt_or_ge (fr.univ \ iv'').size (fr.univ \ iv).size with h' | h'
+    · exact Prod.Lex.left _ _ h'
+    · have heq : (fr.univ \ iv'').size = (fr.univ \ iv).size := by omega
+      rw [heq]
+      exact Prod.Lex.right _ (by simp)
+
+/-- Thin, non-recursive entry point matching the *public* shape of the
+original `partial def innerDFS` (`NestedDFS.lean`): the "already
+finished"/"already visited" checks for the top-level `current` happen here,
+once; `innerDFSCore` handles everything below that, assuming freshness.
+Trivially total (a single non-recursive call to the already-total
+`innerDFSCore`), so no termination proof of its own is needed. -/
+def innerDFSWF (succs : State → Array State) (fr : FiniteReach succs) (seed : State)
+    (current : State) (hcurrent : fr.univ.contains current)
+    (iv : Std.HashSet State) (st : FNDFSState State)
+    : Option (List State) × Std.HashSet State × FNDFSState State :=
+  if st.innerFinished.contains current then (none, iv, st)
+  else if iv.contains current then (none, iv, st)
+  else
+    (innerDFSCore succs fr seed current (succs current).toList (iv.insert current) st
+      hcurrent (fun _ hx => Array.mem_toList_iff.mp hx)).1
+
+end InnerDFSWellFounded
 
 end LTLLib
