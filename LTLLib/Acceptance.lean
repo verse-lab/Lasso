@@ -356,4 +356,42 @@ def BA.toSpec [BEq α] [Hashable α] (ba : BA α) : OASpec BAState α 1 where
     | none => True
   acceptSet _ s := ba.isAccepting s
 
+/-! ## Canonical labeling
+
+`labelCompat` above is a *relation* — a state may be compatible with many
+valuations (it only constrains atoms actually mentioned in `pos`/`neg`).
+CAVA's own automaton-level labeling (`igba_L`/`gba_L`, `Automata.thy`) is
+exactly as relational; CAVA never needs to pick a canonical word from it
+alone, because it always eventually composes with a *system*'s `sa_L`, a
+genuine deterministic function on Kripke-structure states
+(`CAVA_Abstract.thy`'s `abs_model_check_correct`: the returned counterexample
+is `sa_L sys ∘ r`, a run composed with an already-total labeling — see
+`ProofPlan.md`, Track B item 3). This project has no system layer, so
+there is no such function to inherit a word from; `canonicalLabel` builds
+one directly from the automaton's own `labeling` map, playing exactly the
+role CAVA's `sa_L` plays. -/
+
+/-- The canonical valuation at state `q`: true exactly on `q`'s positive
+atoms (per `labeling`), `False` everywhere if `q` isn't in `labeling`'s
+domain (never arises for a `q` actually visited by an automaton run, since
+every visited state has a `labeling` entry by construction). -/
+def canonicalLabel {α : Type u} [BEq α] [Hashable α]
+    (labeling : Std.HashMap Nat (Std.HashSet α × Std.HashSet α)) (q : Nat) :
+    α → Prop :=
+  fun a => (labeling[q]?).elim False (fun p => p.1.contains a)
+
+/-- `canonicalLabel` satisfies a state's label-compatibility constraint,
+given the state's positive/negative atom sets are disjoint (the only fact
+`labelCompat` could ever demand of a single valuation). -/
+theorem canonicalLabel_compat {α : Type u} [BEq α] [Hashable α]
+    {labeling : Std.HashMap Nat (Std.HashSet α × Std.HashSet α)}
+    {q : Nat} {pos neg : Std.HashSet α} (hlab : labeling[q]? = some (pos, neg))
+    (hdisjoint : ∀ a, pos.contains a → neg.contains a → False) :
+    (∀ a, pos.contains a → canonicalLabel labeling q a) ∧
+    (∀ a, neg.contains a → ¬ canonicalLabel labeling q a) := by
+  refine ⟨fun a ha => by simp only [canonicalLabel, hlab, Option.elim]; exact ha,
+    fun a ha hpos => ?_⟩
+  simp only [canonicalLabel, hlab, Option.elim] at hpos
+  exact hdisjoint a hpos ha
+
 end LTLLib

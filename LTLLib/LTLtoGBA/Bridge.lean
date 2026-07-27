@@ -68,6 +68,42 @@ private theorem HashSet_foldl_insert_contains
     · next hp =>
       rw [ih]; simp only [Bool.not_eq_true] at hp; simp [hp]
 
+/-- Folding unconditional inserts over a list into a HashSet: the result
+    contains `q` iff `init` already contained it or some list element maps
+    to `q` via `f`. Unconditional special case of `HashSet_foldl_insert_contains`. -/
+private theorem HashSet_foldl_insert_contains'
+    [BEq γ] [Hashable γ] [LawfulBEq γ] [LawfulHashable γ]
+    (l : List β) (f : β → γ) (init : Std.HashSet γ) (q : γ) :
+    (l.foldl (fun acc x => acc.insert (f x)) init).contains q =
+      (init.contains q || l.any (fun x => f x == q)) := by
+  induction l generalizing init with
+  | nil => simp
+  | cons hd tl ih =>
+    simp only [List.foldl_cons, List.any_cons, ih, Std.HashSet.contains_insert]
+    ac_rfl
+
+/-- `buildStates` contains `q` iff `q` is a key of `nodeMap` (i.e. `q` has a
+    stored node). Corresponds to `g_V = qs` in `create_gba_from_nodes`
+    (LTL_to_GBA.thy) — there this is a tautology since `g_V` literally *is*
+    `qs`; here `buildStates` is a genuine `HashMap`-fold construction, so it
+    needs an actual (if short) proof. -/
+theorem buildStates_mem_iff
+    {nodeMap : Std.HashMap Nat (GBANode α S)} (q : Nat) :
+    (buildStates nodeMap).contains q = true ↔ nodeMap.contains q = true := by
+  simp only [buildStates, Std.HashMap.fold_eq_foldl_toList]
+  rw [HashSet_foldl_insert_contains' _ Prod.fst]
+  simp only [Std.HashSet.contains_emptyWithCapacity, Bool.false_or, List.any_eq_true,
+    beq_iff_eq]
+  constructor
+  · rintro ⟨⟨k, nd⟩, hmem, rfl⟩
+    have hk := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hmem
+    rw [Std.HashMap.contains_eq_isSome_getElem?, hk]
+    rfl
+  · intro hcontains
+    rw [Std.HashMap.contains_eq_isSome_getElem?] at hcontains
+    obtain ⟨nd, hnd⟩ := Option.isSome_iff_exists.mp hcontains
+    exact ⟨(q, nd), Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hnd, rfl⟩
+
 /-- Folding inserts into a HashMap: keys not in the list fall back to `init`. -/
 private theorem HashMap_foldl_insert_not_mem
     [BEq γ] [Hashable γ] [LawfulBEq γ] [LawfulHashable γ]
@@ -564,6 +600,43 @@ theorem createGraph_nameConsistent (φ : NNF α)
           exact ih _ _ _ _ hr h1
   · nomatch hcg
 
+/-! ### Literal consistency from createGraph
+
+Needed for `buildLabeling_disjoint` below (in turn needed for
+`constructGBA_canonicalLabel_compat`, Track B item 3 — see
+`ProofPlan.md`). Ported from `ExpandSpec.literal_consistent`
+(`Invariants.lean`), which already establishes this at the abstract
+`NodeData`/`toNodes` level for `createGraph`'s output (`createGraph_spec`);
+here it's transported down to a concrete `GBANode` via `liftNode`, the same
+move `createGraph_nameConsistent`'s callers already make for other
+`ExpandSpec`-level facts. -/
+
+omit [Hashable α] [LawfulHashable α] in
+/-- A finished node's `old` set never contains both `prop a` and `nprop a`. -/
+theorem createGraph_literal_consistent (φ : NNF α) {st : ExpandState α S}
+    (hcg : createGraph φ = some st) {q : Nat} {node : GBANode α S}
+    (hnode : st.nodes[q]? = some node) (a : α)
+    (hp : FSet.contains node.old (.prop a) = true)
+    (hn : FSet.contains node.old (.nprop a) = true) : False := by
+  have hspec := createGraph_spec φ hcg
+  have hmem := ExpandState.liftNode_mem_toNodes st q hnode
+  have hp' : (st.liftNode q).old (.prop a) := ⟨node, hnode, hp⟩
+  have hn' : (st.liftNode q).old (.nprop a) := ⟨node, hnode, hn⟩
+  exact hspec.literal_consistent (st.liftNode q) hmem a hp' hn'
+
+/-- The positive/negative atom sets `buildLabeling` computes for a
+`createGraph` node are always disjoint — via `createGraph_literal_consistent`,
+the fact `canonicalLabel_compat` (`Acceptance.lean`) needs. -/
+theorem buildLabeling_disjoint (φ : NNF α) {st : ExpandState α S}
+    (hcg : createGraph φ = some st) {q : Nat} {node : GBANode α S}
+    (hnode : st.nodes[q]? = some node)
+    {pos neg : Std.HashSet α} (hlab : (buildLabeling st.nodes)[q]? = some (pos, neg))
+    (a : α) (hpos : pos.contains a = true) (hneg : neg.contains a = true) : False := by
+  have hname := createGraph_nameConsistent φ hcg
+  rw [buildLabeling_pos_correct hname hnode hlab a] at hpos
+  rw [buildLabeling_neg_correct hname hnode hlab a] at hneg
+  exact createGraph_literal_consistent φ hcg hnode a hpos hneg
+
 /-! ### Direction 1: GBA.toSpec accepts → expandOASpec accepts
 
 Given a run σ : Nat → Nat in the computational GBA, lift it to
@@ -773,5 +846,68 @@ theorem constructGBA_correct
     (constructGBA φ st).toSpec.accepts ξ ↔ NNF.satisfies ξ φ := by
   rw [constructGBA_iff_expandOASpec hcg]
   exact gba_abstract_correct hcg h_complete ξ
+
+/-! ### Well-formedness of constructGBA
+
+Corresponds to `create_gba_from_nodes__invar : gba (create_gba_from_nodes φ qs)`
+(`LTL_to_GBA.thy`, `create_gba_from_nodes_precond` locale). CAVA gets this
+almost for free because `g_E`'s set-builder definition already has
+`q∈qs ∧ q'∈qs` baked in (`g_E = {(q,q'). q∈qs ∧ q'∈qs ∧ name q∈incoming q'}`),
+so `E ⊆ V×V` (the `graph` locale's `V0_ss`/`E_ss`, which is all
+`GBA.WellFormed` ports — the `gb_graph`/`gba` locales' extra `F_ss`/`L_ss`
+conjuncts aren't needed by anything downstream in this port) unfolds to a
+near-tautology there, closed by `unfold_locales; auto`. Our
+`buildSuccessors`/`buildInitialStates` don't filter against `states` inline,
+so this needs an actual (if short) proof, assembled here from
+`buildStates_mem_iff`/`buildSuccessors_mem_iff`/`buildInitialStates_correct`
+— each already proven for other reasons (the `constructGBA_iff_expandOASpec`
+bridge above), never previously assembled into a `WellFormed` value. -/
+
+omit [LawfulBEq α] [LawfulHashable α] in
+/-- `constructGBA`'s output is well-formed: initial states and successors of
+    known states are themselves known states. -/
+theorem constructGBA_wellFormed {φ : NNF α} {st : ExpandState α S}
+    (hcg : createGraph φ = some st) :
+    (constructGBA φ st).WellFormed := by
+  have hname := createGraph_nameConsistent φ hcg
+  have hcontains : ∀ {q : Nat} {node : GBANode α S}, st.nodes[q]? = some node →
+      (constructGBA φ st).states.contains q = true := by
+    intro q node hq
+    simp only [constructGBA]
+    rw [buildStates_mem_iff, Std.HashMap.contains_eq_isSome_getElem?, hq]; rfl
+  refine ⟨?_, ?_⟩
+  · -- initial_mem
+    intro q hq
+    simp only [GBA.isInitial, constructGBA] at hq
+    obtain ⟨node, hnode, _⟩ := (buildInitialStates_correct hname q).mp hq
+    exact hcontains hnode
+  · -- succ_mem
+    intro q q' _ hq'
+    simp only [GBA.getSuccessors, constructGBA] at hq'
+    obtain ⟨node, hnode, _⟩ := (buildSuccessors_mem_iff hname q q').mp hq'
+    exact hcontains hnode
+
+/-! ### Canonical labeling for constructGBA
+
+Track B item 3 (`ProofPlan.md`) — assembled from `buildLabeling_some` +
+`buildLabeling_disjoint` (above) + `canonicalLabel_compat`
+(`Acceptance.lean`), exactly as planned there. -/
+
+/-- `canonicalLabel`, applied to `constructGBA`'s own `labeling` map, always
+satisfies `labelCompat` at any state with a stored node — the concrete
+per-state valuation this project uses in place of CAVA's system-level
+`sa_L` (see `Acceptance.lean`'s `canonicalLabel` docstring). -/
+theorem constructGBA_canonicalLabel_compat (φ : NNF α) {st : ExpandState α S}
+    (hcg : createGraph φ = some st) {q : Nat} {node : GBANode α S}
+    (hnode : st.nodes[q]? = some node) :
+    (constructGBA φ st).toSpec.labelCompat q
+      (canonicalLabel (constructGBA φ st).labeling q) := by
+  have hname := createGraph_nameConsistent φ hcg
+  obtain ⟨pos, neg, hlab⟩ := buildLabeling_some hname hnode
+  have hlab' : (constructGBA φ st).labeling[q]? = some (pos, neg) := by
+    simp only [constructGBA]; exact hlab
+  show (GBA.toSpec (constructGBA φ st)).labelCompat q _
+  simp only [GBA.toSpec, hlab']
+  exact canonicalLabel_compat hlab' (buildLabeling_disjoint φ hcg hnode hlab)
 
 end LTLLib

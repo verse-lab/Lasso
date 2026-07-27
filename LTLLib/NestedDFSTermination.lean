@@ -56,6 +56,7 @@
   `NestedDFSPlan.md` for the up-to-date plan.
 -/
 import LTLLib.NestedDFSCorrectness
+import LTLLib.BA
 
 namespace LTLLib
 
@@ -1688,5 +1689,38 @@ theorem nestedDFSWF_nonEmpty_valid
   exact nestedDFS_fuel_nonEmpty_valid heq
 
 end TopLevelFuelBridge
+
+section BAFiniteReach
+
+/-! ## Packaging a `FiniteReach` witness from `BA.WellFormed`
+
+Matches CAVA's own two-layer split noted above under "Should the old
+`partial def innerDFS`/... be deleted?": `nested_dfs_code`'s precondition is
+an explicit `ASSERT (fb_graph G)` threaded through as an argument-level
+assumption, never internally re-derived (`Nested_DFS.thy`) — exactly the
+role `FiniteReach succs` plays for `nestedDFSWF`. Here, `BA.WellFormed`
+(`BA.lean`) supplies exactly the closure fact `FiniteReach.closed` needs,
+with `univ := ba.states`; nothing about *why* `ba` is well-formed is needed
+at this layer, only the two `WellFormed` fields themselves (which, for a
+`BA` produced by `GBA.degeneralize` from a well-formed `GBA`, come from
+`degeneralize_wellFormed`; for `constructGBA`'s own `GBA`, from
+`constructGBA_wellFormed`). -/
+
+variable {α : Type u} [BEq α] [Hashable α]
+
+/-- A well-formed `BA`'s own state set is a `FiniteReach` witness for its
+`getSuccessors` function. -/
+def BA.finiteReach (ba : BA α) (hwf : ba.WellFormed) : FiniteReach ba.getSuccessors where
+  univ := ba.states
+  closed s hs t ht := hwf.succ_mem s t hs ht
+
+/-- A well-formed `BA`'s initial states all lie in its own `finiteReach`
+witness's universe — the `hinitial` hypothesis every `nestedDFSWF` call
+needs. -/
+theorem BA.initialStates_subset_finiteReach (ba : BA α) (hwf : ba.WellFormed) :
+    ∀ x ∈ ba.initialStates.toList, (ba.finiteReach hwf).univ.contains x :=
+  fun x hx => hwf.initial_mem x (Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp hx))
+
+end BAFiniteReach
 
 end LTLLib

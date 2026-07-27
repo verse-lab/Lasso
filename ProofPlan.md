@@ -798,6 +798,452 @@ mechanical; (4) an actual `def` chaining `createGraph → constructGBA →
 GBA.degeneralize → nestedDFS_fuel` together — none exists currently, every
 stage is a free-standing function never composed.
 
+#### Track B: CAVA analysis + detailed roadmap for the 4 items (2026-07-27)
+
+Supersedes the terse note above with a full analysis. Read the actual
+CAVA/AFP sources for each of the 4 items directly (fetched from the AFP
+GitHub mirror, not from memory): `CAVA_Automata/{Automata,Lasso,Digraph}.thy`,
+`CAVA_LTL_Modelchecker/{CAVA_Abstract,CAVA_Impl}.thy`,
+`DFS_Framework/Examples/Nested_DFS.thy`, `LTL_to_GBA/LTL_to_GBA.thy`, and
+cross-checked each against what already exists in this codebase (not
+assumed). Three of the four items turn out to have a close CAVA analogue and
+are smaller than the terse note above suggests, because the needed
+supporting lemmas already exist in `Bridge.lean`/`Invariants.lean` for other
+reasons and just haven't been assembled. One item (constructing a concrete
+`ξ`) has **no** direct CAVA analogue at all — the reason why, and the
+workaround, are under item 3 below.
+
+**Item 1 — `GBA.WellFormed` (+ a new `BA.WellFormed`)**
+
+*CAVA's approach*: the `gba` locale (`CAVA_Automata/Automata.thy:164-167`,
+built on `graph`'s `Digraph.thy:59-64`) requires exactly `V0 ⊆ V` and
+`E ⊆ V × V` — literally our `GBA.WellFormed.initial_mem`/`succ_mem`
+(`GBA.lean:88-91`), field for field. (`gb_graph` layers on
+`finite_F`/`F_ss : gbg_F ⊆ Pow V`, and `gba` itself adds
+`L_ss : gba_L G q l → q ∈ V`, but our port never needed those two extra
+conjuncts — `degeneralize_bridge`'s `hwf` hypothesis only asks for the
+two-field `GBA.WellFormed`, so there's nothing extra to port.) CAVA proves
+it almost by definition:
+```isabelle
+definition create_gba_from_nodes φ qs ≡ ⟨
+  g_E = {(q, q'). q∈qs ∧ q'∈qs ∧ name q∈incoming q'}, ... ⟩
+lemma create_gba_from_nodes__invar: "gba (create_gba_from_nodes φ qs)"
+  apply unfold_locales
+  apply (auto intro!: finite_vimageI subfrmlsr_finite injI
+    simp: create_gba_from_nodes_def)
+```
+The reason this is nearly free: `q∈qs ∧ q'∈qs` is baked directly into the
+*definition* of `g_E` as an inline filter, so `E ⊆ V×V` unfolds to a
+tautology; `unfold_locales; auto` closes the rest without a real argument.
+
+*Why we can't literally copy this*: `buildSuccessors` (`Construction.lean`)
+does not filter against `gba.states` inline — it inserts whatever names
+appear in each node's `incoming` set, keyed by predecessor name, with no
+explicit "and this name is a real state" conjunct built into the
+construction the way CAVA's set-builder syntax has it. So the Lean version
+needs an actual proof, not a definitional unfold.
+
+*What already exists, found by grep, not written for this purpose*:
+`buildSuccessors_mem_iff` (`Bridge.lean:235`):
+```lean
+theorem buildSuccessors_mem_iff ... :
+    q' ∈ (buildSuccessors nodeMap)[q]?.getD #[] ↔
+      ∃ node, nodeMap[q']? = some node ∧ node.incoming.contains q = true
+```
+The forward direction's conclusion, `∃ node, nodeMap[q']? = some node`, *is*
+exactly `succ_mem`'s content once `states` is related to `nodeMap`'s keys
+(next paragraph) — this lemma exists already only because
+`constructGBA_iff_expandOASpec` needed it; nobody has assembled it into a
+`GBA.WellFormed` value.
+
+*Plan*:
+1. `constructGBA`'s `states := allStates := nodes.fold (init := ∅) fun acc name _ =>
+   acc.insert name` (`Construction.lean:107-109`) — prove
+   `allStates.contains q ↔ nodeMap.contains q` by a short fold-induction (the
+   fold only ever inserts keys it's iterating over — same shape of argument
+   as `buildSuccessors_mem_iff`'s own fold-induction skeleton, expect ~10
+   lines).
+2. Combine with `buildSuccessors_mem_iff` to get `succ_mem`.
+3. `initial_mem`: `buildInitialStates` (`Construction.lean:89-92`) only ever
+   inserts `node.name` for `node`s obtained by folding over `nodes` itself —
+   same "fold only inserts real keys" argument as step 1; may be able to
+   generalize a single helper lemma for both `allStates` and
+   `buildInitialStates` rather than proving it twice.
+4. Package into `constructGBA_wellFormed : (constructGBA φ st).WellFormed`.
+5. **New**: `BA.WellFormed` does not exist yet in `BA.lean` (confirmed by
+   grep — only `GBA.WellFormed` exists). Add it mirroring `GBA.WellFormed`'s
+   two fields exactly, then prove `GBA.degeneralize` (`BA.lean:111-155`)
+   preserves it: `degeneralize`'s `succMap`/`allStates` are built by the same
+   "fold that only inserts real, in-range names" pattern (`(gbaState, i)`
+   pairs for `i < k`, successors computed via `gba.getSuccessors` composed
+   with the already-established `succ_mem`), so this should follow the exact
+   same proof technique as steps 1-3, not a new argument.
+6. Package a `FiniteReach ba.getSuccessors` witness
+   (`NestedDFSTermination.lean`'s `FiniteReach` structure, `univ`/`closed`,
+   line 111) with `univ := ba.states` and `closed` from the new
+   `BA.WellFormed.succ_mem` — this is the prerequisite every downstream call
+   to `nestedDFSWF` (item 4) needs.
+
+**Item 1 — ✅ DONE (2026-07-27).** Implemented exactly the 6-step plan above,
+verified against a clean rebuild (`.lake/build/lib/lean/LTLLib` removed
+first — 758 jobs, 0 errors, 0 sorry, no new warnings). Stayed close to
+CAVA's own structure at every step, deviating only where already noted above
+(no inline filter to unfold, so a real proof instead of `unfold_locales;
+auto`):
+
+1. **`buildStates` factored out** (`Construction.lean`) — the plan's step 1
+   needed `allStates.contains q ↔ nodeMap.contains q`, which needs the fold
+   itself to be a *named* thing to state a theorem about. Rather than
+   proving it about an anonymous `let`-bound expression, factored the inline
+   `let allStates := nodes.fold ...` out into a top-level `def buildStates`,
+   matching CAVA's own `qs` being an independently-named entity (not
+   inlined) and matching this file's own existing style (`buildSuccessors`/
+   `buildInitialStates`/`buildLabeling`/`buildAcceptSets` were already
+   separate `def`s — `allStates` was the only GBA component that wasn't).
+   Purely a factoring — `constructGBA`'s type and behavior are unchanged.
+2. **`buildStates_mem_iff`** (`Bridge.lean`, next to `buildSuccessors_mem_iff`/
+   `buildInitialStates_correct`) — proved via a new unconditional-insert fold
+   helper `HashSet_foldl_insert_contains'` (the no-predicate special case of
+   the file's existing `HashSet_foldl_insert_contains`) plus
+   `Std.HashMap.contains_eq_isSome_getElem?` to bridge `nodeMap[q]? = some _`
+   to `nodeMap.contains q`. ~15 lines, matching the estimate.
+3. **`constructGBA_wellFormed`** (`Bridge.lean`, end of file) — assembled
+   `buildStates_mem_iff` + `buildSuccessors_mem_iff` +
+   `buildInitialStates_correct` + the pre-existing `createGraph_nameConsistent`
+   (already used by `constructGBA_toSpec_refines_expandOASpec` for the exact
+   same reason), following that theorem's own established idiom
+   (`have hname := createGraph_nameConsistent φ hcg` first, then
+   `simp only [GBA.isInitial/GBA.getSuccessors, constructGBA] at h` to unfold
+   the field access down to the raw `build*` calls). Both `WellFormed`
+   fields reduce to one shared `have hcontains` helper.
+4. **`BA.WellFormed`** (`BA.lean`) — added verbatim-mirroring
+   `GBA.WellFormed`'s two fields, per the plan.
+5. **`degeneralize_wellFormed`** (`DegeneralBridge.lean`) — the one step that
+   needed genuinely new infrastructure beyond the plan's estimate: proving
+   `GBA.degeneralize` preserves well-formedness needs a *states*-membership
+   characterization for the degeneralized `BA`'s `.states` field, which
+   didn't exist yet (`DegeneralBridge.lean`'s existing double-fold lemmas —
+   `degeneralize_initialStates_contains`, `degeneralize_getSuccessors_mem` —
+   never needed one, because `BA.toSpec` itself never references `.states`
+   at all, only `getSuccessors`/`initialStates`/`isAccepting` — confirmed by
+   reading `BA.toSpec`'s definition directly). Added `outer_fold_states_mem`
+   (private helper, mirrors `outer_fold_successors`'s double-fold-induction
+   template exactly, specialized to `HashSet.contains` instead of `HashMap`
+   key lookup) and `degeneralize_states_contains` (the public iff, matching
+   the file's existing `degeneralize_*_contains` naming/shape convention).
+   `degeneralize_wellFormed` itself then composes cleanly: `initial_mem` from
+   `degeneralize_initialStates_contains` + `hwf.initial_mem`; `succ_mem` from
+   `degeneralize_states_contains` + `degeneralize_getSuccessors_mem` +
+   `hwf.succ_mem`, with `Nat.mod_lt` closing the "counter just advanced"
+   case of the resulting `if`. Docstring cross-references CAVA's own
+   `degen_invar`-style development (`Automata.thy:800-1130`) as the
+   structural analogue, though no specific CAVA lemma was ported line-by-line
+   here (CAVA's `degen` invariant-preservation is folded into its generic
+   `to_gba`/`to_gbg` locale machinery, not a standalone lemma with a direct
+   Lean counterpart).
+6. **`BA.finiteReach`/`BA.initialStates_subset_finiteReach`**
+   (`NestedDFSTermination.lean`, new `BAFiniteReach` section, after
+   `TopLevelFuelBridge`) — thin packaging, exactly as planned: `univ :=
+   ba.states`, `closed` directly from `BA.WellFormed.succ_mem`. Matches
+   CAVA's `nested_dfs_code`/`ASSERT (fb_graph G)` shape precisely (an
+   argument-level assumption, never internally re-derived) — see this
+   file's own "Wiring" section above for where that comparison was first
+   made for `FiniteReach` in general.
+
+No `GraphComplete.lean`/`Invariants.lean` changes needed — every dependency
+(`createGraph_nameConsistent`, `buildSuccessors_mem_iff`,
+`buildInitialStates_correct`) already existed from Phase 4.3/Bridge work,
+confirming the "already 90% there, just not assembled" assessment above.
+Total new code: `Construction.lean` (+8 lines, `buildStates`), `Bridge.lean`
+(+50 lines), `BA.lean` (+8 lines, `WellFormed`), `DegeneralBridge.lean`
+(+65 lines), `NestedDFSTermination.lean` (+2 lines import, +26 lines new
+section) — noticeably smaller than items 2-4, as anticipated by the
+execution-order note below.
+
+**Item 2 — connecting `AcceptingCycle` to a genuine witness**
+
+*CAVA's approach*: `Nested_DFS.thy`'s `blue_dfs_correct` (already the source
+for our Phase 5b/5c, done):
+```isabelle
+lemma blue_dfs_correct: "¬cond s ⟹ case lasso s of
+    None ⇒ ¬(∃v0∈V0. ∃v. (v0,v)∈E* ∧ accpt v ∧ (v,v)∈E+)
+  | Some (pr,pl) ⇒ (∃v0∈V0. ∃v. path E v0 pr v ∧ accpt v ∧ pl≠[] ∧ path E v pl v)"
+```
+The `Some` branch's raw `(pr, pl)` witness is turned into an actual infinite
+accepting run via `CAVA_Automata/Lasso.thy`:
+```isabelle
+definition run_of_lasso L ≡ lasso_reach L ⌢ (lasso_cycle L)^ω
+lemma lasso_accepted: "is_lasso L ⟹ is_acc_run (run_of_lasso L)"
+```
+and CAVA's own top-level driver (`CAVA_Impl.thy`'s `ndfs_find_ce`, ~line
+270) does the repackaging in one line:
+```isabelle
+RETURN (Some (Some (map_lasso fst (lasso_of_prpl l))))
+```
+i.e. wrap the raw `(pr,pl)` as a `lasso` record via `lasso_of_prpl`, project
+away the degeneralization counter via `map_lasso fst`.
+
+*Mapping to our code — already an almost 1:1 port, just not wired*:
+`Lasso.lean` (`lassoRun`, `ValidLasso`, `run_isRun`/`run_isAccepting`) *is*
+the existing Lean port of `Lasso.thy`'s `run_of_lasso`/`lasso_accepted`.
+Phase 5c's `AcceptingCycle` (`NestedDFSCorrectness.lean:471-487`) is
+field-for-field the same shape as `is_lasso_prpl_pre` — compared directly:
+
+| `AcceptingCycle` field | `is_lasso_prpl_pre` conjunct |
+|---|---|
+| `stem_head_initial` | `v0 ∈ V0` |
+| `stem_chain` | `path E v0 pr va` |
+| `overlap` | (implicit: `pr`'s last = `pl`'s head) |
+| `cycle_chain` | `path E va pl va` |
+| `cycle_back` | (wraparound edge, part of `path ... pl va`) |
+| `cycle_head_accepting` | `accpt va` |
+
+So the only missing piece is exactly CAVA's one-liner above: instantiate
+`OutputVerify.lean`'s hypothesis bundle (currently 8 loose arguments to
+`ba_hasAcceptingRun_of_lasso`/`ba_hasAcceptingRun_of_ndfs_output`) from a
+real `AcceptingCycle` value, translating `List`/`∈` membership
+(`AcceptingCycle`'s vocabulary) into `Std.HashSet.contains _ = true`/
+`Array.contains _ = true` (`OutputVerify.lean`'s vocabulary — `BA` stores
+`states`/`initialStates` as `Std.HashSet` and `getSuccessors` returns
+`Array`).
+
+*Plan*:
+1. Add a variant of `ba_hasAcceptingRun_of_lasso` (or overload it) taking an
+   `AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting`
+   value directly, discharging each of the 8 old hypotheses from
+   `AcceptingCycle`'s corresponding field via the translation table above —
+   purely mechanical (`List.mem_iff_contains`-style rewriting), no new
+   mathematics, matching CAVA's own one-line `map_lasso fst ∘ lasso_of_prpl`
+   move in spirit (repackaging a witness into a different but
+   information-equivalent shape).
+2. Note the `initialStates` argument must be `ba.initialStates.toList` (a
+   `List`, to match `AcceptingCycle`'s signature) — this requires actually
+   calling `nestedDFSWF` with the concrete `BA`'s data, which is the same
+   instantiation item 4 needs, so items 2 and 4 should be done together.
+
+**Item 3 — constructing a concrete `ξ` — no direct CAVA analogue, and why**
+
+This took the most digging, because at first glance CAVA's
+`abs_model_check` *does* produce a genuine counterexample word. Reading
+closer shows it never solves the actual problem we have.
+
+*CAVA's labeling is relational, same as ours* — confirmed directly:
+```isabelle
+(* Automata.thy:474 *)
+igba_L :: "'Q ⇒ 'L ⇒ bool"
+(* Automata.thy:173 *)
+definition "accept w ≡ ∃r. is_acc_run r ∧ (∀i. L (r i) (w i))"
+```
+This is structurally identical to our `OASpec.labelCompat`/`OASpec.accepts`
+(`Acceptance.lean:39,62-63`) — a compatibility *relation*, not a function.
+So CAVA's own automaton layer has exactly the same "which word?" ambiguity
+ours does, and never resolves it at this layer either.
+
+*Where CAVA actually gets a concrete word*: one layer up, at the
+system-intersection product. `CAVA_Abstract.thy`'s top-level correctness
+theorem:
+```isabelle
+theorem abs_model_check_correct: "...
+  | Some (Some r) ⇒ graph_defs.is_run sys r ∧ sa_L sys ∘ r ∉ language_ltlc φ ..."
+```
+The returned counterexample is a **run of the system** `r`, not a word —
+and `sa_L sys : 's ⇒ 'prop set` (a Kripke structure's labeling) is a
+genuine **total, deterministic function** on system states, unlike the
+automaton's relational `L`. So `sa_L sys ∘ r` is a word "for free," by
+function composition, no existence proof needed. `CAVA_Impl.thy`'s
+`ndfs_find_ce` confirms this pattern holds all the way down the
+implementation stack too — it only ever manipulates **runs**
+(`'q lasso`/`'q word`), never manufactures a `'prop set` word from an
+automaton state in isolation.
+
+*Why this doesn't carry over*: our project has no system/Kripke-structure
+layer at all (checked — grepping `LTLLib/` for anything resembling `sa_L`
+or a "system" type turns up nothing). Track B is scoped to checking the
+GBA's *own* realizability directly (`constructGBA_correct_weak`'s
+`∀ξ, accepts ξ ↔ ξ ⊨ φ`), so there is no deterministic system-labeling
+function anywhere to inherit a word from — we are stuck exactly at the
+layer CAVA always sidesteps.
+
+*The workaround — genuinely new, but mechanical, not "real math" the way
+the terse note above feared*: build our own deterministic per-state
+labeling function, playing the role CAVA's `sa_L` plays, using pieces that
+already exist for other reasons:
+- `Bridge.lean`'s `buildLabeling_pos_correct`/`buildLabeling_neg_correct`
+  (`Bridge.lean:394,412`): `pos.contains a ↔ node.oldHas (.prop a)` and the
+  `.nprop` analogue for `neg`.
+- `Invariants.lean`'s `literal_consistent` (`Invariants.lean:219`):
+  `oldHas (.prop a) → ¬oldHas (.nprop a)`.
+
+Chained, these give `pos.contains a → ¬neg.contains a` at every node — i.e.
+`pos`/`neg` are always disjoint, for free.
+
+*Plan*:
+1. Define `canonicalLabel (labeling : Std.HashMap Nat (HashSet α × HashSet α))
+   (q : Nat) : α → Prop := fun a => (labeling[q]?).elim False (fun (pos,_) => pos.contains a)`.
+2. Prove `labelCompat q (canonicalLabel labeling q)` unconditionally from the
+   two `buildLabeling_*_correct` lemmas plus `literal_consistent` — the
+   `pos.contains a → v a` half is definitional; the `neg.contains a → ¬v a`
+   half is exactly the disjointness fact above.
+3. For any run `σ` over GBA/BA states, `ξ := canonicalLabel labeling ∘ σ`
+   gives `runCompatible σ ξ` unconditionally — the literal Lean-side
+   construction of what CAVA gets for free from `sa_L sys ∘ r`.
+4. Combine with item 2's `AcceptingCycle`-derived run to upgrade
+   `∃σ, isRun σ ∧ isAcceptingRun σ` to a genuine
+   `ba.toSpec.accepts (canonicalLabel ba.labeling ∘ lassoRun stem cycle _)`.
+
+**Item 3 — ✅ DONE for steps 1-3 (2026-07-27)** (step 4 is item 2+4's job,
+deferred with them as planned). Re-read the CAVA sources once more before
+implementing (`Automata.thy:173,474` for `igba_L`/`accept`,
+`CAVA_Abstract.thy:97-105` for `abs_model_check_correct`'s `sa_L sys ∘ r`)
+to confirm the divergence analysis above still holds — it does; CAVA's own
+`gba`/`igba` locales never resolve a relational labeling into a concrete
+word either, they only ever compose an already-deterministic *system*
+labeling with a run. Implemented exactly the 4-step plan (steps 1-3; step 4
+folded into item 2's own upcoming work), plus a BA-level corollary that
+turned out to be a free byproduct:
+
+1. **`canonicalLabel`/`canonicalLabel_compat`** (`Acceptance.lean`, right
+   after `GBA.toSpec`/`BA.toSpec`) — exactly the planned definition and
+   proof shape. `canonicalLabel` needed `[BEq α] [Hashable α]` added to its
+   own signature (missed in the initial draft — `Std.HashSet α` needs these
+   instances just to name the type, not only to call `.contains`).
+   `canonicalLabel_compat`'s `hdisjoint` hypothesis was phrased as
+   `∀ a, pos.contains a → neg.contains a → False` rather than the plan's
+   `pos.contains a → neg.contains a = false` — definitionally the same fact,
+   but the `False`-shaped version composes directly with `absurd`-free
+   `exact` at the call site instead of needing an extra `Bool` round-trip.
+2. **`createGraph_literal_consistent`** (`Bridge.lean`, new subsection right
+   after `createGraph_nameConsistent`) — ported `ExpandSpec.literal_consistent`
+   (`Invariants.lean`, the *abstract* `NodeData`-level fact, already
+   established for `createGraph`'s output via `createGraph_spec`, Phase 3)
+   down to a concrete `GBANode` via `ExpandState.liftNode`/
+   `liftNode_mem_toNodes` — the exact same "abstract fact → concrete
+   `GBANode` fact via `liftNode`" move `Bridge.lean` already uses throughout
+   `constructGBA_toSpec_refines_expandOASpec` for other `ExpandSpec` fields,
+   just not yet done for `literal_consistent` specifically. (There is a
+   *second*, more directly `GBANode`-shaped `literal_consistent` living
+   inside `ProcessingInv`/`StateInv`, `Invariants.lean:219` — considered
+   using that instead, since it needs no existential-unwrapping through
+   `liftNode`, but it's internal, unexported plumbing local to the
+   `createGraph_spec` proof itself, not part of the file's public API the
+   way `ExpandSpec`/`liftNode` are — reusing the public route kept this
+   change self-contained within `Bridge.lean`, no new `Invariants.lean`
+   exports needed.)
+3. **`buildLabeling_disjoint`** (`Bridge.lean`, right after
+   `createGraph_literal_consistent` — *not* right after
+   `buildLabeling_neg_correct` where it was first drafted; it needs
+   `createGraph_nameConsistent`, defined later in the file, so file order
+   forced the later placement) — chains `buildLabeling_pos_correct`/
+   `buildLabeling_neg_correct` (both pre-existing) with the new
+   `createGraph_literal_consistent` to get disjointness for any
+   `createGraph`-produced node's computed `(pos, neg)` pair.
+4. **`constructGBA_canonicalLabel_compat`** (`Bridge.lean`, end of file,
+   after `constructGBA_wellFormed`) — assembles 1-3:
+   `(constructGBA φ st).toSpec.labelCompat q (canonicalLabel (constructGBA φ
+   st).labeling q)` for any `q` with a stored node. Deliberately hypothesis-
+   based (`hnode : st.nodes[q]? = some node`) rather than universally
+   quantified over all `q : Nat` — a fully unconditional version would have
+   needed a *reverse* fold-membership direction for `buildLabeling`
+   ("`(buildLabeling nodeMap)[q]? = some _ → q` was a real key") that
+   doesn't exist yet and isn't needed: any `q` actually reached by a
+   `GBA.toSpec.isRun σ` already comes with exactly this `hnode` fact for
+   free, via the same `buildSuccessors_mem_iff`/`buildInitialStates_correct`
+   existence step `constructGBA_toSpec_refines_expandOASpec` already
+   performs — so the run-level `runCompatible` corollary (this file's
+   original step 3) needs no strengthening here, just instantiating this
+   lemma at each `σ n` using facts item 2's wiring will already have in
+   hand.
+5. **`degeneralize_canonicalLabel_compat`** (`DegeneralBridge.lean`, right
+   after `degeneralize_labeling`) — the BA-level half, and a genuinely free
+   corollary: since `(gba.degeneralize).labeling = gba.labeling`
+   (`degeneralize_labeling`, pre-existing) and `GBA.toSpec`/
+   `BA.toSpec.labelCompat` share the identical `match` shape (just keyed by
+   `s.gbaState` on the BA side), `canonicalLabel`-compatibility transports
+   across degeneralization for free — no `createGraph`/`constructGBA`
+   specifics needed, generic over any `GBA`. This wasn't explicitly listed
+   in the original 4-step plan (which left "GBA/BA states" as one bullet)
+   but turned out to be worth stating separately once it was clear it needed
+   zero new proof content beyond composing two existing facts.
+
+Verified via a genuinely clean rebuild (`.lake/build/lib/lean/LTLLib`
+removed first): 758 jobs, 0 errors, 0 sorry, no new warnings. New code:
+`Acceptance.lean` (+35 lines), `Bridge.lean` (+55 lines across 3 new
+theorems + 1 new subsection), `DegeneralBridge.lean` (+13 lines). Step 4
+(combining with item 2's `AcceptingCycle` to reach a genuine
+`ba.toSpec.accepts ξ`) remains deferred to item 2, exactly as planned —
+`constructGBA_canonicalLabel_compat`/`degeneralize_canonicalLabel_compat`
+are the two pieces item 2's wiring will import and instantiate at each
+position of the lasso-derived run.
+
+**Item 4 — the composed pipeline `def`**
+
+*CAVA's approach*: `CAVA_Abstract.thy:68-88`, a 3-step monadic chain:
+```isabelle
+definition abs_model_check ... ≡ do {
+  gba ← ltl_to_gba_spec (Not_ltlc φ);
+  (Gprod, map_state) ← inter_spec sys gba;
+  ce ← find_ce_spec Gprod;
+  case ce of ... }
+theorem abs_model_check_correct: "abs_model_check ... ≤ SPEC (...)"
+  unfolding abs_model_check_def ltl_to_gba_spec_def inter_spec_def find_ce_spec_def
+  apply (refine_rcg refine_vcg ...) apply auto done
+```
+— once each of the three stages' own correctness `SPEC` is separately
+established, the composed correctness proof is a single automated
+`refine_rcg` call gluing the postconditions together; no new mathematical
+content at the composition step itself. `CAVA_Impl.thy`'s `ndfs_find_ce`
+(read in full, lines 258-315) does the analogous thing one level down:
+given `igb_graph.degeneralize`, `blue_dfs`, and
+`lasso_of_prpl`/`map_lasso fst` are each separately correct, composing them
+and pushing the witness back up through degeneralization
+(`degen.accepted_lasso` → `degen_acc_run_sound`) is again pure composition,
+no new argument.
+
+*Mapping to our code*: we have no `inter_spec`/system-intersection stage
+(see item 3), so our pipeline is *shorter* than CAVA's full
+`abs_model_check` — closer to `create_name_gba_correct` combined directly
+with a `find_ce_spec`-shaped oracle (`nestedDFSWF`'s two correctness
+theorems). Checked specifically whether the "push the BA-level witness back
+up through degeneralization to the GBA level" step (CAVA's
+`degen_acc_run_sound`) already exists on our side: **yes** —
+`degeneralize_bridge` (`DegeneralBridge.lean`) composed with
+`degeneralize_correct` (`Acceptance.lean`, Phase D, already done) already
+gives `BA.toSpec.accepts ξ ↔ GBA.toSpec.accepts ξ` directly. This half of
+item 4 needs no new lemma at all, just invoking what's already there.
+
+*Plan*:
+1. `def fullPipeline (φ : NNF α) : EmptinessResult` — chain
+   `createGraph → constructGBA → GBA.degeneralize → nestedDFSWF`, using item
+   1's `FiniteReach` witness for the `nestedDFSWF` call (needs `createGraph`
+   to have actually succeeded — `createGraph_term`, already done, guarantees
+   this: `∃ st, createGraph φ = some st ∧ ...`).
+2. Top-level theorem, structurally mirroring `abs_model_check_correct`'s
+   composition but written as ordinary Lean `rw`/`exact` chaining (no
+   refinement calculus needed on our side, matching the same asymmetry noted
+   throughout Phase 2 — Lean functions are already "code," there's no
+   separate code-generation layer to route through): chain
+   `constructGBA_correct_weak` (GBA ↔ φ, done) + `degeneralize_bridge` +
+   `degeneralize_correct` (BA ↔ GBA, both done) + items 1-3's new lemmas
+   (`nestedDFSWF_empty_no_cycle`/`nestedDFSWF_nonEmpty_valid`, now
+   word-level via item 3) into a single
+   `∀φ, fullPipeline φ = .empty ↔ (∀ξ, ξ ⊨ φ)`-shaped theorem.
+3. **Wrinkle to watch, not a blocker**: `k = 0` (no Until-subformulas) —
+   `GBA.degeneralize` (`BA.lean:112`) clamps `k := if acceptSets.size == 0
+   then 1 else acceptSets.size` computationally, but the *abstract*
+   `OASpec.degeneralize` (`Acceptance.lean:92`) takes an explicit
+   `hk : k > 0` argument keyed on `gba.numAcceptSets` (which could genuinely
+   be `0`). `DegeneralBridge.lean` is already sorry-free against this, so
+   this case is already handled *somewhere* in the existing 429 lines — just
+   needs confirming which lemma covers it and threading the right
+   instantiation through, not new proof content.
+
+**Execution order**: item 1 blocks item 4 directly (no `FiniteReach`
+witness without it) and also gates item 2 (need `ba.initialStates.toList`
+from a well-formed, concretely-instantiated `BA`). Item 3 is fully
+independent and can be done any time. Items 2 and 4 are best done together
+since wiring `nestedDFSWF` to a concrete `BA` *is* most of item 4's assembly
+work. Suggested order: **1 → 3 (parallel-safe) → 2+4 together**.
+
 ### Phase 2: Termination — IN PROGRESS (not blocking)
 
 Remove `partial`/`partial_fixpoint` from `expand`, `innerDFS`, `outerDFSLoop`.

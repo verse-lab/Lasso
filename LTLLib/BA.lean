@@ -89,6 +89,15 @@ def getSuccessors (ba : BA α) (s : BAState) : Array BAState :=
 def getLabeling (ba : BA α) (s : BAState) : Std.HashSet α × Std.HashSet α :=
   ba.labeling[s.gbaState]?.getD (Std.HashSet.emptyWithCapacity 0, Std.HashSet.emptyWithCapacity 0)
 
+/-- Well-formedness: initial and successor states are in the state set.
+Mirrors `GBA.WellFormed` (`GBA.lean`) — the same `graph` locale two-field
+scope (`V0_ss`/`E_ss`, `CAVA_Automata/Digraph.thy:59-64`); nothing downstream
+needs more than these two facts for the BA either. -/
+structure WellFormed (ba : BA α) : Prop where
+  initial_mem : ∀ s, ba.initialStates.contains s → ba.states.contains s
+  succ_mem : ∀ s s', ba.states.contains s → s' ∈ ba.getSuccessors s →
+    ba.states.contains s'
+
 end BA
 
 namespace GBA

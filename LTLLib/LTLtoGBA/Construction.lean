@@ -22,6 +22,16 @@ namespace LTLLib
 
 variable {S : Type v} [FSet (NNF α) S]
 
+/-- Collect all state names (the keys of the finished node graph).
+
+Corresponds to `g_V = qs` in `create_gba_from_nodes` (LTL_to_GBA.thy) — `qs`
+is treated there as an independently-named set (the result of
+`create_graph`), so we name it here too rather than inlining it, matching
+CAVA's own structure. -/
+def buildStates (nodes : Std.HashMap Nat (GBANode α S)) : Std.HashSet Nat :=
+  nodes.fold (init := Std.HashSet.emptyWithCapacity nodes.size) fun acc name _ =>
+    acc.insert name
+
 /-- Build the successor (adjacency) map from the node graph.
 
 Corresponds to `build_succ` in LTL_to_GBA_impl.thy:
@@ -104,12 +114,9 @@ The steps are:
 5. Build labeling from positive/negative atoms -/
 def constructGBA [BEq α] [Hashable α] (φ : NNF α) (expandResult : ExpandState α S) : GBA α :=
   let nodes := expandResult.nodes
-  let allStates := nodes.fold
-    (init := Std.HashSet.emptyWithCapacity nodes.size) fun acc name _ =>
-      acc.insert name
   let untilSubs := φ.untilSubformulas  -- may contain duplicates, but that's OK for correctness
   {
-    states := allStates
+    states := buildStates nodes
     initialStates := buildInitialStates nodes
     successors := buildSuccessors nodes
     labeling := buildLabeling nodes

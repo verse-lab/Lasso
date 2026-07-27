@@ -106,6 +106,23 @@ theorem degeneralize_labeling (gba : GBA α) :
     (gba.degeneralize).labeling = gba.labeling := by
   simp [GBA.degeneralize]
 
+/-- The BA-level half of Track B item 3 (`ProofPlan.md`): `canonicalLabel`
+compatibility transports across `degeneralize` for free, since `labeling`
+itself is unchanged (`degeneralize_labeling`) and both `GBA.toSpec`/
+`BA.toSpec.labelCompat` share the exact same `match ... | some (pos,neg) =>
+...` shape, keyed by `s.gbaState` on the `BA` side. Generic over any `GBA`
+— no `createGraph`/`constructGBA` specifics needed here, unlike the GBA-level
+`constructGBA_canonicalLabel_compat` (`Bridge.lean`), which does the actual
+disjointness work this theorem takes as a hypothesis. -/
+theorem degeneralize_canonicalLabel_compat (gba : GBA α) (s : BAState)
+    (h : gba.toSpec.labelCompat s.gbaState (canonicalLabel gba.labeling s.gbaState)) :
+    (gba.degeneralize).toSpec.labelCompat s
+      (canonicalLabel (gba.degeneralize).labeling s.gbaState) := by
+  rw [degeneralize_labeling]
+  show (BA.toSpec (gba.degeneralize)).labelCompat s _
+  simp only [BA.toSpec]
+  simpa only [GBA.toSpec] using h
+
 /-! ### Initial states characterization -/
 
 theorem degeneralize_initialStates_contains (gba : GBA α) (s : BAState) :
@@ -330,6 +347,83 @@ theorem degeneralize_getSuccessors_mem (gba : GBA α)
     simp only [Std.HashMap.getElem?_emptyWithCapacity, Option.getD_none,
                Array.not_mem_empty, false_iff, not_and]
     intro h; exact absurd h hmem
+
+/-! ### States characterization
+
+Needed for `degeneralize_wellFormed` below (not by `degeneralize_bridge`
+itself, which — like CAVA's `gba`/`igba` locales' `accept` — never
+references `.states` at all, only `getSuccessors`/`initialStates`/
+`isAccepting`; see `BA.toSpec`). `allStates` is built by the same shape of
+double fold as `successors` (outer over `gba.states`, inner over
+`List.range k`), so this mirrors `outer_fold_successors` above, specialized
+to `HashSet.contains` instead of `HashMap` key lookup. -/
+
+/-- Double fold building `allStates`: the result contains `s` iff `init` did,
+or `s.gbaState` was iterated over (`∈ l`) with `s.acceptIdx < k`. -/
+private theorem outer_fold_states_mem
+    (k : Nat) (l : List Nat) (init : Std.HashSet BAState) (s : BAState) :
+    (l.foldl (init := init) fun acc gbaState =>
+      (List.range k).foldl (init := acc) fun acc i =>
+        acc.insert ({ gbaState, acceptIdx := i } : BAState)).contains s = true ↔
+      init.contains s = true ∨ (s.gbaState ∈ l ∧ s.acceptIdx < k) := by
+  induction l generalizing init with
+  | nil => simp
+  | cons hd tl ih =>
+    simp only [List.foldl_cons, List.mem_cons]
+    rw [ih]
+    have hinner : ((List.range k).foldl (init := init) fun acc i =>
+        acc.insert ({ gbaState := hd, acceptIdx := i } : BAState)).contains s = true ↔
+        init.contains s = true ∨ (hd = s.gbaState ∧ s.acceptIdx < k) := by
+      rw [HashSet_foldl_map_insert_contains]
+      simp only [Bool.or_eq_true, List.any_eq_true, List.mem_range]
+      constructor
+      · rintro (h | ⟨i, hi, heq⟩)
+        · exact Or.inl h
+        · rw [beq_iff_eq] at heq
+          exact Or.inr ⟨(BAState.mk.inj heq).1, heq ▸ hi⟩
+      · rintro (h | ⟨heq, hi⟩)
+        · exact Or.inl h
+        · exact Or.inr ⟨s.acceptIdx, hi, by rw [beq_iff_eq]; cases s; simp_all⟩
+    rw [hinner]; grind
+
+/-- `(gba.degeneralize).states` contains `s` iff `s.gbaState ∈ gba.states`
+and `s.acceptIdx` is within range. -/
+theorem degeneralize_states_contains (gba : GBA α) (hk : gba.numAcceptSets > 0)
+    (s : BAState) :
+    (gba.degeneralize).states.contains s = true ↔
+      gba.states.contains s.gbaState = true ∧ s.acceptIdx < gba.numAcceptSets := by
+  simp only [GBA.degeneralize, Std.HashSet.fold_eq_foldl_toList, degeneralize_k_eq hk]
+  rw [outer_fold_states_mem]
+  simp only [Std.HashSet.contains_emptyWithCapacity, Bool.false_eq_true, false_or]
+  rw [show s.gbaState ∈ gba.states.toList ↔ gba.states.contains s.gbaState = true from
+    ⟨fun h => Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp h),
+     fun h => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr h)⟩]
+  simp only [GBA.numAcceptSets]
+
+/-! ### Well-formedness is preserved by degeneralize
+
+Corresponds to CAVA's `degen_invar`-style development in `Automata.thy`
+(the `degen` construction is shown to preserve the `graph`/`gb_graph`
+locale assumptions there too — see `to_gbg_alt`/`degen_invar` near
+`Automata.thy:800-1130`, established generically for *any* well-formed
+input, not specific to LTL_to_GBA). Here: assembled directly from
+`GBA.WellFormed`'s two fields plus the fold characterizations above, exactly
+mirroring `run_states_mem`'s own use of `hwf.initial_mem`/`hwf.succ_mem`
+just below. -/
+
+/-- Degeneralizing a well-formed GBA yields a well-formed BA. -/
+theorem degeneralize_wellFormed (gba : GBA α) (hk : gba.numAcceptSets > 0)
+    (hwf : gba.WellFormed) : (gba.degeneralize).WellFormed where
+  initial_mem s hs := by
+    obtain ⟨h1, h2⟩ := (degeneralize_initialStates_contains gba s).mp hs
+    exact (degeneralize_states_contains gba hk s).mpr ⟨hwf.initial_mem s.gbaState h1, h2 ▸ hk⟩
+  succ_mem s s' hs hsucc := by
+    obtain ⟨h1, h2⟩ := (degeneralize_states_contains gba hk s).mp hs
+    obtain ⟨_, _, h3, h4⟩ := (degeneralize_getSuccessors_mem gba hk s s').mp hsucc
+    refine (degeneralize_states_contains gba hk s').mpr ⟨hwf.succ_mem s.gbaState s'.gbaState h1 h3, ?_⟩
+    rw [h4]; split
+    · exact Nat.mod_lt _ hk
+    · omega
 
 /-! ### Main bridge -/
 
