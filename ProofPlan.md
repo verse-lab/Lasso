@@ -4,6 +4,17 @@ This document outlines the plan for porting correctness proofs from the Isabelle
 
 ## Current state
 
+- **Track B (end-to-end runnable pipeline) is now fully DONE (2026-07-27)** —
+  `LTLLib/Pipeline.lean`'s `fullPipeline` is a genuine, total, verified LTL
+  satisfiability decision procedure: `fullPipeline φ = .empty n → ∀ξ,
+  ¬(ξ⊨φ)` and `.nonEmpty stem loop → ∃ξ, ξ⊨φ`, both unconditional. This
+  closes what Phase 6 originally scoped out as "Track B, future work" — see
+  the "Items 2 + 4" write-up under Phase 6 below for the two genuine gaps
+  found and closed along the way (a `numAcceptSets = 0` case
+  `degeneralize_bridge` never covered, and a missing pumping lemma
+  connecting graph-cycle-level to word-level emptiness — CAVA's own
+  `accepted_lasso`, which turned out to be needed on our side too, just as
+  it is on CAVA's).
 - **Build integrity**: `LTLLib.lean` now imports all 23 source files (previously only 13 — see
   "Build-integrity fix" note under Phase 6 below for what that was hiding). A clean rebuild (stale
   `.lake/build` artifacts removed first) succeeds with 0 errors, 0 sorry, 394 build jobs.
@@ -1091,8 +1102,9 @@ Chained, these give `pos.contains a → ¬neg.contains a` at every node — i.e.
    `∃σ, isRun σ ∧ isAcceptingRun σ` to a genuine
    `ba.toSpec.accepts (canonicalLabel ba.labeling ∘ lassoRun stem cycle _)`.
 
-**Item 3 — ✅ DONE for steps 1-3 (2026-07-27)** (step 4 is item 2+4's job,
-deferred with them as planned). Re-read the CAVA sources once more before
+**Item 3 — ✅ DONE for steps 1-3 (2026-07-27)** (step 4 completed together
+with items 2+4 in a later session — see the "Items 2 + 4" write-up below).
+Re-read the CAVA sources once more before
 implementing (`Automata.thy:173,474` for `igba_L`/`accept`,
 `CAVA_Abstract.thy:97-105` for `abs_model_check_correct`'s `sa_L sys ∘ r`)
 to confirm the divergence analysis above still holds — it does; CAVA's own
@@ -1243,6 +1255,136 @@ from a well-formed, concretely-instantiated `BA`). Item 3 is fully
 independent and can be done any time. Items 2 and 4 are best done together
 since wiring `nestedDFSWF` to a concrete `BA` *is* most of item 4's assembly
 work. Suggested order: **1 → 3 (parallel-safe) → 2+4 together**.
+
+**Items 2 + 4 — ✅ DONE (2026-07-27), including two genuine gaps found and
+closed along the way that weren't in the original 4-item scope.** Followed
+the recommended order exactly. Re-read CAVA's sources once more before
+writing any code (`Nested_DFS.thy`'s `blue_dfs_correct`, `Lasso.thy`'s
+`lasso_of_prpl`/`accepted_lasso`, `CAVA_Abstract.thy`'s `abs_model_check`),
+confirmed the analysis above still held, then implemented item 2's plan
+essentially as written — but item 4's assembly surfaced two things the
+original plan didn't anticipate, both closed rather than deferred (explicit
+user decision on each, given both looked like they might need "huge
+proofs" per this project's standing instruction to pause and check first).
+
+**Item 2, as planned** — `AcceptingCycle.toValidLasso` (`OutputVerify.lean`):
+pure field repackaging from `AcceptingCycle` to `ValidLasso`, exactly
+mirroring CAVA's one-line `map_lasso fst (lasso_of_prpl l)` — every field
+except `stem_initial`/`cycle_accepting` transfers directly (same `∈`/`=`
+vocabulary on both sides), those two need a one-line `Std.HashSet` `List`/
+`contains` bridge. Also added the membership induction the plan's item 3
+step 4 needs: `AcceptingCycle.stem_states_mem`/`cycle_states_mem`
+(`OutputVerify.lean`) — direct analogues of `DegeneralBridge.lean`'s
+`run_states_mem`, over `AcceptingCycle`'s explicit list-index chain instead
+of an abstract `Nat`-indexed run — and `AcceptingCycle.run_states_mem`,
+combining them across `lassoRun`'s own stem/cycle case split.
+
+**Gap found #1 — `numAcceptSets = 0`, closed (`DegeneralBridge.lean`).**
+Re-verified before writing item 4's assembly: every one of
+`degeneralize_bridge`/`degeneralize_wellFormed`/`degeneralize_states_contains`/
+`degeneralize_getSuccessors_mem` requires `hk : gba.numAcceptSets > 0`. This
+directly contradicts this file's own earlier note above ("this case is
+already handled *somewhere* in the existing 429 lines") — that note was
+wrong, unverified speculation; correcting it here. `numAcceptSets = 0`
+arises for any formula with no Until-subformula (`prop a`, pure boolean
+formulas, `next`-only formulas) — common, not an edge case. Considered the
+"`gba' := gba` with `acceptSets := #[gba.states]`, a trivial always-accepting
+set" workaround floated when this was first raised, but the *direct* route
+turned out cleaner: proved `BA.toSpec.accepts ξ ↔ GBA.toSpec.accepts ξ`
+straight from the definitions for `numAcceptSets = 0` (`degeneralize_accepts_zero`),
+bypassing `OASpec.degeneralize` entirely — it needs `hk` just to construct
+`Fin k`, but at `k = 0` both sides' acceptance conditions are already
+trivial (`GBA.toSpec.isAcceptingRun` vacuous over `Fin 0`; the computational
+BA's `k = 1` clamp makes *every* state accepting, so `j = 0` always works).
+New lemmas, mirroring the `hk`-gated ones one-for-one but fixing `k := 1`
+and threading `h0 : gba.acceptSets.size = 0` in place of `hk`:
+`mem_computeBASuccs_zero`, `degeneralize_successors_eq_zero`,
+`degeneralize_getSuccessors_mem_zero`, `degeneralize_states_contains_zero`,
+`degeneralize_wellFormed_zero`, `GBA.isAccepting_zero_of_empty`,
+`degeneralize_accepts_zero`. Then two small `dite`-based unifying wrappers,
+`degeneralize_wellFormed_any`/`degeneralize_accepts_any`, combine both cases
+into single unconditional (modulo `gba.WellFormed`) theorems — what
+`degeneralize_wellFormed`/`degeneralize_bridge`+`degeneralize_correct`
+"should have been" if `OASpec.degeneralize` didn't need `hk` just to
+typecheck. These `_any` wrappers are what the pipeline actually calls.
+
+**Gap found #2 — the pumping lemma, closed (`NestedDFSTermination.lean`,
+new `PumpingLemma` section).** `nestedDFSWF_empty_no_cycle`'s conclusion is
+graph-cycle-level (`¬∃ AcceptingCycle`), not word-level
+(`∀ξ, ¬accepts ξ`) — connecting them needs the *reverse* lasso direction,
+CAVA's `gb_graph.accepted_lasso` (`finite reachable ∧ is_acc_run r → ∃
+lasso`), which `Lasso.lean` never ported (only the forward direction,
+lasso→accepting-run, existed). Checked precisely whether this is really
+needed by re-reading `blue_dfs_correct` (graph-cycle-level, like ours — no
+gap *there*) versus `find_ce_spec` (CAVA's actual consumed interface,
+stated at the *run* level) and `ndfs_find_ce`'s refinement proof, which
+explicitly invokes `degen.accepted_lasso` to bridge exactly this gap — so
+CAVA needs it too, just one layer further out than `blue_dfs_correct`
+itself. Ported it, but via a more concrete route than CAVA's abstract
+`limit`/`ipath` machinery: since this project only ever needs it for a
+*single* acceptance set (never the general multi-acceptance-set
+`igb_graph` case), the argument reduces to a **finite** pigeonhole (sample
+`univ.size + 1` accepting-visit indices; two coincide) rather than CAVA's
+argument about the infinite limit set. New lemmas: `accIdxSeq` (+ 3 spec
+lemmas) builds the increasing accepting-index subsequence via
+`Classical.choose`; `exists_dup_of_size_lt` is the pigeonhole itself,
+proved by threading an accumulator `HashSet` through the sampled prefix
+(reusing `HashSet.size_le_of_subset` for the "no duplicate ever found"
+contradiction case); `exists_acceptingCycle_of_run` assembles the two
+repeated-index positions directly into `stem`/`cycle` as explicit
+`List.range`-mapped segments of the run, checking all 8 `AcceptingCycle`
+fields against the two pigeonhole indices `p < q` (`σ p = σ q`, accepting).
+Two small `AskUserQuestion` pauses happened before writing either gap's
+fix, per this project's standing instruction to check before diving into
+proofs that might turn out large — both times the user chose "close it now"
+over deferring.
+
+**Item 4 assembly (`LTLLib/Pipeline.lean`, new file)** — `fullPipeline`
+chains `createGraph → constructGBA → GBA.degeneralize → nestedDFSWF`
+exactly as planned, using `createGraph_term` for totality (the `none`
+branch is genuinely dead code, a defensive default). One Lean-specific
+snag, unrelated to the math: proving `fullPipeline_eq` (the unfolding
+lemma relating `fullPipeline φ` to a concrete `st`) by `simp`/`unfold`
+against the definition's own `match hcg : createGraph φ with` failed
+repeatedly with a stuck-typeclass or "no progress" error depending on the
+exact tactic tried — the same class of "rw through a compiled match" trap
+flagged repeatedly elsewhere in this file (Phase 4.3's gotchas, Phase 5's
+build-integrity fix). Fixed with the same established workaround: `split`
++ explicit `Option.some.inj` reconciliation between the match's own
+freshly-bound state variable and the external one, rather than trying to
+rewrite through the compiled match directly. `fullPipeline_nonEmpty_sat`/
+`fullPipeline_empty_unsat` then assemble cleanly: `constructGBA_correct_weak`
++ `degeneralize_accepts_any` (GBA ↔ BA, unconditional now) +
+`nestedDFSWF_nonEmpty_valid`/`_empty_no_cycle` + item 2's
+`AcceptingCycle.toValidLasso`/`run_states_mem` + item 3's
+`constructGBA_canonicalLabel_compat`/`degeneralize_canonicalLabel_compat`
+(nonEmpty case) + the new pumping lemma (empty case, to rule out a
+hypothetical satisfying `ξ` by deriving an `AcceptingCycle` from its
+accepting run and contradicting `nestedDFSWF_empty_no_cycle`). Final
+theorems:
+```lean
+theorem fullPipeline_nonEmpty_sat (φ : NNF α) {stem loop : List BAState}
+    (h : fullPipeline φ = .nonEmpty stem loop) :
+    ∃ ξ : OmegaWord α, NNF.satisfies ξ φ
+
+theorem fullPipeline_empty_unsat (φ : NNF α) {n : Nat}
+    (h : fullPipeline φ = .empty n) :
+    ∀ ξ : OmegaWord α, ¬ NNF.satisfies ξ φ
+```
+`fullPipeline` is a genuine, total, verified LTL satisfiability decision
+procedure — call it on any `φ`, and whichever branch it returns comes with
+an unconditional correctness guarantee, no side hypotheses beyond `φ`
+itself. This is what "a fully verified, fully functional... model checker"
+(the original framing that kicked off Track B) actually cashes out to,
+now that all four items are done.
+
+Verified via a genuinely clean rebuild (`.lake/build/lib/lean/LTLLib`
+removed first): 759 jobs (up from 758 — `Pipeline.lean` is new), 0 errors,
+0 sorry, no new warnings beyond the pre-existing ones in `GraphComplete.lean`.
+New/changed files this session: `OutputVerify.lean` (+~40 lines),
+`DegeneralBridge.lean` (+~160 lines across the gap-#1 closure and the two
+`_any` wrappers), `NestedDFSTermination.lean` (+~130 lines, the pumping
+lemma), `Pipeline.lean` (new, ~115 lines).
 
 ### Phase 2: Termination — IN PROGRESS (not blocking)
 

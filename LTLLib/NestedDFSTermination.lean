@@ -1723,4 +1723,204 @@ theorem BA.initialStates_subset_finiteReach (ba : BA α) (hwf : ba.WellFormed) :
 
 end BAFiniteReach
 
+section PumpingLemma
+
+/-! ## From an accepting run to an `AcceptingCycle`
+
+The reverse direction `nestedDFSWF_empty_no_cycle`/`nestedDFSWF_nonEmpty_valid`
+don't give: those connect `nestedDFSWF`'s *output* to a graph-cycle witness,
+but say nothing about whether "no accepting cycle" actually implies "no
+accepting infinite run" of the underlying automaton. CAVA needs exactly this
+too — not inside `blue_dfs_correct` itself (which, like our
+`nestedDFSWF_empty_no_cycle`, is stated purely at the graph-cycle level), but
+one layer out, when assembling a genuinely usable decision procedure:
+`CAVA_Impl.thy`'s `ndfs_find_ce` (which has to satisfy the *run*-level
+`find_ce_spec` contract) explicitly invokes `gb_graph.accepted_lasso`
+(`CAVA_Automata/Lasso.thy`):
+```isabelle
+lemma accepted_lasso:
+  assumes "finite (E⇧* `` V0)" and A: "is_acc_run r"
+  shows "∃L. is_lasso L"
+```
+proved via CAVA's abstract `limit`/`ipath` machinery (a state visited
+infinitely often exists by pigeonhole on the finite reachable set; any two
+`limit`-points are connected by a path since the run passes through both
+infinitely often).
+
+This port takes a more concrete route, avoiding CAVA's `limit`/`ipath`
+abstractions entirely: since we only ever need this for a *single*
+acceptance set (`AcceptingCycle`/`OASpec _ _ 1`, never the general `igb_graph`
+case), the argument reduces to finding *one* accepting state that repeats —
+a finite pigeonhole on an explicit prefix of length `univ.size + 1`, not an
+argument about the infinite limit set. Concretely: sample the run at
+`univ.size + 1` increasing accepting-visit indices; since all these visited
+states lie in the finite `univ`, two of them must coincide (pigeonhole);
+the run segment between those two repeated indices is *exactly* the cycle,
+by construction (each step is a genuine `succs`-edge, since it comes from
+`σ`'s own transition hypothesis). -/
+
+variable {State : Type u}
+
+/-- An increasing sequence of indices at which `σ` is accepting, built by
+repeatedly re-invoking `hacc` past the previous index. Classical/noncomputable
+(existence witnesses only, never executed). -/
+private noncomputable def accIdxSeq (σ : Nat → State) (isAccepting : State → Bool)
+    (hacc : ∀ N, ∃ n ≥ N, isAccepting (σ n) = true) : Nat → Nat
+  | 0 => (hacc 0).choose
+  | k + 1 => (hacc (accIdxSeq σ isAccepting hacc k + 1)).choose
+
+private theorem accIdxSeq_succ_spec (σ : Nat → State) (isAccepting : State → Bool)
+    (hacc : ∀ N, ∃ n ≥ N, isAccepting (σ n) = true) (k : Nat) :
+    accIdxSeq σ isAccepting hacc k + 1 ≤ accIdxSeq σ isAccepting hacc (k + 1) ∧
+      isAccepting (σ (accIdxSeq σ isAccepting hacc (k + 1))) = true := by
+  show (accIdxSeq σ isAccepting hacc k + 1 ≤ (hacc (accIdxSeq σ isAccepting hacc k + 1)).choose) ∧
+      isAccepting (σ (hacc (accIdxSeq σ isAccepting hacc k + 1)).choose) = true
+  exact (hacc (accIdxSeq σ isAccepting hacc k + 1)).choose_spec
+
+private theorem accIdxSeq_mono (σ : Nat → State) (isAccepting : State → Bool)
+    (hacc : ∀ N, ∃ n ≥ N, isAccepting (σ n) = true) (k : Nat) :
+    accIdxSeq σ isAccepting hacc k < accIdxSeq σ isAccepting hacc (k + 1) :=
+  Nat.lt_of_succ_le (accIdxSeq_succ_spec σ isAccepting hacc k).1
+
+private theorem accIdxSeq_accepting (σ : Nat → State) (isAccepting : State → Bool)
+    (hacc : ∀ N, ∃ n ≥ N, isAccepting (σ n) = true) (k : Nat) :
+    isAccepting (σ (accIdxSeq σ isAccepting hacc k)) = true := by
+  cases k with
+  | zero => exact (hacc 0).choose_spec.2
+  | succ k => exact (accIdxSeq_succ_spec σ isAccepting hacc k).2
+
+/-- Pigeonhole: among `univ.size + 1` states all drawn from `univ`, two
+coincide. Proved by threading an accumulator `HashSet` through the sampled
+prefix and using `HashSet.size_le_of_subset` for the base case where no
+duplicate was ever found. -/
+private theorem exists_dup_of_size_lt [BEq State] [Hashable State] [LawfulBEq State]
+    [LawfulHashable State] (univ : Std.HashSet State) (f : Nat → State)
+    (hmem : ∀ k, univ.contains (f k) = true) :
+    ∃ i j, i < j ∧ j ≤ univ.size ∧ f i = f j := by
+  suffices h : ∀ k, (∃ i j, i < j ∧ j ≤ k ∧ f i = f j) ∨
+      ∃ acc : Std.HashSet State, acc.size = k + 1 ∧
+        (∀ x, acc.contains x → univ.contains x) ∧
+        (∀ x, acc.contains x → ∃ i ≤ k, f i = x) by
+    rcases h univ.size with h1 | ⟨acc, hsize, hsub, _⟩
+    · exact h1
+    · exact absurd (HashSet.size_le_of_subset hsub) (by omega)
+  intro k
+  induction k with
+  | zero =>
+    right
+    refine ⟨Std.HashSet.emptyWithCapacity 1 |>.insert (f 0),
+      by simp [Std.HashSet.size_insert, Std.HashSet.size_emptyWithCapacity], ?_, ?_⟩
+    · intro x hx
+      simp only [Std.HashSet.contains_insert, Std.HashSet.contains_emptyWithCapacity,
+        Bool.or_false] at hx
+      exact (LawfulBEq.eq_of_beq hx) ▸ hmem 0
+    · intro x hx
+      simp only [Std.HashSet.contains_insert, Std.HashSet.contains_emptyWithCapacity,
+        Bool.or_false] at hx
+      exact ⟨0, Nat.le_refl 0, LawfulBEq.eq_of_beq hx⟩
+  | succ k ih =>
+    rcases ih with ⟨i, j, hij, hjk, heq⟩ | ⟨acc, hsize, hsub, hall⟩
+    · exact Or.inl ⟨i, j, hij, by omega, heq⟩
+    · by_cases hdup : acc.contains (f (k + 1)) = true
+      · obtain ⟨i', hi'k, hi'⟩ := hall (f (k + 1)) hdup
+        exact Or.inl ⟨i', k + 1, by omega, by omega, hi'⟩
+      · right
+        refine ⟨acc.insert (f (k + 1)), ?_, ?_, ?_⟩
+        · rw [Std.HashSet.size_insert,
+            if_neg (by rw [Std.HashSet.mem_iff_contains]; exact hdup)]
+          omega
+        · intro x hx
+          simp only [Std.HashSet.contains_insert] at hx
+          rcases (Bool.or_eq_true _ _).mp hx with h | h
+          · exact (LawfulBEq.eq_of_beq h) ▸ hmem (k + 1)
+          · exact hsub x h
+        · intro x hx
+          simp only [Std.HashSet.contains_insert] at hx
+          rcases (Bool.or_eq_true _ _).mp hx with h | h
+          · exact ⟨k + 1, Nat.le_refl _, LawfulBEq.eq_of_beq h⟩
+          · obtain ⟨i, hik, hi⟩ := hall x h
+            exact ⟨i, by omega, hi⟩
+
+private theorem accIdxSeq_lt_of_lt (σ : Nat → State) (isAccepting : State → Bool)
+    (hacc : ∀ N, ∃ n ≥ N, isAccepting (σ n) = true) :
+    ∀ {i j : Nat}, i < j → accIdxSeq σ isAccepting hacc i < accIdxSeq σ isAccepting hacc j := by
+  intro i j
+  induction j with
+  | zero => intro h; omega
+  | succ j ih =>
+    intro h
+    by_cases heq : i = j
+    · rw [heq]; exact accIdxSeq_mono σ isAccepting hacc j
+    · exact Nat.lt_trans (ih (by omega)) (accIdxSeq_mono σ isAccepting hacc j)
+
+/-- The reverse direction of `nestedDFSWF_empty_no_cycle`/
+`nestedDFS_fuel_empty_no_cycle`: an accepting run yields an `AcceptingCycle`
+witness. Direct analogue of CAVA's `gb_graph.accepted_lasso`
+(`CAVA_Automata/Lasso.thy`), specialized to a single acceptance set and
+proved via the finite pigeonhole above rather than the general `limit`/
+`ipath` machinery. -/
+theorem exists_acceptingCycle_of_run [BEq State] [Hashable State] [LawfulBEq State]
+    [LawfulHashable State]
+    {succs : State → Array State} {isAccepting : State → Bool}
+    {initialStates : List State} (fr : FiniteReach succs)
+    (hinitial : ∀ x ∈ initialStates, fr.univ.contains x)
+    {σ : Nat → State} (hinit : σ 0 ∈ initialStates)
+    (htrans : ∀ n, σ (n + 1) ∈ succs (σ n))
+    (hacc : ∀ N, ∃ n ≥ N, isAccepting (σ n) = true) :
+    ∃ _ac : AcceptingCycle initialStates succs isAccepting, True := by
+  have hmem : ∀ n, fr.univ.contains (σ n) = true := by
+    intro n
+    induction n with
+    | zero => exact hinitial _ hinit
+    | succ n ih => exact fr.closed _ ih _ (htrans n)
+  obtain ⟨i, j, hij, _, heq⟩ := exists_dup_of_size_lt fr.univ
+    (fun k => σ (accIdxSeq σ isAccepting hacc k)) (fun k => hmem _)
+  have hpq : accIdxSeq σ isAccepting hacc i < accIdxSeq σ isAccepting hacc j :=
+    accIdxSeq_lt_of_lt σ isAccepting hacc hij
+  let p := accIdxSeq σ isAccepting hacc i
+  let q := accIdxSeq σ isAccepting hacc j
+  have hstem_get : ∀ i, (hi : i < p + 1) →
+      ((List.range (p + 1)).map σ)[i]'(by simpa using hi) = σ i := by
+    intro i hi; simp
+  have hcycle_get : ∀ i, (hi : i < q - p) →
+      ((List.range (q - p)).map (fun k => σ (p + k)))[i]'(by simpa using hi) = σ (p + i) := by
+    intro i hi; simp
+  refine ⟨{
+    stem := (List.range (p + 1)).map σ
+    cycle := (List.range (q - p)).map (fun k => σ (p + k))
+    stem_nonempty := by simp
+    cycle_nonempty := by simp; omega
+    stem_head_initial := by
+      rw [List.head_eq_getElem, hstem_get 0 (by omega)]
+      exact hinit
+    stem_chain := by
+      intro i hi
+      simp only [List.length_map, List.length_range] at hi
+      rw [hstem_get i (by omega), hstem_get (i + 1) (by omega)]
+      exact htrans i
+    overlap := by
+      rw [List.getLast_eq_getElem, List.head_eq_getElem]
+      simp only [List.length_map, List.length_range, Nat.add_sub_cancel]
+      rw [hstem_get p (by omega), hcycle_get 0 (by omega)]
+      rfl
+    cycle_chain := by
+      intro i hi
+      simp only [List.length_map, List.length_range] at hi
+      rw [hcycle_get i (by omega), hcycle_get (i + 1) (by omega)]
+      simpa using htrans (p + i)
+    cycle_back := by
+      rw [List.head_eq_getElem, List.getLast_eq_getElem]
+      simp only [List.length_map, List.length_range]
+      rw [hcycle_get 0 (by omega), hcycle_get (q - p - 1) (by omega)]
+      have ht := htrans (p + (q - p - 1))
+      have heq2 : p + (q - p - 1) + 1 = q := by omega
+      rw [heq2] at ht
+      rwa [← heq] at ht
+    cycle_head_accepting := by
+      rw [List.head_eq_getElem, hcycle_get 0 (by omega)]
+      exact accIdxSeq_accepting σ isAccepting hacc i
+  }, trivial⟩
+
+end PumpingLemma
+
 end LTLLib
