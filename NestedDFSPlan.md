@@ -324,3 +324,15 @@ without changing what counts as an accepting cycle. Adding it would mean:
   code path.
 
 Not started; no immediate blocker, purely a future enhancement.
+
+## Where this fits now (2026-07-27)
+
+`nestedDFSWF` (the total, well-founded entry point this file tracks the
+construction of) is now composed, alongside the rest of the LTL-to-GBA
+pipeline, into `Pipeline.lean`'s `fullPipeline` — a single total function
+with an unconditional end-to-end satisfiability-decision correctness
+guarantee. See `README.md`/`ProofPlan.md`'s "Track B" section for the
+composition and the two extra pieces that assembly needed (a
+`numAcceptSets = 0` case and a pumping lemma connecting accepting runs to
+accepting cycles) beyond what's recorded in this file. This file remains
+an accurate record of the nested-DFS termination/wiring work itself.

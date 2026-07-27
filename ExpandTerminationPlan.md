@@ -359,4 +359,15 @@ theorem createGraph_term (φ : NNF α) :
     ∃ st : ExpandState α S, createGraph φ = some st ∧ NodesBounded φ st
 ```
 
-Both `sorry`-free. Whole project: 758 jobs, 0 errors, 0 sorry.
+Both `sorry`-free. Whole project: 758 jobs, 0 errors, 0 sorry (at the time
+this was written; now 759 jobs with `Pipeline.lean` added — see below).
+
+## 7. Where this fits now (2026-07-27)
+
+`createGraph_term` is one of the pieces `Pipeline.lean`'s `fullPipeline`
+depends on directly (it's what justifies `fullPipeline`'s `none` branch
+being genuine dead code — `createGraph` always succeeds). See `README.md`
+and `ProofPlan.md`'s "Track B" section for how this connects to the fully
+composed, total, verified LTL satisfiability decision procedure. This file
+remains an accurate record of the termination work itself and is not
+expected to need further updates unless `expand`'s algorithm changes.

@@ -3,6 +3,19 @@
 ## Status
 
 **COMPLETED.** Both sorry's filled. Builds cleanly with 0 sorry, 0 warnings.
+This remains accurate — `Acceptance.lean`'s `degeneralize_correct` hasn't
+changed since. (2026-07-27 note: the whole LTL-to-GBA-to-emptiness pipeline
+this was one early piece of is now fully done end-to-end — see
+`README.md`/`ProofPlan.md`. The **"Previous Plan (for reference)" section
+below this one is pre-implementation planning from before any of Phases
+2-4 were actually built**, and is now substantially wrong as a description
+of the codebase — type names (`GBA.Spec`/`BA.Spec`), file names
+(`SubformulaFinite.lean`, `Correctness.lean`), and theorem names
+(`gba_correct`) it mentions don't match what was actually built (`OASpec`,
+`Invariants.lean`/`GraphComplete.lean`/`Pipeline.lean`,
+`constructGBA_correct_weak`/`fullPipeline_*`). Kept only for historical
+interest in how the plan evolved; treat `ProofPlan.md` as authoritative for
+anything below this line.)
 
 The actual proof followed the "simpler alternative" approach (CAVA's `degen_run_find_acc_aux`)
 rather than the `Frequently` API approach. Used `Nat.find` from `Mathlib.Order.Nat`.
@@ -19,7 +32,7 @@ This plan fills in both sorry's, following the proof structure from CAVA's `Auto
 
 ## File to modify
 
-`/Users/zqy1018/LTLLib/LTLLib/Acceptance.lean`
+`LTLLib/Acceptance.lean`
 
 ## Proof architecture (following CAVA)
 
