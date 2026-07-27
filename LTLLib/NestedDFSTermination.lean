@@ -1013,7 +1013,22 @@ def outerDFSLoopWF (succs : State → Array State) (isAccepting : State → Bool
         outerDFSLoopWF succs isAccepting fr rest pathStack.dropLast st
     | succ :: remainingTail =>
       let stack' := (current, remainingTail) :: rest
-      if _hvis : st.outerVisited.contains succ then
+      if pathStack.contains succ then
+        -- Schwoon-Esparza back-edge shortcut, mirroring `outerDFSLoop_fuel`
+        -- exactly (`NestedDFSCorrectness.lean`).
+        if isAccepting current then
+          if succ == current then
+            (.nonEmpty pathStack [current, current], st)
+          else
+            let loopTail := (pathStack.dropWhile (fun y => !(y == succ))).dropLast
+            (.nonEmpty pathStack (current :: current :: loopTail), st)
+        else if isAccepting succ then
+          let stem := pathStack.takeWhile (fun y => !(y == succ)) ++ [succ]
+          let loop := succ :: pathStack.dropWhile (fun y => !(y == succ))
+          (.nonEmpty stem loop, st)
+        else
+          outerDFSLoopWF succs isAccepting fr stack' pathStack st
+      else if _hvis : st.outerVisited.contains succ then
         outerDFSLoopWF succs isAccepting fr stack' pathStack st
       else if _hsucc_univ : fr.univ.contains succ then
         let st2 := { st with outerVisited := st.outerVisited.insert succ }
@@ -1030,6 +1045,7 @@ decreasing_by
       exact hr2
     rw [hst'_eq]
     exact Prod.Lex.right _ (by simp)
+  · exact Prod.Lex.right _ (by simp)
   · exact Prod.Lex.right _ (by simp)
   · exact Prod.Lex.right _ (by simp)
   · have hsucc_niv : st.outerVisited.contains succ = false := by simpa using _hvis
@@ -1134,24 +1150,67 @@ theorem outerDFSLoop_fuel_accept_not_found (succs : State → Array State) (isAc
 theorem outerDFSLoop_fuel_skip_visited (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat) (current succ : State) (remainingTail : List State)
     (rest : List (State × List State)) (pathStack : List State) (st : FNDFSState State)
-    (hvis : st.outerVisited.contains succ = true) :
+    (hnb : succ ∉ pathStack) (hvis : st.outerVisited.contains succ = true) :
     outerDFSLoop_fuel succs isAccepting (fuel + 1) ((current, succ :: remainingTail) :: rest)
         pathStack st =
       outerDFSLoop_fuel succs isAccepting fuel ((current, remainingTail) :: rest) pathStack st := by
   conv => lhs; rw [outerDFSLoop_fuel.eq_def]
-  simp [hvis]
+  simp [hnb, hvis]
 
 theorem outerDFSLoop_fuel_push (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat) (current succ : State) (remainingTail : List State)
     (rest : List (State × List State)) (pathStack : List State) (st : FNDFSState State)
-    (hvis : st.outerVisited.contains succ = false) :
+    (hnb : succ ∉ pathStack) (hvis : st.outerVisited.contains succ = false) :
     outerDFSLoop_fuel succs isAccepting (fuel + 1) ((current, succ :: remainingTail) :: rest)
         pathStack st =
       outerDFSLoop_fuel succs isAccepting fuel
         ((succ, (succs succ).toList) :: (current, remainingTail) :: rest) (pathStack ++ [succ])
         { st with outerVisited := st.outerVisited.insert succ } := by
   conv => lhs; rw [outerDFSLoop_fuel.eq_def]
-  simp [hvis]
+  simp [hnb, hvis]
+
+/-- Schwoon-Esparza back-edge shortcut, "neither accepting" sub-case: behaves
+    exactly like `outerDFSLoop_fuel_skip_visited` (recurse with `succ`
+    dropped), just reached via the back-edge branch instead of the
+    already-visited one. -/
+theorem outerDFSLoop_fuel_back_edge_skip (succs : State → Array State) (isAccepting : State → Bool)
+    (fuel : Nat) (current succ : State) (remainingTail : List State)
+    (rest : List (State × List State)) (pathStack : List State) (st : FNDFSState State)
+    (hb : succ ∈ pathStack) (hacc : isAccepting current = false)
+    (hsacc : isAccepting succ = false) :
+    outerDFSLoop_fuel succs isAccepting (fuel + 1) ((current, succ :: remainingTail) :: rest)
+        pathStack st =
+      outerDFSLoop_fuel succs isAccepting fuel ((current, remainingTail) :: rest) pathStack st := by
+  conv => lhs; rw [outerDFSLoop_fuel.eq_def]
+  simp [hb, hacc, hsacc]
+
+/-- Schwoon-Esparza back-edge shortcut, "source accepting" sub-case: an
+    immediate, fuel-independent `.nonEmpty` result (self-loop or general). -/
+theorem outerDFSLoop_fuel_back_edge_current_acc (succs : State → Array State)
+    (isAccepting : State → Bool) (fuel : Nat) (current succ : State)
+    (remainingTail : List State) (rest : List (State × List State)) (pathStack : List State)
+    (st : FNDFSState State) (hb : succ ∈ pathStack) (hacc : isAccepting current = true) :
+    outerDFSLoop_fuel succs isAccepting (fuel + 1) ((current, succ :: remainingTail) :: rest)
+        pathStack st =
+      some (.nonEmpty pathStack
+        (if succ == current then [current, current]
+          else current :: current :: (pathStack.dropWhile (fun y => !(y == succ))).dropLast), st) := by
+  conv => lhs; rw [outerDFSLoop_fuel.eq_def]
+  by_cases hsc : succ == current <;> simp [hb, hacc, hsc]
+
+/-- Schwoon-Esparza back-edge shortcut, "target accepting" sub-case: an
+    immediate, fuel-independent `.nonEmpty` result. -/
+theorem outerDFSLoop_fuel_back_edge_succ_acc (succs : State → Array State)
+    (isAccepting : State → Bool) (fuel : Nat) (current succ : State)
+    (remainingTail : List State) (rest : List (State × List State)) (pathStack : List State)
+    (st : FNDFSState State) (hb : succ ∈ pathStack) (hacc : isAccepting current = false)
+    (hsacc : isAccepting succ = true) :
+    outerDFSLoop_fuel succs isAccepting (fuel + 1) ((current, succ :: remainingTail) :: rest)
+        pathStack st =
+      some (.nonEmpty (pathStack.takeWhile (fun y => !(y == succ)) ++ [succ])
+        (succ :: pathStack.dropWhile (fun y => !(y == succ))), st) := by
+  conv => lhs; rw [outerDFSLoop_fuel.eq_def]
+  simp [hb, hacc, hsacc]
 
 /-- Fuel-increase preserves a successful `outerDFSLoop_fuel` result. Proved by
 induction on `fuel`, mirroring `innerDFS_fuel_add_preserves`; needs
@@ -1210,20 +1269,40 @@ theorem outerDFSLoop_fuel_add_preserves (succs : State → Array State) (isAccep
               pathStack st hacc]
           exact ih rest pathStack.dropLast st result st' h
       | succ :: remainingTail =>
-        by_cases hvis : st.outerVisited.contains succ = true
-        · rw [outerDFSLoop_fuel_skip_visited succs isAccepting n current succ remainingTail rest
-              pathStack st hvis] at h
-          rw [outerDFSLoop_fuel_skip_visited succs isAccepting (n + extra) current succ
-              remainingTail rest pathStack st hvis]
-          exact ih ((current, remainingTail) :: rest) pathStack st result st' h
-        · simp only [Bool.not_eq_true] at hvis
-          rw [outerDFSLoop_fuel_push succs isAccepting n current succ remainingTail rest pathStack
-              st hvis] at h
-          rw [outerDFSLoop_fuel_push succs isAccepting (n + extra) current succ remainingTail rest
-              pathStack st hvis]
-          exact ih ((succ, (succs succ).toList) :: (current, remainingTail) :: rest)
-            (pathStack ++ [succ]) { st with outerVisited := st.outerVisited.insert succ }
-            result st' h
+        by_cases hb : succ ∈ pathStack
+        · by_cases hacc : isAccepting current = true
+          · rw [outerDFSLoop_fuel_back_edge_current_acc succs isAccepting n current succ
+                remainingTail rest pathStack st hb hacc] at h
+            rw [outerDFSLoop_fuel_back_edge_current_acc succs isAccepting (n + extra) current succ
+                remainingTail rest pathStack st hb hacc]
+            exact h
+          · simp only [Bool.not_eq_true] at hacc
+            by_cases hsacc : isAccepting succ = true
+            · rw [outerDFSLoop_fuel_back_edge_succ_acc succs isAccepting n current succ
+                  remainingTail rest pathStack st hb hacc hsacc] at h
+              rw [outerDFSLoop_fuel_back_edge_succ_acc succs isAccepting (n + extra) current succ
+                  remainingTail rest pathStack st hb hacc hsacc]
+              exact h
+            · simp only [Bool.not_eq_true] at hsacc
+              rw [outerDFSLoop_fuel_back_edge_skip succs isAccepting n current succ remainingTail
+                  rest pathStack st hb hacc hsacc] at h
+              rw [outerDFSLoop_fuel_back_edge_skip succs isAccepting (n + extra) current succ
+                  remainingTail rest pathStack st hb hacc hsacc]
+              exact ih ((current, remainingTail) :: rest) pathStack st result st' h
+        · by_cases hvis : st.outerVisited.contains succ = true
+          · rw [outerDFSLoop_fuel_skip_visited succs isAccepting n current succ remainingTail rest
+                pathStack st hb hvis] at h
+            rw [outerDFSLoop_fuel_skip_visited succs isAccepting (n + extra) current succ
+                remainingTail rest pathStack st hb hvis]
+            exact ih ((current, remainingTail) :: rest) pathStack st result st' h
+          · simp only [Bool.not_eq_true] at hvis
+            rw [outerDFSLoop_fuel_push succs isAccepting n current succ remainingTail rest pathStack
+                st hb hvis] at h
+            rw [outerDFSLoop_fuel_push succs isAccepting (n + extra) current succ remainingTail rest
+                pathStack st hb hvis]
+            exact ih ((succ, (succs succ).toList) :: (current, remainingTail) :: rest)
+              (pathStack ++ [succ]) { st with outerVisited := st.outerVisited.insert succ }
+              result st' h
 
 variable (succs : State → Array State) (fr : FiniteReach succs) (isAccepting : State → Bool)
 
@@ -1326,7 +1405,61 @@ theorem outerDFSLoop_fuel_eq_outerDFSLoopWF
       simp only [hacc]
       exact heqC2
   | case5 =>
-    rename_i pathStack st current rest succ remainingTail stack' h ih1
+    rename_i _inst pathStack st current rest succ remainingTail hb hacc hsc
+    refine ⟨1, .nonEmpty pathStack [current, current], st, ?_, hfin, ?_⟩
+    · rw [outerDFSLoop_fuel_back_edge_current_acc succs isAccepting 0 current succ remainingTail
+        rest pathStack st (by simpa using hb) hacc]
+      simp [hsc]
+    · unfold outerDFSLoopWF
+      simp only [hb, hacc, hsc, if_true]
+  | case6 =>
+    rename_i _inst pathStack st current rest succ remainingTail hb hacc hsc
+    refine ⟨1, .nonEmpty pathStack
+      (current :: current :: (pathStack.dropWhile (fun y => !(y == succ))).dropLast), st,
+      ?_, hfin, ?_⟩
+    · rw [outerDFSLoop_fuel_back_edge_current_acc succs isAccepting 0 current succ remainingTail
+        rest pathStack st (by simpa using hb) hacc]
+      simp [hsc]
+    · unfold outerDFSLoopWF
+      simp only [hb, hacc, hsc, if_true]
+      rfl
+  | case7 =>
+    rename_i _inst pathStack st current rest succ remainingTail hb hacc hsacc
+    have hacc' : isAccepting current = false := by simpa using hacc
+    refine ⟨1, .nonEmpty (pathStack.takeWhile (fun y => !(y == succ)) ++ [succ])
+      (succ :: pathStack.dropWhile (fun y => !(y == succ))), st, ?_, hfin, ?_⟩
+    · exact outerDFSLoop_fuel_back_edge_succ_acc succs isAccepting 0 current succ remainingTail
+        rest pathStack st (by simpa using hb) hacc' hsacc
+    · unfold outerDFSLoopWF
+      simp only [hb, hacc, hsacc, if_true]
+      rfl
+  | case8 =>
+    rename_i pathStack st current rest succ remainingTail stack' hb hacc hsacc ih1
+    have hb' : succ ∈ pathStack := by simpa using hb
+    have hacc' : isAccepting current = false := by simpa using hacc
+    have hsacc' : isAccepting succ = false := by simpa using hsacc
+    have hstack'_states : ∀ p ∈ stack', fr.univ.contains p.1 := by
+      intro p hp
+      rcases List.mem_cons.mp hp with rfl | hp'
+      · exact hstack_states (current, succ :: remainingTail) (List.mem_cons_self ..)
+      · exact hstack_states p (List.mem_cons_of_mem _ hp')
+    have hstack'_remaining : ∀ p ∈ stack', ∀ x ∈ p.2, x ∈ succs p.1 := by
+      intro p hp
+      rcases List.mem_cons.mp hp with rfl | hp'
+      · exact fun x hx => hstack_remaining (current, succ :: remainingTail)
+          (List.mem_cons_self ..) x (List.mem_cons_of_mem _ hx)
+      · exact hstack_remaining p (List.mem_cons_of_mem _ hp')
+    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ :=
+      ih1 hfin hstack'_states hstack'_remaining
+    refine ⟨fuel2 + 1, result2, st2, ?_, hfin2, ?_⟩
+    · exact outerDFSLoop_fuel_back_edge_skip succs isAccepting fuel2 current succ remainingTail
+        rest pathStack st hb' hacc' hsacc' ▸ heq2
+    · unfold outerDFSLoopWF
+      simp only [hb, hacc, hsacc]
+      exact heqC2
+  | case9 =>
+    rename_i pathStack st current rest succ remainingTail stack' hnb h ih1
+    have hnb' : succ ∉ pathStack := by simpa using hnb
     have hstack'_states : ∀ p ∈ stack', fr.univ.contains p.1 := by
       intro p hp
       rcases List.mem_cons.mp hp with rfl | hp'
@@ -1342,13 +1475,14 @@ theorem outerDFSLoop_fuel_eq_outerDFSLoopWF
       ih1 hfin hstack'_states hstack'_remaining
     refine ⟨fuel2 + 1, result2, st2, ?_, hfin2, ?_⟩
     · exact outerDFSLoop_fuel_skip_visited succs isAccepting fuel2 current succ remainingTail rest
-        pathStack st h ▸ heq2
+        pathStack st hnb' h ▸ heq2
     · unfold outerDFSLoopWF
-      simp only [h]
+      simp only [hnb, h]
       exact heqC2
-  | case6 =>
-    rename_i pathStack st current rest succ remainingTail stack' hnotvis hunivsucc st2 succChildren
-      stack2 ih1
+  | case10 =>
+    rename_i pathStack st current rest succ remainingTail stack' hnb hnotvis hunivsucc st2
+      succChildren stack2 ih1
+    have hnb' : succ ∉ pathStack := by simpa using hnb
     have hnotvis' : st.outerVisited.contains succ = false := by
       simp only [Bool.not_eq_true] at hnotvis; exact hnotvis
     have hfin2' : ∀ x, st2.innerFinished.contains x → fr.univ.contains x := by
@@ -1372,12 +1506,12 @@ theorem outerDFSLoop_fuel_eq_outerDFSLoopWF
       ih1 hfin2' hstack2_states hstack2_remaining
     refine ⟨fuel2 + 1, result2, st2', ?_, hfin2, ?_⟩
     · exact outerDFSLoop_fuel_push succs isAccepting fuel2 current succ remainingTail rest
-        pathStack st hnotvis' ▸ heq2
+        pathStack st hnb' hnotvis' ▸ heq2
     · unfold outerDFSLoopWF
-      simp only [hnotvis, hunivsucc]
+      simp only [hnb, hnotvis, hunivsucc]
       exact heqC2
-  | case7 =>
-    rename_i pathStack st current rest succ remainingTail stack' hnotvis hnotuniv ih1
+  | case11 =>
+    rename_i pathStack st current rest succ remainingTail stack' hnb hnotvis hnotuniv ih1
     exfalso
     apply hnotuniv
     have hcurrent : fr.univ.contains current :=

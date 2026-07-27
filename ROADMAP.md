@@ -1,7 +1,7 @@
 # Roadmap: Verified LTL Model Checking in Lean 4
 
 **Status (2026-07-27): all phases below are DONE.** `LTLLib/` is 0 `sorry`,
-0 warnings-from-this-project's-own-code, ~13,525 lines, 759 build jobs. The
+0 warnings-from-this-project's-own-code, ~14,114 lines, 759 build jobs. The
 top-level result is `fullPipeline` (`LTLLib/Pipeline.lean`): a total,
 computable LTL satisfiability decision procedure with two unconditional
 correctness theorems (`fullPipeline_empty_unsat`/`fullPipeline_nonEmpty_sat`).
@@ -10,6 +10,15 @@ See `README.md` for the proof-status table and usage guide, and
 correspondence, every divergence and why, every gotcha hit along the way).
 This file is now a short orientation snapshot, not the detailed log —
 `ProofPlan.md` is the actively-maintained one.
+
+Beyond Track B, the nested-DFS emptiness check also now includes the
+**Schwoon-Esparza outer-DFS back-edge shortcut** (`outerDFSLoop`/
+`outerDFSLoop_fuel`/`outerDFSLoopWF` all detect an accepting cycle directly
+on a back-edge to/from an accepting state, without launching the inner DFS)
+— a performance optimization ported from CAVA's `se_back_edge`, fully
+proven with no new hypotheses on the completeness direction. See
+`NestedDFSPlan.md`'s "Schwoon-Esparza back-edge optimization" section for
+the full port write-up.
 
 ## The pipeline
 
@@ -71,12 +80,15 @@ were assembled together — both closed, not deferred:
   README.md's "Using this library" section — the automaton-construction
   half (`constructGBA`/`GBA.degeneralize`, with unconditional correctness)
   is fully usable standalone for exactly that.
-- **Schwoon-Esparza back-edge optimization**: `innerDFS`/`outerDFSLoop`
-  implement the classic CVWY algorithm only (cycle found via the inner DFS
-  reaching back to its seed). CAVA's Isabelle version additionally detects
-  a cycle directly on an outer-DFS back-edge, without launching the inner
-  DFS. Performance-only, not a correctness gap; not started. See
-  `NestedDFSPlan.md`'s closing section.
+- **Holzmann-Peled-Yannakakis inner-DFS shortcut**: `innerDFS` stops only
+  when it reaches the literal seed. CAVA additionally stops the *inner*
+  (red) DFS as soon as it reaches *any* state on the *outer* (blue) DFS's
+  call stack (baked into `run_red_dfs`'s stop-predicate in
+  `Nested_DFS.thy`), which is faster but needs threading a cyan-set into
+  `innerDFS`'s own signature. Performance-only, not a correctness gap; not
+  started — a smaller, separate piece from the outer-DFS back-edge
+  shortcut below it, which *is* done. See `NestedDFSPlan.md`'s "Schwoon-
+  Esparza back-edge optimization" section, §0.
 - **`ProbMC/`**: a separate probabilistic-model-checking library in this
   same repository/`lakefile.toml`, entirely independent of `LTLLib/` and
   untouched by the work summarized here. It has its own open `sorry` (the

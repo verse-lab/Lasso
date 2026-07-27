@@ -136,8 +136,28 @@ private partial def outerDFSLoop [BEq State] [Hashable State]
     | succ :: remainingTail =>
       -- Process next successor
       let stack' := (current, remainingTail) :: rest
-      if st.outerVisited.contains succ then
-        -- Already visited: skip
+      if pathStack.contains succ then
+        -- Schwoon-Esparza back-edge shortcut (`se_back_edge` in CAVA's
+        -- `Nested_DFS.thy`): `succ` is cyan (currently on the outer stack),
+        -- so a cycle can be reported directly, without launching innerDFS.
+        -- Verified version + full derivation: `outerDFSLoop_fuel`/
+        -- `outerDFSLoopWF` in `NestedDFSCorrectness.lean`/
+        -- `NestedDFSTermination.lean`.
+        if isAccepting current then
+          if succ == current then
+            -- degenerate case: current -> current is a literal self-loop.
+            (.nonEmpty pathStack [current, current], st)
+          else
+            let loopTail := (pathStack.dropWhile (fun y => !(y == succ))).dropLast
+            (.nonEmpty pathStack (current :: current :: loopTail), st)
+        else if isAccepting succ then
+          let stem := pathStack.takeWhile (fun y => !(y == succ)) ++ [succ]
+          let loop := succ :: pathStack.dropWhile (fun y => !(y == succ))
+          (.nonEmpty stem loop, st)
+        else
+          outerDFSLoop successors isAccepting stack' pathStack st
+      else if st.outerVisited.contains succ then
+        -- Already visited (finished, not on the stack): skip
         outerDFSLoop successors isAccepting stack' pathStack st
       else
         -- Visit new successor: push onto stack

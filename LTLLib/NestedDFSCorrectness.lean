@@ -278,6 +278,168 @@ theorem chain_cons {succs : State → Array State} (a : State) (l : List State)
     have hk : k + 1 < l.length := by simpa using hi
     simpa using hchain k hk
 
+/-- Dropping the head of a `succs`-chain list leaves a `succs`-chain (index
+    version, sibling of `ReachChain.tail`). -/
+private theorem chain_tail {succs : State → Array State} (a : State) (l : List State)
+    (hchain : ∀ i, (hi : i + 1 < (a :: l).length) → (a :: l)[i+1] ∈ succs (a :: l)[i]) :
+    ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i] := by
+  intro i hi
+  have h := hchain (i + 1) (by simpa using hi)
+  simpa using h
+
+/-- A `take n` prefix of a `succs`-chain list is itself a `succs`-chain.
+    Needed for the Schwoon-Esparza back-edge shortcut: slicing `pathStack` at
+    the back-edge target's index keeps the prefix a valid chain (cf. CAVA's
+    `takeWhileNot v` in `se_back_edge_lasso_inv`, `Nested_DFS.thy:494` — we use
+    an explicit index instead of a predicate to stay clear of a Lean
+    dependent-rewrite trap under `takeWhile`'s recursive unfolding). -/
+theorem chain_take {succs : State → Array State} (l : List State) (n : Nat)
+    (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
+    ∀ i, (hi : i + 1 < (l.take n).length) → (l.take n)[i+1] ∈ succs (l.take n)[i] := by
+  intro i hi
+  have hi' : i + 1 < l.length := by
+    have hlen : (l.take n).length ≤ l.length := by simp only [List.length_take]; omega
+    omega
+  have e1 : (l.take n)[i] = l[i]'(by omega) := List.getElem_take
+  have e2 : (l.take n)[i+1] = l[i+1]'hi' := List.getElem_take
+  rw [e1, e2]
+  exact hchain i hi'
+
+/-- A `drop n` suffix of a `succs`-chain list is itself a `succs`-chain.
+    Needed for the Schwoon-Esparza back-edge shortcut: slicing `pathStack` at
+    the back-edge target's index keeps the suffix a valid chain (cf. CAVA's
+    `dropWhileNot v` in `se_back_edge_lasso_inv`, `Nested_DFS.thy:495`). -/
+theorem chain_drop {succs : State → Array State} (l : List State) (n : Nat)
+    (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
+    ∀ i, (hi : i + 1 < (l.drop n).length) → (l.drop n)[i+1] ∈ succs (l.drop n)[i] := by
+  intro i hi
+  have hbound : n + i + 1 < l.length := by
+    have hlen : (l.drop n).length = l.length - n := by simp
+    omega
+  have e1 : (l.drop n)[i] = l[n+i]'(by omega) := List.getElem_drop
+  have e2 : (l.drop n)[i+1] = l[n+i+1]'hbound := List.getElem_drop
+  rw [e1, e2]
+  exact hchain (n + i) hbound
+
+/-- The left part of an append-split `succs`-chain is itself a `succs`-chain.
+    Takes the split as an explicit hypothesis (rather than requiring the
+    caller to cast an existing chain fact along an equation) to sidestep a
+    Lean dependent-rewrite trap: `subst`-ing the split *before* inducting
+    avoids ever rewriting inside the chain fact's own `∀`-quantified type. -/
+theorem chain_append_left {succs : State → Array State} (l a b : List State)
+    (heq : l = a ++ b)
+    (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
+    ∀ i, (hi : i + 1 < a.length) → a[i+1] ∈ succs a[i] := by
+  subst heq
+  induction a with
+  | nil => simp
+  | cons x xs ih =>
+    intro i hi
+    cases i with
+    | zero =>
+      have hxs0 : 0 < xs.length := by simpa using hi
+      have h := hchain 0 (by simp only [List.length_cons, List.length_append]; omega)
+      have e : (xs ++ b)[0]'(by simp; omega) = xs[0]'hxs0 := List.getElem_append_left hxs0
+      simpa [e] using h
+    | succ k =>
+      have hk : k + 1 < xs.length := by simpa using hi
+      exact ih (chain_tail x (xs ++ b) hchain) k hk
+
+/-- The right part of an append-split `succs`-chain is itself a `succs`-chain.
+    Same rationale for the explicit `heq` parameter as `chain_append_left`. -/
+theorem chain_append_right {succs : State → Array State} (l a b : List State)
+    (heq : l = a ++ b)
+    (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
+    ∀ i, (hi : i + 1 < b.length) → b[i+1] ∈ succs b[i] := by
+  subst heq
+  induction a with
+  | nil => simpa using hchain
+  | cons x xs ih => exact ih (chain_tail x (xs ++ b) hchain)
+
+/-- The edge closing off a chain-list's last step: if `l ≠ []` and
+    `l.dropLast ≠ []`, the chain property at the second-to-last index gives
+    exactly `l.getLast ∈ succs (l.dropLast.getLast)`. Needed for the
+    Schwoon-Esparza back-edge shortcut's "source accepting" case: closes the
+    cycle `current :: (loop-tail)` back to `current`. -/
+theorem chain_getLast_edge {succs : State → Array State} (l : List State)
+    (hne : l ≠ []) (hne' : l.dropLast ≠ [])
+    (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
+    l.getLast hne ∈ succs (l.dropLast.getLast hne') := by
+  have hlen : l.dropLast.length ≥ 1 := List.length_pos_iff.mpr hne'
+  have hlen2 : l.length ≥ 2 := by
+    have := List.length_dropLast (xs := l)
+    omega
+  have hdlen : l.dropLast.length = l.length - 1 := List.length_dropLast (xs := l)
+  have e1 : l.dropLast.getLast hne' = l[l.length - 2]'(by omega) := by
+    rw [List.getLast_eq_getElem, List.getElem_dropLast]
+    congr 1
+    omega
+  have e2 : l.getLast hne = l[l.length - 1]'(by omega) := List.getLast_eq_getElem ..
+  rw [e1, e2]
+  have hstep := hchain (l.length - 2) (by omega)
+  simpa [show l.length - 2 + 1 = l.length - 1 from by omega] using hstep
+
+/-- The edge across an append boundary: if `l = a ++ b` with both `a` and `b`
+    nonempty, the chain property at the boundary index gives exactly
+    `b.head ∈ succs (a.getLast)`. Needed for the Schwoon-Esparza back-edge
+    shortcut's "target accepting" case: the edge from the stem's last state
+    into the loop's first state. -/
+theorem chain_append_boundary {succs : State → Array State} (l a b : List State)
+    (heq : l = a ++ b) (ha : a ≠ []) (hb : b ≠ [])
+    (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
+    b.head hb ∈ succs (a.getLast ha) := by
+  subst heq
+  induction a with
+  | nil => exact absurd rfl ha
+  | cons x xs ih =>
+    cases xs with
+    | nil =>
+      have hbl : 0 < b.length := List.length_pos_iff.mpr hb
+      have h0 := hchain 0 (by simp; omega)
+      simpa [List.head_eq_getElem] using h0
+    | cons y ys =>
+      have hxsne : (y :: ys : List State) ≠ [] := by simp
+      have hgetlast_eq : (x :: y :: ys).getLast (by simp) = (y :: ys).getLast hxsne := by
+        simp [List.getLast_cons]
+      rw [hgetlast_eq]
+      exact ih hxsne (chain_tail x ((y :: ys) ++ b) hchain)
+
+/-- If `x` occurs in `l`, dropping elements until the first occurrence of `x`
+    leaves a list whose head is `x`. Needed to identify the Schwoon-Esparza
+    back-edge target's position inside `pathStack`, mirroring CAVA's
+    `dropWhileNot v` (`Nested_DFS.thy`). Proved at the `head?` (`Option`)
+    level throughout to avoid a Lean dependent-rewrite trap under
+    `dropWhile`'s recursive unfolding (cf. `chain_take`/`chain_drop`'s own
+    workaround for the analogous issue). -/
+theorem dropWhile_ne_head?_eq_some {State : Type u} [BEq State] [LawfulBEq State]
+    (l : List State) (x : State) (hx : x ∈ l) :
+    (l.dropWhile (fun y => !(y == x))).head? = some x := by
+  induction l with
+  | nil => simp at hx
+  | cons a t ih =>
+    by_cases hax : a == x
+    · have ha : a = x := LawfulBEq.eq_of_beq hax
+      simp [ha]
+    · have hxt : x ∈ t := by
+        rcases List.mem_cons.mp hx with rfl | hx
+        · simp at hax
+        · exact hx
+      have hax' : (fun y => !(y == x)) a = true := by simp [hax]
+      simp only [List.dropWhile_cons, hax', if_true]
+      exact ih hxt
+
+/-- A length-1 list's head and last element coincide. Needed for the
+    Schwoon-Esparza back-edge shortcut's degenerate case (the sliced cycle
+    has only one state left). -/
+theorem head_eq_getLast_of_length_eq_one {α : Type u} (l : List α) (hl : l.length = 1)
+    (hne : l ≠ []) : l.head hne = l.getLast hne := by
+  cases l with
+  | nil => simp at hl
+  | cons a t =>
+    have ht : t = [] := by simpa using hl
+    subst ht
+    rfl
+
 /-- Dropping a list's last element doesn't change its head (when both are
     still nonempty). -/
 theorem head_dropLast_eq {α : Type u} (l : List α) (hne : l ≠ [])
@@ -420,7 +582,28 @@ def outerDFSLoop_fuel [BEq State] [Hashable State] [LawfulBEq State]
           outerDFSLoop_fuel succs isAccepting fuel rest pathStack.dropLast st
       | succ :: remainingTail =>
         let stack' := (current, remainingTail) :: rest
-        if st.outerVisited.contains succ then
+        if pathStack.contains succ then
+          -- Schwoon-Esparza back-edge shortcut (`se_back_edge` in CAVA's
+          -- `Nested_DFS.thy`): `succ` is cyan (currently on the outer stack),
+          -- so a cycle can be reported directly, without launching innerDFS.
+          if isAccepting current then
+            if succ == current then
+              -- degenerate case: current -> current is a literal self-loop.
+              -- `loop.tail` (not `loop`) is the genuine cycle, matching the
+              -- innerDFS-found case's convention (`loop = current ::
+              -- cyclePath`, `cyclePath.head = current` already) — so `loop`
+              -- itself carries one redundant leading copy of `current`.
+              some (.nonEmpty pathStack [current, current], st)
+            else
+              let loopTail := (pathStack.dropWhile (fun y => !(y == succ))).dropLast
+              some (.nonEmpty pathStack (current :: current :: loopTail), st)
+          else if isAccepting succ then
+            let stem := pathStack.takeWhile (fun y => !(y == succ)) ++ [succ]
+            let loop := succ :: pathStack.dropWhile (fun y => !(y == succ))
+            some (.nonEmpty stem loop, st)
+          else
+            outerDFSLoop_fuel succs isAccepting fuel stack' pathStack st
+        else if st.outerVisited.contains succ then
           outerDFSLoop_fuel succs isAccepting fuel stack' pathStack st
         else
           let st := { st with outerVisited := st.outerVisited.insert succ }
@@ -1440,11 +1623,30 @@ theorem outerDFSLoop_fuel_outerVisited_mono
         · exact ih rest pathStack.dropLast st h
       · rename_i succ remainingTail
         split at h
-        · exact ih ((current, remainingTail) :: rest) pathStack st h
-        · intro s hs
-          exact ih ((succ, (succs succ).toList) :: (current, remainingTail) :: rest)
-            (pathStack ++ [succ]) { st with outerVisited := st.outerVisited.insert succ } h s
-            (by simp [Std.HashSet.contains_insert, hs])
+        · -- back edge (succ ∈ pathStack)
+          split at h
+          · -- isAccepting current: returns immediately either way, st unchanged
+            split at h <;>
+              · simp only [Option.some.injEq, Prod.mk.injEq] at h
+                obtain ⟨-, rfl⟩ := h
+                exact fun s hs => hs
+          · -- ¬isAccepting current
+            split at h
+            · -- isAccepting succ: returns immediately, st unchanged
+              simp only [Option.some.injEq, Prod.mk.injEq] at h
+              obtain ⟨-, rfl⟩ := h
+              exact fun s hs => hs
+            · -- neither accepting: recurse, skip
+              exact ih ((current, remainingTail) :: rest) pathStack st h
+        · -- ¬(succ ∈ pathStack)
+          split at h
+          · -- already visited: recurse, skip
+            exact ih ((current, remainingTail) :: rest) pathStack st h
+          · -- fresh: recurse, push
+            intro s hs
+            exact ih ((succ, (succs succ).toList) :: (current, remainingTail) :: rest)
+              (pathStack ++ [succ]) { st with outerVisited := st.outerVisited.insert succ } h s
+              (by simp [Std.HashSet.contains_insert, hs])
 
 /-- `OuterReachClosed` is maintained across `outerDFSLoop_fuel`'s recursion.
     Proved separately from `outerDFSLoop_fuel_empty_no_cycle` since it doesn't
@@ -1456,6 +1658,7 @@ theorem outerDFSLoop_fuel_reach_closed
     (pathStack : List State)
     (st : FNDFSState State)
     {n : Nat} {st' : FNDFSState State}
+    (hsv : ∀ s ∈ pathStack, st.outerVisited.contains s)
     (h : outerDFSLoop_fuel succs isAccepting fuel stack pathStack st =
       some (.empty n, st'))
     (hrc : OuterReachClosed succs st stack) :
@@ -1483,6 +1686,10 @@ theorem outerDFSLoop_fuel_reach_closed
             rename_i st'' heq
             have houter_eq : st''.outerVisited = st.outerVisited :=
               innerDFS_fuel_outerVisited_eq succs current m current _ st none _ st'' heq
+            have hsv' : ∀ s ∈ pathStack.dropLast, st''.outerVisited.contains s := by
+              intro s hs
+              rw [houter_eq]
+              exact hsv s (List.dropLast_subset _ hs)
             have hinv' : OuterReachClosed succs st'' rest := {
               stack_chain := ReachChain.tail current (rest.map Prod.fst)
                 (by simpa using hrc.stack_chain)
@@ -1503,8 +1710,10 @@ theorem outerDFSLoop_fuel_reach_closed
               stack_remaining_subset := fun p hp t ht =>
                 hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp) t ht
             }
-            exact ih rest pathStack.dropLast st'' h hinv'
+            exact ih rest pathStack.dropLast st'' hsv' h hinv'
         · -- isAccepting current = false
+          have hsv' : ∀ s ∈ pathStack.dropLast, st.outerVisited.contains s :=
+            fun s hs => hsv s (List.dropLast_subset _ hs)
           have hinv' : OuterReachClosed succs st rest := {
             stack_chain := ReachChain.tail current (rest.map Prod.fst)
               (by simpa using hrc.stack_chain)
@@ -1522,79 +1731,104 @@ theorem outerDFSLoop_fuel_reach_closed
             stack_remaining_subset := fun p hp t ht =>
               hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp) t ht
           }
-          exact ih rest pathStack.dropLast st h hinv'
+          exact ih rest pathStack.dropLast st hsv' h hinv'
       · -- remaining = succ :: remainingTail
         rename_i succ remainingTail
+        have hskip : st.outerVisited.contains succ →
+            OuterReachClosed succs st ((current, remainingTail) :: rest) :=
+          fun hvis_succ => {
+          stack_chain := hrc.stack_chain
+          done_closed := hrc.done_closed
+          stack_processed_visited := by
+            intro p hp t ht hpr
+            rcases List.mem_cons.mp hp with rfl | hp'
+            · by_cases hts : t = succ
+              · exact hts ▸ hvis_succ
+              · have hpr' : t ∉ succ :: remainingTail := fun hmem =>
+                  (List.mem_cons.mp hmem).elim hts hpr
+                exact hrc.stack_processed_visited (current, succ :: remainingTail)
+                  (List.mem_cons_self ..) t ht hpr'
+            · exact hrc.stack_processed_visited p (List.mem_cons_of_mem _ hp') t ht hpr
+          stack_remaining_subset := by
+            intro p hp t ht
+            rcases List.mem_cons.mp hp with rfl | hp'
+            · exact hrc.stack_remaining_subset (current, succ :: remainingTail)
+                (List.mem_cons_self ..) t (List.mem_cons_of_mem _ ht)
+            · exact hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp') t ht
+        }
         split at h
-        · -- succ already visited
-          rename_i hvisited
-          have hinv' : OuterReachClosed succs st ((current, remainingTail) :: rest) := {
-            stack_chain := hrc.stack_chain
-            done_closed := hrc.done_closed
-            stack_processed_visited := by
-              intro p hp t ht hpr
-              rcases List.mem_cons.mp hp with rfl | hp'
-              · by_cases hts : t = succ
-                · exact hts ▸ hvisited
-                · have hpr' : t ∉ succ :: remainingTail := fun hmem =>
-                    (List.mem_cons.mp hmem).elim hts hpr
-                  exact hrc.stack_processed_visited (current, succ :: remainingTail)
-                    (List.mem_cons_self ..) t ht hpr'
-              · exact hrc.stack_processed_visited p (List.mem_cons_of_mem _ hp') t ht hpr
-            stack_remaining_subset := by
-              intro p hp t ht
-              rcases List.mem_cons.mp hp with rfl | hp'
-              · exact hrc.stack_remaining_subset (current, succ :: remainingTail)
-                  (List.mem_cons_self ..) t (List.mem_cons_of_mem _ ht)
-              · exact hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp') t ht
-          }
-          exact ih ((current, remainingTail) :: rest) pathStack st h hinv'
-        · -- succ fresh
-          have hsucc_edge : succ ∈ succs current :=
-            hrc.stack_remaining_subset (current, succ :: remainingTail) (List.mem_cons_self ..)
-              succ (List.mem_cons_self ..)
-          have hinv' : OuterReachClosed succs
-              { st with outerVisited := st.outerVisited.insert succ }
-              ((succ, (succs succ).toList) :: (current, remainingTail) :: rest) := {
-            stack_chain := ⟨PathTo.direct hsucc_edge, hrc.stack_chain⟩
-            done_closed := by
-              intro s hvis hnotmem t ht
-              simp only [List.map_cons] at hnotmem
-              have hs_ne_succ : s ≠ succ := fun heq => hnotmem (heq ▸ List.mem_cons_self ..)
-              have hnotmem' : s ∉ (current :: rest.map Prod.fst) := fun hmem =>
-                hnotmem (List.mem_cons_of_mem _ hmem)
-              have hvis_old : st.outerVisited.contains s := by
-                simp [Std.HashSet.contains_insert] at hvis
-                rcases hvis with rfl | hvis
-                · exact absurd rfl hs_ne_succ
-                · exact hvis
-              have ht_old := hrc.done_closed s hvis_old hnotmem' t ht
-              simp [Std.HashSet.contains_insert, ht_old]
-            stack_processed_visited := by
-              intro p hp t ht hpr
-              rcases List.mem_cons.mp hp with rfl | hp'
-              · exact absurd (Array.mem_toList_iff.mpr ht) hpr
-              · rcases List.mem_cons.mp hp' with rfl | hp''
-                · by_cases hts : t = succ
-                  · simp [Std.HashSet.contains_insert, hts]
-                  · have hpr' : t ∉ succ :: remainingTail := fun hmem =>
-                      (List.mem_cons.mp hmem).elim hts hpr
-                    have ht_old := hrc.stack_processed_visited (current, succ :: remainingTail)
-                      (List.mem_cons_self ..) t ht hpr'
+        · -- back edge (succ ∈ pathStack)
+          rename_i hsucc_mem
+          split at h
+          · -- isAccepting current: reports .nonEmpty either way, contradicts .empty
+            split at h <;> simp at h
+          · -- ¬isAccepting current
+            split at h
+            · -- isAccepting succ: reports .nonEmpty, contradicts .empty
+              simp at h
+            · -- neither accepting: identical bookkeeping to "already visited, skip"
+              exact ih ((current, remainingTail) :: rest) pathStack st hsv h
+                (hskip (hsv succ (by simpa using hsucc_mem)))
+        · -- ¬(succ ∈ pathStack)
+          split at h
+          · -- succ already visited (not on the stack)
+            rename_i hvisited
+            exact ih ((current, remainingTail) :: rest) pathStack st hsv h (hskip hvisited)
+          · -- succ fresh
+            have hsucc_edge : succ ∈ succs current :=
+              hrc.stack_remaining_subset (current, succ :: remainingTail) (List.mem_cons_self ..)
+                succ (List.mem_cons_self ..)
+            have hinv' : OuterReachClosed succs
+                { st with outerVisited := st.outerVisited.insert succ }
+                ((succ, (succs succ).toList) :: (current, remainingTail) :: rest) := {
+              stack_chain := ⟨PathTo.direct hsucc_edge, hrc.stack_chain⟩
+              done_closed := by
+                intro s hvis hnotmem t ht
+                simp only [List.map_cons] at hnotmem
+                have hs_ne_succ : s ≠ succ := fun heq => hnotmem (heq ▸ List.mem_cons_self ..)
+                have hnotmem' : s ∉ (current :: rest.map Prod.fst) := fun hmem =>
+                  hnotmem (List.mem_cons_of_mem _ hmem)
+                have hvis_old : st.outerVisited.contains s := by
+                  simp [Std.HashSet.contains_insert] at hvis
+                  rcases hvis with rfl | hvis
+                  · exact absurd rfl hs_ne_succ
+                  · exact hvis
+                have ht_old := hrc.done_closed s hvis_old hnotmem' t ht
+                simp [Std.HashSet.contains_insert, ht_old]
+              stack_processed_visited := by
+                intro p hp t ht hpr
+                rcases List.mem_cons.mp hp with rfl | hp'
+                · exact absurd (Array.mem_toList_iff.mpr ht) hpr
+                · rcases List.mem_cons.mp hp' with rfl | hp''
+                  · by_cases hts : t = succ
+                    · simp [Std.HashSet.contains_insert, hts]
+                    · have hpr' : t ∉ succ :: remainingTail := fun hmem =>
+                        (List.mem_cons.mp hmem).elim hts hpr
+                      have ht_old := hrc.stack_processed_visited (current, succ :: remainingTail)
+                        (List.mem_cons_self ..) t ht hpr'
+                      simp [Std.HashSet.contains_insert, ht_old]
+                  · have ht_old := hrc.stack_processed_visited p (List.mem_cons_of_mem _ hp'') t ht hpr
                     simp [Std.HashSet.contains_insert, ht_old]
-                · have ht_old := hrc.stack_processed_visited p (List.mem_cons_of_mem _ hp'') t ht hpr
-                  simp [Std.HashSet.contains_insert, ht_old]
-            stack_remaining_subset := by
-              intro p hp t ht
-              rcases List.mem_cons.mp hp with rfl | hp'
-              · exact Array.mem_toList_iff.mp ht
-              · rcases List.mem_cons.mp hp' with rfl | hp''
-                · exact hrc.stack_remaining_subset (current, succ :: remainingTail)
-                    (List.mem_cons_self ..) t (List.mem_cons_of_mem _ ht)
-                · exact hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp'') t ht
-          }
-          exact ih ((succ, (succs succ).toList) :: (current, remainingTail) :: rest)
-            (pathStack ++ [succ]) { st with outerVisited := st.outerVisited.insert succ } h hinv'
+              stack_remaining_subset := by
+                intro p hp t ht
+                rcases List.mem_cons.mp hp with rfl | hp'
+                · exact Array.mem_toList_iff.mp ht
+                · rcases List.mem_cons.mp hp' with rfl | hp''
+                  · exact hrc.stack_remaining_subset (current, succ :: remainingTail)
+                      (List.mem_cons_self ..) t (List.mem_cons_of_mem _ ht)
+                  · exact hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp'') t ht
+            }
+            have hsv' : ∀ s ∈ pathStack ++ [succ],
+                ({ st with outerVisited := st.outerVisited.insert succ } :
+                  FNDFSState State).outerVisited.contains s := by
+              intro s hs
+              rcases List.mem_append.mp hs with hs' | hs'
+              · simp [Std.HashSet.contains_insert, hsv s hs']
+              · simp only [List.mem_singleton] at hs'
+                simp [Std.HashSet.contains_insert, hs']
+            exact ih ((succ, (succs succ).toList) :: (current, remainingTail) :: rest)
+              (pathStack ++ [succ]) { st with outerVisited := st.outerVisited.insert succ }
+              hsv' h hinv'
 
 /-- If `pathStack` is a genuine `succs`-chain when `outerDFSLoop_fuel` is called,
     then whenever the call returns `.nonEmpty stem loop`, `(stem, loop)` is a
@@ -1630,6 +1864,7 @@ theorem outerDFSLoop_fuel_nonEmpty_witness
     (hps : pathStack = (stack.map Prod.fst).reverse)
     (hchain : ∀ i, (hi : i + 1 < pathStack.length) → pathStack[i+1] ∈ succs pathStack[i])
     (hroot : ∀ (hp : pathStack ≠ []), pathStack.head hp = root)
+    (hsv : ∀ s ∈ pathStack, st.outerVisited.contains s)
     (hrc : OuterReachClosed succs st stack)
     (h : outerDFSLoop_fuel succs isAccepting fuel stack pathStack st =
       some (.nonEmpty stem loop, st')) :
@@ -1719,7 +1954,12 @@ theorem outerDFSLoop_fuel_nonEmpty_witness
               stack_remaining_subset := fun p hp t ht =>
                 hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp) t ht
             }
-            exact ih rest pathStack.dropLast st'' hps' hchain' hroot' hinv' h
+            have houter_eq' : st''.outerVisited = st.outerVisited :=
+              innerDFS_fuel_outerVisited_eq succs current m current _ st none _ st'' heq
+            have hsv' : ∀ s ∈ pathStack.dropLast, st''.outerVisited.contains s := by
+              rw [houter_eq']
+              exact fun s hs => hsv s (List.dropLast_subset _ hs)
+            exact ih rest pathStack.dropLast st'' hps' hchain' hroot' hsv' hinv' h
         · -- isAccepting current = false
           have hps' : pathStack.dropLast = (rest.map Prod.fst).reverse := by
             simp [hps]
@@ -1745,93 +1985,252 @@ theorem outerDFSLoop_fuel_nonEmpty_witness
             stack_remaining_subset := fun p hp t ht =>
               hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp) t ht
           }
-          exact ih rest pathStack.dropLast st hps' hchain' hroot' hinv' h
+          have hsv' : ∀ s ∈ pathStack.dropLast, st.outerVisited.contains s :=
+            fun s hs => hsv s (List.dropLast_subset _ hs)
+          exact ih rest pathStack.dropLast st hps' hchain' hroot' hsv' hinv' h
       · -- remaining = succ :: remainingTail
         rename_i succ remainingTail
+        have hsucc_edge : succ ∈ succs current :=
+          hrc.stack_remaining_subset (current, succ :: remainingTail) (List.mem_cons_self ..)
+            succ (List.mem_cons_self ..)
+        have hpc : pathStack = (rest.map Prod.fst).reverse ++ [current] := by
+          simp [hps]
+        have hne : pathStack ≠ [] := by simp [hpc]
+        have hgetlast : pathStack.getLast hne = current := by simp [hpc]
+        have hps_skip : pathStack = (((current, remainingTail) :: rest).map Prod.fst).reverse := by
+          simpa using hps
+        have hskip : st.outerVisited.contains succ →
+            OuterReachClosed succs st ((current, remainingTail) :: rest) :=
+          fun hvis_succ => {
+          stack_chain := hrc.stack_chain
+          done_closed := hrc.done_closed
+          stack_processed_visited := by
+            intro p hp t ht hpr
+            rcases List.mem_cons.mp hp with rfl | hp'
+            · by_cases hts : t = succ
+              · exact hts ▸ hvis_succ
+              · have hpr' : t ∉ succ :: remainingTail := fun hmem =>
+                  (List.mem_cons.mp hmem).elim hts hpr
+                exact hrc.stack_processed_visited (current, succ :: remainingTail)
+                  (List.mem_cons_self ..) t ht hpr'
+            · exact hrc.stack_processed_visited p (List.mem_cons_of_mem _ hp') t ht hpr
+          stack_remaining_subset := by
+            intro p hp t ht
+            rcases List.mem_cons.mp hp with rfl | hp'
+            · exact hrc.stack_remaining_subset (current, succ :: remainingTail)
+                (List.mem_cons_self ..) t (List.mem_cons_of_mem _ ht)
+            · exact hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp') t ht
+        }
         split at h
-        · -- succ already visited
-          rename_i hvisited
-          have hps' : pathStack = (((current, remainingTail) :: rest).map Prod.fst).reverse := by
-            simpa using hps
-          have hinv' : OuterReachClosed succs st ((current, remainingTail) :: rest) := {
-            stack_chain := hrc.stack_chain
-            done_closed := hrc.done_closed
-            stack_processed_visited := by
-              intro p hp t ht hpr
-              rcases List.mem_cons.mp hp with rfl | hp'
-              · by_cases hts : t = succ
-                · exact hts ▸ hvisited
-                · have hpr' : t ∉ succ :: remainingTail := fun hmem =>
-                    (List.mem_cons.mp hmem).elim hts hpr
-                  exact hrc.stack_processed_visited (current, succ :: remainingTail)
-                    (List.mem_cons_self ..) t ht hpr'
-              · exact hrc.stack_processed_visited p (List.mem_cons_of_mem _ hp') t ht hpr
-            stack_remaining_subset := by
-              intro p hp t ht
-              rcases List.mem_cons.mp hp with rfl | hp'
-              · exact hrc.stack_remaining_subset (current, succ :: remainingTail)
-                  (List.mem_cons_self ..) t (List.mem_cons_of_mem _ ht)
-              · exact hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp') t ht
-          }
-          exact ih ((current, remainingTail) :: rest) pathStack st hps' hchain hroot hinv' h
-        · -- succ fresh
-          have hsucc_edge : succ ∈ succs current :=
-            hrc.stack_remaining_subset (current, succ :: remainingTail) (List.mem_cons_self ..)
-              succ (List.mem_cons_self ..)
-          have hpc : pathStack = (rest.map Prod.fst).reverse ++ [current] := by
-            simp [hps]
-          have hne : pathStack ≠ [] := by simp [hpc]
-          have hgetlast : pathStack.getLast hne = current := by simp [hpc]
-          have hchain' := chain_append_singleton pathStack succ hchain hne (hgetlast ▸ hsucc_edge)
-          have hroot' : ∀ (hp : (pathStack ++ [succ]) ≠ []), (pathStack ++ [succ]).head hp = root :=
-            fun hp => by rw [head_append_singleton_eq pathStack succ hne]; exact hroot hne
-          have hps' : pathStack ++ [succ] =
-              (((succ, (succs succ).toList) :: (current, remainingTail) :: rest).map
-                Prod.fst).reverse := by
-            simp [hps]
-          have hinv' : OuterReachClosed succs
-              { st with outerVisited := st.outerVisited.insert succ }
-              ((succ, (succs succ).toList) :: (current, remainingTail) :: rest) := {
-            stack_chain := ⟨PathTo.direct hsucc_edge, hrc.stack_chain⟩
-            done_closed := by
-              intro s hvis hnotmem t ht
-              simp only [List.map_cons] at hnotmem
-              have hs_ne_succ : s ≠ succ := fun heq => hnotmem (heq ▸ List.mem_cons_self ..)
-              have hnotmem' : s ∉ (current :: rest.map Prod.fst) := fun hmem =>
-                hnotmem (List.mem_cons_of_mem _ hmem)
-              have hvis_old : st.outerVisited.contains s := by
-                simp [Std.HashSet.contains_insert] at hvis
-                rcases hvis with rfl | hvis
-                · exact absurd rfl hs_ne_succ
-                · exact hvis
-              have ht_old := hrc.done_closed s hvis_old hnotmem' t ht
-              simp [Std.HashSet.contains_insert, ht_old]
-            stack_processed_visited := by
-              intro p hp t ht hpr
-              rcases List.mem_cons.mp hp with rfl | hp'
-              · exact absurd (Array.mem_toList_iff.mpr ht) hpr
-              · rcases List.mem_cons.mp hp' with rfl | hp''
-                · by_cases hts : t = succ
-                  · simp [Std.HashSet.contains_insert, hts]
-                  · have hpr' : t ∉ succ :: remainingTail := fun hmem =>
-                      (List.mem_cons.mp hmem).elim hts hpr
-                    have ht_old := hrc.stack_processed_visited (current, succ :: remainingTail)
-                      (List.mem_cons_self ..) t ht hpr'
+        · -- back edge (succ ∈ pathStack): Schwoon-Esparza shortcut
+          rename_i hsucc_mem'
+          have hsucc_mem : succ ∈ pathStack := by simpa using hsucc_mem'
+          have hsucc_vis : st.outerVisited.contains succ := hsv succ hsucc_mem
+          -- Split `pathStack` at `succ`'s first occurrence: `A ++ B`, with
+          -- `B.head = succ` (CAVA's `dropWhileNot v`/`takeWhileNot v`). `A`/`B`
+          -- are named via `set` (not left as raw `takeWhile`/`dropWhile`
+          -- expressions) so later rewrites of `pathStack` can't loop back
+          -- through them.
+          generalize hA_def : pathStack.takeWhile (fun y => !(y == succ)) = A at h ⊢
+          generalize hB_def : pathStack.dropWhile (fun y => !(y == succ)) = B at h ⊢
+          have hB? : B.head? = some succ := by
+            rw [← hB_def]; exact dropWhile_ne_head?_eq_some pathStack succ hsucc_mem
+          have hBne : B ≠ [] := by
+            intro hc; rw [hc] at hB?; simp at hB?
+          have hBhead : B.head hBne = succ := (List.head_eq_iff_head?_eq_some hBne).mpr hB?
+          have heqAB : pathStack = A ++ B := by
+            rw [← hA_def, ← hB_def]; exact (List.takeWhile_append_dropWhile).symm
+          have hchainB := chain_append_right pathStack A B heqAB hchain
+          have hBgetlast : B.getLast hBne = current := by
+            have hpsGL? : pathStack.getLast? = some current := by
+              rw [List.getLast?_eq_some_getLast hne, hgetlast]
+            have hsplit : pathStack.getLast? = B.getLast?.or A.getLast? := by
+              rw [heqAB]; exact List.getLast?_append
+            rw [hpsGL?] at hsplit
+            have hBsome : B.getLast? = some (B.getLast hBne) := List.getLast?_eq_some_getLast hBne
+            rw [hBsome] at hsplit
+            simp only [Option.some_or] at hsplit
+            exact (Option.some.inj hsplit).symm
+          split at h
+          · -- isAccepting current
+            rename_i hacc
+            split at h
+            · -- succ = current: literal self-loop
+              rename_i hsc
+              have hsc' : succ = current := by simpa using hsc
+              simp only [Option.some.injEq, Prod.mk.injEq, EmptinessResult.nonEmpty.injEq] at h
+              obtain ⟨heqstem, heqloop⟩ := h.1
+              subst heqstem
+              subst heqloop
+              refine ⟨fun hs => hroot hs, List.length_pos_iff.mpr hne, by simp, hchain,
+                ?_, ?_, ?_, ?_⟩
+              · intro hs hl
+                simpa using hgetlast
+              · intro i hi
+                simp at hi
+              · intro hl
+                simpa [← hsc'] using hsucc_edge
+              · intro hl
+                simpa using hacc
+            · -- succ ≠ current
+              rename_i hsc
+              have hsc' : succ ≠ current := by simpa using hsc
+              simp only [Option.some.injEq, Prod.mk.injEq, EmptinessResult.nonEmpty.injEq] at h
+              obtain ⟨heqstem, heqloop⟩ := h.1
+              subst heqstem
+              subst heqloop
+              have hBdlne : B.dropLast ≠ [] := by
+                intro hc
+                apply hsc'
+                have hlen1 : B.length = 1 := by
+                  have hd := List.length_dropLast (xs := B)
+                  rw [hc] at hd
+                  have hge : B.length ≥ 1 := List.length_pos_iff.mpr hBne
+                  simp at hd
+                  omega
+                have heq := head_eq_getLast_of_length_eq_one B hlen1 hBne
+                rw [hBhead, hBgetlast] at heq
+                exact heq
+              have hXchain := chain_dropLast B hchainB
+              have hedge : B.dropLast.head hBdlne ∈ succs current := by
+                rw [head_dropLast_eq B hBne hBdlne, hBhead]
+                exact hsucc_edge
+              have hXchainfull := chain_cons current B.dropLast hBdlne hXchain hedge
+              have hbackedge : current ∈ succs (B.dropLast.getLast hBdlne) := by
+                have hge := chain_getLast_edge B hBne hBdlne hchainB
+                rwa [hBgetlast] at hge
+              refine ⟨fun hs => hroot hs, List.length_pos_iff.mpr hne, by simp, hchain,
+                ?_, ?_, ?_, ?_⟩
+              · intro hs hl
+                simpa using hgetlast
+              · simpa using hXchainfull
+              · intro hl
+                have hgl : (current :: B.dropLast).getLast (by simp) = B.dropLast.getLast hBdlne :=
+                  List.getLast_cons hBdlne
+                simpa [hgl] using hbackedge
+              · intro hl
+                simpa using hacc
+          · -- ¬isAccepting current
+            rename_i hnacc
+            split at h
+            · -- isAccepting succ
+              rename_i hsacc
+              simp only [Option.some.injEq, Prod.mk.injEq, EmptinessResult.nonEmpty.injEq] at h
+              obtain ⟨heqstem, heqloop⟩ := h.1
+              subst heqstem
+              subst heqloop
+              have hstem_getLast : (A ++ [succ]).getLast (by simp) = succ := by simp
+              by_cases hAe : A = []
+              · -- A empty: stem = [succ]
+                have hhead? : pathStack.head? = some succ := by
+                  rw [heqAB, hAe, List.nil_append]
+                  exact hB?
+                have hroot_succ : root = succ := by
+                  have h2 : pathStack.head? = some (pathStack.head hne) :=
+                    List.head?_eq_some_head hne
+                  rw [h2] at hhead?
+                  rw [(Option.some.inj hhead?).symm]
+                  exact (hroot hne).symm
+                refine ⟨fun hs => ?_, by simp, List.length_pos_iff.mpr hBne, by simp [hAe],
+                  ?_, hchainB, ?_, ?_⟩
+                · simp [hAe, hroot_succ]
+                · intro hs hl
+                  simp [hAe, hBhead]
+                · intro hl; simpa [hBhead, hBgetlast] using hsucc_edge
+                · intro hl; simpa [hBhead] using hsacc
+              · -- A nonempty
+                have hAgetlast_edge : succ ∈ succs (A.getLast hAe) := by
+                  have hbe := chain_append_boundary pathStack A B heqAB hAe hBne hchain
+                  rwa [hBhead] at hbe
+                have hchainA := chain_append_left pathStack A B heqAB hchain
+                have hchainstem := chain_append_singleton A succ hchainA hAe hAgetlast_edge
+                have hAhead? : pathStack.head? = A.head? := by
+                  rw [heqAB, List.head?_append, List.head?_eq_some_head hAe]
+                  simp
+                have hAheadroot : A.head hAe = root := by
+                  have h2 : pathStack.head? = some (pathStack.head hne) :=
+                    List.head?_eq_some_head hne
+                  rw [h2] at hAhead?
+                  have h3 : A.head? = some (A.head hAe) := List.head?_eq_some_head hAe
+                  rw [h3] at hAhead?
+                  rw [(Option.some.inj hAhead?).symm]
+                  exact hroot hne
+                refine ⟨fun hs => ?_, by simp, List.length_pos_iff.mpr hBne, hchainstem,
+                  ?_, hchainB, ?_, ?_⟩
+                · rw [head_append_singleton_eq A succ hAe]
+                  exact hAheadroot
+                · intro hs hl
+                  simp [hBhead, hstem_getLast]
+                · intro hl; simpa [hBhead, hBgetlast] using hsucc_edge
+                · intro hl; simpa [hBhead] using hsacc
+            · -- neither accepting: identical bookkeeping to "already visited, skip"
+              exact ih ((current, remainingTail) :: rest) pathStack st hps_skip hchain hroot hsv
+                (hskip hsucc_vis) h
+        · -- ¬(succ ∈ pathStack)
+          split at h
+          · -- succ already visited (not on the stack)
+            rename_i hvisited
+            exact ih ((current, remainingTail) :: rest) pathStack st hps_skip hchain hroot hsv
+              (hskip hvisited) h
+          · -- succ fresh
+            have hchain' := chain_append_singleton pathStack succ hchain hne (hgetlast ▸ hsucc_edge)
+            have hroot' : ∀ (hp : (pathStack ++ [succ]) ≠ []), (pathStack ++ [succ]).head hp = root :=
+              fun hp => by rw [head_append_singleton_eq pathStack succ hne]; exact hroot hne
+            have hps' : pathStack ++ [succ] =
+                (((succ, (succs succ).toList) :: (current, remainingTail) :: rest).map
+                  Prod.fst).reverse := by
+              simp [hps]
+            have hsv' : ∀ s ∈ pathStack ++ [succ],
+                ({ st with outerVisited := st.outerVisited.insert succ } :
+                  FNDFSState State).outerVisited.contains s := by
+              intro s hs
+              rcases List.mem_append.mp hs with hs' | hs'
+              · simp [Std.HashSet.contains_insert, hsv s hs']
+              · simp only [List.mem_singleton] at hs'
+                simp [Std.HashSet.contains_insert, hs']
+            have hinv' : OuterReachClosed succs
+                { st with outerVisited := st.outerVisited.insert succ }
+                ((succ, (succs succ).toList) :: (current, remainingTail) :: rest) := {
+              stack_chain := ⟨PathTo.direct hsucc_edge, hrc.stack_chain⟩
+              done_closed := by
+                intro s hvis hnotmem t ht
+                simp only [List.map_cons] at hnotmem
+                have hs_ne_succ : s ≠ succ := fun heq => hnotmem (heq ▸ List.mem_cons_self ..)
+                have hnotmem' : s ∉ (current :: rest.map Prod.fst) := fun hmem =>
+                  hnotmem (List.mem_cons_of_mem _ hmem)
+                have hvis_old : st.outerVisited.contains s := by
+                  simp [Std.HashSet.contains_insert] at hvis
+                  rcases hvis with rfl | hvis
+                  · exact absurd rfl hs_ne_succ
+                  · exact hvis
+                have ht_old := hrc.done_closed s hvis_old hnotmem' t ht
+                simp [Std.HashSet.contains_insert, ht_old]
+              stack_processed_visited := by
+                intro p hp t ht hpr
+                rcases List.mem_cons.mp hp with rfl | hp'
+                · exact absurd (Array.mem_toList_iff.mpr ht) hpr
+                · rcases List.mem_cons.mp hp' with rfl | hp''
+                  · by_cases hts : t = succ
+                    · simp [Std.HashSet.contains_insert, hts]
+                    · have hpr' : t ∉ succ :: remainingTail := fun hmem =>
+                        (List.mem_cons.mp hmem).elim hts hpr
+                      have ht_old := hrc.stack_processed_visited (current, succ :: remainingTail)
+                        (List.mem_cons_self ..) t ht hpr'
+                      simp [Std.HashSet.contains_insert, ht_old]
+                  · have ht_old := hrc.stack_processed_visited p (List.mem_cons_of_mem _ hp'') t ht hpr
                     simp [Std.HashSet.contains_insert, ht_old]
-                · have ht_old := hrc.stack_processed_visited p (List.mem_cons_of_mem _ hp'') t ht hpr
-                  simp [Std.HashSet.contains_insert, ht_old]
-            stack_remaining_subset := by
-              intro p hp t ht
-              rcases List.mem_cons.mp hp with rfl | hp'
-              · exact Array.mem_toList_iff.mp ht
-              · rcases List.mem_cons.mp hp' with rfl | hp''
-                · exact hrc.stack_remaining_subset (current, succ :: remainingTail)
-                    (List.mem_cons_self ..) t (List.mem_cons_of_mem _ ht)
-                · exact hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp'') t ht
-          }
-          exact ih ((succ, (succs succ).toList) :: (current, remainingTail) :: rest)
-            (pathStack ++ [succ]) { st with outerVisited := st.outerVisited.insert succ }
-            hps' hchain' hroot' hinv' h
+              stack_remaining_subset := by
+                intro p hp t ht
+                rcases List.mem_cons.mp hp with rfl | hp'
+                · exact Array.mem_toList_iff.mp ht
+                · rcases List.mem_cons.mp hp' with rfl | hp''
+                  · exact hrc.stack_remaining_subset (current, succ :: remainingTail)
+                      (List.mem_cons_self ..) t (List.mem_cons_of_mem _ ht)
+                  · exact hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp'') t ht
+            }
+            exact ih ((succ, (succs succ).toList) :: (current, remainingTail) :: rest)
+              (pathStack ++ [succ]) { st with outerVisited := st.outerVisited.insert succ }
+              hps' hchain' hroot' hsv' hinv' h
 
 /-- If the outer DFS returns `empty`, then the outer invariant holds with
     an empty stack (all accepting states have been processed). See the
@@ -2056,136 +2455,159 @@ theorem outerDFSLoop_fuel_empty_no_cycle
           exact ih rest pathStack.dropLast st hps' h hrc' hinv'
       · -- remaining = succ :: remainingTail
         rename_i succ remainingTail
+        have hps' : pathStack = (((current, remainingTail) :: rest).map Prod.fst).reverse := by
+          simpa using hps
+        have hskip_inv : OuterInvariant succs isAccepting st
+            (((current, remainingTail) :: rest).map Prod.fst) := by
+          simpa using hinv
+        have hskip_rc : st.outerVisited.contains succ →
+            OuterReachClosed succs st ((current, remainingTail) :: rest) :=
+          fun hvis_succ => {
+          stack_chain := hrc.stack_chain
+          done_closed := hrc.done_closed
+          stack_processed_visited := by
+            intro p hp t ht hpr
+            rcases List.mem_cons.mp hp with rfl | hp'
+            · by_cases hts : t = succ
+              · exact hts ▸ hvis_succ
+              · have hpr' : t ∉ succ :: remainingTail := fun hmem =>
+                  (List.mem_cons.mp hmem).elim hts hpr
+                exact hrc.stack_processed_visited (current, succ :: remainingTail)
+                  (List.mem_cons_self ..) t ht hpr'
+            · exact hrc.stack_processed_visited p (List.mem_cons_of_mem _ hp') t ht hpr
+          stack_remaining_subset := by
+            intro p hp t ht
+            rcases List.mem_cons.mp hp with rfl | hp'
+            · exact hrc.stack_remaining_subset (current, succ :: remainingTail)
+                (List.mem_cons_self ..) t (List.mem_cons_of_mem _ ht)
+            · exact hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp') t ht
+        }
         split at h
-        · -- succ already visited
-          rename_i hvisited
-          have hps' : pathStack = (((current, remainingTail) :: rest).map Prod.fst).reverse := by
-            simpa using hps
-          have hrc' : OuterReachClosed succs st ((current, remainingTail) :: rest) := {
-            stack_chain := hrc.stack_chain
-            done_closed := hrc.done_closed
-            stack_processed_visited := by
-              intro p hp t ht hpr
-              rcases List.mem_cons.mp hp with rfl | hp'
-              · by_cases hts : t = succ
-                · exact hts ▸ hvisited
-                · have hpr' : t ∉ succ :: remainingTail := fun hmem =>
-                    (List.mem_cons.mp hmem).elim hts hpr
-                  exact hrc.stack_processed_visited (current, succ :: remainingTail)
-                    (List.mem_cons_self ..) t ht hpr'
-              · exact hrc.stack_processed_visited p (List.mem_cons_of_mem _ hp') t ht hpr
-            stack_remaining_subset := by
-              intro p hp t ht
-              rcases List.mem_cons.mp hp with rfl | hp'
-              · exact hrc.stack_remaining_subset (current, succ :: remainingTail)
-                  (List.mem_cons_self ..) t (List.mem_cons_of_mem _ ht)
-              · exact hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp') t ht
-          }
-          have hinv' : OuterInvariant succs isAccepting st
-              (((current, remainingTail) :: rest).map Prod.fst) := by
-            simpa using hinv
-          exact ih ((current, remainingTail) :: rest) pathStack st hps' h hrc' hinv'
-        · -- succ fresh
-          rename_i hnotvisited
-          have hsucc_edge : succ ∈ succs current :=
-            hrc.stack_remaining_subset (current, succ :: remainingTail) (List.mem_cons_self ..)
-              succ (List.mem_cons_self ..)
-          have hps' : pathStack ++ [succ] =
-              (((succ, (succs succ).toList) :: (current, remainingTail) :: rest).map
-                Prod.fst).reverse := by
-            simp [hps]
-          have hrc' : OuterReachClosed succs
-              { st with outerVisited := st.outerVisited.insert succ }
-              ((succ, (succs succ).toList) :: (current, remainingTail) :: rest) := {
-            stack_chain := ⟨PathTo.direct hsucc_edge, hrc.stack_chain⟩
-            done_closed := by
-              intro s hvis hnotmem t ht
-              simp only [List.map_cons] at hnotmem
-              have hs_ne_succ : s ≠ succ := fun heq => hnotmem (heq ▸ List.mem_cons_self ..)
-              have hnotmem' : s ∉ (current :: rest.map Prod.fst) := fun hmem =>
-                hnotmem (List.mem_cons_of_mem _ hmem)
-              have hvis_old : st.outerVisited.contains s := by
-                simp [Std.HashSet.contains_insert] at hvis
-                rcases hvis with rfl | hvis
-                · exact absurd rfl hs_ne_succ
-                · exact hvis
-              have ht_old := hrc.done_closed s hvis_old hnotmem' t ht
-              simp [Std.HashSet.contains_insert, ht_old]
-            stack_processed_visited := by
-              intro p hp t ht hpr
-              rcases List.mem_cons.mp hp with rfl | hp'
-              · exact absurd (Array.mem_toList_iff.mpr ht) hpr
-              · rcases List.mem_cons.mp hp' with rfl | hp''
-                · by_cases hts : t = succ
-                  · simp [Std.HashSet.contains_insert, hts]
-                  · have hpr' : t ∉ succ :: remainingTail := fun hmem =>
-                      (List.mem_cons.mp hmem).elim hts hpr
-                    have ht_old := hrc.stack_processed_visited (current, succ :: remainingTail)
-                      (List.mem_cons_self ..) t ht hpr'
+        · -- back edge (succ ∈ pathStack)
+          rename_i hsucc_mem
+          have hsucc_vis : st.outerVisited.contains succ := by
+            have hmem_stack : succ ∈ ((current, succ :: remainingTail) :: rest).map Prod.fst := by
+              have hmem_rev : succ ∈ pathStack := by simpa using hsucc_mem
+              rw [hps] at hmem_rev
+              simpa using List.mem_reverse.mp hmem_rev
+            exact hinv.stack_subset_visited succ hmem_stack
+          split at h
+          · -- isAccepting current: reports .nonEmpty either way, contradicts .empty
+            split at h <;> simp at h
+          · -- ¬isAccepting current
+            split at h
+            · -- isAccepting succ: reports .nonEmpty, contradicts .empty
+              simp at h
+            · -- neither accepting: identical bookkeeping to "already visited, skip"
+              exact ih ((current, remainingTail) :: rest) pathStack st hps' h
+                (hskip_rc hsucc_vis) hskip_inv
+        · -- ¬(succ ∈ pathStack)
+          split at h
+          · -- succ already visited (not on the stack)
+            rename_i hvisited
+            exact ih ((current, remainingTail) :: rest) pathStack st hps' h
+              (hskip_rc hvisited) hskip_inv
+          · -- succ fresh
+            rename_i hnotvisited
+            have hsucc_edge : succ ∈ succs current :=
+              hrc.stack_remaining_subset (current, succ :: remainingTail) (List.mem_cons_self ..)
+                succ (List.mem_cons_self ..)
+            have hps' : pathStack ++ [succ] =
+                (((succ, (succs succ).toList) :: (current, remainingTail) :: rest).map
+                  Prod.fst).reverse := by
+              simp [hps]
+            have hrc' : OuterReachClosed succs
+                { st with outerVisited := st.outerVisited.insert succ }
+                ((succ, (succs succ).toList) :: (current, remainingTail) :: rest) := {
+              stack_chain := ⟨PathTo.direct hsucc_edge, hrc.stack_chain⟩
+              done_closed := by
+                intro s hvis hnotmem t ht
+                simp only [List.map_cons] at hnotmem
+                have hs_ne_succ : s ≠ succ := fun heq => hnotmem (heq ▸ List.mem_cons_self ..)
+                have hnotmem' : s ∉ (current :: rest.map Prod.fst) := fun hmem =>
+                  hnotmem (List.mem_cons_of_mem _ hmem)
+                have hvis_old : st.outerVisited.contains s := by
+                  simp [Std.HashSet.contains_insert] at hvis
+                  rcases hvis with rfl | hvis
+                  · exact absurd rfl hs_ne_succ
+                  · exact hvis
+                have ht_old := hrc.done_closed s hvis_old hnotmem' t ht
+                simp [Std.HashSet.contains_insert, ht_old]
+              stack_processed_visited := by
+                intro p hp t ht hpr
+                rcases List.mem_cons.mp hp with rfl | hp'
+                · exact absurd (Array.mem_toList_iff.mpr ht) hpr
+                · rcases List.mem_cons.mp hp' with rfl | hp''
+                  · by_cases hts : t = succ
+                    · simp [Std.HashSet.contains_insert, hts]
+                    · have hpr' : t ∉ succ :: remainingTail := fun hmem =>
+                        (List.mem_cons.mp hmem).elim hts hpr
+                      have ht_old := hrc.stack_processed_visited (current, succ :: remainingTail)
+                        (List.mem_cons_self ..) t ht hpr'
+                      simp [Std.HashSet.contains_insert, ht_old]
+                  · have ht_old := hrc.stack_processed_visited p (List.mem_cons_of_mem _ hp'') t ht hpr
                     simp [Std.HashSet.contains_insert, ht_old]
-                · have ht_old := hrc.stack_processed_visited p (List.mem_cons_of_mem _ hp'') t ht hpr
-                  simp [Std.HashSet.contains_insert, ht_old]
-            stack_remaining_subset := by
-              intro p hp t ht
-              rcases List.mem_cons.mp hp with rfl | hp'
-              · exact Array.mem_toList_iff.mp ht
-              · rcases List.mem_cons.mp hp' with rfl | hp''
-                · exact hrc.stack_remaining_subset (current, succ :: remainingTail)
-                    (List.mem_cons_self ..) t (List.mem_cons_of_mem _ ht)
-                · exact hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp'') t ht
-          }
-          have hinv' : OuterInvariant succs isAccepting
-              { st with outerVisited := st.outerVisited.insert succ }
-              (((succ, (succs succ).toList) :: (current, remainingTail) :: rest).map
-                Prod.fst) := {
-            accepting_finished := by
-              intro s hvis haccept hnotmem
-              simp only [List.map_cons] at hnotmem
-              have hs_ne : s ≠ succ := fun heq => hnotmem (heq ▸ List.mem_cons_self ..)
-              have hnotmem' : s ∉ (current :: rest.map Prod.fst) := fun hmem =>
-                hnotmem (List.mem_cons_of_mem _ hmem)
-              have hvis_old : st.outerVisited.contains s := by
-                simp [Std.HashSet.contains_insert] at hvis
-                rcases hvis with rfl | hvis
-                · exact absurd rfl hs_ne
-                · exact hvis
-              exact hinv.accepting_finished s hvis_old haccept hnotmem'
-            finished_closed := hinv.finished_closed
-            finished_subset_visited := by
-              intro s hs
-              have hold := hinv.finished_subset_visited s hs
-              simp [Std.HashSet.contains_insert, hold]
-            finished_stack_disjoint := by
-              intro s hs
-              simp only [List.map_cons] at hs
-              rcases List.mem_cons.mp hs with heq | hs'
-              · intro hcontra
-                have hcontra' := heq ▸ hcontra
-                exact absurd (hinv.finished_subset_visited succ hcontra') hnotvisited
-              · exact hinv.finished_stack_disjoint s (by simpa using hs')
-            finished_no_cycle := by
-              intro s haccept hnotmem hvis
-              simp only [List.map_cons] at hnotmem
-              have hs_ne : s ≠ succ := fun heq => hnotmem (heq ▸ List.mem_cons_self ..)
-              have hnotmem' : s ∉ (current :: rest.map Prod.fst) := fun hmem =>
-                hnotmem (List.mem_cons_of_mem _ hmem)
-              have hvis_old : st.outerVisited.contains s := by
-                simp [Std.HashSet.contains_insert] at hvis
-                rcases hvis with rfl | hvis
-                · exact absurd rfl hs_ne
-                · exact hvis
-              exact hinv.finished_no_cycle s haccept hnotmem' hvis_old
-            stack_subset_visited := by
-              intro s hs
-              simp only [List.map_cons] at hs
-              rcases List.mem_cons.mp hs with rfl | hs'
-              · simp [Std.HashSet.contains_insert]
-              · have hold := hinv.stack_subset_visited s (by simpa using hs')
+              stack_remaining_subset := by
+                intro p hp t ht
+                rcases List.mem_cons.mp hp with rfl | hp'
+                · exact Array.mem_toList_iff.mp ht
+                · rcases List.mem_cons.mp hp' with rfl | hp''
+                  · exact hrc.stack_remaining_subset (current, succ :: remainingTail)
+                      (List.mem_cons_self ..) t (List.mem_cons_of_mem _ ht)
+                  · exact hrc.stack_remaining_subset p (List.mem_cons_of_mem _ hp'') t ht
+            }
+            have hinv' : OuterInvariant succs isAccepting
+                { st with outerVisited := st.outerVisited.insert succ }
+                (((succ, (succs succ).toList) :: (current, remainingTail) :: rest).map
+                  Prod.fst) := {
+              accepting_finished := by
+                intro s hvis haccept hnotmem
+                simp only [List.map_cons] at hnotmem
+                have hs_ne : s ≠ succ := fun heq => hnotmem (heq ▸ List.mem_cons_self ..)
+                have hnotmem' : s ∉ (current :: rest.map Prod.fst) := fun hmem =>
+                  hnotmem (List.mem_cons_of_mem _ hmem)
+                have hvis_old : st.outerVisited.contains s := by
+                  simp [Std.HashSet.contains_insert] at hvis
+                  rcases hvis with rfl | hvis
+                  · exact absurd rfl hs_ne
+                  · exact hvis
+                exact hinv.accepting_finished s hvis_old haccept hnotmem'
+              finished_closed := hinv.finished_closed
+              finished_subset_visited := by
+                intro s hs
+                have hold := hinv.finished_subset_visited s hs
                 simp [Std.HashSet.contains_insert, hold]
-          }
-          exact ih ((succ, (succs succ).toList) :: (current, remainingTail) :: rest)
-            (pathStack ++ [succ]) { st with outerVisited := st.outerVisited.insert succ }
-            hps' h hrc' hinv'
+              finished_stack_disjoint := by
+                intro s hs
+                simp only [List.map_cons] at hs
+                rcases List.mem_cons.mp hs with heq | hs'
+                · intro hcontra
+                  have hcontra' := heq ▸ hcontra
+                  exact absurd (hinv.finished_subset_visited succ hcontra') hnotvisited
+                · exact hinv.finished_stack_disjoint s (by simpa using hs')
+              finished_no_cycle := by
+                intro s haccept hnotmem hvis
+                simp only [List.map_cons] at hnotmem
+                have hs_ne : s ≠ succ := fun heq => hnotmem (heq ▸ List.mem_cons_self ..)
+                have hnotmem' : s ∉ (current :: rest.map Prod.fst) := fun hmem =>
+                  hnotmem (List.mem_cons_of_mem _ hmem)
+                have hvis_old : st.outerVisited.contains s := by
+                  simp [Std.HashSet.contains_insert] at hvis
+                  rcases hvis with rfl | hvis
+                  · exact absurd rfl hs_ne
+                  · exact hvis
+                exact hinv.finished_no_cycle s haccept hnotmem' hvis_old
+              stack_subset_visited := by
+                intro s hs
+                simp only [List.map_cons] at hs
+                rcases List.mem_cons.mp hs with rfl | hs'
+                · simp [Std.HashSet.contains_insert]
+                · have hold := hinv.stack_subset_visited s (by simpa using hs')
+                  simp [Std.HashSet.contains_insert, hold]
+            }
+            exact ih ((succ, (succs succ).toList) :: (current, remainingTail) :: rest)
+              (pathStack ++ [succ]) { st with outerVisited := st.outerVisited.insert succ }
+              hps' h hrc' hinv'
 
 end OuterCorrectness
 
@@ -2305,7 +2727,10 @@ theorem nestedDFS_fuel_go_correct
           have hrc'' : OuterReachClosed succs st'' [] :=
             outerDFSLoop_fuel_reach_closed succs isAccepting m
               [(init, (succs init).toList)] [init]
-              { st with outerVisited := st.outerVisited.insert init } heq hrc_pushed
+              { st with outerVisited := st.outerVisited.insert init }
+              (by intro s hs; simp only [List.mem_singleton] at hs; subst hs
+                  simp [Std.HashSet.contains_insert])
+              heq hrc_pushed
           have hinv'' : OuterInvariant succs isAccepting st'' [] :=
             outerDFSLoop_fuel_empty_no_cycle succs isAccepting m
               [(init, (succs init).toList)] [init]
@@ -2439,6 +2864,13 @@ theorem nestedDFS_fuel_go_nonEmpty_witness
           intro i hi; simp at hi
         have hroot_pushed : ∀ (hp : ([init] : List State) ≠ []),
             ([init] : List State).head hp = init := fun _ => rfl
+        have hsv_pushed : ∀ s ∈ ([init] : List State),
+            ({ st with outerVisited := st.outerVisited.insert init } :
+              FNDFSState State).outerVisited.contains s := by
+          intro s hs
+          simp only [List.mem_singleton] at hs
+          subst hs
+          simp [Std.HashSet.contains_insert]
         split at h
         · -- fuel ran out inside outerDFSLoop_fuel
           simp at h
@@ -2452,7 +2884,7 @@ theorem nestedDFS_fuel_go_nonEmpty_witness
             outerDFSLoop_fuel_nonEmpty_witness succs isAccepting m
               [(init, (succs init).toList)] [init]
               { st with outerVisited := st.outerVisited.insert init } init
-              hps_pushed hchain_pushed hroot_pushed hrc_pushed heq
+              hps_pushed hchain_pushed hroot_pushed hsv_pushed hrc_pushed heq
           refine ⟨fun hs => ?_, hlen, hltail, hchainstem, hoverlap, hchainloop, hback, haccept⟩
           rw [hroot8 hs]
           exact List.mem_cons_self ..
@@ -2461,7 +2893,10 @@ theorem nestedDFS_fuel_go_nonEmpty_witness
           have hrc'' : OuterReachClosed succs st'' [] :=
             outerDFSLoop_fuel_reach_closed succs isAccepting m
               [(init, (succs init).toList)] [init]
-              { st with outerVisited := st.outerVisited.insert init } heq hrc_pushed
+              { st with outerVisited := st.outerVisited.insert init }
+              (by intro s hs; simp only [List.mem_singleton] at hs; subst hs
+                  simp [Std.HashSet.contains_insert])
+              heq hrc_pushed
           have hinv'' : OuterInvariant succs isAccepting st'' [] :=
             outerDFSLoop_fuel_empty_no_cycle succs isAccepting m
               [(init, (succs init).toList)] [init]

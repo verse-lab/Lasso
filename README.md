@@ -160,7 +160,7 @@ If you just want to know whether an LTL formula is satisfiable (and get a witnes
 
 ### As a component inside your own model checker
 
-If you already have a model checker with its own state-space exploration and liveness/cycle-detection machinery, you don't need `fullPipeline`/`nestedDFSWF` at all — those are *this* library's own emptiness check, redundant with yours. What you want instead is just the automaton-construction half, to build the product yourself:
+If you already have a model checker with its own state-space exploration, what you need from this library is the automaton-construction half, to build the product yourself. You do *not* need `fullPipeline` (that's this library's own end-to-end LTL satisfiability checker, running the emptiness check against the bare property automaton, not your product). But `nestedDFSWF`/`outerDFSLoopWF` themselves are worth keeping — see "Reusing `nestedDFSWF` for your own product's emptiness check" below, after the product-construction snippet.
 
 ```lean
 -- 1. φ : NNF α — your LTL property (or its negation, depending on your convention)
@@ -181,6 +181,44 @@ have hcorr : ∀ ξ, ba.toSpec.accepts ξ ↔ NNF.satisfies ξ φ := fun ξ =>
 `gba`/`ba` are plain `Std.HashMap`/`Std.HashSet`-backed data (not proof terms) — read `states`/`successors`/`labeling`/`acceptSets`/`acceptingStates` directly to drive your own product construction against your system's explored states. `labeling : HashMap Nat (HashSet α × HashSet α)` gives each automaton state's (positive, negative) atom requirements; a system state is compatible with an automaton state exactly when its valuation satisfies both (see `OASpec.labelCompat`, `Acceptance.lean`, for the precise relation — it's the same shape CAVA's own `gba_L` uses). `hwf`/`hbawf` additionally guarantee every successor reference resolves to a real state, which a correct product construction typically needs.
 
 **What this does *not* give you**, and structurally can't: a proof that *your* product construction correctly represents *your* system's traces. That step (CAVA calls it `inter_spec`) depends entirely on your system's own state representation, which lives outside this project — see `ProofPlan.md`'s "Track B" section for the full discussion of this boundary. If your model checker and product construction are trustworthy on their own terms, gluing them to `ba`/`gba` above gives you a genuinely verified automaton at the point where they meet; whether the full assembled pipeline is end-to-end formally verified depends on whether that gluing is itself checked, which is necessarily a separate piece of work specific to your system model.
+
+### Reusing `nestedDFSWF`/`outerDFSLoopWF` for your own product's emptiness check (Liveness)
+
+**Don't reimplement nested DFS / cycle detection from scratch for the product** — `nestedDFSWF` (`NestedDFSTermination.lean`) is generic over any state type and successor/accepting function, not tied to this library's own automata. It has no idea whether its states came from `constructGBA` or from your own product construction. Point it at your product graph directly and you get the verified emptiness check *and* the Schwoon-Esparza back-edge optimization (`NestedDFSPlan.md`'s "Schwoon-Esparza back-edge optimization" section) for free, instead of writing and re-verifying your own.
+
+What it needs from you:
+
+```lean
+-- ProductState := your own product-state type (system state × automaton state, or however you represent it)
+-- productSuccs : ProductState → Array ProductState — your product's successor function
+-- productAccepting : ProductState → Bool — true iff the automaton component is accepting
+-- productInitialStates : List ProductState — your product's initial states
+
+-- A finite over-approximation of everything reachable from productInitialStates
+-- (e.g. built during your own state-space exploration):
+have fr : FiniteReach productSuccs := {
+  univ := exploredStates          -- Std.HashSet ProductState, from your own exploration
+  closed := hclosed               -- ∀ s, exploredStates.contains s → ∀ t ∈ productSuccs s, exploredStates.contains t
+}
+have hinitial : ∀ x ∈ productInitialStates, fr.univ.contains x := ...
+
+let result := nestedDFSWF productSuccs fr productAccepting productInitialStates
+-- result : EmptinessResult ProductState — `.empty n` (property holds) or
+-- `.nonEmpty stem loop` (counterexample lasso)
+```
+
+`FiniteReach` is the Lean analogue of CAVA's `fb_graph` locale (finite/bounded-degree graph) — it's the one precondition `nestedDFSWF` needs, and if you've already done your own state-space exploration, `univ := exploredStates` with `closed` following from "exploration doesn't miss successors" is usually immediate. Both directions come with unconditional correctness, in terms of `AcceptingCycle` (`NestedDFSCorrectness.lean`) — a stem+cycle witness over *your* `productSuccs`/`productAccepting`, not this library's own types:
+
+```lean
+theorem nestedDFSWF_empty_no_cycle ... (h : nestedDFSWF ... = .empty n) :
+    ¬∃ _ac : AcceptingCycle productInitialStates productSuccs productAccepting, True
+
+theorem nestedDFSWF_nonEmpty_valid ... (h : nestedDFSWF ... = .nonEmpty stem loop) :
+    ∃ ac : AcceptingCycle productInitialStates productSuccs productAccepting,
+      ac.stem = stem ∧ ac.cycle = loop.tail
+```
+
+Same caveat as above: this proves the emptiness check is correct *for the product graph you handed it*. Whether that product graph is a faithful representation of your system × property is still on you (`inter_spec`, not provided here).
 
 ## Isabelle correspondence
 

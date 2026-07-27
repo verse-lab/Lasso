@@ -303,25 +303,319 @@ sorry, whole project builds clean (394 jobs) — Phase 2's nested-DFS work,
 including wiring, is done.** Remaining: `expand`'s own termination
 conversion, separately scoped.
 
-## Future work (TODO): Schwoon-Esparza back-edge optimization
+## Schwoon-Esparza back-edge optimization
 
-Our `innerDFS`/`outerDFSLoop` only implement the classic CVWY algorithm: a
-cycle is detected exclusively by the *inner* DFS finding its way back to the
-seed after backtracking from an accepting state. CAVA's Isabelle
-implementation additionally has the Schwoon & Esparza (2005) shortcut: the
-*outer* DFS can detect a cycle directly when it hits a back-edge to a state
-already on the stack, without ever launching the inner DFS for that case
-(`se_back_edge`/`on_back_edge` in CAVA's `Nested_DFS.thy`).
+**Status: ✅ DONE (2026-07-27).** Implemented and fully proven the same day
+the roadmap below was written, following it closely — the section below is
+kept as the original porting analysis (still accurate as a design
+description); this note records what actually landed and where it diverged.
 
-This is a performance optimization, not a correctness one — it lets the
-algorithm terminate faster on graphs where cycles show up via back-edges,
-without changing what counts as an accepting cycle. Adding it would mean:
-- implementing the back-edge check in `outerDFSLoop`/`outerDFSLoop_fuel`,
-- porting the `back_edge` case of CAVA's `lasso_inv` maintenance proof
-  (`Nested_DFS.thy` ~437–489, the `se_back_edge_lasso_inv` lemma) alongside
-  the `finish`-case we already have, for the soundness direction, and
-- re-checking the completeness direction (Phase 5b) still holds with the new
-  code path.
+**What changed, concretely:**
+- `outerDFSLoop`/`outerDFSLoop_fuel`/`outerDFSLoopWF` (`NestedDFS.lean`,
+  `NestedDFSCorrectness.lean`, `NestedDFSTermination.lean`) all gained the
+  same 3-way split on each successor: back-edge (`pathStack.contains succ`)
+  → finished/blue (`outerVisited.contains succ`) → fresh. The back-edge
+  branch further splits exactly as CAVA's `se_back_edge` does (source
+  accepting → target accepting → neither), reporting `.nonEmpty` directly
+  in the first two, matching this project's `loop`/`loop.tail`
+  "redundant-duplicate-head" convention (`loop := current :: current ::
+  loopTail`, mirroring the existing innerDFS-found case's `current ::
+  cyclePath` shape) rather than CAVA's own `pr`/`pl` bookkeeping.
+- New reusable list lemmas in `NestedDFSCorrectness.lean`: `chain_take`,
+  `chain_drop`, `chain_append_left`, `chain_append_right`,
+  `chain_getLast_edge`, `chain_append_boundary`, `dropWhile_ne_head?_eq_some`,
+  `head_eq_getLast_of_length_eq_one` — all proved via structural induction or
+  explicit `getElem`-index arithmetic (never raw `rw` on a `List.takeWhile`/
+  `dropWhile` value inside an un-introduced `∀`-goal or a `.head`/`.getLast`
+  proof-argument position — see "Divergences" below).
+- `outerDFSLoop_fuel_outerVisited_mono`, `outerDFSLoop_fuel_reach_closed`,
+  `outerDFSLoop_fuel_empty_no_cycle`, `outerDFSLoop_fuel_nonEmpty_witness`
+  (`NestedDFSCorrectness.lean`) and `outerDFSLoop_fuel_eq_outerDFSLoopWF`
+  plus its unfolding-lemma family (`NestedDFSTermination.lean`) all extended
+  with the matching new cases.
+- Confirmed by *reading the actual proofs*, not just predicting: the
+  completeness-direction theorems needed **zero new mathematics** — every
+  new case is either a trivial `.nonEmpty ≠ .empty` contradiction or a
+  verbatim copy of the existing skip-case reasoning, exactly matching CAVA's
+  own trivial `back_edge` case in `i_no_accpt_cyle_in_finish`. All the real
+  work is in `outerDFSLoop_fuel_nonEmpty_witness` and the matching terminal
+  cases of the `outerDFSLoopWF` bridge, as predicted below.
+- `outerDFSLoop_fuel_reach_closed` and `outerDFSLoop_fuel_nonEmpty_witness`
+  both needed a new hypothesis (`hsv : ∀ s ∈ pathStack, st.outerVisited
+  .contains s`) neither previously carried, threaded through their
+  induction the same way `hps`/`hchain`/`hroot` already were — needed to
+  derive `outerVisited.contains succ` from `succ ∈ pathStack` (a fact
+  `outerDFSLoop_fuel_empty_no_cycle` already had for free via its existing
+  `hps` + `OuterInvariant.stack_subset_visited`).
+
+**Divergences from the plan below, found only while implementing:**
+- **`set` is a Mathlib tactic** — `NestedDFSCorrectness.lean`/
+  `NestedDFSTermination.lean` deliberately import only `Std`, not Mathlib
+  (see this file's own header note on that boundary), so `set A := ... with
+  hA_def` used elsewhere in this codebase (e.g. `Pipeline.lean`) isn't
+  available here. Used `generalize hA_def : expr = A at h ⊢` instead (core
+  Lean4, same effect) — with the equation in the *opposite* direction
+  (`expr = A`, not `A = expr`), the one place that mattered.
+  Naming the takeWhile/dropWhile slices via `generalize` (not left as raw
+  repeated expressions) turned out to be load-bearing, not just cosmetic:
+  `pathStack`'s own later rewrites would otherwise loop back through the
+  *unnamed* `pathStack.takeWhile`/`dropWhile` subterms nested inside
+  `heqAB`'s statement.
+- **`List.getLast?`/`List.head?` (Option-valued) throughout, not
+  `.getLast`/`.head` (proof-carrying) directly** — every fact relating a
+  `takeWhile`/`dropWhile`/`dropLast` slice's head or last element back to
+  `pathStack`'s was built by bridging through the non-dependent `Option`
+  form (`List.head_eq_iff_head?_eq_some`, `List.getLast_eq_iff_getLast?
+  _eq_some` and friends) and only converting back to `.head`/`.getLast` at
+  the very end. Attempting the dependent form directly hits "motive is not
+  type correct" — the same class of trap already documented elsewhere in
+  this project's history for compiled-match rewriting, here triggered by
+  `GetElem`'s implicit bound-proof argument instead.
+- The plan below anticipated slicing via `takeWhile`/`dropWhile` with a
+  *predicate*; a first attempt at fully generic `chain_takeWhile`/
+  `chain_dropWhile` lemmas (proved by induction *on the predicate form
+  itself*) hit the same rewrite trap and was abandoned in favor of index-
+  based `chain_take`/`chain_drop` (ultimately not even needed once
+  `chain_append_left`/`chain_append_right` — proved via `subst` on an
+  explicit `l = a ++ b` hypothesis parameter, sidestepping the trap
+  entirely — turned out to cover every actual use site). `chain_take`/
+  `chain_drop` are kept as general-purpose, tested, reusable lemmas even
+  though the final proof didn't end up needing them.
+- The degenerate self-loop case (`succ = current`) needed one fix mid-proof:
+  `outerDFSLoop_fuel`'s definition originally emitted `loop := [current]`
+  for this case, which breaks the `loop`/`loop.tail`-redundant-head
+  convention (`loop.tail` would be `[]`, violating `loop.tail.length ≥ 1`).
+  Fixed to `loop := [current, current]` before starting the proof work,
+  once the convention mismatch was noticed while planning the soundness
+  argument — a genuine bug caught by working out the proof obligations
+  first, not by the type-checker (the buggy version still type-checked; it
+  would have failed a `#eval`/theorem-statement check instead).
+
+The original porting analysis (unchanged, still an accurate design
+description of the approach actually taken):
+
+### 0. What CAVA actually bundles under this name
+
+Re-reading Schwoon & Esparza (2005) directly (not just CAVA's code) shows
+this is really **two historically separate optimizations**, both wired into
+CAVA's actual emptiness check (`CAVA_LTL_Modelchecker_CAVA_Impl.thy:265`'s
+`blue_dfs`, not just present in unused theory):
+
+1. **Holzmann, Peled & Yannakakis (1996), "On Nested Depth First Search"**:
+   the *inner* (red) DFS stops as soon as it reaches *any* state on the
+   *outer* (blue) DFS's call stack — not only the literal seed — since any
+   such state is guaranteed to reach the seed via the stack itself. In CAVA
+   this is baked directly into `run_red_dfs`'s stop-predicate:
+   `red_dfs (red s) (λx. x = u ∨ x ∈ cyan s) u` (`Nested_DFS.thy:71`,
+   `cyan s ≡ set (stack s)`) — i.e. it lives *inside* the red search's own
+   spec, not in a separate hook.
+2. **Gastin, Moro & Zeitoun (2004)**, generalized slightly by **Schwoon &
+   Esparza (2005)** themselves: the *outer* (blue) DFS can detect a cycle
+   directly on a back-edge to an accepting state on the stack, or (Schwoon–
+   Esparza's own generalization) when the *current* state is accepting and
+   the edge goes back to *any* stack state — without ever launching the red
+   search. This is `se_back_edge`/`on_back_edge` (`Nested_DFS.thy:76-93,
+   101`).
+
+**This section only analyzes porting (2)** — the outer-DFS shortcut, since
+that's what our docs previously labeled "the Schwoon-Esparza back-edge
+optimization" and what was asked about. (1) is a smaller, independent change
+confined entirely to `innerDFS`'s stop condition (it would need a stack/cyan
+set threaded into `innerDFS`'s signature, which it doesn't currently take at
+all); worth flagging as a related follow-up, not analyzed further here.
+
+### 1. Where this hooks into our control flow
+
+CAVA's `param_DFS` framework classifies every edge `(u, v)` the blue DFS
+processes into three cases: `discover` (v is white/fresh), `cross_edge` (v
+is already finished/blue, not on the stack), `back_edge` (v is discovered
+but not finished — i.e. **cyan**, currently on the call stack). `se_back_edge`
+is exactly the `on_back_edge` handler for the third case.
+
+Our `outerDFSLoop`/`outerDFSLoop_fuel`/`outerDFSLoopWF` currently only have a
+**two-way** split at the successor-processing site:
+
+```lean
+| succ :: remainingTail =>
+  if st.outerVisited.contains succ then    -- "already visited": skip
+    ...
+  else                                       -- fresh: push
+    ...
+```
+
+`outerVisited` conflates CAVA's blue and cyan colors into one set — we never
+distinguish "finished, popped off the stack" from "still an ancestor on the
+current path." Porting the optimization means turning this into CAVA's
+three-way split, by adding a check *before* the existing `outerVisited`
+branch (since every cyan state is, by construction, already in
+`outerVisited` — it was inserted at push time and never removed):
+
+```lean
+| succ :: remainingTail =>
+  if succ ∈ pathStack then           -- NEW: back edge (cyan)
+    if isAccepting current then      -- CAVA se_back_edge case 1
+      (.nonEmpty ..., st)              -- report immediately, no innerDFS
+    else if isAccepting succ then    -- CAVA se_back_edge case 2
+      (.nonEmpty ..., st)
+    else                              -- CAVA's "else NOOP s"
+      outerDFSLoop ... stack' pathStack st   -- identical to today's skip case
+  else if st.outerVisited.contains succ then  -- existing: finished, skip
+    ...
+  else                                          -- existing: fresh, push
+    ...
+```
+
+Detection reuses a field we already thread through the recursion: `pathStack`
+*is* CAVA's `rev (stack s)` (root-first list of exactly the states currently
+on the outer stack — confirmed by the existing hypothesis
+`hps : pathStack = (stack.map Prod.fst).reverse` in
+`outerDFSLoop_fuel_nonEmpty_witness`). So `succ ∈ pathStack` is precisely
+CAVA's `v ∈ cyan s` — no new state field is *required* for correctness.
+(Performance note: `pathStack` is a `List`, so membership is `O(pathStack
+.length)` per edge, versus CAVA's `O(1)` stack-bit/hash-table — Schwoon &
+Esparza's own paper explicitly flags this cost tradeoff for the 3-bit
+encoding. Still a net win, since it replaces an entire redundant inner-DFS
+launch, but if the `O(n)` scan ever matters, a separate `cyan :
+Std.HashSet State` field mirrored alongside `pathStack` would fix it — pure
+performance follow-up, orthogonal to this port.)
+
+### 2. The two constructive sub-cases, translated to our conventions
+
+CAVA's `se_back_edge_lasso_inv` (`Nested_DFS.thy:436-539`) builds the witness
+directly from `stack s` slices. Translating this to our `AcceptingCycle`
+conventions (`stem`/`cycle` with `overlap : stem.getLast = cycle.head`,
+i.e. the loop's entry state is *included* in `stem` too) needs care, because
+**CAVA's own `pr`/`pl` convention is different from ours**: `lasso_inv`
+(`Nested_DFS.thy:429-434`) only requires `∃v0∈V0. path E v0 pr (hd pl)` —
+`pr` does *not* itself end at `hd pl`; there's an implicit extra edge from
+`last pr` to `hd pl` supplied separately by the `path` relation. Our
+`AcceptingCycle.stem_chain`/`overlap` fields have no such implicit edge —
+`stem` must *literally* end where `cycle` begins. So each CAVA formula below
+needed its list-slicing boundary shifted by one element to fit our shape,
+not just copied.
+
+Recall `current` = the state being finished/whose successors are being
+walked, `succ` = the cyan target of the back edge, so `current → succ ∈ E`
+is exactly the edge that triggered this branch, always available for free.
+
+**Case 1 — `isAccepting current`** (CAVA: `accpt (hd (stack s))`, source of
+the back-edge is accepting). The cycle is `current → succ → ⋯ → parent(current)
+→ current` (the last step is the existing tree edge one level up the
+stack). In our shape:
+```
+stem := pathStack                                                  -- unchanged!
+loop := current :: (pathStack.dropLast.dropWhile (· ≠ succ))
+```
+This is the *same output shape* `(.nonEmpty pathStack (current :: X))` as
+today's ordinary innerDFS-found case (`outerDFSLoop_fuel` line ~416) — only
+`X` differs (sliced from `pathStack` instead of returned by `innerDFS`). That
+means it can reuse the exact same `AcceptingCycle` field derivations that
+case already has; only the proof that *this* `X` satisfies chain/nonempty/
+back-edge facts is new.
+
+**Degenerate case, must special-case explicitly**: if `succ = current` (a
+literal self-loop, `current → current ∈ E`), the formula above breaks —
+`pathStack.dropLast` excludes `current`, so `dropWhile (· ≠ succ)` over it
+never finds `succ = current` at all. CAVA hits exactly this and special-cases
+it (`Nested_DFS.thy:473-478`, `case True: ul = [hd (stack s)]`, i.e. cycle :=
+`[current]`, a singleton). Our port needs the same explicit `if succ =
+current then loop := [current] else loop := current :: ...` split. This also
+explains why CAVA checks `accpt (hd (stack s))` *before* `accpt v` in its
+`if/else if`: if `succ = current`, `accpt v = accpt succ = accpt current`,
+so a self-loop can only ever be handled by Case 1's formula — Case 2's
+formula (below) would slice a stack that doesn't even contain a distinguished
+occurrence of `succ` past `current` in the right way. **The case-priority
+order (current-accepting checked first) must be preserved, not incidental.**
+
+**Case 2 — `isAccepting succ`** (CAVA: `accpt v`, target of the back-edge is
+accepting; only reached when Case 1's guard is false, so `succ ≠ current`
+here — no degenerate case needed). The cycle is `succ → ⋯ → current → succ`
+(closing edge is the triggering back-edge itself):
+```
+stem := pathStack.takeWhile (· ≠ succ) ++ [succ]     -- CAVA's vr, boundary-shifted
+loop := pathStack.dropWhile (· ≠ succ)                -- CAVA's vl, unchanged
+```
+(CAVA's own `vr := takeWhileNot v (rev (stack s))` excludes `v`; we append
+`[succ]` to satisfy our `overlap` convention instead of relying on `path`'s
+implicit edge.)
+
+### 3. Blast radius — what needs a new case, and what's trivial
+
+The good news, confirmed by actually reading `outerDFSLoop_fuel_nonEmpty_witness`
+and `outerDFSLoop_fuel_empty_no_cycle`'s proofs: **all the genuinely new
+mathematical content is confined to the soundness direction.** This mirrors
+CAVA's own proof shape exactly — their `back_edge` case in
+`i_no_accpt_cyle_in_finish` (the completeness-side invariant) is
+`by (simp add: se_back_edge_def split: option.split)`, i.e. trivial, while
+`se_back_edge_lasso_inv` (the soundness-side lemma) is the ~100-line one with
+real content. Reason it transfers here too: the new branch either (a) returns
+`.nonEmpty` immediately with no state mutation, or (b) falls through to
+exactly today's existing "skip" behavior when neither state is accepting —
+there is no new way to reach `.empty`, so nothing that already proves "empty
+⟹ no cycle" needs new reasoning, only a new case to dismiss (by
+constructor-mismatch) or copy (by identical behavior).
+
+Three parallel copies currently implement this loop and all three need the
+identical structural edit: `NestedDFS.lean`'s `outerDFSLoop` (unverified
+reference), `NestedDFSCorrectness.lean`'s `outerDFSLoop_fuel`, and
+`NestedDFSTermination.lean`'s `outerDFSLoopWF`. Per-theorem effect:
+
+- **`outerDFSLoop_fuel_outerVisited_mono`**: new case needed for any result
+  (not just `.empty`). Trivial either way — Case 1/2 don't touch
+  `outerVisited` at all (`st` unchanged), the non-accepting fallthrough is
+  behaviorally identical to the existing visited-skip case.
+- **`outerDFSLoop_fuel_reach_closed`** and the `OuterReachClosed`/
+  `OuterInvariant` maintenance blocks inside the big theorems: new case
+  needed. Case 1/2 sub-cases contradict the theorem's `= some (.empty n, st')`
+  hypothesis outright (return shape mismatch) — dismissed the same way CAVA
+  dismisses its `back_edge` case. The non-accepting fallthrough is a literal
+  copy of the existing "succ already visited" invariant-maintenance proof
+  (same recursive call, same `stack'`, same `st`).
+- **`outerDFSLoop_fuel_nonEmpty_witness`**: the one theorem needing real new
+  work. Two new sub-cases (Case 1, Case 2 above), each proving the sliced
+  `stem`/`loop` satisfy the 8-fact tuple this theorem returns
+  (`stem_head_initial`-equivalent, `stem_chain`, `overlap`, `cycle_chain`,
+  `cycle_back`, `cycle_head_accepting`, nonemptiness). Built from `hchain`
+  (already threaded as an explicit hypothesis at exactly this point in the
+  induction) plus two **new small lemmas**, siblings of the existing
+  `chain_dropLast`/`chain_append_singleton`/`chain_cons` family (same
+  index-arithmetic proof technique, same file):
+  - `chain_takeWhile`: a `takeWhile p l` prefix of a chain-list is a chain.
+  - `chain_dropWhile`: a `dropWhile p l` suffix of a chain-list is a chain.
+- **`outerDFSLoop_fuel_empty_no_cycle`**: new case needed, but *zero* new
+  mathematics — Case 1/2 are dismissed by contradiction (can't produce
+  `.empty`), non-accepting fallthrough is a verbatim copy of the existing
+  visited-skip case's proof.
+- **`outerDFSLoopWF`** (`NestedDFSTermination.lean`): the new branch is an
+  immediate return, exactly like the existing "innerDFS found a cycle" leaf
+  — measure-trivial, no new termination argument.
+- **`outerDFSLoop_fuel_eq_outerDFSLoopWF`** (the fuel↔WF bridge): needs a
+  matching new case, but since both sides get the *identical* new branch
+  (same condition, same formula), bridging it is mechanical — the same
+  pattern every existing case in that bridge already follows.
+- **`OutputVerify.lean` (`AcceptingCycle`, `ValidLasso`, `toValidLasso`),
+  `Lasso.lean`, `Pipeline.lean`: unaffected.** Confirmed by reading
+  `AcceptingCycle`'s definition — its fields are pure facts about the final
+  `stem`/`cycle` *values*, with no dependence on how `outerDFSLoop` derived
+  them. Whatever theorem currently repackages
+  `outerDFSLoop_fuel_nonEmpty_witness`'s 8-tuple into an `AcceptingCycle`
+  continues to work unchanged, since the new cases produce the same shape of
+  tuple, just via different values. `innerDFS`/`innerDFSWF`/`innerDFSCore`/
+  `innerDFS_fuel` are also entirely untouched by this port (this
+  optimization is blue-DFS-only; see §0 for the separate red-DFS
+  optimization that *would* touch them).
+
+### 4. Net effort shape
+
+Mechanical/copy-paste: the non-accepting fallthrough case, everywhere it
+appears (≈5 theorem sites, same pattern each time). Trivial-by-contradiction:
+every completeness-direction site's new case (≈3-4 sites). Genuinely new
+math: `chain_takeWhile`/`chain_dropWhile` (small, self-contained, same
+technique as existing neighbors) plus the two `AcceptingCycle`-shaped
+witness derivations in `outerDFSLoop_fuel_nonEmpty_witness` (the real work,
+but scoped to one theorem, with the degenerate self-loop case called out
+explicitly above so it isn't discovered mid-proof). No changes needed to
+`innerDFS*`, `OutputVerify.lean`, `Lasso.lean`, or `Pipeline.lean`.
 
 Not started; no immediate blocker, purely a future enhancement.
 
