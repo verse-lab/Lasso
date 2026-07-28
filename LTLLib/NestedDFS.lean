@@ -63,17 +63,28 @@ private structure NDFSState (State : Type u) [BEq State] [Hashable State] where
   (optimization from the CVWY paper). -/
   innerFinished : Std.HashSet State
 
-/-- Inner DFS: search for a path from `current` back to `seed`.
-If found, an accepting cycle exists.
+/-- Inner DFS: search for a path from `current` back to `seed` — or, with the
+Holzmann-Peled-Yannakakis shortcut, back to *any* state on the outer DFS's
+current call stack (`cyan`). If found, an accepting cycle exists.
 
-Returns `some path` if a path back to `seed` is found, `none` otherwise. -/
+This is CAVA's `cyan`/`run_red_dfs` stop predicate (`Nested_DFS.thy:54,67-74`):
+`λx. x = u ∨ x ∈ cyan s`. Any state on the outer stack is, by construction, an
+ancestor of `seed` in the DFS tree, so the existing stack path is itself a
+ready-made witness back to `seed` — no need to keep searching for the literal
+seed once any ancestor is re-touched. See `NestedDFSPlan.md`'s
+"Holzmann-Peled-Yannakakis inner-DFS shortcut" section for the full
+CAVA-correspondence write-up.
+
+Returns `some (path, target)` if a path to some `target ∈ {seed} ∪ cyan` is
+found (CAVA's `Inr (vs, v)`), `none` otherwise. -/
 private partial def innerDFS [BEq State] [Hashable State]
     (successors : State → Array State)
     (seed : State)
+    (cyan : List State)
     (current : State)
     (innerVisited : Std.HashSet State)
     (st : NDFSState State)
-    : Option (List State) × Std.HashSet State × NDFSState State :=
+    : Option (List State × State) × Std.HashSet State × NDFSState State :=
   if st.innerFinished.contains current then
     (none, innerVisited, st)
   else if innerVisited.contains current then
@@ -86,20 +97,21 @@ private partial def innerDFS [BEq State] [Hashable State]
         match result with
         | some _ => (result, innerVisited, st)  -- already found, short-circuit
         | none =>
-          if succ == seed then
-            -- Found a cycle back to seed!
-            (some [current], innerVisited, st)
+          if succ == seed || cyan.contains succ then
+            -- Found a cycle back to seed, or (HPY shortcut) back to some
+            -- other state currently on the outer DFS's stack.
+            (some ([current], succ), innerVisited, st)
           else
-            match innerDFS successors seed succ innerVisited st with
-            | (some cyclePath, iv, st') =>
-              (some (current :: cyclePath), iv, st')
+            match innerDFS successors seed cyan succ innerVisited st with
+            | (some (cyclePath, target), iv, st') =>
+              (some (current :: cyclePath, target), iv, st')
             | (none, iv, st') =>
               (none, iv, st')
     |> fun (result, innerVisited, st) =>
       match result with
       | some _ => (result, innerVisited, st)
       | none =>
-        -- All successors explored without finding seed; mark as finished
+        -- All successors explored without finding seed/cyan; mark as finished
         let st := { st with innerFinished := st.innerFinished.insert current }
         (none, innerVisited, st)
 
@@ -123,12 +135,19 @@ private partial def outerDFSLoop [BEq State] [Hashable State]
       if isAccepting current then
         -- Launch inner DFS from this accepting state
         let innerVisited := Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)
-        match innerDFS successors current current innerVisited st with
-        | (some cyclePath, _, st') =>
-          -- Found accepting cycle!
-          -- stem = pathStack (path to the accepting state, inclusive)
-          -- loop = seed :: cyclePath (from seed, through cycle, back to seed)
-          (.nonEmpty pathStack (current :: cyclePath), st')
+        match innerDFS successors current pathStack current innerVisited st with
+        | (some (cyclePath, target), _, st') =>
+          -- Found accepting cycle! `target` (HPY shortcut) may be `current`
+          -- itself or any other state on `pathStack`. `stem` is unchanged;
+          -- `loop` splices `cyclePath` (current ... target) with the
+          -- existing stack tree-path from `target` back down to `current`'s
+          -- own stack-parent (`chain_append_boundary`/`chain_getLast_edge`'s
+          -- kind of reasoning, shared with the Schwoon-Esparza back-edge
+          -- case). When `target = current` this collapses to exactly the
+          -- previous `current :: cyclePath` formula, since the appended
+          -- stack-suffix is then empty — no separate degenerate case needed.
+          let loopTail := (pathStack.dropWhile (fun y => !(y == target))).dropLast
+          (.nonEmpty pathStack (current :: cyclePath ++ loopTail), st')
         | (none, _, st') =>
           outerDFSLoop successors isAccepting rest pathStack.dropLast st'
       else

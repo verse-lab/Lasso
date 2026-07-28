@@ -619,6 +619,237 @@ explicitly above so it isn't discovered mid-proof). No changes needed to
 
 Not started; no immediate blocker, purely a future enhancement.
 
+## Holzmann-Peled-Yannakakis inner-DFS shortcut
+
+**Status: started (2026-07-28).** The other of CAVA's two nested-DFS
+optimizations flagged in §0 above — the inner (red) DFS stopping as soon as
+it reaches *any* state on the outer (blue) DFS's call stack, not only the
+literal seed. Per standing project practice, CAVA's actual Isabelle sources
+(`thys/DFS_Framework/Examples/Nested_DFS.thy`,
+`thys/DFS_Framework/Examples/DFS_Find_Path.thy`, fetched from the AFP mirror
+and read in full) were read directly before any Lean design work, not
+relied on secondhand.
+
+### What CAVA actually does
+
+**The stop predicate** (`Nested_DFS.thy:54,67-74`):
+```isabelle
+definition "cyan s ≡ set (stack s)"
+definition run_red_dfs where
+  "run_red_dfs u s ≡ case lasso s of None ⇒ do {
+     redS ← red_dfs (red s) (λx. x = u ∨ x ∈ cyan s) u;
+     RETURN (mk_blue_witness s redS) } | _ ⇒ NOOP s"
+```
+`red s` is CAVA's `innerFinished`. The stop predicate `λx. x = u ∨ x ∈ cyan s`
+is checked identically to a literal-seed check, just widened — `u` is
+trivially already a member of `cyan s` (the whole stack, including its own
+top), so CAVA's own predicate is *itself* redundant in exactly the way a
+naive Lean port would also be. This directly informed keeping both
+disjuncts in the Lean port (`succ == seed || cyan.contains succ`) rather
+than "simplifying" to a cyan-only check — matching CAVA, not over-cleaning
+it up.
+
+**The core invariant** (`Nested_DFS.thy:155-159`):
+```isabelle
+definition "blue_basic_invar s ≡
+  case lasso s of None ⇒ restr_invar E (red s) (λx. x∈set (stack s)) ∧ red s ⊆ dom (finished s)
+  | Some l ⇒ True"
+```
+where `restr_invar E R P ≡ E `` R ⊆ R ∧ R ∩ Collect P = {}`
+(`DFS_Find_Path.thy:222-226`). This is *stronger* than what the pre-HPY Lean
+proof establishes: it says `innerFinished` is simultaneously closed under
+`succs` **and** disjoint from the *entire current stack*, not just from the
+one seed that launched the most recent red search. `blue_basic_invar` is
+proved as a genuine DFS-wide invariant via `is_invar`/`establish_invarI`
+(structural induction over the whole execution trace) — CAVA proves this
+**once**, persistently, rather than re-deriving "avoid the whole stack"
+after each individual finish step.
+
+**Where this mattered against our pre-existing proof**:
+`outerDFSLoop_fuel_empty_no_cycle`'s accepting-leaf case composed *two
+separately-derived* facts — `innerDFS_no_cycle_from_seed_finished`
+(self-loop-only) plus a *separate* `ReachChain`-based argument for "can't
+reach any *other* stack ancestor either" — glued together after the
+inner-DFS call returned. CAVA's single `restr_invar E R' (λx. x∈set(stack
+s))` postcondition gives **both facts at once**, directly from the widened
+red-DFS's own postcondition, with no separate gluing step. The Lean port's
+whole point is to let the widened inner-DFS fact absorb that separate
+`ReachChain` composition, mirroring CAVA's actual (simpler) structure
+rather than only its performance behavior.
+
+**The witness construction** (`mk_blue_witness`, `Nested_DFS.thy:59-65`, and
+`find_path1_restr_pred`'s `Inr` clause, `DFS_Find_Path.thy:336-339`):
+```isabelle
+definition "find_path1_restr_pred G P R ≡ λr. case r of
+    Inl R' ⇒ R' = R ∪ E⁺``V0 ∧ restr_invar E R' P
+  | Inr (vs,v) ⇒ P v ∧ vs≠[] ∧ (∃v0∈V0. path (E∩UNIV×-R) v0 vs v)"
+definition mk_blue_witness s redS ≡ case redS of
+    Inl R' ⇒ ⟨lasso=None, red=R'⟩
+  | Inr (vs,v) ⇒ let rs = rev(stack s) in ⟨lasso = Some (rs, vs @ dropWhileNot v rs), red=red s⟩
+```
+When the red search finds a path, it returns the pair `(vs, v)` — the path
+found *and* which cyan state `v` it actually hit (previously always `v =
+u`; now can be any stack ancestor). The witness splices `vs` (path from `u`
+to `v`) with `dropWhileNot v rs` (the stack suffix from `v` back down to
+`u`) to close the cycle. This is structurally the same slicing pattern
+already implemented for the Schwoon-Esparza back-edge port's "target
+accepting" case above (`stem := pathStack.takeWhile (·≠succ) ++ [succ]` /
+`loop := succ :: pathStack.dropWhile (·≠succ)`), so it reuses the same
+already-proven helper lemmas (`chain_append_boundary`, `chain_getLast_edge`,
+`dropWhile_ne_head?_eq_some`) rather than needing new ones. One genuine
+simplification versus the SE port: HPY's branch is *only ever entered when
+`current` is already known accepting* (`on_finish = if accpt u then
+run_red_dfs u s else NOOP`, mirroring our own `outerDFSLoop`'s `if
+isAccepting current then ... innerDFS ...`), so unlike SE's back-edge case
+there is **no accepting-source-vs-accepting-target case split** — the
+witness's accepting state is always `current` itself.
+
+**Why this is sound**: any cyan (stack) state is, by construction, an
+ancestor of the currently-finishing node in the DFS tree — the tree-path
+down the stack is itself an already-existing witness that a cyan state can
+reach the seed. So stopping red DFS the moment it touches *any* stack
+state, not just literally re-finding the seed, cannot miss a genuine cycle:
+whatever cyan state got hit, the existing stack-tree path already provides
+the closing segment back to the seed — exactly what the already-built
+`ReachChain`/`pathStack`-chain machinery (from the SE port) supplies.
+
+### Design decisions for the Lean port
+
+1. **New parameter `cyan : List State`**, distinct from `innerDFSCore`'s own
+   pre-existing internal `pathStack` (its search-path-so-far bookkeeping
+   from its explicit-stack redesign — a different concept). Passed through
+   unchanged across the whole inner-DFS call, mirroring `seed`'s existing
+   threading exactly (the outer stack never changes while the inner search
+   runs). `outerDFSLoop`/`outerDFSLoop_fuel`/`outerDFSLoopWF` pass their own
+   already-in-scope `pathStack` as this argument.
+2. **Keep `seed` and check `succ == seed || cyan.contains succ`** (not
+   cyan-only) — matches CAVA's own literal, redundant-looking predicate; see
+   above.
+3. **The "found" result changes from `Option (List State)` to `Option (List
+   State × State)`** — path plus *which* state was actually hit (CAVA's
+   `Inr (vs, v)`). A real, if mechanical, change to every "found"-result
+   pattern-match site, more invasive than a pure parameter addition — flagged
+   explicitly since today's code implicitly always assumes the hit target is
+   `seed` and simply discards this information.
+4. **No new termination argument.** The widened stop-check is one more
+   early-return guard at the same site as the existing `succ == seed` check
+   — same recursive/measure structure throughout, so `innerDFSCore`'s/
+   `innerDFS_fuel_fold`'s termination proofs need no new argument.
+
+### Theorem-by-theorem plan (CAVA lemma to check before each)
+
+File order: `NestedDFS.lean` → `NestedDFSCorrectness.lean` →
+`NestedDFSTermination.lean`, matching the SE port's own sequencing.
+
+- `NestedDFS.lean`: `innerDFS` gains `cyan`, widened stop check, pair
+  return; `outerDFSLoop`'s call site passes `pathStack` as `cyan` and
+  consumes the pair, generalizing `loop := current :: cyclePath` to the
+  target-aware slicing (checked to specialize back to today's exact formula
+  when `target = current`).
+- `NestedDFSCorrectness.lean`, mechanical signature propagation only (no new
+  CAVA content beyond confirming shape): `innerDFS_fuel_mono`,
+  `innerDFS_fuel_fold_mono`, `innerDFS_fuel_current_blocked`,
+  `innerDFS_fuel_fold_adds_current`, `innerDFS_fuel_iv_subset_finished`,
+  `innerDFS_fuel_new_finished_subset_iv`, `innerDFS_fuel_outerVisited_eq`.
+- **Genuine strengthening** (check `restr_invar`/`blue_basic_invar`,
+  `Nested_DFS.thy:155-159`, first): `innerDFS_fuel_fold_succs_blocked` and
+  `innerDFS_no_cycle_from_seed`/`innerDFS_no_cycle_from_seed_finished` —
+  conclusion generalizes from "seed unreachable from itself" to "no `cyan`
+  member is reachable."
+- `innerDFS_fuel_new_no_edge_to_seed` generalizes to "no edge to any `cyan`
+  member" (check `i_no_accpt_cyle_in_finish`'s use of this fact first,
+  `Nested_DFS.thy:355-418`).
+- `innerDFS_fuel_cyclePath_chain`: must additionally expose/relate to the
+  hit target (check `find_path1_restr_pred`'s `Inr` clause,
+  `DFS_Find_Path.thy:336-339`, first).
+- `outerDFSLoop_fuel`'s call site + `outerDFSLoop_fuel_nonEmpty_witness`:
+  check `mk_blue_witness`'s `Inr` branch (`Nested_DFS.thy:64-65`) before
+  writing the new target≠current sub-case; reuse
+  `chain_append_boundary`/`chain_getLast_edge`/`dropWhile_ne_head?_eq_some`.
+- `outerDFSLoop_fuel_empty_no_cycle`: check `i_no_accpt_cyle_in_finish`
+  (`Nested_DFS.thy:355-418`) first; attempt to simplify by dropping the
+  separate `ReachChain`-based composition once the widened inner-DFS fact is
+  available.
+- `outerDFSLoop_fuel_outerVisited_mono`/`outerDFSLoop_fuel_reach_closed`:
+  mechanical, reuse `innerDFS_fuel_outerVisited_eq`.
+- `NestedDFSTermination.lean`: `innerDFSCore`/`innerDFSWF` gain `cyan`
+  (careful not to collide with `innerDFSCore`'s own existing internal
+  `pathStack`), widened stop check, pair-return; `outerDFSLoopWF` passes
+  `pathStack` as `cyan` and mirrors the outer-loop consumption change; the
+  fuel↔WF bridges (`innerDFS_fuel_chain`, `innerDFS_fuel_chain_eq_innerDFSCore`,
+  `innerDFS_fuel_eq_innerDFSWF`, outer analogues) thread `cyan` through
+  symmetrically — expected mechanical given the identical stop-check shape
+  on both sides. No new termination/measure work expected.
+
+### Status: ✅ DONE (2026-07-28)
+
+Implemented across all three files following the plan above closely; whole
+project builds clean (759 jobs, 0 sorry, 0 new warnings — the one
+pre-existing `unused variable ac` warning in `NestedDFSCorrectness.lean`
+predates this work, confirmed via `git stash`). Findings worth recording,
+where reality diverged from or refined the plan:
+
+- **No degenerate case needed, unlike the SE port.** The uniform witness
+  formula `current :: cyclePath ++ (pathStack.dropWhile (·≠target)).dropLast`
+  collapses to exactly the pre-HPY `current :: cyclePath` formula when
+  `target = current`, verified algebraically before implementing (the
+  appended slice becomes `(pathStack.dropWhile (·≠current)).dropLast =
+  [current].dropLast = []`, since `current` is `pathStack`'s own last
+  element at the call site) — confirmed correct once proved. This is
+  *simpler* than the Schwoon-Esparza back-edge port, which needed an explicit
+  `succ = current` split; here the same `cyclePath0 ++ B.dropLast` shape
+  handles both sub-cases uniformly, because `cyclePath` (from `innerDFS`)
+  already carries the "path to the target" information as real data, unlike
+  SE's direct one-hop edge which had nothing to fall back on but list
+  slicing.
+- **The `ReachChain` simplification happened, exactly as predicted.**
+  `outerDFSLoop_fuel_empty_no_cycle`'s `hno_stack_reach` — previously
+  composed from a self-loop-only fact (`hno_unrestricted`) plus a separate
+  `ReachChain.reaches_head` argument — is now derived directly from a single
+  generalized fact (`hno_unrestricted_all`/`hno_restricted_all`, both stated
+  `∀ t, (t = current ∨ t ∈ pathStack) → ...`) via a new small lemma,
+  `PathTo.no_reach_of_closed_no_incoming` (generalizes the existing
+  `no_self_loop_of_closed_no_incoming` from a fixed self-loop target to an
+  arbitrary one — a one-line proof, since the underlying
+  `avoids_closed_of_no_incoming` was already fully general). The
+  `ReachChain`-based derivation is gone from this theorem's proof entirely.
+- **One genuinely new lemma needed beyond the plan's prediction:**
+  `chain_append` (concatenating two `succs`-chains given a boundary edge) —
+  the plan anticipated reusing `chain_append_boundary`/`chain_getLast_edge`
+  alone, but the general (non-degenerate) witness case needed the *whole*
+  spliced list's chain property, not just the boundary edge. Proved by
+  induction on the first list (not raw index arithmetic like its siblings)
+  specifically to avoid a dependent-rewrite trap when the second list's
+  index shifts to `0` — the same class of issue this file's history already
+  flags for `getElem`/`head`/`getLast` proof-argument positions.
+- **The return-type change (`Option (List State)` → `Option (List State ×
+  State)`) was exactly as invasive as flagged**, touching every "found"-case
+  pattern match across both files — mechanical per site, but pervasive
+  (roughly a dozen sites in `NestedDFSCorrectness.lean`, another dozen in
+  `NestedDFSTermination.lean`'s fuel-bridge section).
+- **`by_cases`/`simp [hse]` on the widened `succ == seed || cyan.contains
+  succ` condition was less reliable than the plan assumed** for the simple
+  mechanical-propagation theorems — `simp [hse] at h` (which worked fine for
+  the old single-`==` condition) intermittently left unresolved goals or hit
+  "no progress" against the compound `||` condition. Fixed by switching to
+  `split at h` (letting Lean's own case-splitting introduce the right
+  hypothesis form) rather than manually asserting the boolean equation via
+  `by_cases`, and by deriving the needed `≠`/`∉` facts through `simp_all`
+  (robust to whichever exact syntactic form `split` produces) rather than
+  through targeted `Bool.or_eq_false_iff`-style rewriting (fragile to the
+  same class of mismatch).
+- **Mechanical parameter-threading was done via scoped `sed`**, not
+  per-theorem manual edits: `succs seed ` → `succs seed cyan `/`succs fr
+  seed ` → `succs fr seed cyan ` across each section's line range, plus
+  `Option (List State)` → `Option (List State × State)`. This worked
+  cleanly once broadened to catch *every* call site (including calls to
+  sibling helper theorems, not just to `innerDFS_fuel`/`innerDFS_fuel_fold`
+  themselves) in a single pass — an initial narrower pass (matching only
+  literal `innerDFS_fuel succs seed fuel`-shaped calls) missed the many
+  calls using induction-bound fuel variables (`n`, `k + 1`, ...) instead of
+  the literal identifier `fuel`.
+- `ROADMAP.md`'s "Known non-goals" entry for this item updated to done.
+
 ## Where this fits now (2026-07-27)
 
 `nestedDFSWF` (the total, well-founded entry point this file tracks the

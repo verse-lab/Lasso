@@ -242,24 +242,24 @@ value on out-of-domain input" pattern. For any call reachable from
 later equation/induction-based proof about it an ordinary (non-dependent)
 one. -/
 def innerDFSCore [LawfulBEq State] (succs : State → Array State) (fr : FiniteReach succs)
-    (seed : State)
+    (seed : State) (cyan : List State)
     (stack : List (State × List State))
     (pathStack : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
-    : Option (List State) × Std.HashSet State × FNDFSState State :=
+    : Option (List State × State) × Std.HashSet State × FNDFSState State :=
   match stack with
   | [] => (none, iv, st)
   | (current, remaining) :: rest =>
     match remaining with
     | [] =>
-      innerDFSCore succs fr seed rest pathStack.dropLast iv
+      innerDFSCore succs fr seed cyan rest pathStack.dropLast iv
         { st with innerFinished := st.innerFinished.insert current }
     | succ :: remainingTail =>
       let stack' := (current, remainingTail) :: rest
-      if succ == seed then
-        (some pathStack, iv, st)
+      if succ == seed || cyan.contains succ then
+        (some (pathStack, succ), iv, st)
       else if hblocked : st.innerFinished.contains succ || iv.contains succ then
-        innerDFSCore succs fr seed stack' pathStack iv st
+        innerDFSCore succs fr seed cyan stack' pathStack iv st
       else if hsucc_univ : fr.univ.contains succ then
         have hsucc_niv : iv.contains succ = false := by
           rw [Bool.eq_false_iff]
@@ -268,9 +268,9 @@ def innerDFSCore [LawfulBEq State] (succs : State → Array State) (fr : FiniteR
         let iv' := iv.insert succ
         let succChildren := (succs succ).toList
         let stack2 := (succ, succChildren) :: stack'
-        innerDFSCore succs fr seed stack2 (pathStack ++ [succ]) iv' st
+        innerDFSCore succs fr seed cyan stack2 (pathStack ++ [succ]) iv' st
       else
-        innerDFSCore succs fr seed stack' pathStack iv st
+        innerDFSCore succs fr seed cyan stack' pathStack iv st
 termination_by ((fr.univ \ iv).size, pendingSum stack + stack.length)
 decreasing_by
   · exact Prod.Lex.right _ (by simp)
@@ -288,13 +288,14 @@ initialization for the outer loop. Trivially total (a single non-recursive
 call to the already-total `innerDFSCore`), so no termination proof of its own
 is needed. -/
 def innerDFSWF (succs : State → Array State) (fr : FiniteReach succs) (seed : State)
+    (cyan : List State)
     (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
-    : Option (List State) × Std.HashSet State × FNDFSState State :=
+    : Option (List State × State) × Std.HashSet State × FNDFSState State :=
   if st.innerFinished.contains current then (none, iv, st)
   else if iv.contains current then (none, iv, st)
   else
-    innerDFSCore succs fr seed [(current, (succs current).toList)] [current]
+    innerDFSCore succs fr seed cyan [(current, (succs current).toList)] [current]
       (iv.insert current) st
 
 /-- `innerDFSWF`'s "already blocked" case, as a reusable equation — needed by
@@ -302,10 +303,10 @@ the fuel bridge (`InnerFuelBridge`, below `OuterDFSWellFounded`) to align
 `innerDFS_fuel`'s uniform "always call the top-level function" style with
 `innerDFSCore`'s own explicit `hblocked` branch. -/
 theorem innerDFSWF_blocked (succs : State → Array State) (fr : FiniteReach succs) (seed : State)
-    (current : State)
+    (cyan : List State) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (hblocked : st.innerFinished.contains current || iv.contains current) :
-    innerDFSWF succs fr seed current iv st = (none, iv, st) := by
+    innerDFSWF succs fr seed cyan current iv st = (none, iv, st) := by
   unfold innerDFSWF
   rcases Bool.or_eq_true_iff.mp hblocked with h | h
   · simp [h]
@@ -315,12 +316,12 @@ theorem innerDFSWF_blocked (succs : State → Array State) (fr : FiniteReach suc
 
 /-- `innerDFSWF`'s "fresh" case, as a reusable equation. -/
 theorem innerDFSWF_fresh (succs : State → Array State) (fr : FiniteReach succs) (seed : State)
-    (current : State)
+    (cyan : List State) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (hnotfin : st.innerFinished.contains current = false)
     (hnotvisited : iv.contains current = false) :
-    innerDFSWF succs fr seed current iv st =
-      innerDFSCore succs fr seed [(current, (succs current).toList)] [current]
+    innerDFSWF succs fr seed cyan current iv st =
+      innerDFSCore succs fr seed cyan [(current, (succs current).toList)] [current]
         (iv.insert current) st := by
   unfold innerDFSWF
   simp [hnotfin, hnotvisited]
@@ -334,11 +335,12 @@ ordinary well-founded recursive function, so `innerDFSCore.induct` generates
 normally and this is a plain structural induction — no bundling into the
 return type needed. -/
 theorem innerDFSCore_outerVisited_pres (succs : State → Array State) (fr : FiniteReach succs)
-    (seed : State)
+    (seed : State) (cyan : List State)
     (stack : List (State × List State)) (pathStack : List State)
     (iv : Std.HashSet State) (st : FNDFSState State) :
-    (innerDFSCore succs fr seed stack pathStack iv st).2.2.outerVisited = st.outerVisited := by
-  induction stack, pathStack, iv, st using innerDFSCore.induct (succs := succs) (fr := fr) (seed := seed)
+    (innerDFSCore succs fr seed cyan stack pathStack iv st).2.2.outerVisited = st.outerVisited := by
+  induction stack, pathStack, iv, st using innerDFSCore.induct (succs := succs) (fr := fr)
+    (seed := seed) (cyan := cyan)
   all_goals (unfold innerDFSCore; dsimp only; try simp_all; try (rename_i ih; simpa using ih))
 
 /-- Thin wrapper around `innerDFSCore_outerVisited_pres` for `innerDFSWF`
@@ -346,18 +348,19 @@ itself — needed by `outerDFSLoopWF`'s own `decreasing_by`, which calls
 `innerDFSWF` (not `innerDFSCore` directly; see that function's docstring for
 why) at its accepting-leaf branch. -/
 theorem innerDFSWF_outerVisited_pres (succs : State → Array State) (fr : FiniteReach succs)
-    (seed current : State) (iv : Std.HashSet State) (st : FNDFSState State) :
-    (innerDFSWF succs fr seed current iv st).2.2.outerVisited = st.outerVisited := by
+    (seed : State) (cyan : List State) (current : State)
+    (iv : Std.HashSet State) (st : FNDFSState State) :
+    (innerDFSWF succs fr seed cyan current iv st).2.2.outerVisited = st.outerVisited := by
   by_cases hblocked : st.innerFinished.contains current || iv.contains current
-  · rw [innerDFSWF_blocked succs fr seed current iv st hblocked]
+  · rw [innerDFSWF_blocked succs fr seed cyan current iv st hblocked]
   · have hblocked' : (st.innerFinished.contains current || iv.contains current) = false := by
       rw [Bool.eq_false_iff]; exact hblocked
     have hnotfin : st.innerFinished.contains current = false := by
       simp only [Bool.or_eq_false_iff] at hblocked'; exact hblocked'.1
     have hnotvisited : iv.contains current = false := by
       simp only [Bool.or_eq_false_iff] at hblocked'; exact hblocked'.2
-    rw [innerDFSWF_fresh succs fr seed current iv st hnotfin hnotvisited]
-    exact innerDFSCore_outerVisited_pres succs fr seed _ _ _ st
+    rw [innerDFSWF_fresh succs fr seed cyan current iv st hnotfin hnotvisited]
+    exact innerDFSCore_outerVisited_pres succs fr seed cyan _ _ _ st
 
 end InnerDFSWellFounded
 
@@ -378,7 +381,7 @@ the new one, so nothing is lost by only keeping this version. -/
 section InnerFuelBridge
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
-  (succs : State → Array State) (fr : FiniteReach succs) (seed : State)
+  (succs : State → Array State) (fr : FiniteReach succs) (seed : State) (cyan : List State)
 
 /-- Sufficient-fuel measure — same role as `innerDFSCore`'s own well-founded
 measure (`(fr.univ \ iv).size`), phrased via `Nat` subtraction because this
@@ -412,17 +415,17 @@ transitions before implementing (see `ProofPlan.md`'s Phase 2 write-up) —
 this is *not* simply "propagate the cycle unchanged", which is wrong by
 exactly one `current ::`/`succ ::` layer at every frame boundary. -/
 def innerDFS_fuel_chain [BEq State] [Hashable State] [LawfulBEq State]
-    (succs : State → Array State) (seed : State) (fuel : Nat)
+    (succs : State → Array State) (seed : State) (cyan : List State) (fuel : Nat)
     (stack : List (State × List State)) (pathStack : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
     : InnerResult State :=
   match stack with
   | [] => some (none, iv, st)
   | (current, remaining) :: rest =>
-    match innerDFS_fuel_fold succs seed fuel current remaining iv st with
+    match innerDFS_fuel_fold succs seed cyan fuel current remaining iv st with
     | none => none
-    | some (some cyc, iv', st') => some (some (pathStack ++ cyc.tail), iv', st')
-    | some (none, iv', st') => innerDFS_fuel_chain succs seed fuel rest pathStack.dropLast iv' st'
+    | some (some (cyc, target), iv', st') => some (some (pathStack ++ cyc.tail, target), iv', st')
+    | some (none, iv', st') => innerDFS_fuel_chain succs seed cyan fuel rest pathStack.dropLast iv' st'
 
 /-- One-step unfolding lemmas for `innerDFS_fuel`/`innerDFS_fuel_fold`/
 `innerDFS_fuel_chain` — all ordinary structural/fuel recursion (no
@@ -434,25 +437,25 @@ avoid simp's "possibly looping" concern on self-referential equations (each
 of these exposes exactly *one* layer, never simp-normalizing recursively). -/
 theorem innerDFS_fuel_fold_nil (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State) :
-    innerDFS_fuel_fold succs seed fuel current [] iv st =
+    innerDFS_fuel_fold succs seed cyan fuel current [] iv st =
       some (none, iv, { st with innerFinished := st.innerFinished.insert current }) := by
   unfold innerDFS_fuel_fold
   rfl
 
 theorem innerDFS_fuel_fold_seed (fuel : Nat) (current succ : State) (rest : List State)
-    (iv : Std.HashSet State) (st : FNDFSState State) (hse : succ == seed) :
-    innerDFS_fuel_fold succs seed fuel current (succ :: rest) iv st =
-      some (some [current], iv, st) := by
+    (iv : Std.HashSet State) (st : FNDFSState State) (hse : succ == seed || cyan.contains succ) :
+    innerDFS_fuel_fold succs seed cyan fuel current (succ :: rest) iv st =
+      some (some ([current], succ), iv, st) := by
   unfold innerDFS_fuel_fold
   simp only [hse, if_true]
 
 theorem innerDFS_fuel_fold_cons (fuel : Nat) (current succ : State) (rest : List State)
-    (iv : Std.HashSet State) (st : FNDFSState State) (hse : ¬ succ == seed) :
-    innerDFS_fuel_fold succs seed fuel current (succ :: rest) iv st =
-      match innerDFS_fuel succs seed fuel succ iv st with
+    (iv : Std.HashSet State) (st : FNDFSState State) (hse : ¬ (succ == seed || cyan.contains succ)) :
+    innerDFS_fuel_fold succs seed cyan fuel current (succ :: rest) iv st =
+      match innerDFS_fuel succs seed cyan fuel succ iv st with
       | none => none
-      | some (some cyc, iv', st') => some (some (current :: cyc), iv', st')
-      | some (none, iv', st') => innerDFS_fuel_fold succs seed fuel current rest iv' st' := by
+      | some (some (cyc, target), iv', st') => some (some (current :: cyc, target), iv', st')
+      | some (none, iv', st') => innerDFS_fuel_fold succs seed cyan fuel current rest iv' st' := by
   conv => lhs; rw [innerDFS_fuel_fold.eq_def]
   simp only [hse, Bool.false_eq_true, if_false]
   rfl
@@ -460,7 +463,7 @@ theorem innerDFS_fuel_fold_cons (fuel : Nat) (current succ : State) (rest : List
 theorem innerDFS_fuel_blocked (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (hblocked : st.innerFinished.contains current || iv.contains current) :
-    innerDFS_fuel succs seed (fuel + 1) current iv st = some (none, iv, st) := by
+    innerDFS_fuel succs seed cyan (fuel + 1) current iv st = some (none, iv, st) := by
   unfold innerDFS_fuel
   rcases Bool.or_eq_true_iff.mp hblocked with h | h
   · simp [h]
@@ -472,20 +475,20 @@ theorem innerDFS_fuel_fresh (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (hnotfin : st.innerFinished.contains current = false)
     (hnotvisited : iv.contains current = false) :
-    innerDFS_fuel succs seed (fuel + 1) current iv st =
-      innerDFS_fuel_fold succs seed fuel current (succs current).toList (iv.insert current) st := by
+    innerDFS_fuel succs seed cyan (fuel + 1) current iv st =
+      innerDFS_fuel_fold succs seed cyan fuel current (succs current).toList (iv.insert current) st := by
   unfold innerDFS_fuel
   simp [hnotfin, hnotvisited]
 
 theorem innerDFS_fuel_chain_cons (fuel : Nat) (current : State) (remaining : List State)
     (rest : List (State × List State)) (pathStack : List State)
     (iv : Std.HashSet State) (st : FNDFSState State) :
-    innerDFS_fuel_chain succs seed fuel ((current, remaining) :: rest) pathStack iv st =
-      match innerDFS_fuel_fold succs seed fuel current remaining iv st with
+    innerDFS_fuel_chain succs seed cyan fuel ((current, remaining) :: rest) pathStack iv st =
+      match innerDFS_fuel_fold succs seed cyan fuel current remaining iv st with
       | none => none
-      | some (some cyc, iv', st') => some (some (pathStack ++ cyc.tail), iv', st')
+      | some (some (cyc, target), iv', st') => some (some (pathStack ++ cyc.tail, target), iv', st')
       | some (none, iv', st') =>
-          innerDFS_fuel_chain succs seed fuel rest pathStack.dropLast iv' st' := rfl
+          innerDFS_fuel_chain succs seed cyan fuel rest pathStack.dropLast iv' st' := rfl
 
 /-- Fuel-increase preserves a successful result: more fuel than strictly
 needed can't change what `innerDFS_fuel_fold` computes. Needed because
@@ -501,29 +504,29 @@ was already enough. Proved by the same fuel/fold mutual-induction template
 used throughout this file (cf. `innerDFS_fuel_mono` in
 `NestedDFSCorrectness.lean`). -/
 private theorem innerDFS_fuel_fold_add_aux (succs : State → Array State) (seed : State)
-    (extra fuel : Nat) (current : State) (remaining : List State)
+    (cyan : List State) (extra fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (ih_inner : ∀ (curr : State) (iv₀ : Std.HashSet State) (st₀ : FNDFSState State)
-      (result : Option (List State)) (iv₁ : Std.HashSet State) (st₁ : FNDFSState State),
-      innerDFS_fuel succs seed fuel curr iv₀ st₀ = some (result, iv₁, st₁) →
-      innerDFS_fuel succs seed (fuel + extra) curr iv₀ st₀ = some (result, iv₁, st₁))
-    (result : Option (List State)) (iv' : Std.HashSet State) (st' : FNDFSState State)
-    (h : innerDFS_fuel_fold succs seed fuel current remaining iv st =
+      (result : Option (List State × State)) (iv₁ : Std.HashSet State) (st₁ : FNDFSState State),
+      innerDFS_fuel succs seed cyan fuel curr iv₀ st₀ = some (result, iv₁, st₁) →
+      innerDFS_fuel succs seed cyan (fuel + extra) curr iv₀ st₀ = some (result, iv₁, st₁))
+    (result : Option (List State × State)) (iv' : Std.HashSet State) (st' : FNDFSState State)
+    (h : innerDFS_fuel_fold succs seed cyan fuel current remaining iv st =
       some (result, iv', st')) :
-    innerDFS_fuel_fold succs seed (fuel + extra) current remaining iv st =
+    innerDFS_fuel_fold succs seed cyan (fuel + extra) current remaining iv st =
       some (result, iv', st') := by
   induction remaining generalizing iv st result iv' st' with
   | nil =>
     rw [innerDFS_fuel_fold.eq_def] at h ⊢
     exact h
   | cons succ rest ih_rem =>
-    by_cases hse : succ == seed
-    · rw [innerDFS_fuel_fold_seed succs seed fuel current succ rest iv st hse] at h
-      rw [innerDFS_fuel_fold_seed succs seed (fuel + extra) current succ rest iv st hse]
+    by_cases hse : succ == seed || cyan.contains succ
+    · rw [innerDFS_fuel_fold_seed succs seed cyan fuel current succ rest iv st hse] at h
+      rw [innerDFS_fuel_fold_seed succs seed cyan (fuel + extra) current succ rest iv st hse]
       exact h
-    · rw [innerDFS_fuel_fold_cons succs seed fuel current succ rest iv st hse] at h
-      rw [innerDFS_fuel_fold_cons succs seed (fuel + extra) current succ rest iv st hse]
-      cases hinner : innerDFS_fuel succs seed fuel succ iv st with
+    · rw [innerDFS_fuel_fold_cons succs seed cyan fuel current succ rest iv st hse] at h
+      rw [innerDFS_fuel_fold_cons succs seed cyan (fuel + extra) current succ rest iv st hse]
+      cases hinner : innerDFS_fuel succs seed cyan fuel succ iv st with
       | none => rw [hinner] at h; exact absurd h (by simp)
       | some val =>
         rw [hinner] at h
@@ -537,18 +540,18 @@ private theorem innerDFS_fuel_fold_add_aux (succs : State → Array State) (seed
 Proved by induction on `fuel`, using `innerDFS_fuel_fold_add_aux` for the
 mutual recursion — the same shape as `innerDFS_fuel_mono`'s own proof. -/
 theorem innerDFS_fuel_add_preserves (succs : State → Array State) (seed : State)
-    (extra fuel : Nat) (current : State)
+    (cyan : List State) (extra fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
-    (result : Option (List State)) (iv' : Std.HashSet State) (st' : FNDFSState State)
-    (h : innerDFS_fuel succs seed fuel current iv st = some (result, iv', st')) :
-    innerDFS_fuel succs seed (fuel + extra) current iv st = some (result, iv', st') := by
+    (result : Option (List State × State)) (iv' : Std.HashSet State) (st' : FNDFSState State)
+    (h : innerDFS_fuel succs seed cyan fuel current iv st = some (result, iv', st')) :
+    innerDFS_fuel succs seed cyan (fuel + extra) current iv st = some (result, iv', st') := by
   induction fuel generalizing current iv st result iv' st' with
   | zero => simp [innerDFS_fuel.eq_def] at h
   | succ n ih =>
     rw [show n + 1 + extra = (n + extra) + 1 by omega]
     by_cases hblocked : st.innerFinished.contains current || iv.contains current
-    · rw [innerDFS_fuel_blocked succs seed n current iv st hblocked] at h
-      rw [innerDFS_fuel_blocked succs seed (n + extra) current iv st hblocked]
+    · rw [innerDFS_fuel_blocked succs seed cyan n current iv st hblocked] at h
+      rw [innerDFS_fuel_blocked succs seed cyan (n + extra) current iv st hblocked]
       exact h
     · have hblocked' : (st.innerFinished.contains current || iv.contains current) = false := by
         rw [Bool.eq_false_iff]; exact hblocked
@@ -556,21 +559,21 @@ theorem innerDFS_fuel_add_preserves (succs : State → Array State) (seed : Stat
         simp only [Bool.or_eq_false_iff] at hblocked'; exact hblocked'.1
       have hnotvisited : iv.contains current = false := by
         simp only [Bool.or_eq_false_iff] at hblocked'; exact hblocked'.2
-      rw [innerDFS_fuel_fresh succs seed n current iv st hnotfin hnotvisited] at h
-      rw [innerDFS_fuel_fresh succs seed (n + extra) current iv st hnotfin hnotvisited]
-      exact innerDFS_fuel_fold_add_aux succs seed extra n current _ _ st ih result iv' st' h
+      rw [innerDFS_fuel_fresh succs seed cyan n current iv st hnotfin hnotvisited] at h
+      rw [innerDFS_fuel_fresh succs seed cyan (n + extra) current iv st hnotfin hnotvisited]
+      exact innerDFS_fuel_fold_add_aux succs seed cyan extra n current _ _ st ih result iv' st' h
 
 theorem innerDFS_fuel_fold_add_preserves (succs : State → Array State) (seed : State)
-    (extra fuel : Nat) (current : State) (remaining : List State)
+    (cyan : List State) (extra fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
-    (result : Option (List State)) (iv' : Std.HashSet State) (st' : FNDFSState State)
-    (h : innerDFS_fuel_fold succs seed fuel current remaining iv st =
+    (result : Option (List State × State)) (iv' : Std.HashSet State) (st' : FNDFSState State)
+    (h : innerDFS_fuel_fold succs seed cyan fuel current remaining iv st =
       some (result, iv', st')) :
-    innerDFS_fuel_fold succs seed (fuel + extra) current remaining iv st =
+    innerDFS_fuel_fold succs seed cyan (fuel + extra) current remaining iv st =
       some (result, iv', st') :=
-  innerDFS_fuel_fold_add_aux succs seed extra fuel current remaining iv st
+  innerDFS_fuel_fold_add_aux succs seed cyan extra fuel current remaining iv st
     (fun curr iv₀ st₀ res iv₁ st₁ h =>
-      innerDFS_fuel_add_preserves succs seed extra fuel curr iv₀ st₀ res iv₁ st₁ h)
+      innerDFS_fuel_add_preserves succs seed cyan extra fuel curr iv₀ st₀ res iv₁ st₁ h)
     result iv' st' h
 
 /-- Sufficient fuel guarantees success — the existence counterpart to
@@ -588,7 +591,7 @@ both decrements `fuel` by exactly one *and* strictly shrinks
 freshly inserted), so they stay in lockstep and structural induction on
 `fuel` suffices. -/
 private theorem innerDFS_fuel_fold_exists_aux (succs : State → Array State) (fr : FiniteReach succs)
-    (seed : State) (fuel : Nat) (current : State) (remaining : List State)
+    (seed : State) (cyan : List State) (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (hiv : ∀ x, iv.contains x → fr.univ.contains x)
     (hcurrent : fr.univ.contains current)
@@ -596,18 +599,18 @@ private theorem innerDFS_fuel_fold_exists_aux (succs : State → Array State) (f
     (ih_inner : ∀ (curr : State) (iv₀ : Std.HashSet State) (st₀ : FNDFSState State),
       (∀ x, iv₀.contains x → fr.univ.contains x) → fr.univ.contains curr →
       fuel ≥ innerFuelMeasure succs fr iv₀ + 1 →
-      ∃ result iv₁ st₁, innerDFS_fuel succs seed fuel curr iv₀ st₀ = some (result, iv₁, st₁) ∧
+      ∃ result iv₁ st₁, innerDFS_fuel succs seed cyan fuel curr iv₀ st₀ = some (result, iv₁, st₁) ∧
         (∀ x, iv₁.contains x → fr.univ.contains x))
     (hfuel : fuel ≥ innerFuelMeasure succs fr iv + 1) :
-    ∃ result iv' st', innerDFS_fuel_fold succs seed fuel current remaining iv st =
+    ∃ result iv' st', innerDFS_fuel_fold succs seed cyan fuel current remaining iv st =
       some (result, iv', st') ∧ (∀ x, iv'.contains x → fr.univ.contains x) := by
   induction remaining generalizing iv st with
-  | nil => exact ⟨none, iv, _, innerDFS_fuel_fold_nil succs seed fuel current iv st, hiv⟩
+  | nil => exact ⟨none, iv, _, innerDFS_fuel_fold_nil succs seed cyan fuel current iv st, hiv⟩
   | cons succ rest ih_rem =>
-    by_cases hse : succ == seed
-    · exact ⟨some [current], iv, st,
-        innerDFS_fuel_fold_seed succs seed fuel current succ rest iv st hse, hiv⟩
-    · rw [innerDFS_fuel_fold_cons succs seed fuel current succ rest iv st hse]
+    by_cases hse : succ == seed || cyan.contains succ
+    · exact ⟨some ([current], succ), iv, st,
+        innerDFS_fuel_fold_seed succs seed cyan fuel current succ rest iv st hse, hiv⟩
+    · rw [innerDFS_fuel_fold_cons succs seed cyan fuel current succ rest iv st hse]
       have hsuccmem : succ ∈ succs current := hremaining succ (List.mem_cons_self ..)
       have hsucc_univ : fr.univ.contains succ := fr.closed current hcurrent succ hsuccmem
       obtain ⟨result1, iv1, st1, heq1, hiv1⟩ := ih_inner succ iv st hiv hsucc_univ hfuel
@@ -617,31 +620,31 @@ private theorem innerDFS_fuel_fold_exists_aux (succs : State → Array State) (f
       | none =>
         have hfuel1 : fuel ≥ innerFuelMeasure succs fr iv1 + 1 := by
           have hle : iv.size ≤ iv1.size :=
-            HashSet.size_le_of_subset ((innerDFS_fuel_mono succs seed fuel succ iv st none iv1 st1
+            HashSet.size_le_of_subset ((innerDFS_fuel_mono succs seed cyan fuel succ iv st none iv1 st1
               heq1).1)
           unfold innerFuelMeasure at *
           omega
         exact ih_rem iv1 st1 hiv1 (fun x hx => hremaining x (List.mem_cons_of_mem _ hx)) hfuel1
 
 theorem innerDFS_fuel_exists (succs : State → Array State) (fr : FiniteReach succs) (seed : State)
-    (fuel : Nat) (current : State) (iv : Std.HashSet State) (st : FNDFSState State)
+    (cyan : List State) (fuel : Nat) (current : State) (iv : Std.HashSet State) (st : FNDFSState State)
     (hiv : ∀ x, iv.contains x → fr.univ.contains x)
     (hcurrent : fr.univ.contains current)
     (hfuel : fuel ≥ innerFuelMeasure succs fr iv + 1) :
-    ∃ result iv' st', innerDFS_fuel succs seed fuel current iv st = some (result, iv', st') ∧
+    ∃ result iv' st', innerDFS_fuel succs seed cyan fuel current iv st = some (result, iv', st') ∧
       (∀ x, iv'.contains x → fr.univ.contains x) := by
   induction fuel generalizing current iv st with
   | zero => unfold innerFuelMeasure at hfuel; omega
   | succ n ih =>
     by_cases hblocked : st.innerFinished.contains current || iv.contains current
-    · exact ⟨none, iv, st, innerDFS_fuel_blocked succs seed n current iv st hblocked, hiv⟩
+    · exact ⟨none, iv, st, innerDFS_fuel_blocked succs seed cyan n current iv st hblocked, hiv⟩
     · have hblocked' : (st.innerFinished.contains current || iv.contains current) = false := by
         rw [Bool.eq_false_iff]; exact hblocked
       have hnotfin : st.innerFinished.contains current = false := by
         simp only [Bool.or_eq_false_iff] at hblocked'; exact hblocked'.1
       have hnotvisited : iv.contains current = false := by
         simp only [Bool.or_eq_false_iff] at hblocked'; exact hblocked'.2
-      rw [innerDFS_fuel_fresh succs seed n current iv st hnotfin hnotvisited]
+      rw [innerDFS_fuel_fresh succs seed cyan n current iv st hnotfin hnotvisited]
       have hiv' : ∀ x, (iv.insert current).contains x → fr.univ.contains x := by
         intro x hx
         simp only [Std.HashSet.contains_insert, Bool.or_eq_true] at hx
@@ -657,7 +660,7 @@ theorem innerDFS_fuel_exists (succs : State → Array State) (fr : FiniteReach s
         have hle : (iv.insert current).size ≤ fr.univ.size := HashSet.size_le_of_subset hiv'
         unfold innerFuelMeasure at hfuel ⊢
         omega
-      exact innerDFS_fuel_fold_exists_aux succs fr seed n current (succs current).toList
+      exact innerDFS_fuel_fold_exists_aux succs fr seed cyan n current (succs current).toList
         (iv.insert current) st hiv' hcurrent (fun x hx => Array.mem_toList_iff.mp hx)
         (fun curr iv₀ st₀ hiv₀ hcurr hf => ih curr iv₀ st₀ hiv₀ hcurr hf) hmeasure
 
@@ -676,14 +679,14 @@ theorem innerDFS_fuel_chain_eq_innerDFSCore
     (hstack_states : ∀ p ∈ stack, fr.univ.contains p.1)
     (hstack_remaining : ∀ p ∈ stack, ∀ x ∈ p.2, x ∈ succs p.1)
     (hfuel : fuel ≥ innerFuelMeasure succs fr iv + 1) :
-    ∃ result iv₁ st₁, innerDFS_fuel_chain succs seed fuel stack pathStack iv st =
+    ∃ result iv₁ st₁, innerDFS_fuel_chain succs seed cyan fuel stack pathStack iv st =
         some (result, iv₁, st₁) ∧
       (∀ x, iv₁.contains x → fr.univ.contains x) ∧
       (∀ x, st₁.innerFinished.contains x → fr.univ.contains x) ∧
-      (result, iv₁, st₁) = innerDFSCore succs fr seed stack pathStack iv st := by
+      (result, iv₁, st₁) = innerDFSCore succs fr seed cyan stack pathStack iv st := by
   obtain ⟨fuel', rfl⟩ : ∃ fuel', fuel = fuel' + 1 := ⟨fuel - 1, by omega⟩
   induction stack, pathStack, iv, st using innerDFSCore.induct (succs := succs) (fr := fr)
-    (seed := seed) with
+    (seed := seed) (cyan := cyan) with
   | case1 =>
     rename_i pathStack iv st
     refine ⟨none, iv, st, rfl, hiv, hfin, ?_⟩
@@ -713,12 +716,12 @@ theorem innerDFS_fuel_chain_eq_innerDFSCore
       exact heqC
   | case3 =>
     rename_i pathStack iv st current rest succ remainingTail hse
-    refine ⟨some pathStack, iv, st, ?_, hiv, hfin, ?_⟩
+    refine ⟨some (pathStack, succ), iv, st, ?_, hiv, hfin, ?_⟩
     · rw [innerDFS_fuel_chain_cons,
-        innerDFS_fuel_fold_seed succs seed (fuel' + 1) current succ remainingTail iv st hse]
+        innerDFS_fuel_fold_seed succs seed cyan (fuel' + 1) current succ remainingTail iv st hse]
       simp
     · unfold innerDFSCore
-      simp [hse]
+      simp only [hse, if_true]
   | case4 =>
     rename_i pathStack iv st current rest succ remainingTail stack' hse hblocked ih1
     have hstack'_states : ∀ p ∈ (current, remainingTail) :: rest, fr.univ.contains p.1 := by
@@ -738,8 +741,8 @@ theorem innerDFS_fuel_chain_eq_innerDFSCore
       ih1 hiv hfin hstack'_states hstack'_remaining hfuel
     refine ⟨result, iv₁, st₁, ?_, hiv1, hfin1, ?_⟩
     · rw [innerDFS_fuel_chain_cons,
-        innerDFS_fuel_fold_cons succs seed (fuel' + 1) current succ remainingTail iv st hse,
-        innerDFS_fuel_blocked succs seed fuel' succ iv st hblocked]
+        innerDFS_fuel_fold_cons succs seed cyan (fuel' + 1) current succ remainingTail iv st hse,
+        innerDFS_fuel_blocked succs seed cyan fuel' succ iv st hblocked]
       exact heq
     · unfold innerDFSCore
       simp only [hse, Bool.false_eq_true, if_false, hblocked, dif_pos]
@@ -788,30 +791,31 @@ theorem innerDFS_fuel_chain_eq_innerDFSCore
       intro hc
       exact hblocked (by simp [hc])
     obtain ⟨result0, iv0, st0, heq0, -⟩ :=
-      innerDFS_fuel_exists succs fr seed (fuel' + 1) succ iv st hiv hsucc_univ hfuel
-    have hfresh : innerDFS_fuel succs seed (fuel' + 1) succ iv st =
-        innerDFS_fuel_fold succs seed fuel' succ (succs succ).toList (iv.insert succ) st :=
-      innerDFS_fuel_fresh succs seed fuel' succ iv st hnotfin hsucc_niv
-    have hfold_val : innerDFS_fuel_fold succs seed fuel' succ (succs succ).toList (iv.insert succ) st
+      innerDFS_fuel_exists succs fr seed cyan (fuel' + 1) succ iv st hiv hsucc_univ hfuel
+    have hfresh : innerDFS_fuel succs seed cyan (fuel' + 1) succ iv st =
+        innerDFS_fuel_fold succs seed cyan fuel' succ (succs succ).toList (iv.insert succ) st :=
+      innerDFS_fuel_fresh succs seed cyan fuel' succ iv st hnotfin hsucc_niv
+    have hfold_val : innerDFS_fuel_fold succs seed cyan fuel' succ (succs succ).toList (iv.insert succ) st
         = some (result0, iv0, st0) := by rw [← hfresh, heq0]
     have hfold_val' :
-        innerDFS_fuel_fold succs seed (fuel' + 1) succ (succs succ).toList (iv.insert succ) st =
+        innerDFS_fuel_fold succs seed cyan (fuel' + 1) succ (succs succ).toList (iv.insert succ) st =
           some (result0, iv0, st0) :=
-      innerDFS_fuel_fold_add_preserves succs seed 1 fuel' succ (succs succ).toList
+      innerDFS_fuel_fold_add_preserves succs seed cyan 1 fuel' succ (succs succ).toList
         (iv.insert succ) st result0 iv0 st0 hfold_val
-    have heq2' : innerDFS_fuel_chain succs seed (fuel' + 1) stack2 (pathStack ++ [succ]) iv' st =
+    have heq2' : innerDFS_fuel_chain succs seed cyan (fuel' + 1) stack2 (pathStack ++ [succ]) iv' st =
         some (result, iv₁, st₁) := heq2
     rw [innerDFS_fuel_chain_cons, hfold_val'] at heq2'
     refine ⟨result, iv₁, st₁, ?_, hiv1, hfin1, ?_⟩
     · rw [innerDFS_fuel_chain_cons,
-        innerDFS_fuel_fold_cons succs seed (fuel' + 1) current succ remainingTail iv st hse, heq0]
+        innerDFS_fuel_fold_cons succs seed cyan (fuel' + 1) current succ remainingTail iv st hse, heq0]
       cases result0 with
-      | some cyclePath =>
-        have hchain := innerDFS_fuel_cyclePath_chain succs seed (fuel' + 1) succ iv st heq0
+      | some val =>
+        obtain ⟨cyclePath, target⟩ := val
+        have hchain := innerDFS_fuel_cyclePath_chain succs seed cyan (fuel' + 1) succ iv st heq0
         match cyclePath, hchain with
         | [], hchain => simp at hchain
         | c :: cs, hchain =>
-          have hhead : c = succ := hchain.2.1 (by simp)
+          have hhead : c = succ := hchain.2.2.1 (by simp)
           subst hhead
           simp only at heq2' ⊢
           rw [show pathStack ++ (current :: c :: cs).tail = pathStack ++ [c] ++ cs by
@@ -844,28 +848,29 @@ singleton-stack `innerDFS_fuel_chain` call to `innerDFS_fuel_fold` exactly
 just `[current]` itself). -/
 private theorem innerDFS_fuel_fold_cyclePath_head (fuel : Nat) (current : State)
     (remaining : List State) (iv : Std.HashSet State) (st : FNDFSState State)
-    {cyclePath : List State} {iv' : Std.HashSet State} {st' : FNDFSState State}
-    (h : innerDFS_fuel_fold succs seed fuel current remaining iv st =
-      some (some cyclePath, iv', st')) :
+    {cyclePath : List State} {target : State} {iv' : Std.HashSet State} {st' : FNDFSState State}
+    (h : innerDFS_fuel_fold succs seed cyan fuel current remaining iv st =
+      some (some (cyclePath, target), iv', st')) :
     cyclePath.head? = some current := by
   induction remaining generalizing iv st with
   | nil => rw [innerDFS_fuel_fold_nil] at h; simp at h
   | cons succ rest ih_rem =>
-    by_cases hse : succ == seed
-    · rw [innerDFS_fuel_fold_seed succs seed fuel current succ rest iv st hse] at h
+    by_cases hse : succ == seed || cyan.contains succ
+    · rw [innerDFS_fuel_fold_seed succs seed cyan fuel current succ rest iv st hse] at h
       simp only [Option.some.injEq, Prod.mk.injEq] at h
-      obtain ⟨rfl, -, -⟩ := h
+      obtain ⟨⟨rfl, -⟩, -, -⟩ := h
       rfl
-    · rw [innerDFS_fuel_fold_cons succs seed fuel current succ rest iv st hse] at h
-      cases hin : innerDFS_fuel succs seed fuel succ iv st with
+    · rw [innerDFS_fuel_fold_cons succs seed cyan fuel current succ rest iv st hse] at h
+      cases hin : innerDFS_fuel succs seed cyan fuel succ iv st with
       | none => rw [hin] at h; simp at h
       | some val =>
         rw [hin] at h
         obtain ⟨cyc, iv2, st2⟩ := val
         cases cyc with
-        | some cyclePath2 =>
+        | some val2 =>
+          obtain ⟨cyclePath2, target2⟩ := val2
           simp only [Option.some.injEq, Prod.mk.injEq] at h
-          obtain ⟨rfl, -, -⟩ := h
+          obtain ⟨⟨rfl, -⟩, -, -⟩ := h
           rfl
         | none => exact ih_rem iv2 st2 h
 
@@ -877,17 +882,18 @@ against the general stack shape) at `innerDFSWF`'s own entry point, which
 calls `innerDFSCore` with the singleton stack `[(current, succs current)]`. -/
 theorem innerDFS_fuel_chain_singleton (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State) :
-    innerDFS_fuel_chain succs seed fuel [(current, remaining)] [current] iv st =
-      innerDFS_fuel_fold succs seed fuel current remaining iv st := by
+    innerDFS_fuel_chain succs seed cyan fuel [(current, remaining)] [current] iv st =
+      innerDFS_fuel_fold succs seed cyan fuel current remaining iv st := by
   rw [innerDFS_fuel_chain_cons]
-  cases h : innerDFS_fuel_fold succs seed fuel current remaining iv st with
+  cases h : innerDFS_fuel_fold succs seed cyan fuel current remaining iv st with
   | none => rfl
   | some val =>
     obtain ⟨cyc, iv', st'⟩ := val
     cases cyc with
     | none => rfl
-    | some cyclePath =>
-      have hhead := innerDFS_fuel_fold_cyclePath_head succs seed fuel current remaining iv st h
+    | some val2 =>
+      obtain ⟨cyclePath, target⟩ := val2
+      have hhead := innerDFS_fuel_fold_cyclePath_head succs seed cyan fuel current remaining iv st h
       cases cyclePath with
       | nil => cases hhead
       | cons c cs =>
@@ -903,15 +909,15 @@ theorem innerDFS_fuel_eq_innerDFSWF
     (hiv : ∀ x, iv.contains x → fr.univ.contains x)
     (hfin : ∀ x, st.innerFinished.contains x → fr.univ.contains x)
     (hfuel : fuel ≥ innerFuelMeasure succs fr iv + 1) :
-    ∃ result iv₁ st₁, innerDFS_fuel succs seed fuel current iv st = some (result, iv₁, st₁) ∧
+    ∃ result iv₁ st₁, innerDFS_fuel succs seed cyan fuel current iv st = some (result, iv₁, st₁) ∧
       (∀ x, iv₁.contains x → fr.univ.contains x) ∧
       (∀ x, st₁.innerFinished.contains x → fr.univ.contains x) ∧
-      (result, iv₁, st₁) = innerDFSWF succs fr seed current iv st := by
+      (result, iv₁, st₁) = innerDFSWF succs fr seed cyan current iv st := by
   by_cases hblocked : st.innerFinished.contains current || iv.contains current
   · refine ⟨none, iv, st, ?_, hiv, hfin, ?_⟩
     · obtain ⟨n, rfl⟩ : ∃ n, fuel = n + 1 := ⟨fuel - 1, by unfold innerFuelMeasure at hfuel; omega⟩
-      exact innerDFS_fuel_blocked succs seed n current iv st hblocked
-    · rw [innerDFSWF_blocked succs fr seed current iv st hblocked]
+      exact innerDFS_fuel_blocked succs seed cyan n current iv st hblocked
+    · rw [innerDFSWF_blocked succs fr seed cyan current iv st hblocked]
   · have hblocked' : (st.innerFinished.contains current || iv.contains current) = false := by
       rw [Bool.eq_false_iff]; exact hblocked
     have hnotfin : st.innerFinished.contains current = false := by
@@ -919,8 +925,8 @@ theorem innerDFS_fuel_eq_innerDFSWF
     have hnotvisited : iv.contains current = false := by
       simp only [Bool.or_eq_false_iff] at hblocked'; exact hblocked'.2
     obtain ⟨n, rfl⟩ : ∃ n, fuel = n + 1 := ⟨fuel - 1, by unfold innerFuelMeasure at hfuel; omega⟩
-    rw [innerDFS_fuel_fresh succs seed n current iv st hnotfin hnotvisited]
-    rw [innerDFSWF_fresh succs fr seed current iv st hnotfin hnotvisited]
+    rw [innerDFS_fuel_fresh succs seed cyan n current iv st hnotfin hnotvisited]
+    rw [innerDFSWF_fresh succs fr seed cyan current iv st hnotfin hnotvisited]
     have hiv' : ∀ x, (iv.insert current).contains x → fr.univ.contains x := by
       intro x hx
       simp only [Std.HashSet.contains_insert, Bool.or_eq_true] at hx
@@ -942,7 +948,7 @@ theorem innerDFS_fuel_eq_innerDFSWF
       unfold innerFuelMeasure at hfuel ⊢
       omega
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
-      innerDFS_fuel_chain_eq_innerDFSCore succs fr seed n [(current, (succs current).toList)]
+      innerDFS_fuel_chain_eq_innerDFSCore succs fr seed cyan n [(current, (succs current).toList)]
         [current] (iv.insert current) st hiv' hfin hstack1_states hstack1_remaining hmeasure
     rw [innerDFS_fuel_chain_singleton] at heq
     exact ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩
@@ -1004,9 +1010,14 @@ def outerDFSLoopWF (succs : State → Array State) (isAccepting : State → Bool
     | [] =>
       if isAccepting current then
         let innerVisited := Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)
-        match _hr : innerDFSWF succs fr current current innerVisited st with
-        | (some cyclePath, _, st') =>
-          (.nonEmpty pathStack (current :: cyclePath), st')
+        match _hr : innerDFSWF succs fr current pathStack current innerVisited st with
+        | (some (cyclePath, target), _, st') =>
+          -- Holzmann-Peled-Yannakakis shortcut (mirroring `outerDFSLoop_fuel`
+          -- exactly, `NestedDFSCorrectness.lean`): `target` may be `current`
+          -- itself or any other state on `pathStack`; collapses to the
+          -- pre-HPY `current :: cyclePath` formula when `target = current`.
+          let loopTail := (pathStack.dropWhile (fun y => !(y == target))).dropLast
+          (.nonEmpty pathStack (current :: cyclePath ++ loopTail), st')
         | (none, _, st') =>
           outerDFSLoopWF succs isAccepting fr rest pathStack.dropLast st'
       else
@@ -1040,7 +1051,7 @@ def outerDFSLoopWF (succs : State → Array State) (isAccepting : State → Bool
 termination_by ((fr.univ \ st.outerVisited).size, pendingSum stack + stack.length)
 decreasing_by
   · have hst'_eq : st'.outerVisited = st.outerVisited := by
-      have hr2 := innerDFSWF_outerVisited_pres succs fr current current innerVisited st
+      have hr2 := innerDFSWF_outerVisited_pres succs fr current pathStack current innerVisited st
       rw [_hr] at hr2
       exact hr2
     rw [hst'_eq]
@@ -1119,20 +1130,26 @@ theorem outerDFSLoop_fuel_backtrack_not_accept (succs : State → Array State)
 theorem outerDFSLoop_fuel_accept_none (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat) (current : State) (rest : List (State × List State)) (pathStack : List State)
     (st : FNDFSState State) (hacc : isAccepting current = true)
-    (hinner : innerDFS_fuel succs current fuel current
+    (hinner : innerDFS_fuel succs current pathStack fuel current
         (Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)) st = none) :
     outerDFSLoop_fuel succs isAccepting (fuel + 1) ((current, []) :: rest) pathStack st = none := by
   unfold outerDFSLoop_fuel
   simp [hacc, hinner]
 
+/-- Holzmann-Peled-Yannakakis shortcut: `target` may be `current` itself or
+    any other state on `pathStack`; the witness formula collapses to the
+    pre-HPY `current :: cyclePath` when `target = current` (see
+    `NestedDFSCorrectness.lean`'s `outerDFSLoop_fuel` for the same formula). -/
 theorem outerDFSLoop_fuel_accept_found (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat) (current : State) (rest : List (State × List State)) (pathStack : List State)
     (st : FNDFSState State) (hacc : isAccepting current = true)
-    (cyclePath : List State) (iv' : Std.HashSet State) (st' : FNDFSState State)
-    (hinner : innerDFS_fuel succs current fuel current
-        (Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)) st = some (some cyclePath, iv', st')) :
+    (cyclePath : List State) (target : State) (iv' : Std.HashSet State) (st' : FNDFSState State)
+    (hinner : innerDFS_fuel succs current pathStack fuel current
+        (Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)) st =
+        some (some (cyclePath, target), iv', st')) :
     outerDFSLoop_fuel succs isAccepting (fuel + 1) ((current, []) :: rest) pathStack st =
-      some (.nonEmpty pathStack (current :: cyclePath), st') := by
+      some (.nonEmpty pathStack
+        (current :: cyclePath ++ (pathStack.dropWhile (fun y => !(y == target))).dropLast), st') := by
   unfold outerDFSLoop_fuel
   simp [hacc, hinner]
 
@@ -1140,7 +1157,7 @@ theorem outerDFSLoop_fuel_accept_not_found (succs : State → Array State) (isAc
     (fuel : Nat) (current : State) (rest : List (State × List State)) (pathStack : List State)
     (st : FNDFSState State) (hacc : isAccepting current = true)
     (iv' : Std.HashSet State) (st' : FNDFSState State)
-    (hinner : innerDFS_fuel succs current fuel current
+    (hinner : innerDFS_fuel succs current pathStack fuel current
         (Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)) st = some (none, iv', st')) :
     outerDFSLoop_fuel succs isAccepting (fuel + 1) ((current, []) :: rest) pathStack st =
       outerDFSLoop_fuel succs isAccepting fuel rest pathStack.dropLast st' := by
@@ -1235,7 +1252,7 @@ theorem outerDFSLoop_fuel_add_preserves (succs : State → Array State) (isAccep
       match remaining with
       | [] =>
         by_cases hacc : isAccepting current = true
-        · cases hinner : innerDFS_fuel succs current n current
+        · cases hinner : innerDFS_fuel succs current pathStack n current
               (Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)) st with
           | none =>
             rw [outerDFSLoop_fuel_accept_none succs isAccepting n current rest pathStack st hacc
@@ -1244,13 +1261,14 @@ theorem outerDFSLoop_fuel_add_preserves (succs : State → Array State) (isAccep
           | some val =>
             obtain ⟨cyc, iv', st''⟩ := val
             cases cyc with
-            | some cyclePath =>
+            | some val2 =>
+              obtain ⟨cyclePath, target⟩ := val2
               rw [outerDFSLoop_fuel_accept_found succs isAccepting n current rest pathStack st hacc
-                  cyclePath iv' st'' hinner] at h
+                  cyclePath target iv' st'' hinner] at h
               rw [outerDFSLoop_fuel_accept_found succs isAccepting (n + extra) current rest pathStack
-                  st hacc cyclePath iv' st''
-                  (innerDFS_fuel_add_preserves succs current extra n current
-                    (Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)) st (some cyclePath)
+                  st hacc cyclePath target iv' st''
+                  (innerDFS_fuel_add_preserves succs current pathStack extra n current
+                    (Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)) st (some (cyclePath, target))
                     iv' st'' hinner)]
               exact h
             | none =>
@@ -1258,7 +1276,7 @@ theorem outerDFSLoop_fuel_add_preserves (succs : State → Array State) (isAccep
                   hacc iv' st'' hinner] at h
               rw [outerDFSLoop_fuel_accept_not_found succs isAccepting (n + extra) current rest
                   pathStack st hacc iv' st''
-                  (innerDFS_fuel_add_preserves succs current extra n current
+                  (innerDFS_fuel_add_preserves succs current pathStack extra n current
                     (Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)) st none iv' st''
                     hinner)]
               exact ih rest pathStack.dropLast st'' result st' h
@@ -1329,22 +1347,24 @@ theorem outerDFSLoop_fuel_eq_outerDFSLoopWF
     unfold outerDFSLoopWF
     rfl
   | case2 =>
-    rename_i pathStack st current rest hacc innerVisited cyclePath iv' st' hr
+    rename_i pathStack st current rest hacc innerVisited cyclePath target iv' st' hr
     have hcurrent : fr.univ.contains current := hstack_states (current, []) (List.mem_cons_self ..)
     have hiv : ∀ x, innerVisited.contains x → fr.univ.contains x := by
       simp [innerVisited, Std.HashSet.contains_emptyWithCapacity]
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
-      innerDFS_fuel_eq_innerDFSWF succs fr current
+      innerDFS_fuel_eq_innerDFSWF succs fr current pathStack
         (innerFuelMeasure succs fr innerVisited + 1) current innerVisited st
         hcurrent hiv hfin (by omega)
     rw [hr] at heqC
     simp only [Prod.mk.injEq] at heqC
     obtain ⟨rfl, rfl, rfl⟩ := heqC
     refine ⟨innerFuelMeasure succs fr innerVisited + 1 + 1,
-      .nonEmpty pathStack (current :: cyclePath), st₁, ?_, hfin1, ?_⟩
+      .nonEmpty pathStack
+        (current :: cyclePath ++ (pathStack.dropWhile (fun y => !(y == target))).dropLast), st₁,
+      ?_, hfin1, ?_⟩
     · exact outerDFSLoop_fuel_accept_found succs isAccepting
         (innerFuelMeasure succs fr innerVisited + 1) current rest pathStack st hacc
-        cyclePath iv₁ st₁ heq
+        cyclePath target iv₁ st₁ heq
     · unfold outerDFSLoopWF
       simp only [hacc, if_true, innerVisited] at hr ⊢
       rw [hr]
@@ -1358,7 +1378,7 @@ theorem outerDFSLoop_fuel_eq_outerDFSLoopWF
     have hstack_remaining_rest : ∀ p ∈ rest, ∀ x ∈ p.2, x ∈ succs p.1 :=
       fun p hp => hstack_remaining p (List.mem_cons_of_mem _ hp)
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
-      innerDFS_fuel_eq_innerDFSWF succs fr current
+      innerDFS_fuel_eq_innerDFSWF succs fr current pathStack
         (innerFuelMeasure succs fr innerVisited + 1) current innerVisited st
         hcurrent hiv hfin (by omega)
     rw [hr] at heqC
@@ -1367,12 +1387,12 @@ theorem outerDFSLoop_fuel_eq_outerDFSLoopWF
     obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ :=
       ih1 hfin1 hstack_states_rest hstack_remaining_rest
     let m := max (innerFuelMeasure succs fr innerVisited + 1) fuel2
-    have heqm : innerDFS_fuel succs current m current innerVisited st =
+    have heqm : innerDFS_fuel succs current pathStack m current innerVisited st =
         some (none, iv₁, st₁) := by
       rw [show m = (innerFuelMeasure succs fr innerVisited + 1) +
           (m - (innerFuelMeasure succs fr innerVisited + 1)) by
         simp only [m]; omega]
-      exact innerDFS_fuel_add_preserves succs current _
+      exact innerDFS_fuel_add_preserves succs current pathStack _
         (innerFuelMeasure succs fr innerVisited + 1) current innerVisited st none iv₁ st₁ heq
     have heq2m : outerDFSLoop_fuel succs isAccepting m rest pathStack.dropLast st₁ =
         some (result2, st2) := by

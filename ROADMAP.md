@@ -20,6 +20,15 @@ proven with no new hypotheses on the completeness direction. See
 `NestedDFSPlan.md`'s "Schwoon-Esparza back-edge optimization" section for
 the full port write-up.
 
+It also includes the **Holzmann-Peled-Yannakakis inner-DFS shortcut**
+(`innerDFS`/`innerDFS_fuel`/`innerDFSCore` all stop as soon as they reach
+*any* state on the outer DFS's current call stack, not only the literal
+seed) — the other of CAVA's two nested-DFS optimizations, ported from
+`Nested_DFS.thy`'s `cyan`/`run_red_dfs` stop predicate. See
+`NestedDFSPlan.md`'s "Holzmann-Peled-Yannakakis inner-DFS shortcut" section
+for the full port write-up, including the CAVA source analysis done before
+implementing.
+
 ## The pipeline
 
 ```
@@ -80,15 +89,6 @@ were assembled together — both closed, not deferred:
   README.md's "Using this library" section — the automaton-construction
   half (`constructGBA`/`GBA.degeneralize`, with unconditional correctness)
   is fully usable standalone for exactly that.
-- **Holzmann-Peled-Yannakakis inner-DFS shortcut**: `innerDFS` stops only
-  when it reaches the literal seed. CAVA additionally stops the *inner*
-  (red) DFS as soon as it reaches *any* state on the *outer* (blue) DFS's
-  call stack (baked into `run_red_dfs`'s stop-predicate in
-  `Nested_DFS.thy`), which is faster but needs threading a cyan-set into
-  `innerDFS`'s own signature. Performance-only, not a correctness gap; not
-  started — a smaller, separate piece from the outer-DFS back-edge
-  shortcut below it, which *is* done. See `NestedDFSPlan.md`'s "Schwoon-
-  Esparza back-edge optimization" section, §0.
 - **`ProbMC/`**: a separate probabilistic-model-checking library in this
   same repository/`lakefile.toml`, entirely independent of `LTLLib/` and
   untouched by the work summarized here. It has its own open `sorry` (the
