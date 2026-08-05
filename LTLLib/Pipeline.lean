@@ -19,7 +19,7 @@ import LTLLib.LTLtoGBA.GraphComplete
 import LTLLib.DegeneralBridge
 import LTLLib.LTLtoGBA.ExpandTermination
 import LTLLib.NestedDFS.NestedDFSTermination
-import LTLLib.OutputVerify
+import LTLLib.OutputVerifyBA
 
 namespace LTLLib
 

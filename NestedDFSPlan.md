@@ -10,7 +10,7 @@ Two directions:
 
 ## Phase 5a: Output Verification ✅ DONE (~329 lines)
 
-**Files**: `LTLLib/Lasso.lean` (~232 lines), `LTLLib/OutputVerify.lean` (~97 lines)
+**Files**: `LTLLib/Lasso.lean` (~232 lines), `LTLLib/OutputVerifyBA.lean` (~97 lines)
 
 ### Lasso.lean — Abstract Lasso Theory
 
@@ -30,7 +30,7 @@ Two directions:
   - `run_isAccepting`: the run visits accepting states infinitely often
   - `accepts_of_validLasso`: valid lasso → automaton accepts
 
-### OutputVerify.lean — Connecting nestedDFS Output
+### OutputVerifyBA.lean — Connecting nestedDFS Output
 
 - `ba_hasAcceptingRun_of_lasso`: given computational checks (Array.contains, isAccepting),
   constructs a `ValidLasso` and derives `∃ σ, isRun σ ∧ isAcceptingRun σ`
@@ -603,7 +603,7 @@ reference), `NestedDFS/NestedDFSCorrectness.lean`'s `outerDFSLoop_fuel`, and
   matching new case, but since both sides get the *identical* new branch
   (same condition, same formula), bridging it is mechanical — the same
   pattern every existing case in that bridge already follows.
-- **`OutputVerify.lean` (`AcceptingCycle`, `ValidLasso`, `toValidLasso`),
+- **`OutputVerifyBA.lean` (`AcceptingCycle`, `ValidLasso`, `toValidLasso`),
   `Lasso.lean`, `Pipeline.lean`: unaffected.** Confirmed by reading
   `AcceptingCycle`'s definition — its fields are pure facts about the final
   `stem`/`cycle` *values*, with no dependence on how `outerDFSLoop` derived
@@ -625,7 +625,7 @@ technique as existing neighbors) plus the two `AcceptingCycle`-shaped
 witness derivations in `outerDFSLoop_fuel_nonEmpty_witness` (the real work,
 but scoped to one theorem, with the degenerate self-loop case called out
 explicitly above so it isn't discovered mid-proof). No changes needed to
-`innerDFS*`, `OutputVerify.lean`, `Lasso.lean`, or `Pipeline.lean`.
+`innerDFS*`, `OutputVerifyBA.lean`, `Lasso.lean`, or `Pipeline.lean`.
 
 Not started; no immediate blocker, purely a future enhancement.
 

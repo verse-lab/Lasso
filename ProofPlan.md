@@ -58,7 +58,7 @@ This document outlines the plan for porting correctness proofs from the Isabelle
   genuine accepting cycle (`nestedDFS_fuel_nonEmpty_valid`, Phase 5c), and both now transfer to the
   well-founded `nestedDFSWF` too (`nestedDFSWF_empty_no_cycle`/`nestedDFSWF_nonEmpty_valid`, Phase 2's
   wiring). `nestedDFSWF` is a fully verified, terminating decision procedure (given a `FiniteReach`
-  witness). `OutputVerify.lean`'s
+  witness). `OutputVerifyBA.lean`'s
   `ba_hasAcceptingRun_of_lasso`/`ba_hasAcceptingRun_of_ndfs_output` remain
   unwired (they take the chain facts as hypotheses rather than deriving them
   from a real run) — connecting them to `nestedDFS_fuel_nonEmpty_valid` for a
@@ -78,7 +78,7 @@ This document outlines the plan for porting correctness proofs from the Isabelle
 library root) only transitively imported 13 of 23 `.lean` files — everything
 from Phase 3 onward (`Invariants.lean`, `Soundness.lean`, `Completeness.lean`,
 `GraphComplete.lean`, `Bridge.lean`, `DegeneralBridge.lean`, `Lasso.lean`,
-`OutputVerify.lean`, `NestedDFS/NestedDFSCorrectness.lean`) was **never actually checked
+`OutputVerifyBA.lean`, `NestedDFS/NestedDFSCorrectness.lean`) was **never actually checked
 by `lake build`** — `.lake/build/lib/lean/LTLLib/` only had 6 `.olean` files on
 disk. `lake build`'s "success" and the sorry-grep were both true but vacuous
 for that majority of the codebase. Standalone `lake env lean <file>` checks
@@ -251,7 +251,7 @@ are unconditionally proved," which was **wrong**. Re-checking against CAVA's
 shot) surfaced that only the completeness direction (Phase 5b, `.empty` ⟹ no
 cycle) is actually unconditional in our codebase. The soundness direction
 (`.nonEmpty` ⟹ genuine cycle) only exists as the *conditional* lemmas in
-`OutputVerify.lean` (`ba_hasAcceptingRun_of_lasso` /
+`OutputVerifyBA.lean` (`ba_hasAcceptingRun_of_lasso` /
 `ba_hasAcceptingRun_of_ndfs_output`): "**if** the reported `stem`/`loop` satisfy
 these chain/overlap/back-edge facts, **then** they witness a real accepting run."
 Nothing in the codebase proves the algorithm's actual `.nonEmpty` output always
@@ -264,7 +264,7 @@ as **Phase 5c** below.
 
 **Phase 5a (output verification, conditional lemmas) — DONE, but not yet wired up**:
 - `LTLLib/Lasso.lean` (~232 lines): Abstract lasso theory — `ValidLasso` structure, `lassoRun` construction, proofs that valid lassos yield accepting runs
-- `LTLLib/OutputVerify.lean` (~97 lines): Bridge from computational checks to `ValidLasso`, connecting nestedDFS output format to the abstract theory. Both theorems here take the chain/overlap/back-edge facts as *hypotheses*; Phase 5c's job is to discharge those hypotheses from the real algorithm run.
+- `LTLLib/OutputVerifyBA.lean` (~97 lines): Bridge from computational checks to `ValidLasso`, connecting nestedDFS output format to the abstract theory. Both theorems here take the chain/overlap/back-edge facts as *hypotheses*; Phase 5c's job is to discharge those hypotheses from the real algorithm run.
 
 **Phase 5b (emptiness completeness) — ✅ DONE**:
 
@@ -644,7 +644,7 @@ don't depend on anything else and let the approach be validated early):
       `innerDFS_fuel_cyclePath_chain`, next bullet) *already* starts with a
       copy of `current`, so `loop = [current, current, x₁, ..., xₘ]`. `loop`
       itself is NOT a chain (`current ∈ succs current` isn't guaranteed) —
-      only `loop.tail = cyclePath` is. This matches `OutputVerify.lean`'s
+      only `loop.tail = cyclePath` is. This matches `OutputVerifyBA.lean`'s
       pre-existing convention of indexing from `loop[1]`, confirming that
       file's hypothesis shapes were correct all along, not a bug as first
       suspected.
@@ -695,7 +695,7 @@ don't depend on anything else and let the approach be validated early):
   variables and a theorem's own implicit result variables — used repeatedly
   in the "found" branches of both new theorems to sidestep dependent-rewrite
   motive errors entirely, rather than fighting them with `▸`-chains.
-  (3) Initially believed `OutputVerify.lean`'s `ba_hasAcceptingRun_of_ndfs_output`
+  (3) Initially believed `OutputVerifyBA.lean`'s `ba_hasAcceptingRun_of_ndfs_output`
   had a bug (indexing `loop[1]` instead of `loop[0]`) — tracing through
   `innerDFS_fuel_fold`'s actual recursion by hand (the `f(x)` derivation
   above) showed it was correct; the confusion came from initially assuming
@@ -717,7 +717,7 @@ don't depend on anything else and let the approach be validated early):
   `loop.tail = cyclePath` is the "real" cycle: head `= current` (accepting),
   internal chain `current → x₁ → ... → xₘ`, and `current ∈ succs(xₘ)` (the
   wraparound edge). This is exactly `AcceptingCycle.cycle` if we set
-  `cycle := loop.tail`, confirming `OutputVerify.lean`'s existing hypothesis
+  `cycle := loop.tail`, confirming `OutputVerifyBA.lean`'s existing hypothesis
   shapes are the right target, not a bug.
 
   **Planned steps, staying close to CAVA's structure**:
@@ -745,7 +745,7 @@ don't depend on anything else and let the approach be validated early):
   3. Assemble: combine steps 1–2 at the point `outerDFSLoop_fuel` returns
      `.nonEmpty pathStack (current :: cyclePath)`, thread through
      `nestedDFS_fuel_go`'s loop (mirroring Phase E's composition), and land
-     on either an `AcceptingCycle` value or `OutputVerify.lean`'s exact
+     on either an `AcceptingCycle` value or `OutputVerifyBA.lean`'s exact
      hypothesis set for `ba_hasAcceptingRun_of_ndfs_output`. CAVA's assembly
      step is `mk_blue_witness`'s `Inr` case plus `lasso_inv`'s conclusion,
      packaged directly into `blue_dfs_correct`'s `Some` branch — no separate
@@ -763,7 +763,7 @@ described above — pure assembly of already-unconditional pieces, zero new
 math — or (b) a genuinely *runnable* LTL→emptiness-check pipeline wiring GBA
 → degeneralize → `BA` → `nestedDFS_fuel`, which needs several more pieces,
 at least one of which is real new proof content (constructing a concrete
-label-compatible `ξ` from a lasso witness — `OutputVerify.lean`'s theorems
+label-compatible `ξ` from a lasso witness — `OutputVerifyBA.lean`'s theorems
 only conclude `isRun ∧ isAcceptingRun`, not a genuine `.accepts ξ`). Per
 explicit user choice, Phase 6 was scoped to (a); (b) remains future work
 (not tracked as a phase here — see "Track B" notes below if resuming it).
@@ -801,7 +801,7 @@ accept-iff correspondence.
 `(constructGBA φ st).WellFormed` proved (needed by `degeneralize_bridge`'s
 `hwf` hypothesis — currently proved nowhere); (2) a connecting lemma from
 `AcceptingCycle initialStates ba.getSuccessors ba.isAccepting` (as produced
-by `nestedDFS_fuel_nonEmpty_valid`) to `OutputVerify.lean`'s raw hypothesis
+by `nestedDFS_fuel_nonEmpty_valid`) to `OutputVerifyBA.lean`'s raw hypothesis
 bundle — mechanical, currently missing; (3) constructing a concrete
 label-compatible `ξ` from a lasso witness to get a genuine `.accepts ξ`
 rather than just `isRun ∧ isAcceptingRun` — real new proof content, not
@@ -1010,11 +1010,11 @@ field-for-field the same shape as `is_lasso_prpl_pre` — compared directly:
 | `cycle_head_accepting` | `accpt va` |
 
 So the only missing piece is exactly CAVA's one-liner above: instantiate
-`OutputVerify.lean`'s hypothesis bundle (currently 8 loose arguments to
+`OutputVerifyBA.lean`'s hypothesis bundle (currently 8 loose arguments to
 `ba_hasAcceptingRun_of_lasso`/`ba_hasAcceptingRun_of_ndfs_output`) from a
 real `AcceptingCycle` value, translating `List`/`∈` membership
 (`AcceptingCycle`'s vocabulary) into `Std.HashSet.contains _ = true`/
-`Array.contains _ = true` (`OutputVerify.lean`'s vocabulary — `BA` stores
+`Array.contains _ = true` (`OutputVerifyBA.lean`'s vocabulary — `BA` stores
 `states`/`initialStates` as `Std.HashSet` and `getSuccessors` returns
 `Array`).
 
@@ -1267,14 +1267,14 @@ original plan didn't anticipate, both closed rather than deferred (explicit
 user decision on each, given both looked like they might need "huge
 proofs" per this project's standing instruction to pause and check first).
 
-**Item 2, as planned** — `AcceptingCycle.toValidLasso` (`OutputVerify.lean`):
+**Item 2, as planned** — `AcceptingCycle.toValidLasso` (`OutputVerifyBA.lean`):
 pure field repackaging from `AcceptingCycle` to `ValidLasso`, exactly
 mirroring CAVA's one-line `map_lasso fst (lasso_of_prpl l)` — every field
 except `stem_initial`/`cycle_accepting` transfers directly (same `∈`/`=`
 vocabulary on both sides), those two need a one-line `Std.HashSet` `List`/
 `contains` bridge. Also added the membership induction the plan's item 3
 step 4 needs: `AcceptingCycle.stem_states_mem`/`cycle_states_mem`
-(`OutputVerify.lean`) — direct analogues of `DegeneralBridge.lean`'s
+(`OutputVerifyBA.lean`) — direct analogues of `DegeneralBridge.lean`'s
 `run_states_mem`, over `AcceptingCycle`'s explicit list-index chain instead
 of an abstract `Nat`-indexed run — and `AcceptingCycle.run_states_mem`,
 combining them across `lassoRun`'s own stem/cycle case split.
@@ -1381,7 +1381,7 @@ now that all four items are done.
 Verified via a genuinely clean rebuild (`.lake/build/lib/lean/LTLLib`
 removed first): 759 jobs (up from 758 — `Pipeline.lean` is new), 0 errors,
 0 sorry, no new warnings beyond the pre-existing ones in `GraphComplete.lean`.
-New/changed files this session: `OutputVerify.lean` (+~40 lines),
+New/changed files this session: `OutputVerifyBA.lean` (+~40 lines),
 `DegeneralBridge.lean` (+~160 lines across the gap-#1 closure and the two
 `_any` wrappers), `NestedDFS/NestedDFSTermination.lean` (+~130 lines, the pumping
 lemma), `Pipeline.lean` (new, ~115 lines).
@@ -2066,7 +2066,7 @@ CAVA before diverging). Two findings from that re-check, both acted on:
      *not* a bug to route around: `outerDFSLoop_fuel_nonEmpty_witness`'s own
      docstring confirms `loop = current :: cyclePath` deliberately carries a
      redundant duplicate at `loop[0]` (`cyclePath` already starts with
-     `current`), matching `OutputVerify.lean`'s existing convention of
+     `current`), matching `OutputVerifyBA.lean`'s existing convention of
      indexing the loop from `loop[1]`. Fixed by adding the same prepend to
      `outerDFSLoopWF`'s branch, restoring bit-for-bit agreement with
      `outerDFSLoop_fuel`.

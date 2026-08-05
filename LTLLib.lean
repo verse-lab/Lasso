@@ -20,7 +20,7 @@ import LTLLib.LTLtoGBA.Bridge
 import LTLLib.LTLtoGBA.GraphComplete
 import LTLLib.DegeneralBridge
 import LTLLib.Lasso
-import LTLLib.OutputVerify
+import LTLLib.OutputVerifyBA
 import LTLLib.NestedDFS.NestedDFSCorrectness
 import LTLLib.NestedDFS.NestedDFSTermination
 import LTLLib.LTLtoGBA.ExpandTermination

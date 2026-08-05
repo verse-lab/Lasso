@@ -1905,7 +1905,7 @@ theorem outerDFSLoop_fuel_reach_closed
     with a copy of `current` (`innerDFS_fuel_cyclePath_chain`'s `hhead0`, since
     `seed` and the initial `current`-argument coincide at the top-level call).
     So `loop.tail = cyclePath` is the genuine chain; `loop` itself is not
-    (`current ∈ succs current` isn't guaranteed) — matching `OutputVerify.lean`'s
+    (`current ∈ succs current` isn't guaranteed) — matching `OutputVerifyBA.lean`'s
     existing convention of indexing from `loop[1]`, not `loop[0]`.
 
     Together these are the Lean analogue of CAVA's `lasso_inv` (`Nested_DFS.thy`)

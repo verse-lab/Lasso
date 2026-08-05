@@ -94,7 +94,7 @@ LTLLib/
   NestedDFS/NestedDFSCorrectness.lean       -- Fuel-based nestedDFS soundness + completeness (both directions)
   NestedDFS/NestedDFSTermination.lean       -- Total nestedDFSWF; nestedDFSChecker; pumping lemma; fuel bridges
   Lasso.lean                      -- Abstract lasso theory (ValidLasso, lassoRun)
-  OutputVerify.lean                -- Bridge: nestedDFS/AcceptingCycle output → ValidLasso → accepting run
+  OutputVerifyBA.lean                -- Bridge: nestedDFS/AcceptingCycle output → ValidLasso → accepting run
   Pipeline.lean                    -- fullPipeline: the composed, total, verified decision procedure
   Product.lean                     -- On-the-fly product between an external system and a BA
   ModelCheck.lean                  -- modelCheck: system × φ → EmptinessResult, the model-checking entry point
@@ -153,7 +153,7 @@ LTLLib/
 
 **`Lasso.lean`** — `lassoRun`, `ValidLasso`, `run_isRun`/`run_isAccepting`/`accepts_of_validLasso`. The Lean port of CAVA's `run_of_lasso`/`lasso_accepted`.
 
-**`OutputVerify.lean`** — `AcceptingCycle.toValidLasso` (repackaging, mirrors CAVA's `lasso_of_prpl`) and the membership lemmas (`stem_states_mem`/`cycle_states_mem`/`run_states_mem`) needed to invoke `canonicalLabel` compatibility along the derived run.
+**`OutputVerifyBA.lean`** — `AcceptingCycle.toValidLasso` (repackaging, mirrors CAVA's `lasso_of_prpl`) and the membership lemmas (`stem_states_mem`/`cycle_states_mem`/`run_states_mem`) needed to invoke `canonicalLabel` compatibility along the derived run.
 
 **`Pipeline.lean`** — `fullPipeline`, chaining every stage above into one total function, plus `fullPipeline_empty_unsat`/`fullPipeline_nonEmpty_sat`.
 
