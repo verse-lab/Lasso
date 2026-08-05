@@ -39,20 +39,9 @@
 -/
 
 import Std
+import LTLLib.EmptinessCheck
 
 namespace LTLLib
-
-/-- Result of the nested DFS emptiness check. -/
-inductive EmptinessResult (State : Type u) where
-  /-- No accepting cycle found — the automaton's language is empty
-  (i.e., the checked property is satisfied). -/
-  | empty (exploredStates : Nat)
-  /-- An accepting cycle was found — the automaton's language is non-empty
-  (i.e., the checked property is violated).
-  - `stem`: path from an initial state to the accepting state (inclusive)
-  - `loop`: cycle from the accepting state back to itself (inclusive on both ends) -/
-  | nonEmpty (stem : List State) (loop : List State)
-deriving Repr, Inhabited
 
 /-- Internal mutable state for the nested DFS algorithm. -/
 private structure NDFSState (State : Type u) [BEq State] [Hashable State] where

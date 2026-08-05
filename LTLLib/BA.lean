@@ -89,6 +89,16 @@ def getSuccessors (ba : BA α) (s : BAState) : Array BAState :=
 def getLabeling (ba : BA α) (s : BAState) : Std.HashSet α × Std.HashSet α :=
   ba.labeling[s.gbaState]?.getD (Std.HashSet.emptyWithCapacity 0, Std.HashSet.emptyWithCapacity 0)
 
+/-- Label-compatibility check: does `valuation` satisfy `s`'s propositional
+constraint? Corresponds to CAVA's `igba.L q l` (`CAVA_Automata/Automata.thy`,
+`igba_rec.gba_L`): `positiveProps(q) ⊆ l ∧ negativeProps(q) ∩ l = ∅`. Used by
+the system-product construction (`Product.lean`) as the gate on a product
+state's own outgoing edges — see that file's docstring for why the check is
+evaluated on the *source* state, not the destination. -/
+def compatible (ba : BA α) (s : BAState) (valuation : Std.HashSet α) : Bool :=
+  let (pos, neg) := ba.getLabeling s
+  pos.all valuation.contains && !neg.any valuation.contains
+
 /-- Well-formedness: initial and successor states are in the state set.
 Mirrors `GBA.WellFormed` (`GBA.lean`) — the same `graph` locale two-field
 scope (`V0_ss`/`E_ss`, `CAVA_Automata/Digraph.thy:59-64`); nothing downstream

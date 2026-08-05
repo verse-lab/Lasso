@@ -102,17 +102,11 @@ end HashSetCard
 
 /-! ## Finite-reachability hypothesis
 
-Lean analogue of CAVA's `fb_graph` locale assumption. Any concrete automaton
-built by `constructGBA`/`GBA.degeneralize` satisfies this with `univ :=`
-its own (finite, `Std.HashMap`-backed) state set.
-
-No `initialStates` field here — that's only relevant at `nestedDFS`'s own
-level (as a separate hypothesis `∀ i ∈ initialStates, univ.contains i`),
-not at `innerDFS`/`outerDFSLoop`'s. -/
-structure FiniteReach {State : Type u} [BEq State] [Hashable State]
-    (succs : State → Array State) where
-  univ : Std.HashSet State
-  closed : ∀ s, univ.contains s → ∀ t ∈ succs s, univ.contains t
+`FiniteReach` itself now lives in `EmptinessCheck.lean` alongside
+`EmptinessResult`/`AcceptingCycle`/`EmptinessChecker` — it's the
+algorithm-agnostic reachability precondition (Lean analogue of CAVA's
+`fb_graph` locale assumption), not specific to nested DFS. Imported
+transitively via `NestedDFSCorrectness.lean`/`NestedDFS.lean`. -/
 
 -- (The old `InnerFuelSufficiency` section — `innerDFS_fuel_sufficient`,
 -- `innerDFS_fuel_fold_sufficient_aux`, keyed on bare `univ`/`hclosed` params
@@ -1849,6 +1843,30 @@ theorem nestedDFSWF_nonEmpty_valid
   exact nestedDFS_fuel_nonEmpty_valid heq
 
 end TopLevelFuelBridge
+
+section EmptinessCheckerInterface
+
+/-! ## `nestedDFSWF` as an `EmptinessChecker` instance
+
+`EmptinessChecker` itself (the algorithm-agnostic `find_ce_spec`-style
+contract) now lives in `EmptinessCheck.lean`, alongside
+`EmptinessResult`/`AcceptingCycle`/`FiniteReach` — imported transitively via
+`NestedDFSCorrectness.lean`/`NestedDFS.lean`. What belongs here, in the
+nested-DFS-specific file, is just this one concrete instance of it. -/
+
+variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
+
+/-- `nestedDFSWF` packaged as an `EmptinessChecker` instance — the (so far)
+only refinement of the contract in `EmptinessCheck.lean`. Corresponds to
+CAVA's `find_ce_impl` being proven to refine `find_ce_spec`. -/
+def nestedDFSChecker : EmptinessChecker State where
+  check := nestedDFSWF
+  nonEmpty_valid := fun {succs fr isAccepting initialStates stem loop} hinit h =>
+    nestedDFSWF_nonEmpty_valid succs fr isAccepting initialStates stem loop hinit h
+  empty_no_cycle := fun {succs fr isAccepting initialStates n} hinit h =>
+    nestedDFSWF_empty_no_cycle succs fr isAccepting initialStates n hinit h
+
+end EmptinessCheckerInterface
 
 section BAFiniteReach
 

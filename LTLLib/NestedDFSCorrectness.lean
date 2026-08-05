@@ -703,30 +703,12 @@ where
           | some (.nonEmpty stem loop, _) => some (.nonEmpty stem loop)
           | some (.empty _, st') => go succs isAccepting rest st' fuel
 
-/-! ## Accepting cycle definition -/
+/-! ## Accepting cycle definition
 
-/-- An accepting cycle exists: there is a stem from an initial state to an
-    accepting state, and a cycle from that state back to itself.
-
-    This is the standard "lasso" witness for non-emptiness of a Büchi
-    automaton (cf. CVWY §2, Schwoon & Esparza §2). -/
-structure AcceptingCycle
-    (initialStates : List State) (succs : State → Array State)
-    (isAccepting : State → Bool) where
-  stem : List State
-  cycle : List State
-  stem_nonempty : stem.length ≥ 1
-  cycle_nonempty : cycle.length ≥ 1
-  stem_head_initial : stem.head (List.ne_nil_of_length_pos (by omega)) ∈ initialStates
-  stem_chain : ∀ (i : Nat), (hi : i + 1 < stem.length) →
-    stem[i + 1] ∈ succs (stem[i])
-  overlap : stem.getLast (List.ne_nil_of_length_pos (by omega)) =
-            cycle.head (List.ne_nil_of_length_pos (by omega))
-  cycle_chain : ∀ (i : Nat), (hi : i + 1 < cycle.length) →
-    cycle[i + 1] ∈ succs (cycle[i])
-  cycle_back : cycle.head (List.ne_nil_of_length_pos (by omega)) ∈
-    succs (cycle.getLast (List.ne_nil_of_length_pos (by omega)))
-  cycle_head_accepting : isAccepting (cycle.head (List.ne_nil_of_length_pos (by omega))) = true
+`AcceptingCycle` itself now lives in `EmptinessCheck.lean` — it's the
+algorithm-agnostic "lasso" witness, not specific to nested DFS, so it moved
+out alongside `EmptinessResult`/`FiniteReach`/`EmptinessChecker`. Imported
+transitively via `NestedDFS.lean`. -/
 
 /-! ## Predicate: blocked states -/
 
