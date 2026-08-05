@@ -29,7 +29,7 @@
   the direct analogue of Isabelle's `fix_eq`/`lfp_fix`. That is enough to
   prove totality *directly*, by well-founded induction on the same measure
   CAVA uses, entirely avoiding a separate fuel-indexed mirror function (the
-  `NestedDFSTermination.lean` playbook) — a genuine simplification found by
+  `NestedDFS/NestedDFSTermination.lean` playbook) — a genuine simplification found by
   checking what Lean's `partial_fixpoint` machinery actually offers before
   assuming the nested-DFS approach would carry over.
 

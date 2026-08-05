@@ -6,7 +6,7 @@
   its correctness. Assembles items 1-3 (`GBA.WellFormed`/`BA.WellFormed`/
   `FiniteReach`, the `AcceptingCycle` → `ValidLasso` wiring, and
   `canonicalLabel` compatibility) plus the pumping lemma
-  (`exists_acceptingCycle_of_run`, `NestedDFSTermination.lean`) into a
+  (`exists_acceptingCycle_of_run`, `NestedDFS/NestedDFSTermination.lean`) into a
   genuinely usable decision procedure — no new mathematical content beyond
   the wiring itself.
 
@@ -18,7 +18,7 @@
 import LTLLib.LTLtoGBA.GraphComplete
 import LTLLib.DegeneralBridge
 import LTLLib.LTLtoGBA.ExpandTermination
-import LTLLib.NestedDFSTermination
+import LTLLib.NestedDFS.NestedDFSTermination
 import LTLLib.OutputVerify
 
 namespace LTLLib

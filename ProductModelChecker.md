@@ -92,7 +92,7 @@ Four things worth being precise about, since they're easy to get backwards:
    over paths needed).
 
 This lines up closely with what's already in this repo: `nestedDFS`/
-`nestedDFSWF` (`LTLLib/NestedDFS.lean:208`, `LTLLib/NestedDFSTermination.lean:1594`)
+`nestedDFSWF` (`LTLLib/NestedDFS/NestedDFSRef.lean:208`, `LTLLib/NestedDFS/NestedDFSTermination.lean:1594`)
 already take a bare `initialStates`/`successors : State → Array State` pair
 with no automaton-specific record — exactly CAVA's on-the-fly successor
 function style. `BA`'s labeling (`LTLLib/BA.lean:63-65`, `LTLLib/GBA.lean:47-52`)
@@ -168,7 +168,7 @@ The caller must supply their own `FiniteReach sysSucc` witness (their system
 being finite-state / finitely-reachable is *their* proof obligation, exactly
 as CAVA's `inter_spec` takes `finite (sa.E* `` sa.V0)` as a precondition, not
 something it derives). Given that plus `ba.finiteReach hbawf`
-(`LTLLib/NestedDFSTermination.lean:1873`, already exists):
+(`LTLLib/NestedDFS/NestedDFSTermination.lean:1873`, already exists):
 
 ```lean
 /-- Corresponds to CAVA's `prod_finite_reachable` (`Automata.html:1335`):
@@ -375,7 +375,7 @@ wasn't packaged as an explicit interface.** `AcceptingCycle` was a purely
 graph-theoretic structure (stem + cycle satisfying chain/accepting
 conditions over `initialStates`/`succs`/`isAccepting` alone — no mention of
 `nestedDFSWF` or any algorithm). `nestedDFSWF_nonEmpty_valid`/
-`nestedDFSWF_empty_no_cycle` (`NestedDFSTermination.lean:1830-1849`) are
+`nestedDFSWF_empty_no_cycle` (`NestedDFS/NestedDFSTermination.lean:1830-1849`) are
 exactly the two halves of `find_ce_spec`'s `SPEC` case split, proven for
 `nestedDFSWF` specifically. `fullPipeline_nonEmpty_sat`/
 `fullPipeline_empty_unsat` (`Pipeline.lean`) already call *only* these two
@@ -387,17 +387,17 @@ interface a second algorithm could implement against.
 nested-DFS files entirely into their own file, `LTLLib/EmptinessCheck.lean`,
 since none of this is specific to nested DFS as an algorithm:
 
-- `EmptinessResult` (moved from `NestedDFS.lean`), `AcceptingCycle` (moved
-  from `NestedDFSCorrectness.lean`), `FiniteReach` (moved from
-  `NestedDFSTermination.lean`), and the new `EmptinessChecker` structure all
+- `EmptinessResult` (moved from `NestedDFS/NestedDFSRef.lean`), `AcceptingCycle` (moved
+  from `NestedDFS/NestedDFSCorrectness.lean`), `FiniteReach` (moved from
+  `NestedDFS/NestedDFSTermination.lean`), and the new `EmptinessChecker` structure all
   live in `EmptinessCheck.lean` now. That file imports nothing but `Std` and
-  mentions no concrete algorithm anywhere — `NestedDFS.lean`/
-  `NestedDFSCorrectness.lean`/`NestedDFSTermination.lean` import *it*, not
+  mentions no concrete algorithm anywhere — `NestedDFS/NestedDFSRef.lean`/
+  `NestedDFS/NestedDFSCorrectness.lean`/`NestedDFS/NestedDFSTermination.lean` import *it*, not
   the other way around.
 - `nestedDFSChecker : EmptinessChecker State`, the one existing refinement
   (`check := nestedDFSWF`, with `nonEmpty_valid`/`empty_no_cycle` discharged
   by `nestedDFSWF_nonEmpty_valid`/`nestedDFSWF_empty_no_cycle`), stays in
-  `NestedDFSTermination.lean` — it *is* nested-DFS-specific, unlike the
+  `NestedDFS/NestedDFSTermination.lean` — it *is* nested-DFS-specific, unlike the
   interface it implements.
 - `modelCheck` (`ModelCheck.lean`) takes `checker : EmptinessChecker
   (SysState × BAState) := nestedDFSChecker` and calls `checker.check`
@@ -414,10 +414,10 @@ and isn't blocking anything.
 
 - `LTLLib/EmptinessCheck.lean` (new) — `EmptinessResult`, `AcceptingCycle`,
   `FiniteReach`, `EmptinessChecker`. Imports only `Std`.
-- `LTLLib/NestedDFS.lean` — `EmptinessResult` moved out to
+- `LTLLib/NestedDFS/NestedDFSRef.lean` — `EmptinessResult` moved out to
   `EmptinessCheck.lean`; now imports it.
-- `LTLLib/NestedDFSCorrectness.lean` — `AcceptingCycle` moved out.
-- `LTLLib/NestedDFSTermination.lean` — `FiniteReach` moved out;
+- `LTLLib/NestedDFS/NestedDFSCorrectness.lean` — `AcceptingCycle` moved out.
+- `LTLLib/NestedDFS/NestedDFSTermination.lean` — `FiniteReach` moved out;
   `EmptinessChecker` moved out; `nestedDFSChecker` (the concrete instance)
   stays.
 - `LTLLib/BA.lean` — add `BA.compatible`.

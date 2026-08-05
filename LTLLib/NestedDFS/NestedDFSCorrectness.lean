@@ -39,7 +39,7 @@
     — Local color invariants verified in Dafny; confirms the monotonicity
     and exploration properties we formalize here.
 -/
-import LTLLib.NestedDFS
+import LTLLib.EmptinessCheck
 
 namespace LTLLib
 
@@ -708,7 +708,7 @@ where
 `AcceptingCycle` itself now lives in `EmptinessCheck.lean` — it's the
 algorithm-agnostic "lasso" witness, not specific to nested DFS, so it moved
 out alongside `EmptinessResult`/`FiniteReach`/`EmptinessChecker`. Imported
-transitively via `NestedDFS.lean`. -/
+transitively via `NestedDFS/NestedDFSRef.lean`. -/
 
 /-! ## Predicate: blocked states -/
 

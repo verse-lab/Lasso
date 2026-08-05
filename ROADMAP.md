@@ -61,9 +61,9 @@ top-level theorems (`Pipeline.lean`).
 | 4.3 | `GraphComplete` proved unconditionally from `createGraph` | ✅ DONE | `LTLtoGBA/GraphComplete.lean` |
 | — | `constructGBA` bridge (computational ↔ abstract) | ✅ DONE | `LTLtoGBA/Bridge.lean` |
 | — | `degeneralize` bridge (computational ↔ proof-level) | ✅ DONE | `DegeneralBridge.lean` |
-| 2 | Termination: `expand`, `innerDFS`, `outerDFSLoop`, `nestedDFS` | ✅ DONE | `LTLtoGBA/ExpandTermination.lean`, `NestedDFSTermination.lean` |
-| 5b | Nested DFS completeness (`.empty` → no accepting cycle) | ✅ DONE | `NestedDFSCorrectness.lean` |
-| 5c | Nested DFS soundness (`.nonEmpty` → genuine witness) | ✅ DONE | `NestedDFSCorrectness.lean` |
+| 2 | Termination: `expand`, `innerDFS`, `outerDFSLoop`, `nestedDFS` | ✅ DONE | `LTLtoGBA/ExpandTermination.lean`, `NestedDFS/NestedDFSTermination.lean` |
+| 5b | Nested DFS completeness (`.empty` → no accepting cycle) | ✅ DONE | `NestedDFS/NestedDFSCorrectness.lean` |
+| 5c | Nested DFS soundness (`.nonEmpty` → genuine witness) | ✅ DONE | `NestedDFS/NestedDFSCorrectness.lean` |
 | 6 | End-to-end GBA-level theorem | ✅ DONE | `LTLtoGBA/GraphComplete.lean` |
 | Track B | Genuinely runnable end-to-end pipeline | ✅ DONE | `Pipeline.lean` |
 
@@ -74,7 +74,7 @@ were assembled together — both closed, not deferred:
   (`DegeneralBridge.lean`), since any formula with no Until-subformula hits
   this case.
 - **The pumping lemma** (`exists_acceptingCycle_of_run`,
-  `NestedDFSTermination.lean`): CAVA's own `accepted_lasso`, connecting
+  `NestedDFS/NestedDFSTermination.lean`): CAVA's own `accepted_lasso`, connecting
   "some accepting run exists" (word-level) to "an accepting cycle exists"
   (graph-level) — needed because CAVA needs this too, one layer out from
   its own nested-DFS theorem (`ndfs_find_ce`'s refinement proof invokes it

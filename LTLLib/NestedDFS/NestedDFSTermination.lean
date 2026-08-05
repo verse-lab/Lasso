@@ -1,7 +1,7 @@
 /-
   Phase 2 (partial): fuel-sufficiency for the nested DFS emptiness check.
 
-  `innerDFS`/`outerDFSLoop` (`NestedDFS.lean`) are marked `partial`. CAVA proves
+  `innerDFS`/`outerDFSLoop` (`NestedDFS/NestedDFSRef.lean`) are marked `partial`. CAVA proves
   termination of the analogous generic DFS framework (`Param_DFS.thy`) from a
   single locale assumption: the set of states reachable from the roots is
   finite (`fb_graph`; finite branching is free there too, since `E x` is
@@ -50,12 +50,12 @@
   termination itself — using it forces reconstructing, by hand, exactly the
   bookkeeping `termination_by`/`decreasing_by` already provides natively.
   Current plan (not yet done): convert `innerDFS`/`outerDFSLoop`
-  (`NestedDFS.lean`) directly to well-founded recursion via `termination_by`,
+  (`NestedDFS/NestedDFSRef.lean`) directly to well-founded recursion via `termination_by`,
   using the same `(A, B) := (univ.size - visited.size, pendingSum + stack
   length)` measure, matching `param_dfs_variant` structurally — see
   `NestedDFSPlan.md` for the up-to-date plan.
 -/
-import LTLLib.NestedDFSCorrectness
+import LTLLib.NestedDFS.NestedDFSCorrectness
 import LTLLib.BA
 
 namespace LTLLib
@@ -106,7 +106,7 @@ end HashSetCard
 `EmptinessResult`/`AcceptingCycle`/`EmptinessChecker` — it's the
 algorithm-agnostic reachability precondition (Lean analogue of CAVA's
 `fb_graph` locale assumption), not specific to nested DFS. Imported
-transitively via `NestedDFSCorrectness.lean`/`NestedDFS.lean`. -/
+transitively via `NestedDFS/NestedDFSCorrectness.lean`/`NestedDFS/NestedDFSRef.lean`. -/
 
 -- (The old `InnerFuelSufficiency` section — `innerDFS_fuel_sufficient`,
 -- `innerDFS_fuel_fold_sufficient_aux`, keyed on bare `univ`/`hclosed` params
@@ -163,7 +163,7 @@ recursive-descent-with-fold. There is no CAVA analogue of "prove a fact
 about a sibling call's return value to justify continuing a fold", because
 there are no nested calls in the first place — only single-step transitions
 on an explicit stack, exactly like `outerDFSLoopWF` below (which *was*
-already built this way from `NestedDFS.lean`'s original design, which is
+already built this way from `NestedDFS/NestedDFSRef.lean`'s original design, which is
 *why* its own conversion needed no `Subtype` at all).
 
 `innerDFSCore` is rebuilt here the same way: an explicit stack of
@@ -273,7 +273,7 @@ decreasing_by
   · exact Prod.Lex.right _ (by simp)
 
 /-- Thin, non-recursive entry point matching the *public* shape of the
-original `partial def innerDFS` (`NestedDFS.lean`): the "already
+original `partial def innerDFS` (`NestedDFS/NestedDFSRef.lean`): the "already
 finished"/"already visited" checks for the top-level `current` happen here,
 once; `innerDFSCore` handles everything below that, assuming freshness, seeded
 with the singleton stack `[(current, succs current)]` and `pathStack :=
@@ -361,7 +361,7 @@ end InnerDFSWellFounded
 /-! ## Fuel ↔ well-founded bridge, inner half (Phase 2, 2026-07-25)
 
 Mirrors CAVA's own `it_dfsT_eq_it_dfs`/`WHILET_eq_WHILE_tproof`: rather than
-re-proving `NestedDFSCorrectness.lean`'s ~2000 sorry-free lines of `innerDFS_fuel`
+re-proving `NestedDFS/NestedDFSCorrectness.lean`'s ~2000 sorry-free lines of `innerDFS_fuel`
 correctness against the new well-founded `innerDFSCore`/`innerDFSWF`, prove a
 single equation showing the two agree (for sufficient fuel), then transport
 every existing fuel-based theorem across it for free.
@@ -496,7 +496,7 @@ call computes the *same* result as the slightly smaller amount the
 original nested call would actually have used, provided the smaller amount
 was already enough. Proved by the same fuel/fold mutual-induction template
 used throughout this file (cf. `innerDFS_fuel_mono` in
-`NestedDFSCorrectness.lean`). -/
+`NestedDFS/NestedDFSCorrectness.lean`). -/
 private theorem innerDFS_fuel_fold_add_aux (succs : State → Array State) (seed : State)
     (cyan : List State) (extra fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -1013,7 +1013,7 @@ def outerDFSLoopWF (succs : State → Array State) (isAccepting : State → Bool
         match _hr : innerDFSWF succs fr current pathStack current innerVisited st with
         | (some (cyclePath, target), _, st') =>
           -- Holzmann-Peled-Yannakakis shortcut (mirroring `outerDFSLoop_fuel`
-          -- exactly, `NestedDFSCorrectness.lean`): `target` may be `current`
+          -- exactly, `NestedDFS/NestedDFSCorrectness.lean`): `target` may be `current`
           -- itself or any other state on `pathStack`; collapses to the
           -- pre-HPY `current :: cyclePath` formula when `target = current`.
           let loopTail := (pathStack.dropWhile (fun y => !(y == target))).dropLast
@@ -1026,7 +1026,7 @@ def outerDFSLoopWF (succs : State → Array State) (isAccepting : State → Bool
       let stack' := (current, remainingTail) :: rest
       if pathStack.contains succ then
         -- Schwoon-Esparza back-edge shortcut, mirroring `outerDFSLoop_fuel`
-        -- exactly (`NestedDFSCorrectness.lean`).
+        -- exactly (`NestedDFS/NestedDFSCorrectness.lean`).
         if isAccepting current then
           if succ == current then
             (.nonEmpty pathStack [current, current], st)
@@ -1087,7 +1087,7 @@ step-count formula anywhere. We do the same: `outerDFSLoop_fuel_eq_outerDFSLoopW
 below proves *existence* of a sufficient fuel by induction on `outerDFSLoopWF`'s
 own recursion (i.e. on the same lex measure), never a formula in `fuel`. This
 matches how the existing fuel-based correctness theorems in
-`NestedDFSCorrectness.lean` are already stated (e.g. `nestedDFS_fuel_empty_no_cycle`
+`NestedDFS/NestedDFSCorrectness.lean` are already stated (e.g. `nestedDFS_fuel_empty_no_cycle`
 takes an arbitrary implicit `fuel` and only assumes *success*, never a lower
 bound) — so existence-of-*some*-sufficient-fuel is exactly what's needed to
 transport them across the bridge, nothing stronger.
@@ -1139,7 +1139,7 @@ theorem outerDFSLoop_fuel_accept_none (succs : State → Array State) (isAccepti
 /-- Holzmann-Peled-Yannakakis shortcut: `target` may be `current` itself or
     any other state on `pathStack`; the witness formula collapses to the
     pre-HPY `current :: cyclePath` when `target = current` (see
-    `NestedDFSCorrectness.lean`'s `outerDFSLoop_fuel` for the same formula). -/
+    `NestedDFS/NestedDFSCorrectness.lean`'s `outerDFSLoop_fuel` for the same formula). -/
 theorem outerDFSLoop_fuel_accept_found (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat) (current : State) (rest : List (State × List State)) (pathStack : List State)
     (st : FNDFSState State) (hacc : isAccepting current = true)
@@ -1554,7 +1554,7 @@ ordinary successor discovery (picking a new root is just another kind of
 "discover a new state" transition, per `step`'s own `is_empty_stack s then
 get_new_root ...` branch).
 
-Our own `nestedDFS_fuel`/`nestedDFS_fuel.go` (`NestedDFSCorrectness.lean`,
+Our own `nestedDFS_fuel`/`nestedDFS_fuel.go` (`NestedDFS/NestedDFSCorrectness.lean`,
 Phase 5, ✅ done, ~2000 sorry-free lines) does *not* mirror this exactly: it
 factors multi-root handling as a second, outer structural loop over
 `initialStates`, calling `outerDFSLoop_fuel` once per unvisited root, rather
@@ -1851,7 +1851,7 @@ section EmptinessCheckerInterface
 `EmptinessChecker` itself (the algorithm-agnostic `find_ce_spec`-style
 contract) now lives in `EmptinessCheck.lean`, alongside
 `EmptinessResult`/`AcceptingCycle`/`FiniteReach` — imported transitively via
-`NestedDFSCorrectness.lean`/`NestedDFS.lean`. What belongs here, in the
+`NestedDFS/NestedDFSCorrectness.lean`/`NestedDFS/NestedDFSRef.lean`. What belongs here, in the
 nested-DFS-specific file, is just this one concrete instance of it. -/
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]

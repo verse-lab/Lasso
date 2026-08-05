@@ -15,7 +15,7 @@
   Kept in its own file, separate from `Product.lean`, since `Product.lean`
   is the reusable on-the-fly graph-construction layer while this file is the
   specific "chain it all together for LTL model checking" wiring, matching
-  how `Pipeline.lean` is kept separate from `NestedDFS.lean`/`BA.lean`.
+  how `Pipeline.lean` is kept separate from `NestedDFS/NestedDFSRef.lean`/`BA.lean`.
 -/
 import LTLLib.LTLtoGBA.GraphComplete
 import LTLLib.DegeneralBridge
@@ -63,7 +63,7 @@ system is finitely reachable — exactly as CAVA's `inter_spec` takes
 
 The emptiness check itself is parameterized by `checker : EmptinessChecker`
 (`EmptinessCheck.lean` — the algorithm-agnostic contract; `nestedDFSChecker`,
-its one existing refinement, lives in `NestedDFSTermination.lean` since
+its one existing refinement, lives in `NestedDFS/NestedDFSTermination.lean` since
 that part *is* nested-DFS-specific), defaulting to `nestedDFSChecker`. This
 mirrors how CAVA's `abs_model_check`
 is defined against the abstract `find_ce_spec` rather than any concrete

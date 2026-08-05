@@ -84,7 +84,7 @@ see §4 below for why this matters over raw `unfold expand`). That is
 enough to prove totality *directly* by well-founded induction on the same
 measure, using `termination_by`/`decreasing_by` on a **recursive
 `theorem`** (the same lex-pair idiom already used for `innerDFSCore`/
-`outerDFSLoopWF` in `NestedDFSTermination.lean`) — entirely avoiding a
+`outerDFSLoopWF` in `NestedDFS/NestedDFSTermination.lean`) — entirely avoiding a
 separate fuel-indexed mirror function (the nested-DFS playbook). This is a
 genuine simplification, found by checking what `partial_fixpoint` actually
 offers before assuming the nested-DFS approach would carry over verbatim.

@@ -29,7 +29,7 @@ OmegaWord α := exec (α → Prop)  -- ω-words
 |-----------|------|---------|
 | `GBA α` | `GBA.lean` | Generalized Büchi: states/successors/labeling/acceptSets as HashMaps |
 | `BA α`, `BAState` | `BA.lean` | Standard Büchi: degeneralized from GBA |
-| `nestedDFS` | `NestedDFS.lean` | CVWY emptiness check on BA |
+| `nestedDFS` | `NestedDFS/NestedDFSRef.lean` | CVWY emptiness check on BA |
 
 **Proof tier** (predicate-based, for reasoning):
 

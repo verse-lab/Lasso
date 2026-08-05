@@ -11,7 +11,7 @@ import LTLLib.LTLtoGBA.Node
 import LTLLib.LTLtoGBA.Expand
 import LTLLib.LTLtoGBA.Construction
 import LTLLib.EmptinessCheck
-import LTLLib.NestedDFS
+import LTLLib.NestedDFS.NestedDFSRef
 import LTLLib.Acceptance
 import LTLLib.LTLtoGBA.Invariants
 import LTLLib.LTLtoGBA.Soundness
@@ -21,8 +21,8 @@ import LTLLib.LTLtoGBA.GraphComplete
 import LTLLib.DegeneralBridge
 import LTLLib.Lasso
 import LTLLib.OutputVerify
-import LTLLib.NestedDFSCorrectness
-import LTLLib.NestedDFSTermination
+import LTLLib.NestedDFS.NestedDFSCorrectness
+import LTLLib.NestedDFS.NestedDFSTermination
 import LTLLib.LTLtoGBA.ExpandTermination
 import LTLLib.Pipeline
 import LTLLib.Product

@@ -20,7 +20,7 @@ This document outlines the plan for porting correctness proofs from the Isabelle
   `.lake/build` artifacts removed first) succeeds with 0 errors, 0 sorry, 394 build jobs.
 - **Phase 2 (Termination) is DONE for nested DFS, fully wired**: both `innerDFS` and `outerDFSLoop`
   are genuinely well-founded-recursive (`innerDFSWF`/`innerDFSCore` and `outerDFSLoopWF`,
-  `NestedDFSTermination.lean`, 0 sorry, 0 warnings, 2026-07-25) — converted as two **independent**
+  `NestedDFS/NestedDFSTermination.lean`, 0 sorry, 0 warnings, 2026-07-25) — converted as two **independent**
   single-measure recursions (not mutual), exactly matching CAVA's own blue/red DFS structure once the
   actual AFP sources were read. Both are bridged (for sufficient fuel) to the pre-existing,
   already-verified fuel-based definitions, and a total top-level `nestedDFSWF` composes them,
@@ -46,13 +46,13 @@ This document outlines the plan for porting correctness proofs from the Isabelle
 - **constructGBA bridge** completed — computational GBA ↔ abstract automaton (Bridge.lean, ~777 lines)
 - **degeneralize bridge** completed — computational BA ↔ proof-level degeneralization (DegeneralBridge.lean, ~429 lines)
 - **FSet abstraction** completed — abstract finite set typeclass with HashSet/TreeSet instances
-- **2** `partial` functions remain in `NestedDFS.lean` (`innerDFS`, `outerDFSLoop`) — kept
+- **2** `partial` functions remain in `NestedDFS/NestedDFSRef.lean` (`innerDFS`, `outerDFSLoop`) — kept
   deliberately, as the abstract reference layer, mirroring CAVA's own choice to keep `nested_dfs`
   around once `nested_dfs_code` exists (see Phase 2's wiring write-up). The verified, total,
-  actually-usable entry point is `nestedDFSWF` (`NestedDFSTermination.lean`), not this file.
+  actually-usable entry point is `nestedDFSWF` (`NestedDFS/NestedDFSTermination.lean`), not this file.
 - `expand` uses `partial_fixpoint` (provides equational rewriting + `partial_correctness` induction)
 - **Phase 5 (Nested DFS Correctness) is now fully DONE, both directions** —
-  `NestedDFSCorrectness.lean` is sorry-free and unconditionally proves both
+  `NestedDFS/NestedDFSCorrectness.lean` is sorry-free and unconditionally proves both
   `.empty` result ⟹ no accepting cycle exists (`nestedDFS_fuel_empty_no_cycle`,
   Phase 5b) and `.nonEmpty stem loop` result ⟹ `(stem, loop.tail)` is a
   genuine accepting cycle (`nestedDFS_fuel_nonEmpty_valid`, Phase 5c), and both now transfer to the
@@ -78,12 +78,12 @@ This document outlines the plan for porting correctness proofs from the Isabelle
 library root) only transitively imported 13 of 23 `.lean` files — everything
 from Phase 3 onward (`Invariants.lean`, `Soundness.lean`, `Completeness.lean`,
 `GraphComplete.lean`, `Bridge.lean`, `DegeneralBridge.lean`, `Lasso.lean`,
-`OutputVerify.lean`, `NestedDFSCorrectness.lean`) was **never actually checked
+`OutputVerify.lean`, `NestedDFS/NestedDFSCorrectness.lean`) was **never actually checked
 by `lake build`** — `.lake/build/lib/lean/LTLLib/` only had 6 `.olean` files on
 disk. `lake build`'s "success" and the sorry-grep were both true but vacuous
 for that majority of the codebase. Standalone `lake env lean <file>` checks
 (bypassing the build cache) confirmed every orphaned file compiles clean
-**except** `NestedDFSCorrectness.lean`, which had a real error: in
+**except** `NestedDFS/NestedDFSCorrectness.lean`, which had a real error: in
 `fold_cyclePath_chain_aux`'s cons-case (Phase 5c), `simp only [hse, if_false]
 at h` silently failed to collapse `if (succ == seed) then _ else _` (wrong
 simp lemma for a `Prop`-decidable `ite`, not the `Bool.cond` form `if_false`
@@ -268,7 +268,7 @@ as **Phase 5c** below.
 
 **Phase 5b (emptiness completeness) — ✅ DONE**:
 
-**File**: `LTLLib/NestedDFSCorrectness.lean` (~2013 lines), **0 sorries** —
+**File**: `LTLLib/NestedDFS/NestedDFSCorrectness.lean` (~2013 lines), **0 sorries** —
 fully sorry-free. Both `outerDFSLoop_fuel_empty_no_cycle` and the top-level
 `nestedDFS_fuel_empty_no_cycle` are proved unconditionally.
 
@@ -580,7 +580,7 @@ don't depend on anything else and let the approach be validated early):
     this time) — same fix, name the equality and use `▸` instead of `rfl`.
 
 - [x] **Phase F** — DONE. `nestedDFS_fuel_empty_no_cycle` fully proved, 0
-  sorry — **`NestedDFSCorrectness.lean` is now 100% sorry-free.** Follows
+  sorry — **`NestedDFS/NestedDFSCorrectness.lean` is now 100% sorry-free.** Follows
   CAVA's `blue_dfs_correct` almost exactly:
   1. Unfold `nestedDFS_fuel` to `nestedDFS_fuel.go ... initialStates st₀
      fuel`, and apply Phase E with trivial `hrc₀`/`hinv₀` for the empty
@@ -704,8 +704,8 @@ don't depend on anything else and let the approach be validated early):
   initial `current`-argument to the *same* value, so `cyclePath` already
   starts with a duplicate of `current`/`seed`.
 
-  **Traced exactly how the raw output is built** (`NestedDFS.lean`/
-  `NestedDFSCorrectness.lean`'s `innerDFS_fuel`/`innerDFS_fuel_fold`): define
+  **Traced exactly how the raw output is built** (`NestedDFS/NestedDFSRef.lean`/
+  `NestedDFS/NestedDFSCorrectness.lean`'s `innerDFS_fuel`/`innerDFS_fuel_fold`): define
   `f(x)` as what a `some (some _)`-returning fold at node `x` returns. Base
   case (some successor of `x` equals `seed`): `f(x) = [x]`. Recursive case
   (recursing into successor `y ≠ seed`): `f(x) = x :: f(y)`. Unrolled:
@@ -890,7 +890,7 @@ exactly `succ_mem`'s content once `states` is related to `nodeMap`'s keys
    with the already-established `succ_mem`), so this should follow the exact
    same proof technique as steps 1-3, not a new argument.
 6. Package a `FiniteReach ba.getSuccessors` witness
-   (`NestedDFSTermination.lean`'s `FiniteReach` structure, `univ`/`closed`,
+   (`NestedDFS/NestedDFSTermination.lean`'s `FiniteReach` structure, `univ`/`closed`,
    line 111) with `univ := ba.states` and `closed` from the new
    `BA.WellFormed.succ_mem` — this is the prerequisite every downstream call
    to `nestedDFSWF` (item 4) needs.
@@ -953,7 +953,7 @@ auto`):
    `to_gba`/`to_gbg` locale machinery, not a standalone lemma with a direct
    Lean counterpart).
 6. **`BA.finiteReach`/`BA.initialStates_subset_finiteReach`**
-   (`NestedDFSTermination.lean`, new `BAFiniteReach` section, after
+   (`NestedDFS/NestedDFSTermination.lean`, new `BAFiniteReach` section, after
    `TopLevelFuelBridge`) — thin packaging, exactly as planned: `univ :=
    ba.states`, `closed` directly from `BA.WellFormed.succ_mem`. Matches
    CAVA's `nested_dfs_code`/`ASSERT (fb_graph G)` shape precisely (an
@@ -967,7 +967,7 @@ No `GraphComplete.lean`/`Invariants.lean` changes needed — every dependency
 confirming the "already 90% there, just not assembled" assessment above.
 Total new code: `Construction.lean` (+8 lines, `buildStates`), `Bridge.lean`
 (+50 lines), `BA.lean` (+8 lines, `WellFormed`), `DegeneralBridge.lean`
-(+65 lines), `NestedDFSTermination.lean` (+2 lines import, +26 lines new
+(+65 lines), `NestedDFS/NestedDFSTermination.lean` (+2 lines import, +26 lines new
 section) — noticeably smaller than items 2-4, as anticipated by the
 execution-order note below.
 
@@ -997,7 +997,7 @@ away the degeneralization counter via `map_lasso fst`.
 *Mapping to our code — already an almost 1:1 port, just not wired*:
 `Lasso.lean` (`lassoRun`, `ValidLasso`, `run_isRun`/`run_isAccepting`) *is*
 the existing Lean port of `Lasso.thy`'s `run_of_lasso`/`lasso_accepted`.
-Phase 5c's `AcceptingCycle` (`NestedDFSCorrectness.lean:471-487`) is
+Phase 5c's `AcceptingCycle` (`NestedDFS/NestedDFSCorrectness.lean:471-487`) is
 field-for-field the same shape as `is_lasso_prpl_pre` — compared directly:
 
 | `AcceptingCycle` field | `is_lasso_prpl_pre` conjunct |
@@ -1308,7 +1308,7 @@ into single unconditional (modulo `gba.WellFormed`) theorems — what
 "should have been" if `OASpec.degeneralize` didn't need `hk` just to
 typecheck. These `_any` wrappers are what the pipeline actually calls.
 
-**Gap found #2 — the pumping lemma, closed (`NestedDFSTermination.lean`,
+**Gap found #2 — the pumping lemma, closed (`NestedDFS/NestedDFSTermination.lean`,
 new `PumpingLemma` section).** `nestedDFSWF_empty_no_cycle`'s conclusion is
 graph-cycle-level (`¬∃ AcceptingCycle`), not word-level
 (`∀ξ, ¬accepts ξ`) — connecting them needs the *reverse* lasso direction,
@@ -1383,7 +1383,7 @@ removed first): 759 jobs (up from 758 — `Pipeline.lean` is new), 0 errors,
 0 sorry, no new warnings beyond the pre-existing ones in `GraphComplete.lean`.
 New/changed files this session: `OutputVerify.lean` (+~40 lines),
 `DegeneralBridge.lean` (+~160 lines across the gap-#1 closure and the two
-`_any` wrappers), `NestedDFSTermination.lean` (+~130 lines, the pumping
+`_any` wrappers), `NestedDFS/NestedDFSTermination.lean` (+~130 lines, the pumping
 lemma), `Pipeline.lean` (new, ~115 lines).
 
 ### Phase 2: Termination — IN PROGRESS (not blocking)
@@ -1525,8 +1525,8 @@ application); `thys/DFS_Framework/Examples/Nested_DFS.thy` lines 48–133
 `thys/DFS_Framework/Examples/DFS_Find_Path.thy` lines 33–70, 336–430 (`fp0`
 locale, `find_path1_restr_spec`/`find_path1_restr`, the refinement lemma).
 
-**Key realization (nested DFS, `NestedDFSTermination.lean`)**: the two
-`partial` functions in `NestedDFS.lean` don't need equally-hard termination
+**Key realization (nested DFS, `NestedDFS/NestedDFSTermination.lean`)**: the two
+`partial` functions in `NestedDFS/NestedDFSRef.lean` don't need equally-hard termination
 arguments. `innerDFS_fuel`'s `fuel : Nat` argument is *not* a depleting
 total-work counter — every sibling call inside `innerDFS_fuel_fold` (one per
 successor of `current`) gets the *same* fuel value, not a further-decremented
@@ -1534,9 +1534,9 @@ share, because `fuel` is a plain value, not a threaded/returned resource. So
 fuel there acts as a *maximum recursion depth* cap, reusable across branches:
 `universe.size + 1` uniformly suffices for any call, proved by a strong
 induction on `universe.size - iv.size`. This is now **done** —
-`innerDFS_fuel_sufficient` in `NestedDFSTermination.lean`, 0 sorry, following
+`innerDFS_fuel_sufficient` in `NestedDFS/NestedDFSTermination.lean`, 0 sorry, following
 the same fuel/fold double-induction template used throughout
-`NestedDFSCorrectness.lean`.
+`NestedDFS/NestedDFSCorrectness.lean`.
 
 This reuse phenomenon does **not** carry over to `outerDFSLoop_fuel`: its own
 recursion is a single non-branching chain (no fold over siblings), so fuel
@@ -1545,7 +1545,7 @@ there really is consumed once per actual step of the whole outer traversal.
 **Outer-DFS: fuel-based attempt tried and abandoned (2026-07-24)**. Bounding
 `outerDFSLoop_fuel`'s fuel needs the *full* CAVA-style lexicographic potential
 function `(discovered, pending, stack-length)` from `param_dfs_variant`. A
-proof was attempted in `NestedDFSTermination.lean` (`OuterFuelInv`, `pendingSum`,
+proof was attempted in `NestedDFS/NestedDFSTermination.lean` (`OuterFuelInv`, `pendingSum`,
 nested `Nat.strongRecOn` on `(A, B) := (univ.size - outerVisited.size,
 pendingSum stack + stack.length)`, mirroring the file's usual fuel/fold
 induction style) but hit a genuine circularity: the "accepting leaf, launch
@@ -1558,7 +1558,7 @@ picking that fuel value is exactly what the threshold is supposed to
 determine — combining two independently-quantified `∃ threshold, ∀
 fuel≥threshold, ...` facts via `max` silently assumed a monotonicity property
 ("succeeds at fuel F ⟹ succeeds at any F′≥F") that hadn't been proved. This
-attempt was reverted; `NestedDFSTermination.lean` now contains only the
+attempt was reverted; `NestedDFS/NestedDFSTermination.lean` now contains only the
 completed, verified inner-DFS half (`innerDFS_fuel_sufficient`,
 `innerDFS_fuel_fold_sufficient_aux`, plus small `Std.HashSet` cardinality
 helpers: `size_le_of_subset`, `size_pos_of_contains`, `size_lt_of_ssubset`,
@@ -1587,10 +1587,10 @@ separately** via `termination_by`, in that order — not as a mutual
 definition:
 
 1. **`innerDFS` becomes a standalone well-founded recursion first — ✅ DONE
-   (2026-07-25), `NestedDFSTermination.lean`, 0 sorry, 0 warnings, whole
+   (2026-07-25), `NestedDFS/NestedDFSTermination.lean`, 0 sorry, 0 warnings, whole
    project still builds (394 jobs).** `FiniteReach` (`univ : Std.HashSet
    State`, `closed : ∀ s, univ.contains s → ∀ t ∈ succs s, univ.contains t`)
-   was added there (not `NestedDFS.lean` itself yet — see below) as a
+   was added there (not `NestedDFS/NestedDFSRef.lean` itself yet — see below) as a
    genuine **explicit parameter**, our analogue of `fb_graph`/CAVA's own
    `finite reachable` hypothesis, assumed rather than derived, exactly as
    planned.
@@ -1622,7 +1622,7 @@ definition:
    originally feared (one `≤` on a `Nat`, not a full `⊆`-style closure
    invariant), a direct consequence of the measure correction above.
 
-   **Structure actually implemented** (`NestedDFSTermination.lean`, new
+   **Structure actually implemented** (`NestedDFS/NestedDFSTermination.lean`, new
    section `InnerDFSWellFounded`): two definitions, not one, mirroring the
    file's own established fuel/fold split:
    - `innerDFSCore succs fr seed current remaining iv st hcurrent hremaining`
@@ -1642,17 +1642,17 @@ definition:
      (does the top-level "already finished"/"already visited" check once,
      then inserts `current` and delegates to `innerDFSCore`). Named `...WF`
      rather than `innerDFS` as a deliberate staging choice — it lives
-     alongside (not yet in place of) `NestedDFS.lean`'s still-`partial`
+     alongside (not yet in place of) `NestedDFS/NestedDFSRef.lean`'s still-`partial`
      `innerDFS`, to avoid forcing `outerDFSLoop`'s signature to change
      before its own conversion (step 2) is actually ready; the rename/swap-in
      happens together with step 2.
 2. **`outerDFSLoop` second, using the now-total `innerDFS` as a plain
    helper call — ✅ DONE (2026-07-25), `outerDFSLoopWF`,
-   `NestedDFSTermination.lean`, 0 sorry, 0 warnings, whole project still
+   `NestedDFS/NestedDFSTermination.lean`, 0 sorry, 0 warnings, whole project still
    builds (394 jobs).** Confirmed exactly as this note predicted: this step
    *is* simpler than `innerDFS`'s. `outerDFSLoopWF` takes `FiniteReach` plus
    two threaded closure hypotheses (`hstack_states`/`hstack_remaining`,
-   mirroring `NestedDFSCorrectness.lean`'s `OuterReachClosed.
+   mirroring `NestedDFS/NestedDFSCorrectness.lean`'s `OuterReachClosed.
    stack_remaining_subset` bookkeeping), re-derived structurally at every
    call site — never needing a fact about a *previous* call's *result*, so
    (as anticipated) **no Subtype-bundled return type at all**, unlike
@@ -1693,7 +1693,7 @@ definition:
    refinement instead of a joint measure.
 3. **Bridge to the existing correctness proofs, instead of re-proving
    them — IN PROGRESS (2026-07-25), significant progress, one isolated
-   blocker.** `NestedDFSCorrectness.lean` (~2000 sorry-free lines) is proved
+   blocker.** `NestedDFS/NestedDFSCorrectness.lean` (~2000 sorry-free lines) is proved
    against `innerDFS_fuel`/`outerDFSLoop_fuel`, not the real functions.
    Redoing that whole proof against the new WF-recursive definitions would
    be wasteful. CAVA itself does the analogous thing rather than reprove
@@ -1704,7 +1704,7 @@ definition:
    `outerDFSLoop ... = outerDFSLoop_fuel N ...` for `N` above the already-
 
    **Status**: `innerDFS_fuel_fold_eq_innerDFSCore` (`InnerFuelBridge` section,
-   `NestedDFSTermination.lean`) — the fold-level half of the inner bridge,
+   `NestedDFS/NestedDFSTermination.lean`) — the fold-level half of the inner bridge,
    strengthening the old (now-deleted) `innerDFS_fuel_fold_sufficient_aux` to
    assert *equality* with `innerDFSCore`, not just "returns `some`" — is
    **fully proved, 0 sorry**, for 3 of 4 branches (nil, seed-found,
@@ -1796,7 +1796,7 @@ definition:
    still-to-be-proved `outerDFSLoop` analogue — note this sufficiency proof
    is now easier too, for the same reason step 2 is: it no longer needs a
    combined bound, just the outer-only measure). Every existing theorem in
-   `NestedDFSCorrectness.lean` then transports across this equation for
+   `NestedDFS/NestedDFSCorrectness.lean` then transports across this equation for
    free — no proof content needs to be redone, only restated.
 
    **Verified precisely (2026-07-25), and worth recording exactly**: read
@@ -1906,7 +1906,7 @@ recursive call's termination proof to depend on a fact about the
 *previous* call's actual return value — a dependency CAVA's algorithm
 structure never creates, because it has no nested calls at all, only
 single-step transitions on an explicit stack (which is *exactly* how
-`outerDFSLoopWF` was already built, from `NestedDFS.lean`'s own original
+`outerDFSLoopWF` was already built, from `NestedDFS/NestedDFSRef.lean`'s own original
 design — this is *why* that conversion needed no `Subtype` and went
 smoothly).
 
@@ -1969,7 +1969,7 @@ to relate two *structurally different* traversal orders (`innerDFS_fuel`'s
 recursive-descent-with-fold vs. `innerDFSCore`'s explicit-stack).
 
 **Update (2026-07-25, later still): the fold-level bridge redesigned and
-proved — `NestedDFSTermination.lean` is now completely `sorry`-free.**
+proved — `NestedDFS/NestedDFSTermination.lean` is now completely `sorry`-free.**
 The redesign (`innerDFS_fuel_chain`, a new auxiliary function) chains
 `innerDFS_fuel_fold` calls across an explicit stack of pending frames — the
 fuel-side companion to `innerDFSCore`'s own `stack` argument. Its "found"
@@ -1992,11 +1992,11 @@ how the bridge theorem's own induction keeps `fuel` fixed across all cases
 one on every "descend into a fresh successor" (confirmed via the
 `innerDFS_fuel_fresh` unfolding lemma). Reconciling a uniform fuel value
 against the naturally-decremented one needed two more self-contained
-lemmas, both added to `NestedDFSTermination.lean`:
+lemmas, both added to `NestedDFS/NestedDFSTermination.lean`:
 - `innerDFS_fuel_add_preserves`/`innerDFS_fuel_fold_add_preserves`: more
   fuel than needed can't change an already-successful result (proved by the
   same fuel/fold mutual-induction template `innerDFS_fuel_mono` already
-  uses in `NestedDFSCorrectness.lean`).
+  uses in `NestedDFS/NestedDFSCorrectness.lean`).
 - `innerDFS_fuel_exists`/`innerDFS_fuel_fold_exists_aux`: sufficient fuel
   (per `innerFuelMeasure`) *guarantees* success — the existence
   counterpart, resurrecting the *content* of the very first (deleted)
@@ -2017,12 +2017,12 @@ and `innerDFS_fuel_fold_cyclePath_head`/`innerDFS_fuel_chain_singleton`
 `innerDFS_fuel`'s top-level call in the final composition,
 `innerDFS_fuel_eq_innerDFSWF`).
 
-`NestedDFSCorrectness.lean` itself was never touched — still the
+`NestedDFS/NestedDFSCorrectness.lean` itself was never touched — still the
 fold-shaped `innerDFS_fuel`, still 0 sorry, still ~2000 lines exactly as
 before; the entire redesign was scoped to the bridge lemma (plus its
 supporting infrastructure) alone, preserving the existing correctness proof
 exactly as planned from the start of Phase 2. **Current sorry count in
-`NestedDFSTermination.lean`: 0.** Whole project builds clean (394 jobs).
+`NestedDFS/NestedDFSTermination.lean`: 0.** Whole project builds clean (394 jobs).
 
 ### `outerDFSLoopWF ↔ outerDFSLoop_fuel` bridge — ✅ DONE (2026-07-25, continued)
 
@@ -2097,7 +2097,7 @@ step-count formula anywhere. Followed the same approach: the bridge proves
 *existence* of a sufficient fuel by induction on `outerDFSLoopWF`'s own
 recursion (i.e. on the same lex measure), never a formula in `fuel` — which
 is exactly what's needed, since the existing fuel-based correctness theorems
-in `NestedDFSCorrectness.lean` (e.g. `nestedDFS_fuel_empty_no_cycle`) already
+in `NestedDFS/NestedDFSCorrectness.lean` (e.g. `nestedDFS_fuel_empty_no_cycle`) already
 take an arbitrary implicit `fuel` and assume only *success*, never a lower
 bound. Every branch of the induction has exactly one nested computation to
 solve for fuel, except the "accepting, cycle not found" branch, which has
@@ -2111,11 +2111,11 @@ whenever an equation lemma's RHS also mentions the function being unfolded),
 to reconcile the two to a shared value, exactly mirroring
 `innerDFS_fuel_add_preserves`'s earlier role in the inner bridge.
 
-**Current sorry count in `NestedDFSTermination.lean`: 0.** Whole project
+**Current sorry count in `NestedDFS/NestedDFSTermination.lean`: 0.** Whole project
 builds clean (394 jobs). This completes Phase 2's nested-DFS termination
 work in full — both `innerDFS` and `outerDFSLoop` are now well-founded,
 sorry-free, and proven equal (for sufficient fuel) to the pre-existing
-fuel-based definitions whose correctness `NestedDFSCorrectness.lean` already
+fuel-based definitions whose correctness `NestedDFS/NestedDFSCorrectness.lean` already
 establishes, so every existing correctness theorem there transfers across
 the bridge for free. Remaining Phase 2 scope: `expand`'s own termination
 conversion (`partial_fixpoint` → well-founded recursion via an
@@ -2124,7 +2124,7 @@ conversion (`partial_fixpoint` → well-founded recursion via an
 ### Wiring: total `nestedDFSWF` + top-level fuel bridge — ✅ DONE (2026-07-25, continued)
 
 Closes the "finish wiring nested DFS" follow-up: a total, well-founded
-top-level entry point, bridged to `NestedDFSCorrectness.lean`'s existing
+top-level entry point, bridged to `NestedDFS/NestedDFSCorrectness.lean`'s existing
 Phase 5 correctness theorems, so they now hold of a *real, terminating*
 function rather than only of the fuel-indexed proof device.
 
@@ -2164,13 +2164,29 @@ function rather than only of the fuel-indexed proof device.
    precondition is an explicit `ASSERT (fb_graph G)` (finite/bounded graph)
    threaded through as an argument-level assumption, not internally
    re-derived — exactly the role `FiniteReach succs` plays for `nestedDFSWF`.
-   So: **not deleted.** `NestedDFS.lean`'s `partial def`s are kept as the
+   So: **not deleted.** `NestedDFS/NestedDFSRef.lean`'s `partial def`s are kept as the
    abstract reference layer (readable, unverified termination), with a new
    docstring pointing to `nestedDFSWF` as the verified, total counterpart —
    mirroring CAVA's own two-layer split precisely, rather than inventing a
    new one.
 
-**What was built** (`NestedDFSTermination.lean`, `TopLevelWF` +
+   **Correction (later session, when this file was renamed `NestedDFSRef.lean`
+   and moved into `LTLLib/NestedDFS/`):** "mirroring
+   precisely" overclaimed — only the *structural* decision (keep both
+   layers) was mirrored, not CAVA's *proof* connecting them. CAVA's
+   `nested_dfs_code` is proven, via `nested_dfs_impl`/`nested_dfs_code.refine`,
+   to refine `nested_dfs`'s abstract nondeterministic spec (Isabelle
+   Refinement Framework). No such theorem was ever written here — there is
+   no Lean lemma anywhere connecting the `partial def`s to
+   `nestedDFS_fuel`/`nestedDFSWF`. This was never a real gap, since
+   `nestedDFSWF`'s correctness (this Phase 5 section) is proven by fuel-
+   indexed induction directly on the concrete algorithm, never needing an
+   abstract reference as an intermediate target the way CAVA's refinement-
+   calculus style structurally requires — but the docstring should have
+   said so at the time instead of implying full parity with CAVA. Fixed in
+   `NestedDFSRef.lean`'s docstring.
+
+**What was built** (`NestedDFS/NestedDFSTermination.lean`, `TopLevelWF` +
 `TopLevelFuelBridge` sections): `nestedDFSWF` (total, mirrors
 `nestedDFS_fuel`'s shape per finding 1 above); a `nestedDFS_fuel.go`
 one-step-unfolding equation-lemma family plus `nestedDFS_fuel_go_add_preserves`
@@ -2189,7 +2205,7 @@ and only assumes success, no lower bound, so existence of *some* sufficient
 fuel (not a closed formula) is exactly what's needed, same pattern as the
 outer bridge.
 
-**Current sorry count in `NestedDFSTermination.lean`: 0.** Whole project
+**Current sorry count in `NestedDFS/NestedDFSTermination.lean`: 0.** Whole project
 builds clean (394 jobs). `nestedDFSWF` + its two correctness theorems are
 now the verified, total, actually-usable nested-DFS emptiness check —
 callers supply a `FiniteReach succs` witness and get back a result with a

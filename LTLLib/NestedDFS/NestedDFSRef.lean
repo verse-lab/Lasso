@@ -1,5 +1,7 @@
 /-
-  Generic Nested DFS emptiness check for Büchi automata.
+  Generic Nested DFS emptiness check for Büchi automata — abstract
+  reference layer only. Not part of the verified pipeline; see "What this
+  file actually is" below before relying on anything here.
 
   Implements the Courcoubetis-Vardi-Wolper-Yannakakis (CVWY) algorithm for
   detecting accepting cycles in a graph. This is the standard algorithm for
@@ -12,24 +14,42 @@
   include the emptiness check (it only produces the GBA). The emptiness check
   is part of the broader CAVA model checking framework.
 
-  This file's `nestedDFS`/`innerDFS`/`outerDFSLoop` are the *abstract
-  reference* definitions — `partial def`, unverified termination, kept for
-  readability. This mirrors CAVA's own two-layer split (`Nested_DFS.thy`):
-  the abstract `nested_dfs ≡ do { s ← it_dfs G accpt; RETURN (lasso s) }` is
-  never deleted once the concrete, generated `nested_dfs_code` exists —
-  both are kept, connected by a refinement theorem (`nested_dfs_impl`,
-  `nested_dfs_code.refine`), and `nested_dfs_code`'s own precondition is an
-  explicit `ASSERT (fb_graph G)` (finite/bounded-degree graph), threaded
-  through rather than internally re-derived.
+  ## What this file actually is
 
-  The verified, total, actually-terminating counterpart here is
-  `nestedDFSWF` (`NestedDFSTermination.lean`), playing `nested_dfs_code`'s
-  role: it requires a `FiniteReach succs` witness as an explicit argument
-  (the Lean analogue of `ASSERT (fb_graph G)`), is proven equal to
-  `nestedDFS_fuel` for sufficient fuel (`nestedDFS_fuel_eq_nestedDFSWF`),
-  and inherits both of Phase 5's correctness theorems for free
+  `nestedDFS`/`innerDFS`/`outerDFSLoop` below are `partial def`s: unverified
+  termination, kept purely as human-readable pseudocode of the algorithm.
+  Nothing in this codebase calls them — every actual computation and every
+  correctness theorem goes through `nestedDFSWF` (`NestedDFS/NestedDFSTermination.lean`,
+  well-founded, total) and the fuel-indexed proof device it's bridged to
+  (`NestedDFS/NestedDFSCorrectness.lean`). That fuel-indexed version was independently
+  hand-written to implement the same algorithm, not derived from or checked
+  against this file — there is **no Lean theorem anywhere connecting this
+  file's definitions to `nestedDFS_fuel`/`nestedDFSWF`**.
+
+  This intentionally mirrors CAVA's own decision to keep its abstract
+  `nested_dfs ≡ do { s ← it_dfs G accpt; RETURN (lasso s) }` (`Nested_DFS.thy`)
+  around once the concrete, executable `nested_dfs_code` exists, rather than
+  deleting it. It does **not** mirror CAVA's proof: in Isabelle, those two
+  layers are connected by an actual refinement theorem (`nested_dfs_impl`,
+  `nested_dfs_code.refine`) — CAVA proves `nested_dfs_code` refines
+  `nested_dfs`'s abstract nondeterministic specification, via the Isabelle
+  Refinement Framework. That refinement proof has not been ported here, and
+  — unlike, say, `Product.finiteReach`'s `sorry` (`Product.lean`) — it isn't
+  a gap that needs closing: this Lean port proves `nestedDFSWF`'s
+  correctness via a completely different route
+  (`NestedDFS/NestedDFSCorrectness.lean`'s fuel-indexed induction, directly on the
+  concrete algorithm), which never needs an abstract reference
+  implementation as an intermediate proof target the way CAVA's
+  refinement-calculus style does. This file's only remaining job is
+  documentation: readable pseudocode for anyone approaching the algorithm
+  before diving into the well-founded/fuel machinery.
+
+  The verified, total, actually-terminating counterpart is `nestedDFSWF`
+  (`NestedDFS/NestedDFSTermination.lean`): it requires a `FiniteReach succs` witness as
+  an explicit argument (the Lean analogue of `ASSERT (fb_graph G)`), and has
+  both correctness directions proven unconditionally
   (`nestedDFSWF_empty_no_cycle`, `nestedDFSWF_nonEmpty_valid`). Use
-  `nestedDFSWF`, not this file's `nestedDFS`, wherever a verified result is
+  `nestedDFSWF`, never this file's `nestedDFS`, wherever a verified result is
   needed.
 
   References:
@@ -149,8 +169,8 @@ private partial def outerDFSLoop [BEq State] [Hashable State]
         -- `Nested_DFS.thy`): `succ` is cyan (currently on the outer stack),
         -- so a cycle can be reported directly, without launching innerDFS.
         -- Verified version + full derivation: `outerDFSLoop_fuel`/
-        -- `outerDFSLoopWF` in `NestedDFSCorrectness.lean`/
-        -- `NestedDFSTermination.lean`.
+        -- `outerDFSLoopWF` in `NestedDFS/NestedDFSCorrectness.lean`/
+        -- `NestedDFS/NestedDFSTermination.lean`.
         if isAccepting current then
           if succ == current then
             -- degenerate case: current -> current is a literal self-loop.

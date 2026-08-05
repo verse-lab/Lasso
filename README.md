@@ -33,10 +33,10 @@ theorem fullPipeline_nonEmpty_sat (φ : NNF α) {stem loop : List BAState}
 | Computational GBA accepts exactly the models of `φ` | `constructGBA_correct_weak` | `LTLtoGBA/GraphComplete.lean` |
 | `constructGBA`'s output is well-formed | `constructGBA_wellFormed` | `LTLtoGBA/Bridge.lean` |
 | GBA degeneralization preserves language, any `numAcceptSets` | `degeneralize_accepts_any` | `DegeneralBridge.lean` |
-| `innerDFS`/`outerDFSLoop`/`nestedDFS` are total, well-founded | `nestedDFSWF` | `NestedDFSTermination.lean` |
-| `nestedDFSWF` soundness (`.nonEmpty` → genuine accepting cycle) | `nestedDFSWF_nonEmpty_valid` | `NestedDFSTermination.lean` |
-| `nestedDFSWF` completeness (`.empty` → no accepting cycle) | `nestedDFSWF_empty_no_cycle` | `NestedDFSTermination.lean` |
-| Accepting run ⟹ accepting cycle exists (pumping lemma) | `exists_acceptingCycle_of_run` | `NestedDFSTermination.lean` |
+| `innerDFS`/`outerDFSLoop`/`nestedDFS` are total, well-founded | `nestedDFSWF` | `NestedDFS/NestedDFSTermination.lean` |
+| `nestedDFSWF` soundness (`.nonEmpty` → genuine accepting cycle) | `nestedDFSWF_nonEmpty_valid` | `NestedDFS/NestedDFSTermination.lean` |
+| `nestedDFSWF` completeness (`.empty` → no accepting cycle) | `nestedDFSWF_empty_no_cycle` | `NestedDFS/NestedDFSTermination.lean` |
+| Accepting run ⟹ accepting cycle exists (pumping lemma) | `exists_acceptingCycle_of_run` | `NestedDFS/NestedDFSTermination.lean` |
 | Everything composed into one satisfiability decision procedure | `fullPipeline_empty_unsat` / `fullPipeline_nonEmpty_sat` | `Pipeline.lean` |
 
 See `ProofPlan.md` for the full, session-by-session history of how each piece was ported from the Isabelle sources, including every place the Lean port had to diverge from CAVA and why. `ROADMAP.md` gives a short current-status snapshot.
@@ -90,9 +90,9 @@ LTLLib/
     Bridge.lean                    -- Bridge: computational GBA ↔ abstract automaton; constructGBA_wellFormed
     GraphComplete.lean              -- GraphComplete proved from createGraph; unconditional end-to-end GBA theorem
   EmptinessCheck.lean              -- EmptinessResult, AcceptingCycle, FiniteReach, EmptinessChecker (algorithm-agnostic)
-  NestedDFS.lean                  -- Reference (partial def) nested DFS emptiness check (CVWY algorithm)
-  NestedDFSCorrectness.lean       -- Fuel-based nestedDFS soundness + completeness (both directions)
-  NestedDFSTermination.lean       -- Total nestedDFSWF; nestedDFSChecker; pumping lemma; fuel bridges
+  NestedDFS/NestedDFSRef.lean                  -- Reference (partial def) nested DFS emptiness check (CVWY algorithm)
+  NestedDFS/NestedDFSCorrectness.lean       -- Fuel-based nestedDFS soundness + completeness (both directions)
+  NestedDFS/NestedDFSTermination.lean       -- Total nestedDFSWF; nestedDFSChecker; pumping lemma; fuel bridges
   Lasso.lean                      -- Abstract lasso theory (ValidLasso, lassoRun)
   OutputVerify.lean                -- Bridge: nestedDFS/AcceptingCycle output → ValidLasso → accepting run
   Pipeline.lean                    -- fullPipeline: the composed, total, verified decision procedure
@@ -145,11 +145,11 @@ LTLLib/
 
 **`EmptinessCheck.lean`** — The algorithm-agnostic core of the emptiness-check story, factored out so it doesn't live inside the nested-DFS-specific files: `EmptinessResult` (the `.empty`/`.nonEmpty` result type), `AcceptingCycle` (the pure stem+cycle graph witness — CAVA's `is_acc_run`), `FiniteReach` (the `fb_graph`-analogue finiteness precondition), and `EmptinessChecker` (an abstract `check`-plus-two-correctness-obligations contract, corresponding to CAVA's `find_ce_spec` — any future non-nested-DFS emptiness algorithm implements this same interface). Imports only `Std`; mentions no concrete algorithm.
 
-**`NestedDFS.lean`** — The reference Courcoubetis-Vardi-Wolper-Yannakakis (CVWY) nested DFS emptiness check, as two `partial def`s (`innerDFS`/`outerDFSLoop`) kept as a readable specification layer — the verified, total entry point is `nestedDFSWF` (`NestedDFSTermination.lean`), not this file directly.
+**`NestedDFS/NestedDFSRef.lean`** — The reference Courcoubetis-Vardi-Wolper-Yannakakis (CVWY) nested DFS emptiness check, as two `partial def`s (`innerDFS`/`outerDFSLoop`) kept as a readable specification layer — the verified, total entry point is `nestedDFSWF` (`NestedDFS/NestedDFSTermination.lean`), not this file directly.
 
-**`NestedDFSCorrectness.lean`** — Fuel-indexed proof device (`innerDFS_fuel`/`outerDFSLoop_fuel`/`nestedDFS_fuel`) proving both directions unconditionally: `.empty` → no accepting cycle (`nestedDFS_fuel_empty_no_cycle`), `.nonEmpty` → genuine `AcceptingCycle` witness (`nestedDFS_fuel_nonEmpty_valid`).
+**`NestedDFS/NestedDFSCorrectness.lean`** — Fuel-indexed proof device (`innerDFS_fuel`/`outerDFSLoop_fuel`/`nestedDFS_fuel`) proving both directions unconditionally: `.empty` → no accepting cycle (`nestedDFS_fuel_empty_no_cycle`), `.nonEmpty` → genuine `AcceptingCycle` witness (`nestedDFS_fuel_nonEmpty_valid`).
 
-**`NestedDFSTermination.lean`** — Converts `innerDFS`/`outerDFSLoop` off `partial` (`innerDFSWF`/`innerDFSCore`, `outerDFSLoopWF`, independent well-founded recursions, not mutual — matching CAVA's own blue/red DFS structure), bridges them to the fuel-based definitions so `NestedDFSCorrectness.lean`'s proofs transfer for free, and wires up the total `nestedDFSWF`. Also: `BA.finiteReach`/`BA.WellFormed`-packaging, `nestedDFSChecker` (nested DFS packaged as the one existing `EmptinessChecker` refinement), and the pumping lemma `exists_acceptingCycle_of_run` (CAVA's `accepted_lasso`: an accepting run over a finite reachable set yields an `AcceptingCycle`, via a finite pigeonhole).
+**`NestedDFS/NestedDFSTermination.lean`** — Converts `innerDFS`/`outerDFSLoop` off `partial` (`innerDFSWF`/`innerDFSCore`, `outerDFSLoopWF`, independent well-founded recursions, not mutual — matching CAVA's own blue/red DFS structure), bridges them to the fuel-based definitions so `NestedDFS/NestedDFSCorrectness.lean`'s proofs transfer for free, and wires up the total `nestedDFSWF`. Also: `BA.finiteReach`/`BA.WellFormed`-packaging, `nestedDFSChecker` (nested DFS packaged as the one existing `EmptinessChecker` refinement), and the pumping lemma `exists_acceptingCycle_of_run` (CAVA's `accepted_lasso`: an accepting run over a finite reachable set yields an `AcceptingCycle`, via a finite pigeonhole).
 
 **`Lasso.lean`** — `lassoRun`, `ValidLasso`, `run_isRun`/`run_isAccepting`/`accepts_of_validLasso`. The Lean port of CAVA's `run_of_lasso`/`lasso_accepted`.
 

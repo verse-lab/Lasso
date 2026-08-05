@@ -11,7 +11,7 @@
 -/
 import LTLLib.Lasso
 import LTLLib.BA
-import LTLLib.NestedDFSCorrectness
+import LTLLib.NestedDFS.NestedDFSCorrectness
 
 namespace LTLLib
 
@@ -100,7 +100,7 @@ theorem ba_hasAcceptingRun_of_ndfs_output [BEq α] [Hashable α]
 Track B item 2 (`ProofPlan.md`) — CAVA's own move here (`CAVA_Impl.thy`'s
 `ndfs_find_ce`, `RETURN (Some (Some (map_lasso fst (lasso_of_prpl l))))`) is
 a one-line repackaging of the raw `(pr, pl)` witness into a `lasso` record.
-`AcceptingCycle` (`NestedDFSCorrectness.lean`) is already field-for-field the
+`AcceptingCycle` (`EmptinessCheck.lean`) is already field-for-field the
 same shape as CAVA's `is_lasso_prpl_pre`, so the Lean analogue is just as
 mechanical: convert each field into `ValidLasso`'s vocabulary. -/
 

@@ -8,7 +8,7 @@
   The external interface is deliberately three bare arguments — no bundled
   `System` record — matching both CAVA's `sa_rec` (`g_V0`/`g_E`/`sa_L`,
   `CAVA_Automata/Automata.thy`) and this repo's own `nestedDFS`/`nestedDFSWF`
-  (`NestedDFS.lean`, `NestedDFSTermination.lean`), which already take a bare
+  (`NestedDFS/NestedDFSRef.lean`, `NestedDFS/NestedDFSTermination.lean`), which already take a bare
   `initialStates`/`successors : State → Array State` pair with no
   automaton-specific record:
   - `sysInit : List SysState` — corresponds to CAVA's `g_V0`.
@@ -20,7 +20,7 @@
   Product state order is `SysState × BAState` (Lean-natural `(input,
   automaton)` order); CAVA's own `(q,s)` pairs are `(automaton, system)`.
 -/
-import LTLLib.NestedDFSTermination
+import LTLLib.NestedDFS.NestedDFSTermination
 
 namespace LTLLib
 
@@ -86,7 +86,7 @@ private def hashSetProd (A : Std.HashSet SysState) (B : Std.HashSet BAState) :
 `FiniteReach` witness (their system being finitely-reachable is *their*
 proof obligation, exactly as CAVA's `inter_spec` takes
 `finite (sa.E⇧* `` sa.V0)` as a precondition rather than deriving it), and
-this combines it with `BA.finiteReach` (`NestedDFSTermination.lean`).
+this combines it with `BA.finiteReach` (`NestedDFS/NestedDFSTermination.lean`).
 
 `closed` is left unproven (`sorry`) for this pass — see
 `ProductModelChecker.md`'s "Explicitly out of scope" section, which tracks

@@ -254,7 +254,7 @@ Independent of Phase 1. Removes `partial` from the three functions.
 
 ### 2.3 `innerDFS` / `outerDFSLoop` termination
 
-**Modify**: `LTLLib/NestedDFS.lean`
+**Modify**: `LTLLib/NestedDFS/NestedDFSRef.lean`
 
 - Add finiteness precondition (bounded reachable state set)
 - `innerDFS`: measure is `|reachable| - |innerVisited|`
@@ -339,7 +339,7 @@ theorem ltl_to_gba_correct (φ : Formula α) :
 | `LTLLib/Acceptance.lean` | 1 | **New** — GBA.Spec, BA.Spec, acceptance, degeneralize_correct |
 | `LTLLib/LTL/SubformulaFinite.lean` | 2 | **New** — NNF.size, finiteness |
 | `LTLLib/LTLtoGBA/Expand.lean` | 2 | Modify (remove partial) |
-| `LTLLib/NestedDFS.lean` | 2 | Modify (remove partial) |
+| `LTLLib/NestedDFS/NestedDFSRef.lean` | 2 | Modify (remove partial) |
 | `LTLLib/LTLtoGBA/Invariants.lean` | 3 | **New** — propagation lemmas, L4_6 |
 | `LTLLib/LTLtoGBA/Soundness.lean` | 4 | **New** — L4_8, L4_9 |
 | `LTLLib/LTLtoGBA/Completeness.lean` | 4 | **New** — L4_10, auto_run |

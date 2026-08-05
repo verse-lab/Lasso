@@ -5,9 +5,9 @@
   algorithm must satisfy.
 
   Nothing in this file mentions `nestedDFS`/`innerDFS`/`outerDFSLoop` or any
-  other concrete algorithm. `NestedDFS.lean`/`NestedDFSCorrectness.lean`/
-  `NestedDFSTermination.lean` are one particular *implementation* consuming
-  these definitions — `nestedDFSChecker` (`NestedDFSTermination.lean`) is
+  other concrete algorithm. `NestedDFS/NestedDFSRef.lean`/`NestedDFS/NestedDFSCorrectness.lean`/
+  `NestedDFS/NestedDFSTermination.lean` are one particular *implementation* consuming
+  these definitions — `nestedDFSChecker` (`NestedDFS/NestedDFSTermination.lean`) is
   the one existing instance of `EmptinessChecker` below. A future algorithm
   (e.g. an SCC-based checker) implements the same contract without touching
   this file, `NestedDFS*.lean`, or anything built on top of `EmptinessChecker`
@@ -93,7 +93,7 @@ never changes.
 `is_acc_run` plays the role of — stated purely over
 `initialStates`/`succs`/`isAccepting`, no mention of any specific search
 strategy. `nestedDFSWF_nonEmpty_valid`/`nestedDFSWF_empty_no_cycle`
-(`NestedDFSTermination.lean`) are exactly `find_ce_spec`'s two cases, proven
+(`NestedDFS/NestedDFSTermination.lean`) are exactly `find_ce_spec`'s two cases, proven
 for `nestedDFSWF` specifically. This structure packages that same contract
 as an explicit interface so a future algorithm (e.g. an SCC-based checker)
 can be swapped in by proving just these two obligations, without touching
