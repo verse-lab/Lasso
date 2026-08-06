@@ -80,6 +80,15 @@ private def hashSetProd (A : Std.HashSet SysState) (B : Std.HashSet BAState) :
     Std.HashSet (SysState × BAState) :=
   Std.HashSet.ofList (A.toList.flatMap fun a => B.toList.map fun b => (a, b))
 
+/-- Membership in `hashSetProd`: `(a, b)` is in the product iff `a`/`b` are
+each in their own half. The lemma `hashSetProd` itself was missing before
+`finiteReach.closed` could be proven (see that def's docstring). -/
+private theorem hashSetProd_mem [LawfulBEq SysState] [LawfulHashable SysState]
+    (A : Std.HashSet SysState) (B : Std.HashSet BAState) (a : SysState) (b : BAState) :
+    (a, b) ∈ hashSetProd A B ↔ a ∈ A ∧ b ∈ B := by
+  simp [hashSetProd, Std.HashSet.mem_ofList, List.mem_flatMap, List.mem_map, Prod.mk.injEq,
+    Std.HashSet.mem_toList]
+
 /-- Corresponds to CAVA's `prod_finite_reachable` (`Automata.thy`,
 `igba_sys_prod_precond`): the product's reachable states are contained in
 `reachable(sys) × reachable(ba)`. The caller supplies their own system's
@@ -88,19 +97,33 @@ proof obligation, exactly as CAVA's `inter_spec` takes
 `finite (sa.E⇧* `` sa.V0)` as a precondition rather than deriving it), and
 this combines it with `BA.finiteReach` (`NestedDFS/NestedDFSTermination.lean`).
 
-`closed` is left unproven (`sorry`) for this pass — see
-`ProductModelChecker.md`'s "Explicitly out of scope" section, which tracks
-it explicitly. It is expected to be a short, mechanical proof (unfold
-`getSuccessors`, split on the `compatible` guard — the `else #[]` case is
-vacuous — and combine `sysFR.closed`/`(ba.finiteReach hbawf).closed`
-pointwise via a `hashSetProd` membership lemma that doesn't exist yet), but
-is deliberately not attempted in this pass. -/
-def finiteReach (ba : BA α) (hbawf : ba.WellFormed)
+`[LawfulBEq SysState] [LawfulHashable SysState]` (beyond the file's own
+`variable` block) are needed only here, for `hashSetProd_mem`'s
+`Std.HashSet.mem_ofList`/`mem_toList` lemmas to hold of the product
+`Std.HashSet (SysState × BAState)` — `BAState` already has both instances
+(`BA.lean`). -/
+def finiteReach [LawfulBEq SysState] [LawfulHashable SysState] (ba : BA α) (hbawf : ba.WellFormed)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysSucc) :
     FiniteReach (getSuccessors ba sysSucc sysLabel) where
   univ := hashSetProd sysFR.univ (ba.finiteReach hbawf).univ
-  closed := sorry
+  closed := by
+    rintro ⟨s, q⟩ hsq ⟨s', q'⟩ hst
+    obtain ⟨hs_mem, hq_mem⟩ := (hashSetProd_mem ..).mp (Std.HashSet.mem_iff_contains.mpr hsq)
+    unfold getSuccessors at hst
+    cases hcompat : ba.compatible q (sysLabel s) with
+    | false => simp [hcompat] at hst
+    | true =>
+      simp only [hcompat, if_true, Array.mem_flatMap, Array.mem_map] at hst
+      obtain ⟨s'', hs''_mem, q'', hq''_mem, heq⟩ := hst
+      obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. |>.mp heq
+      have hs'_mem : s'' ∈ sysFR.univ :=
+        Std.HashSet.mem_iff_contains.mpr
+          (sysFR.closed s (Std.HashSet.mem_iff_contains.mp hs_mem) s'' hs''_mem)
+      have hq'_mem : q'' ∈ (ba.finiteReach hbawf).univ :=
+        Std.HashSet.mem_iff_contains.mpr
+          ((ba.finiteReach hbawf).closed q (Std.HashSet.mem_iff_contains.mp hq_mem) q'' hq''_mem)
+      exact Std.HashSet.mem_iff_contains.mp ((hashSetProd_mem ..).mpr ⟨hs'_mem, hq'_mem⟩)
 
 end Product
 

@@ -32,6 +32,9 @@ instance : LawfulBEq Light where
   eq_of_beq {x y} h := by cases x <;> cases y <;> first | rfl | (rw [Light.beq_def] at h; contradiction)
   rfl {x} := by cases x <;> rfl
 
+instance : LawfulHashable Light where
+  hash_eq {a b} h := by have := eq_of_beq h; subst this; rfl
+
 /-- Atomic propositions labeling the traffic light's states. -/
 abbrev Prop' := String
 
@@ -66,11 +69,7 @@ def ψ : Formula Prop' := .always (.eventually (.atom "green"))
 needs for its internal tableau construction (matches `BuildPrint.S`). -/
 abbrev S := Std.HashSet (NNF Prop')
 
--- `#eval!`, not `#eval`: `Product.finiteReach`'s `closed` field is a
--- documented `sorry` (`Product.lean`, "deliberately not attempted in this
--- pass"). It's a `Prop`, erased at runtime, so this is safe to evaluate
--- anyway — the `sorry` never actually runs.
-#eval!
+#eval
   match modelCheck (S := S) ψ lightInit lightSucc lightLabel lightFR with
   | .empty n => s!"sys ⊨ ψ (no counterexample; explored {n} product states)"
   | .nonEmpty stem loop => s!"sys ⊭ ψ; counterexample stem={reprStr stem} loop={reprStr loop}"

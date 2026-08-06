@@ -26,6 +26,7 @@ namespace LTLLib
 
 variable {α : Type u} {S : Type w} [FSet (NNF α) S]
   {SysState : Type v} [BEq SysState] [Hashable SysState] [LawfulBEq SysState]
+  [LawfulHashable SysState]
   [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
 
 /-- Does `sys` (given by `sysInit`/`sysSucc`/`sysLabel`) satisfy `φ`?

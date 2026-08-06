@@ -187,8 +187,13 @@ def finiteReach (ba : BA α) (hbawf : ba.WellFormed)
     sorry
 ```
 
-(`sorry` placeholder for the implementation pass; expected to be a short,
-mechanical proof — no `sorry` left once implemented.)
+(This was left as a `sorry` placeholder for the implementation pass, then
+proven afterward. The actual proof (`Product.lean`) keeps the same shape —
+unfold `getSuccessors`, `cases` on the `compatible` guard, combine
+`sysFR.closed`/`(ba.finiteReach hbawf).closed` — but goes through a private
+`hashSetProd_mem` lemma rather than the informal `×ˢ` notation sketched
+above, and needed `[LawfulBEq SysState] [LawfulHashable SysState]` added to
+`finiteReach`'s signature for the `Std.HashSet` membership lemmas involved.)
 
 ### 4. `LTLLib/ModelCheck.lean` (new file) — top-level `modelCheck`
 
@@ -295,9 +300,16 @@ analogues we'd want are exactly the `modelCheck` counterparts of
   A real proof effort, comparable in size to what
   `DegeneralBridge.lean`/`Pipeline.lean`'s existing correctness theorems
   already required.
-- **Not yet proven**: `Product.finiteReach`'s `closed` field (marked `sorry`
-  above until the implementation pass fills it in — expected to be short,
-  but tracked here explicitly so it isn't forgotten).
+- ~~**Not yet proven**: `Product.finiteReach`'s `closed` field~~ — done.
+  Proven via a new `hashSetProd_mem` membership lemma plus the
+  unfold/split/combine shape sketched in section 3 below; required adding
+  `[LawfulBEq SysState] [LawfulHashable SysState]` to `finiteReach`'s own
+  signature (only there, not the file's shared `variable` block) and
+  `[LawfulHashable SysState]` to `modelCheck`'s (`ModelCheck.lean`) — the
+  `Std.HashSet` correctness lemmas used (`mem_ofList`, `mem_toList`) need
+  `LawfulHashable` on `SysState × BAState`, which `BAState` already had but
+  `SysState` didn't have anywhere in scope. Every `modelCheck` caller must
+  now also supply a `LawfulHashable` instance for their system-state type.
 
 ### What's *not* a gap (already covered, or matched deliberately)
 

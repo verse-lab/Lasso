@@ -34,8 +34,9 @@
   `nested_dfs_code.refine`) — CAVA proves `nested_dfs_code` refines
   `nested_dfs`'s abstract nondeterministic specification, via the Isabelle
   Refinement Framework. That refinement proof has not been ported here, and
-  — unlike, say, `Product.finiteReach`'s `sorry` (`Product.lean`) — it isn't
-  a gap that needs closing: this Lean port proves `nestedDFSWF`'s
+  it isn't a gap that needs closing (unlike `Product.finiteReach`'s `closed`
+  field once was, `Product.lean` — now proven): this Lean port proves
+  `nestedDFSWF`'s
   correctness via a completely different route
   (`NestedDFS/NestedDFSCorrectness.lean`'s fuel-indexed induction, directly on the
   concrete algorithm), which never needs an abstract reference

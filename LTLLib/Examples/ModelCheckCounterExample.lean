@@ -32,6 +32,9 @@ instance : LawfulBEq Light where
   eq_of_beq {x y} h := by cases x <;> cases y <;> first | rfl | (rw [Light.beq_def] at h; contradiction)
   rfl {x} := by cases x <;> rfl
 
+instance : LawfulHashable Light where
+  hash_eq {a b} h := by have := eq_of_beq h; subst this; rfl
+
 /-- Atomic propositions labeling the traffic light's states. -/
 abbrev Prop' := String
 
@@ -105,16 +108,12 @@ def showCounterexample (stem loop : List (Light × BAState)) : String :=
 prints it `Repr`-quoted (escaped `\n` and all), same reason
 `BuildPrint.runExample` prints via `IO.println` rather than returning text. -/
 def report : IO Unit := do
-  -- `#eval!`, not `#eval`: `Product.finiteReach`'s `closed` field is a
-  -- documented `sorry` (`Product.lean`, "deliberately not attempted in this
-  -- pass"). It's a `Prop`, erased at runtime, so this is safe to evaluate
-  -- anyway — the `sorry` never actually runs.
   match modelCheck (S := S) ψ lightInit lightSucc lightLabel lightFR with
   | .empty n => IO.println s!"sys ⊨ ψ (no counterexample; explored {n} product states)"
   | .nonEmpty stem loop =>
     IO.println "sys ⊭ ψ"
     IO.println (showCounterexample stem loop)
 
-#eval! report
+#eval report
 
 end LTLLib.Examples
