@@ -313,6 +313,23 @@ sorry, whole project builds clean (394 jobs) — Phase 2's nested-DFS work,
 including wiring, is done.** Remaining: `expand`'s own termination
 conversion, separately scoped.
 
+**Update (2026-08-07): the "zero proof obligations via runtime
+`fr.univ.contains succ` `dite` + defensive fallback" design described above
+(2026-07-25 updates) has been superseded.** `FiniteReach` no longer carries a
+`Std.HashSet` witness at all (`fr.univ`/`fr.closed` are gone) — it's now a
+bare `Prop` existence certificate over a canonical `Reachable` closure
+relation, and `innerDFSCore`/`outerDFSLoopWF` thread a new `RFrame` structure
+(bundling an erased, per-frame `Reachable` proof) through their stack instead
+of the old runtime check. This *does* reintroduce proof-carrying data into
+the stack's own element type — the thing the 2026-07-25 updates deliberately
+stripped out to keep `rw`/`induction ... using .induct` tractable — but
+bundled *per-frame* (via `RFrame`) rather than as a *whole-stack* hypothesis
+argument (the shape that failed before), combined with `grind` (immature
+enough at the time of the original attempt to not be a reliable fallback)
+handling the resulting one-step-unfolding goals that plain `rw`/`simp` still
+cannot. See `## FiniteReach strict redesign (Option B)` below and
+`FiniteReachRedesign.md` for the full design and findings.
+
 ## Schwoon-Esparza back-edge optimization
 
 **Status: ✅ DONE (2026-07-27).** Implemented and fully proven the same day
@@ -859,6 +876,66 @@ where reality diverged from or refined the plan:
   calls using induction-bound fuel variables (`n`, `k + 1`, ...) instead of
   the literal identifier `fuel`.
 - `ROADMAP.md`'s "Known non-goals" entry for this item updated to done.
+
+## FiniteReach strict redesign (Option B)
+
+**Status: ✅ DONE (2026-08-07).** Full design record and findings in
+`FiniteReachRedesign.md` (especially §8/§8.6.1) — this section is a short
+pointer plus the parts most relevant to *this* file's own history, since it
+directly reverses a design call made earlier in the `## Status update` log
+above (2026-07-25).
+
+**What changed.** `FiniteReach` used to be a structure carrying a real
+`Std.HashSet` "universe" witness (`fr.univ`, `fr.closed`), and
+`innerDFSCore`/`outerDFSLoopWF` checked `fr.univ.contains succ` at runtime
+via a `dite` with a defensive dead-fallback branch — chosen specifically so
+neither function's *type* carried proof obligations (see the 2026-07-25
+entries above). `FiniteReach` is now a bare `Prop`, no data at all
+(`{s | Reachable initialStates succs s}.Finite`, over a new canonical
+inductive `Reachable` closure relation in `EmptinessCheck.lean`), and the
+runtime check is gone entirely — `innerDFSCore`/`outerDFSLoopWF` now thread a
+new `RFrame` structure through their explicit stack, bundling each frame's
+own erased `Reachable`/suffix proof, so a fresh successor's reachability
+comes from `Reachable.step` at zero runtime cost. This matches CAVA's own
+`fb_graph`/`ASSERT`-once discipline literally, not just in spirit.
+
+**Why the earlier "strip proof obligations" call didn't block this.** The
+2026-07-25 finding was that threading `fr.univ`-membership facts as
+*explicit, whole-stack-quantified* hypothesis arguments made `rw`/
+`induction ... using .induct` fragile. `RFrame` sidesteps that specific
+failure mode by bundling the proof *per stack frame* (in the element type)
+rather than as a separate whole-stack hypothesis — Lean's definitional proof
+irrelevance means no `rw`/`.induct` call ever needs to know *which* proof
+populates an `RFrame`'s `hreach` field. This was validated in isolation
+first, via a standalone toy spike, before touching the real ~2000-line file
+(`FiniteReachRedesign.md` §8.6).
+
+**The other key finding, useful for any future well-founded-recursion work
+in this codebase**: plain `rw [<fn>.eq_def]` and blanket `simp [<fn>, ...]`
+both fail (the former leaves the nested match/if unresolved even given the
+pinning hypothesis; the latter loops) on the one-step-unfolding goals this
+kind of proof-carrying-argument threading produces. `rw [<fn>.eq_2]; grind`
+does not — `Lean` only ever splits a well-founded def's auto-generated
+equation lemmas at its own *outermost* recursion-justifying match (so
+`explore.eq_2`/`innerDFSCore.eq_2` covers the entire `frame :: rest` case,
+nested `match`/`if`s and all, unsplit), and `grind` reliably resolves what's
+left using whatever case-specific hypotheses (`hrem`, `hse`, `hblocked`,
+`heq`, …) are already in scope. This is the concrete, mechanical reason this
+attempt succeeded where the 2026-07-25 one didn't: `grind`'s current
+maturity, not a cleverer proof shape.
+
+**Downstream**: `Product.lean`'s `hashSetProd` (a genuine `Std.HashSet`
+cross-product materialization) is deleted outright; `BA.finiteReach`/
+`Product.finiteReach` are now pure existence proofs, never surfacing
+`FiniteReach`-derived data. `ModelCheck.lean`/`Pipeline.lean` got signature
+updates (`initialStates` now precedes the `FiniteReach`/`fr` argument
+everywhere, since `FiniteReach`'s type depends on it). Both Schwoon-Esparza
+and Holzmann-Peled-Yannakakis optimizations (below) are untouched in logic —
+only mechanically re-threaded onto `RFrame`; if you're reading those
+sections' code snippets, mentally substitute `RFrame`-typed stack elements
+for the bare `(State, List State)` pairs they were written against. Full
+project `lake build` clean, zero `sorry`; both example programs verified to
+still produce correct model-checking results after the rewrite.
 
 ## Where this fits now (2026-07-27)
 

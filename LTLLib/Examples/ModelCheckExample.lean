@@ -13,6 +13,7 @@
   cycle of the loop.
 -/
 import LTLLib
+import Mathlib.Tactic.DeriveFintype
 
 namespace LTLLib.Examples
 
@@ -20,7 +21,7 @@ namespace LTLLib.Examples
 `red → green → yellow → red → …`. -/
 inductive Light where
   | red | yellow | green
-deriving BEq, Hashable, Repr, Inhabited, DecidableEq
+deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
 
 private theorem Light.beq_def (x y : Light) :
     (x == y) = (match x, y with
@@ -54,13 +55,10 @@ def lightLabel : Light → Std.HashSet Prop'
 /-- The system starts at `red`. -/
 def lightInit : List Light := [.red]
 
-/-- All three states are reachable from `red` and closed under `lightSucc`,
-witnessing finite reachability for the emptiness checker. -/
-def lightFR : FiniteReach lightSucc where
-  univ := {Light.red, Light.yellow, Light.green}
-  closed := by
-    intro s hs t ht
-    cases s <;> simp_all [lightSucc]
+/-- `Light` is a `Fintype`, so *any* `Set Light` is finite for free — no
+manual enumeration/closure proof needed, unlike the old `Std.HashSet`-witness
+design. -/
+def lightFR : FiniteReach lightInit lightSucc := Set.toFinite _
 
 /-- `□◇green`: the light turns green infinitely often. -/
 def ψ : Formula Prop' := .always (.eventually (.atom "green"))

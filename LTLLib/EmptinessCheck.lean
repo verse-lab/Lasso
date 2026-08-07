@@ -20,6 +20,7 @@
   full correspondence.
 -/
 import Std
+import Mathlib.Data.Set.Card
 
 namespace LTLLib
 
@@ -66,17 +67,35 @@ structure AcceptingCycle
 
 /-! ## Finite-reachability hypothesis
 
-Lean analogue of CAVA's `fb_graph` locale assumption. Any concrete automaton
-built by `constructGBA`/`GBA.degeneralize` satisfies this with `univ :=`
-its own (finite, `Std.HashMap`-backed) state set.
+Lean analogue of CAVA's `fb_graph` locale assumption — and, more precisely,
+of the top-level `finite ((g_E sys)⇧* `` g_V0 sys)` assertion CAVA states
+over the *canonical* reachability closure of a graph's own edge relation,
+never over an arbitrary caller-named closed superset. `Reachable` below is
+that canonical closure; `FiniteReach` is the bare existence certificate that
+it's finite. Deliberately a `Prop` with no data fields at all: nothing here
+is ever touched on an executable path, matching CAVA's `ASSERT`-once,
+never-again discipline exactly (see `FiniteReachRedesign.md` §8 for the full
+design rationale — this replaces the old `Std.HashSet`-witness-carrying
+`structure FiniteReach`).
 
-No `initialStates` field here — that's only relevant at a concrete
-checker's own top level (as a separate hypothesis
-`∀ i ∈ initialStates, univ.contains i`), not here. -/
-structure FiniteReach {State : Type u} [BEq State] [Hashable State]
-    (succs : State → Array State) where
-  univ : Std.HashSet State
-  closed : ∀ s, univ.contains s → ∀ t ∈ succs s, univ.contains t
+No `BEq`/`Hashable` needed on `State` for either definition — pure `Prop`,
+no `Std.HashSet` involved. -/
+
+/-- Canonical reachability: every `i ∈ initialStates` is reachable
+(reflexively), and reachability is closed under one `succs`-step. -/
+inductive Reachable {State : Type u} (initialStates : List State)
+    (succs : State → Array State) : State → Prop where
+  | base {i : State} (hi : i ∈ initialStates) : Reachable initialStates succs i
+  | step {s t : State} (hs : Reachable initialStates succs s) (ht : t ∈ succs s) :
+      Reachable initialStates succs t
+
+/-- Bare existence certificate: the canonically-reachable set is finite.
+`Reachable.base` already makes "every initial state is reachable" free, so
+callers/downstream proofs never need a separate `∀ i ∈ initialStates, ...`
+hypothesis alongside this one. -/
+def FiniteReach {State : Type u} (initialStates : List State)
+    (succs : State → Array State) : Prop :=
+  {s | Reachable initialStates succs s}.Finite
 
 /-! ## Algorithm-agnostic emptiness-check contract
 
@@ -114,23 +133,26 @@ to know which algorithm computed the result. -/
 structure EmptinessChecker (State : Type u) [BEq State] [Hashable State]
     [LawfulBEq State] where
   /-- Compute the emptiness result for a graph given by its successor
-  function, a finite-reachability witness, an accepting predicate, and its
-  initial states — the same four pieces of data `nestedDFSWF` already takes. -/
-  check : (succs : State → Array State) → FiniteReach succs →
-    (isAccepting : State → Bool) → List State → EmptinessResult State
+  function, its initial states, a finite-reachability certificate (now a
+  bare `Prop`, needed only to state the type — never inspected by `check`
+  itself as data), and an accepting predicate. `initialStates` moves before
+  `FiniteReach` since the latter's type now depends on it. -/
+  check : (succs : State → Array State) → (initialStates : List State) →
+    FiniteReach initialStates succs → (isAccepting : State → Bool) →
+    EmptinessResult State
   /-- Soundness of `.nonEmpty`: a returned `stem`/`loop` is a genuine
-  `AcceptingCycle` witness. -/
-  nonEmpty_valid : ∀ {succs : State → Array State} {fr : FiniteReach succs}
-      {isAccepting : State → Bool} {initialStates stem loop : List State},
-    (∀ x ∈ initialStates, fr.univ.contains x) →
-    check succs fr isAccepting initialStates = .nonEmpty stem loop →
+  `AcceptingCycle` witness. The old `∀ x ∈ initialStates, fr.univ.contains x`
+  hypothesis is gone — subsumed by `Reachable.base`. -/
+  nonEmpty_valid : ∀ {succs : State → Array State} {initialStates : List State}
+      {fr : FiniteReach initialStates succs} {isAccepting : State → Bool}
+      {stem loop : List State},
+    check succs initialStates fr isAccepting = .nonEmpty stem loop →
     ∃ ac : AcceptingCycle initialStates succs isAccepting,
       ac.stem = stem ∧ ac.cycle = loop.tail
   /-- Completeness of `.empty`: no `AcceptingCycle` exists. -/
-  empty_no_cycle : ∀ {succs : State → Array State} {fr : FiniteReach succs}
-      {isAccepting : State → Bool} {initialStates : List State} {n : Nat},
-    (∀ x ∈ initialStates, fr.univ.contains x) →
-    check succs fr isAccepting initialStates = .empty n →
+  empty_no_cycle : ∀ {succs : State → Array State} {initialStates : List State}
+      {fr : FiniteReach initialStates succs} {isAccepting : State → Bool} {n : Nat},
+    check succs initialStates fr isAccepting = .empty n →
     ¬∃ _ac : AcceptingCycle initialStates succs isAccepting, True
 
 end LTLLib

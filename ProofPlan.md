@@ -58,7 +58,8 @@ This document outlines the plan for porting correctness proofs from the Isabelle
   genuine accepting cycle (`nestedDFS_fuel_nonEmpty_valid`, Phase 5c), and both now transfer to the
   well-founded `nestedDFSWF` too (`nestedDFSWF_empty_no_cycle`/`nestedDFSWF_nonEmpty_valid`, Phase 2's
   wiring). `nestedDFSWF` is a fully verified, terminating decision procedure (given a `FiniteReach`
-  witness). `OutputVerifyBA.lean`'s
+  proof — as of 2026-08-07, `FiniteReach` is a bare `Prop` existence certificate, not a `Std.HashSet`
+  witness; see the "FiniteReach strict redesign" write-up at the end of Phase 2 below). `OutputVerifyBA.lean`'s
   `ba_hasAcceptingRun_of_lasso`/`ba_hasAcceptingRun_of_ndfs_output` remain
   unwired (they take the chain facts as hypotheses rather than deriving them
   from a real run) — connecting them to `nestedDFS_fuel_nonEmpty_valid` for a
@@ -114,8 +115,8 @@ The generated GBA accepts exactly the ω-words satisfying the LTL formula. This 
 
 - **Soundness (L4_9)**: If the GBA has an accepting run labeled by ξ, then `ξ ⊨ φ`. ✅ DONE
 - **Completeness (L4_10)**: If `ξ ⊨ φ`, then there exists an accepting run of the GBA labeled by ξ. ✅ DONE, unconditionally (`expandOASpec_completeness_weak`)
-- **Termination**: `expand` always terminates (well-founded recursion). Not started
-- **Finiteness**: The generated state space is finite. Not started
+- **Termination**: `expand` always terminates (well-founded recursion). ✅ DONE (`ExpandTermination.lean`, 2026-07-26) — see the Phase 2 write-up below.
+- **Finiteness**: The generated state space is finite. ✅ Free in the Lean port — `GBA.states`/`GBA.successors` are concrete `Std.HashSet`/`Std.HashMap` values by construction, so unlike Isabelle's abstract `graph_rec_scheme` locale this needs no separate proof obligation at all (see `GraphComplete.lean`'s docstring above `constructGBA_correct`). Distinct from — do not confuse with — `FiniteReach`, the *separate* finite-reachability precondition a caller of `nestedDFSWF`/`modelCheck` must supply for their own external system (or the on-the-fly product against it); that one genuinely is a nontrivial `Prop`-level proof obligation, strictly redesigned 2026-08-07 (see Phase 2's "FiniteReach strict redesign" write-up below).
 
 ---
 
@@ -893,7 +894,10 @@ exactly `succ_mem`'s content once `states` is related to `nodeMap`'s keys
    (`NestedDFS/NestedDFSTermination.lean`'s `FiniteReach` structure, `univ`/`closed`,
    line 111) with `univ := ba.states` and `closed` from the new
    `BA.WellFormed.succ_mem` — this is the prerequisite every downstream call
-   to `nestedDFSWF` (item 4) needs.
+   to `nestedDFSWF` (item 4) needs. (Stale as of the 2026-08-07 `FiniteReach`
+   strict redesign — `BA.finiteReach` is now a pure `Prop`-level proof, no
+   `univ`/`closed` fields to package at all; see the write-up at the end of
+   Phase 2 below.)
 
 **Item 1 — ✅ DONE (2026-07-27).** Implemented exactly the 6-step plan above,
 verified against a clean rebuild (`.lake/build/lib/lean/LTLLib` removed
@@ -959,7 +963,12 @@ auto`):
    CAVA's `nested_dfs_code`/`ASSERT (fb_graph G)` shape precisely (an
    argument-level assumption, never internally re-derived) — see this
    file's own "Wiring" section above for where that comparison was first
-   made for `FiniteReach` in general.
+   made for `FiniteReach` in general. **Superseded (2026-08-07)**:
+   `BA.finiteReach` is now a pure `Prop`-level proof (`ba.states`/
+   `hwf.succ_mem` used only as internal proof tooling, never as `FiniteReach`
+   witness data), and `BA.initialStates_subset_finiteReach` was deleted
+   outright — subsumed for free by `Reachable.base`. See the "FiniteReach
+   strict redesign" write-up at the end of Phase 2 below.
 
 No `GraphComplete.lean`/`Invariants.lean` changes needed — every dependency
 (`createGraph_nameConsistent`, `buildSuccessors_mem_iff`,
@@ -1386,7 +1395,7 @@ New/changed files this session: `OutputVerifyBA.lean` (+~40 lines),
 `_any` wrappers), `NestedDFS/NestedDFSTermination.lean` (+~130 lines, the pumping
 lemma), `Pipeline.lean` (new, ~115 lines).
 
-### Phase 2: Termination — IN PROGRESS (not blocking)
+### Phase 2: Termination — ✅ DONE (stale "IN PROGRESS" header left uncorrected until 2026-08-07; body below has shown DONE since 2026-07-26)
 
 Remove `partial`/`partial_fixpoint` from `expand`, `innerDFS`, `outerDFSLoop`.
 
@@ -1593,7 +1602,13 @@ definition:
    was added there (not `NestedDFS/NestedDFSRef.lean` itself yet — see below) as a
    genuine **explicit parameter**, our analogue of `fb_graph`/CAVA's own
    `finite reachable` hypothesis, assumed rather than derived, exactly as
-   planned.
+   planned. **This `univ`/`closed`-field design (and everything below in this
+   Phase 2 write-up that builds on it) was strictly redesigned 2026-08-07 —
+   `FiniteReach` is now a bare `Prop`, no `Std.HashSet` witness at all. See
+   the "FiniteReach strict redesign" write-up at the end of this Phase 2
+   section for what changed and why; the measure/proof-carrying-argument
+   history immediately below remains an accurate record of how the codebase
+   got to the point that redesign started from.**
 
    **Correction found empirically while implementing this**: the measure is
    **not** `univ.size - iv.size` (`Nat` subtraction) as this note originally
@@ -1958,6 +1973,21 @@ rebuild in place; `innerDFSCore`, `innerDFSCore_outerVisited_pres`,
 `innerDFSWF`, `innerDFSWF_blocked`, `innerDFSWF_fresh`, `outerDFSLoopWF` are
 all 0 sorry.
 
+**⚠️ Superseded (2026-08-07)**: the "drop proof-carrying arguments, use a
+runtime `fr.univ.contains`/`dite` + defensive fallback instead" conclusion
+above — reached specifically because threading `hstack_states`/
+`hstack_remaining` as *whole-stack-quantified* hypothesis arguments broke
+`rw [innerDFSCore.eq_def]`/`.induct` — is *not* the final word. Proof-carrying
+arguments were successfully reintroduced later, bundled *per stack frame*
+(a new `RFrame` structure carrying an erased `Reachable` proof) rather than
+as a separate whole-stack hypothesis, and the resulting one-step-unfolding
+goals were closed reliably via `rw [innerDFSCore.eq_2]; grind` — a tactic
+combination not leaned on here because `grind` wasn't yet mature enough to
+be a reliable fallback at the time this finding was written. `fr.univ`/
+`fr.closed`/the runtime `dite` no longer exist at all; `FiniteReach` is now a
+bare `Prop`. Full story: the "FiniteReach strict redesign" write-up at the
+end of this Phase 2 section, and `FiniteReachRedesign.md`.
+
 **What this supersedes**: the old fold-based `innerDFSCore` and its dead-end
 `innerDFSCore_fresh_eq` lemma (described in step 3's write-up above) no
 longer exist in the file — deleted, not patched. The `InnerFuelBridge`
@@ -2045,6 +2075,13 @@ CAVA before diverging). Two findings from that re-check, both acted on:
    exactly like `innerDFSCore`'s analogous fallback. The two closure facts
    now live only in the bridge theorem's own hypotheses, exactly as
    `DFS_invar` lives only in CAVA's separate correctness lemmas about `step`.
+
+   **⚠️ Superseded (2026-08-07)**: same caveat as `innerDFSCore`'s analogous
+   finding above — `outerDFSLoopWF` now threads `RFrame`-bundled proof-
+   carrying stack data too (`fr.univ`/`fr.closed`/the runtime `dite` are
+   gone), once `grind` made the resulting equation-lemma proofs tractable.
+   See the "FiniteReach strict redesign" write-up at the end of this Phase 2
+   section.
 
 2. **`outerDFSLoopWF`'s accepting-leaf branch called `innerDFSCore` directly**
    (bypassing `innerDFSWF`'s blocked-check and `iv.insert current` step) —
@@ -2164,6 +2201,12 @@ function rather than only of the fuel-indexed proof device.
    precondition is an explicit `ASSERT (fb_graph G)` (finite/bounded graph)
    threaded through as an argument-level assumption, not internally
    re-derived — exactly the role `FiniteReach succs` plays for `nestedDFSWF`.
+   (This comparison held only *structurally* at the time — `FiniteReach`
+   still carried a `Std.HashSet` witness touched by a runtime `dite`, unlike
+   CAVA's pure `ASSERT`. The 2026-08-07 strict redesign, see the write-up at
+   the end of this Phase 2 section, makes it literally true: `FiniteReach`
+   is now a bare `Prop`, asserted once and never touched by any executable
+   code, exactly like `ASSERT (fb_graph G)`.)
    So: **not deleted.** `NestedDFS/NestedDFSRef.lean`'s `partial def`s are kept as the
    abstract reference layer (readable, unverified termination), with a new
    docstring pointing to `nestedDFSWF` as the verified, total counterpart —
@@ -2364,6 +2407,98 @@ removing two now-duplicate `private` lemmas from `GraphComplete.lean`
 newly-public `Invariants.lean` originals once un-privatized; all of
 `GraphComplete.lean`'s call sites work unchanged against the public
 versions (identical signatures, just already existed).
+
+### `FiniteReach` strict redesign (Option B) — ✅ DONE (2026-08-07)
+
+Full design record, CAVA correspondence, and the mandatory toy-spike
+validation (done *before* touching the real ~2000-line file, per standing
+instruction to de-risk large well-founded-recursion changes first) all live
+in `FiniteReachRedesign.md` — this write-up is a condensed version for this
+file's own chronological record, since it directly reverses design calls
+made earlier in this Phase 2 section (flagged with `⚠️ Superseded` markers
+above at each affected passage).
+
+**The problem.** `FiniteReach` (`EmptinessCheck.lean`) was a structure
+carrying a real `Std.HashSet` "universe" witness (`fr.univ`, `fr.closed`).
+Every caller of `nestedDFSWF`/`modelCheck` had to materialize a concrete
+`Std.HashSet` containing literally every state reachable from their
+system's initial states — a real memory cost the on-the-fly `Product`
+construction was specifically designed to avoid, just reintroduced one level
+down. Worse, `fr.univ` was genuinely touched on `innerDFSCore`/
+`outerDFSLoopWF`'s executable path (a runtime `dite`/`fr.univ.contains succ`
+check with a dead fallback branch — see the two `⚠️ Superseded` passages
+above), which is a strictly larger divergence from CAVA than this codebase
+intended: CAVA's `fb_graph`/`ASSERT (fb_graph G)` is asserted once, at entry,
+as a pure `Prop`, and never touched again by generated code — no fuel, no
+decreasing counter, no "universe" witness threaded through at runtime.
+
+**Why the earlier "strip proof obligations" call (this section, 2026-07-25)
+didn't rule this out.** That finding was specifically that threading
+`fr.univ`-membership facts as *whole-stack-quantified* hypothesis arguments
+(`hstack_states : ∀ p ∈ stack, fr.univ.contains p.1`) broke `rw
+[innerDFSCore.eq_def]`/`induction ... using .induct`. The redesign avoids
+that specific failure mode by bundling the proof *per stack frame* instead:
+a new `RFrame` structure (`state`/`hreach : Reachable initialStates succs
+state`/`remaining`/`hsuffix : remaining <:+ (succs state).toList`) replaces
+the old bare `(State, List State)` stack-frame pairs in both
+`innerDFSCore`/`outerDFSLoopWF`. Since `hreach`/`hsuffix` are `Prop`-valued
+fields, Lean 4's definitional proof irrelevance means no `rw`/`.induct` call
+ever needs to know *which* proof populates them — pushing a fresh successor
+derives its `Reachable` proof for free via `Reachable.step`, with zero
+runtime data touch, and the old dead-fallback branch is deleted outright
+(not merely dead — gone).
+
+**The concrete tactic finding that made this actually work, useful for any
+future well-founded-recursion surgery in this codebase**: plain `rw
+[<fn>.eq_def]` and blanket `simp [<fn>, ...]` both still fail on the
+resulting one-step-unfolding goals — `eq_def` leaves the nested
+`match`/`if`-chain unresolved even given the pinning hypothesis in scope,
+and `simp [<fn>, ...]` loops (confirmed hitting `maxRecDepth`, not just
+slow). But `rw [<fn>.eq_2]; grind` reliably works. Two things make this
+tick: (1) Lean's well-founded-recursion equation compiler only splits a
+function's auto-generated equation lemmas at its own *outermost*
+recursion-justifying match — `explore.eq_1`/`innerDFSCore.eq_1` is the base
+case, `explore.eq_2`/`innerDFSCore.eq_2` covers the *entire* `frame :: rest`
+case with every nested `match`/`if` inside it left unsplit — so `eq_2` is
+the right unfolding target, not `eq_def`; (2) `grind` (immature enough at
+the time of the original 2026-07-25 attempt not to be a reliable fallback)
+now reliably resolves the resulting goal using whatever case-specific
+hypotheses (`hrem`, `hse`, `hblocked`, `heq`, …) are already in scope. This
+was validated on a standalone toy spike *before* being trusted on the real
+file (`FiniteReachRedesign.md` §8.6) — the spike also caught a genuine
+`rename_i` footgun worth remembering: a `let`-bound local (e.g. `stack' :=
+...`) sitting among the auto-generated inaccessible hypotheses being
+renamed still consumes a naming slot, so omitting it from `rename_i`'s
+argument list silently shifts every subsequent name by one, producing
+bizarre "wrong type"/"function expected" errors far from the actual cause.
+
+**Downstream.** `Product.lean`'s `hashSetProd`/`hashSetProd_mem` (a genuine
+`Std.HashSet` cross-product materialization, the actual expensive-enumeration
+cost the whole redesign targeted) are deleted outright; `Product.finiteReach`
+is now a pure existence proof (`reachable_imp` + `Set.Finite.prod`/
+`.subset`), needing no `LawfulBEq`/`LawfulHashable SysState` at all.
+`BA.finiteReach` similarly becomes a pure proof (`ba.states`/`hwf.succ_mem`
+used only as internal proof tooling); `BA.initialStates_subset_finiteReach`
+is deleted, subsumed for free by the new canonical `Reachable.base`
+constructor. The hand-rolled 47-line pigeonhole lemma in the pumping-lemma
+section (`exists_dup_of_size_lt`) was replaced by Mathlib's
+`Set.Infinite.exists_ne_map_eq_of_mapsTo`. `EmptinessChecker.check`'s
+signature (`EmptinessCheck.lean`) and every downstream call
+(`ModelCheck.lean`, `Pipeline.lean`, `Examples/*.lean`) were updated to match
+— `initialStates` now precedes the `FiniteReach`/`fr` argument everywhere,
+since `FiniteReach`'s type depends on it; `∀ x ∈ initialStates,
+fr.univ.contains x`-style hypotheses disappear entirely, subsumed by
+`Reachable.base`. Both the Schwoon-Esparza and Holzmann-Peled-Yannakakis
+optimizations (this file, above) are unchanged in logic — only mechanically
+re-threaded onto `RFrame`.
+
+**Verification, not just compilation**: both example programs
+(`Examples/ModelCheckExample.lean`/`ModelCheckCounterExample.lean`) were
+re-run after the rewrite and still produce the correct model-checking
+results (no spurious counterexample; the correct `red → green → yellow ⟲`
+counterexample for the deliberately-false property), confirming the DFS
+search logic itself — not just its types — survived unchanged. Whole
+project `lake build` clean, 0 `sorry`, 0 errors.
 
 ---
 

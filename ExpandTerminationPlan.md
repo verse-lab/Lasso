@@ -31,8 +31,12 @@ fully executed.
     *recursive-call* value is a **larger** subset of a **fixed finite
     universe** than the current value. Well-founded because a subset of a
     finite set can't grow forever. Same idiom as this project's nested-DFS
-    measures (`(fr.univ \ iv).size`), just phrased as growth-toward-a-bound
-    rather than shrinkage-of-a-complement.
+    measures (`innerDFSCore`/`outerDFSLoopWF`'s `({s | Reachable
+    initialStates succs s} \ {x | iv.contains x}).ncard`, post the 2026-08-07
+    `FiniteReach` strict redesign — `Set.ncard`-based, not `Std.HashSet.size`-
+    based, since `FiniteReach` is now a `Prop` with no `Std.HashSet` witness
+    at all; see `FiniteReachRedesign.md`), just phrased as growth-toward-a-
+    bound rather than shrinkage-of-a-complement.
   - `size_set S := Σ_{x∈S} (2·size(x)+1)` (`LTL.thy:519`) — a **weighted
     sum of syntactic formula complexity**, *not* set cardinality. This is
     what makes splitting a compound formula into two syntactically-smaller

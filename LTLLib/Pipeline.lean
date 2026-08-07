@@ -38,7 +38,7 @@ def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
     let gba := constructGBA φ st
     let ba := gba.degeneralize
     let hbawf := degeneralize_wellFormed_any gba (constructGBA_wellFormed hcg)
-    nestedDFSWF ba.getSuccessors (ba.finiteReach hbawf) ba.isAccepting ba.initialStates.toList
+    nestedDFSWF ba.getSuccessors ba.initialStates.toList (ba.finiteReach hbawf) ba.isAccepting
   | none => .empty 0
 
 omit [LawfulBEq α] [LawfulHashable α] [DecidableEq α] in
@@ -46,10 +46,10 @@ omit [LawfulBEq α] [LawfulHashable α] [DecidableEq α] in
 theorem fullPipeline_eq (φ : NNF α) {st : ExpandState α S} (hcg : createGraph φ = some st) :
     fullPipeline (S := S) φ =
       nestedDFSWF (constructGBA φ st).degeneralize.getSuccessors
+        (constructGBA φ st).degeneralize.initialStates.toList
         ((constructGBA φ st).degeneralize.finiteReach
           (degeneralize_wellFormed_any (constructGBA φ st) (constructGBA_wellFormed hcg)))
-        (constructGBA φ st).degeneralize.isAccepting
-        (constructGBA φ st).degeneralize.initialStates.toList := by
+        (constructGBA φ st).degeneralize.isAccepting := by
   unfold fullPipeline
   split
   next st' hcg' =>
@@ -67,9 +67,8 @@ theorem fullPipeline_nonEmpty_sat (φ : NNF α) {stem loop : List BAState}
   set ba := gba.degeneralize with hba
   have hwf := constructGBA_wellFormed hcg
   have hbawf := degeneralize_wellFormed_any gba hwf
-  obtain ⟨ac, _, _⟩ := nestedDFSWF_nonEmpty_valid ba.getSuccessors (ba.finiteReach hbawf)
-    ba.isAccepting ba.initialStates.toList stem loop
-    (BA.initialStates_subset_finiteReach ba hbawf) h
+  obtain ⟨ac, _, _⟩ := nestedDFSWF_nonEmpty_valid ba.getSuccessors
+    (ba.finiteReach hbawf) ba.isAccepting stem loop h
   set ξ : OmegaWord α := fun n => canonicalLabel ba.labeling (ac.toValidLasso.run n).gbaState
     with hξ
   have hcompat : ∀ n, ba.toSpec.labelCompat (ac.toValidLasso.run n) (ξ n) := by
@@ -107,13 +106,12 @@ theorem fullPipeline_empty_unsat (φ : NNF α) {n : Nat}
   obtain ⟨σ, hrun, _, hacc⟩ := hba_acc
   have hcyc : ∃ _ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting, True :=
     exists_acceptingCycle_of_run (ba.finiteReach hbawf)
-      (BA.initialStates_subset_finiteReach ba hbawf)
       (Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr hrun.1))
       hrun.2
       (fun N => by
         obtain ⟨j, hj⟩ := hacc ⟨0, Nat.one_pos⟩ N
         exact ⟨N + j, by omega, hj⟩)
-  exact nestedDFSWF_empty_no_cycle ba.getSuccessors (ba.finiteReach hbawf) ba.isAccepting
-    ba.initialStates.toList n (BA.initialStates_subset_finiteReach ba hbawf) h hcyc
+  exact nestedDFSWF_empty_no_cycle ba.getSuccessors (ba.finiteReach hbawf)
+    ba.isAccepting n h hcyc
 
 end LTLLib

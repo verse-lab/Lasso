@@ -164,6 +164,22 @@ end Product
 
 ### 3. `Product.finiteReach` — port of `prod_finite_reachable`
 
+**Superseded (2026-08-07)**: this whole section documents the design as it
+stood immediately after this implementation pass — `FiniteReach` as a
+`Std.HashSet`-witness-carrying structure, `Product.finiteReach` built via a
+`hashSetProd`/`hashSetProd_mem` cross-product. That has since been replaced
+by a strict "Option B" redesign: `FiniteReach` is now a bare `Prop`
+(`{s | Reachable initialStates succs s}.Finite`, no data), `hashSetProd` is
+deleted outright, and `Product.finiteReach`/`BA.finiteReach` are pure
+existence proofs — no `[LawfulBEq SysState] [LawfulHashable SysState]`
+needed anywhere in this file any more, and no `Std.HashSet` cross-product is
+ever materialized. Current signature: `Product.finiteReach (ba) (hbawf)
+(sysSucc) (sysLabel) (sysInit) (sysFR : FiniteReach sysInit sysSucc) :
+FiniteReach (Product.initialStates ba sysInit) (Product.getSuccessors ba
+sysSucc sysLabel)`. Full design record and findings: `FiniteReachRedesign.md`
+(§8/§8.6.1). The rest of this section is kept as a historical record of the
+original design pass.
+
 The caller must supply their own `FiniteReach sysSucc` witness (their system
 being finite-state / finitely-reachable is *their* proof obligation, exactly
 as CAVA's `inter_spec` takes `finite (sa.E* `` sa.V0)` as a precondition, not
@@ -224,6 +240,16 @@ definitionally the same NNF — see `LTL/Syntax.lean:180-210`). The `NNF.neg`
 version wasn't unsound, just doing the negation at the wrong layer relative
 to CAVA and redoing normalization work `toNNF false` already does in one
 pass.
+
+**Superseded (2026-08-07)**: the snippet below predates both the `checker :
+EmptinessChecker ... := nestedDFSChecker` default parameter (added later,
+also unreflected here) and the `FiniteReach` strict redesign. Current
+signature: `modelCheck (φ) (sysInit) (sysSucc) (sysLabel) (sysFR :
+FiniteReach sysInit sysSucc) (checker := nestedDFSChecker)`, calling
+`checker.check (Product.getSuccessors ...) (Product.initialStates ...)
+(Product.finiteReach ba hbawf sysSucc sysLabel sysInit sysFR)
+(Product.isAccepting ba)` — see `ModelCheck.lean` for the exact current
+body. `FiniteReachRedesign.md` (§8/§8.6.1) has the full record.
 
 ```lean
 /-- Corresponds to CAVA's `abs_model_check` (`CAVA_Abstract.thy`), the piece
@@ -300,16 +326,17 @@ analogues we'd want are exactly the `modelCheck` counterparts of
   A real proof effort, comparable in size to what
   `DegeneralBridge.lean`/`Pipeline.lean`'s existing correctness theorems
   already required.
-- ~~**Not yet proven**: `Product.finiteReach`'s `closed` field~~ — done.
-  Proven via a new `hashSetProd_mem` membership lemma plus the
-  unfold/split/combine shape sketched in section 3 below; required adding
-  `[LawfulBEq SysState] [LawfulHashable SysState]` to `finiteReach`'s own
-  signature (only there, not the file's shared `variable` block) and
-  `[LawfulHashable SysState]` to `modelCheck`'s (`ModelCheck.lean`) — the
-  `Std.HashSet` correctness lemmas used (`mem_ofList`, `mem_toList`) need
-  `LawfulHashable` on `SysState × BAState`, which `BAState` already had but
-  `SysState` didn't have anywhere in scope. Every `modelCheck` caller must
-  now also supply a `LawfulHashable` instance for their system-state type.
+- ~~**Not yet proven**: `Product.finiteReach`'s `closed` field~~ — done, then
+  **superseded (2026-08-07)**: the `hashSetProd_mem`/`LawfulBEq`/
+  `LawfulHashable` machinery this bullet describes no longer exists.
+  `Product.finiteReach` is now a pure existence proof (`reachable_imp` +
+  `Set.Finite.prod`/`.subset`) needing no `Std.HashSet` reasoning and no
+  `LawfulBEq`/`LawfulHashable SysState` requirement at all — "every
+  `modelCheck` caller must now also supply a `LawfulHashable` instance" is no
+  longer true on account of `finiteReach` (though `modelCheck`/`Product` may
+  still require `LawfulHashable SysState` for unrelated reasons — check
+  `ModelCheck.lean`'s `variable` block if this matters to you). See
+  `FiniteReachRedesign.md` (§8/§8.6.1).
 
 ### What's *not* a gap (already covered, or matched deliberately)
 

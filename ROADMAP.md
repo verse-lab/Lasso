@@ -11,6 +11,13 @@ correspondence, every divergence and why, every gotcha hit along the way).
 This file is now a short orientation snapshot, not the detailed log —
 `ProofPlan.md` is the actively-maintained one.
 
+**Update (2026-08-07)**: `FiniteReach` (the finite-reachability precondition
+every `nestedDFSWF`/`modelCheck` call needs) was strictly redesigned — it's
+now a bare `Prop` existence certificate with no `Std.HashSet` witness data of
+any kind, touched on no executable path at all, matching CAVA's own
+`ASSERT`-based finiteness handling literally. Full record:
+`FiniteReachRedesign.md`. Whole project still builds clean, 0 `sorry`.
+
 Beyond Track B, the nested-DFS emptiness check also now includes the
 **Schwoon-Esparza outer-DFS back-edge shortcut** (`outerDFSLoop`/
 `outerDFSLoop_fuel`/`outerDFSLoopWF` all detect an accepting cycle directly

@@ -57,10 +57,14 @@ function; it happened to still be logically sound but did the negation at
 the wrong layer relative to CAVA, redoing normalization work `toNNF false`
 already does in one pass.
 
-The caller supplies `sysFR : FiniteReach sysSucc` — proof that their own
-system is finitely reachable — exactly as CAVA's `inter_spec` takes
+The caller supplies `sysFR : FiniteReach sysInit sysSucc` — proof that their
+own system is finitely reachable — exactly as CAVA's `inter_spec` takes
 `finite (sa.E⇧* `` sa.V0)` as a precondition rather than deriving it
-(`Product.lean`'s `Product.finiteReach` docstring).
+(`Product.lean`'s `Product.finiteReach` docstring). This is now a bare
+existence certificate (`FiniteReach` is a `Prop`, no `Std.HashSet` witness
+of any kind) — a caller with e.g. a bounded-counter system state supplies a
+cheap structural finiteness proof instead of enumerating/hashing every
+reachable state.
 
 The emptiness check itself is parameterized by `checker : EmptinessChecker`
 (`EmptinessCheck.lean` — the algorithm-agnostic contract; `nestedDFSChecker`,
@@ -78,7 +82,7 @@ means the product found a run of `sys` violating `φ`, witnessed by
 `(system state, ¬φ-automaton state)` pairs along `stem`/`loop`. -/
 def modelCheck (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
-    (sysFR : FiniteReach sysSucc)
+    (sysFR : FiniteReach sysInit sysSucc)
     (checker : EmptinessChecker (SysState × BAState) := nestedDFSChecker) :
     EmptinessResult (SysState × BAState) :=
   let negNNF := φ.toNNF false
@@ -88,8 +92,8 @@ def modelCheck (φ : Formula α) (sysInit : List SysState)
     let hbawf := degeneralize_wellFormed_any (constructGBA negNNF st)
       (constructGBA_wellFormed hcg)
     checker.check (Product.getSuccessors ba sysSucc sysLabel)
-      (Product.finiteReach ba hbawf sysSucc sysLabel sysFR) (Product.isAccepting ba)
       (Product.initialStates ba sysInit)
+      (Product.finiteReach ba hbawf sysSucc sysLabel sysInit sysFR) (Product.isAccepting ba)
   | none => .empty 0
 
 end LTLLib

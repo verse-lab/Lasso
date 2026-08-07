@@ -8,7 +8,9 @@ The core algorithm (LTL-to-GBA via Gerth et al.) is ported from the verified Isa
 
 The LTL-to-BA pipeline and its nested-DFS emptiness check (everything through `fullPipeline`) are **0 `sorry`, 0 errors**, ~14,665 lines across 28 source files (`lake build`, 762 jobs). Every top-level correctness theorem in that pipeline is unconditional — no admitted hypotheses, no `GraphComplete`-style assumptions, no side conditions beyond the formula `φ` itself.
 
-The model-checking layer built on top of it (`Product.lean`/`ModelCheck.lean`, "As a component inside your own model checker" below) is executable today but not yet proven correct: one explicit `sorry` (`Product.finiteReach`'s `closed` field) and the theorem connecting `modelCheck`'s result to actual system traces are still open. See `ProductModelChecker.md` for exactly what's tracked and why.
+The model-checking layer built on top of it (`Product.lean`/`ModelCheck.lean`, "As a component inside your own model checker" below) is executable today but not yet fully proven correct: the theorem connecting `modelCheck`'s result to actual system traces is still open. See `ProductModelChecker.md` for exactly what's tracked and why.
+
+`FiniteReach` (the caller-supplied finite-reachability precondition every `modelCheck`/`nestedDFSWF` call needs) was strictly redesigned 2026-08-07: it's now a bare `Prop` existence certificate (`{s | Reachable initialStates succs s}.Finite`, no `Std.HashSet` witness of any kind, no data touched on any executable path), matching CAVA's own `ASSERT`-based finiteness handling literally rather than just in spirit. `Product.finiteReach`'s proof (previously tracked here as an open `sorry`) is complete and needs no `LawfulBEq`/`LawfulHashable SysState` instances. Full design record: `FiniteReachRedesign.md`.
 
 The top-level result:
 
@@ -143,7 +145,7 @@ LTLLib/
 
 **`LTLtoGBA/GraphComplete.lean`** — Proves `GraphComplete`/`WeakGraphComplete` *from* `createGraph` itself (no longer an assumption), giving the fully unconditional `constructGBA_correct_weak : (constructGBA φ st).toSpec.accepts ξ ↔ ξ ⊨ φ`.
 
-**`EmptinessCheck.lean`** — The algorithm-agnostic core of the emptiness-check story, factored out so it doesn't live inside the nested-DFS-specific files: `EmptinessResult` (the `.empty`/`.nonEmpty` result type), `AcceptingCycle` (the pure stem+cycle graph witness — CAVA's `is_acc_run`), `FiniteReach` (the `fb_graph`-analogue finiteness precondition), and `EmptinessChecker` (an abstract `check`-plus-two-correctness-obligations contract, corresponding to CAVA's `find_ce_spec` — any future non-nested-DFS emptiness algorithm implements this same interface). Imports only `Std`; mentions no concrete algorithm.
+**`EmptinessCheck.lean`** — The algorithm-agnostic core of the emptiness-check story, factored out so it doesn't live inside the nested-DFS-specific files: `EmptinessResult` (the `.empty`/`.nonEmpty` result type), `AcceptingCycle` (the pure stem+cycle graph witness — CAVA's `is_acc_run`), `Reachable`/`FiniteReach` (the `fb_graph`-analogue finiteness precondition — `FiniteReach` is a bare `Prop`, `{s | Reachable initialStates succs s}.Finite`, no data, matching CAVA's own `ASSERT`-based finiteness handling literally, not just structurally), and `EmptinessChecker` (an abstract `check`-plus-two-correctness-obligations contract, corresponding to CAVA's `find_ce_spec` — any future non-nested-DFS emptiness algorithm implements this same interface). Imports `Std` and `Mathlib.Data.Set.Card`; mentions no concrete algorithm.
 
 **`NestedDFS/NestedDFSRef.lean`** — The reference Courcoubetis-Vardi-Wolper-Yannakakis (CVWY) nested DFS emptiness check, as two `partial def`s (`innerDFS`/`outerDFSLoop`) kept as a readable specification layer — the verified, total entry point is `nestedDFSWF` (`NestedDFS/NestedDFSTermination.lean`), not this file directly.
 
@@ -183,12 +185,13 @@ open LTLLib
 -- sysSucc  : SysState → Array SysState
 -- sysLabel : SysState → Std.HashSet α           -- atomic propositions true at each state
 
--- Your own finite-reachability witness — from your own exploration, or
--- immediate if your system is finite by construction:
-have sysFR : FiniteReach sysSucc := {
-  univ := exploredStates            -- Std.HashSet SysState
-  closed := hclosed                 -- ∀ s ∈ exploredStates, ∀ t ∈ sysSucc s, t ∈ exploredStates
-}
+-- Your own finite-reachability *proof* — `FiniteReach` is a bare `Prop`
+-- (no `Std.HashSet` witness of any kind is ever built or touched at
+-- runtime), so this costs nothing beyond the proof term itself:
+--   * system finite by construction (a `Fintype` state type): `Set.toFinite _`
+--   * otherwise, a `Set.Finite` proof over the canonical `Reachable` closure,
+--     e.g. by exhibiting a concrete finite superset and `Set.Finite.subset`
+have sysFR : FiniteReach sysInit sysSucc := ...
 
 let result := modelCheck φ sysInit sysSucc sysLabel sysFR
 -- result : EmptinessResult (SysState × BAState)
@@ -201,7 +204,7 @@ let result := modelCheck φ sysInit sysSucc sysLabel sysFR
 
 If a different emptiness-check algorithm suits your system better than nested DFS (e.g. an SCC-based one), `modelCheck` takes an optional `checker : EmptinessChecker (SysState × BAState) := nestedDFSChecker` parameter — provide your own `EmptinessChecker` instance (`EmptinessCheck.lean`) and nothing else about the call changes.
 
-**What's proven and what isn't, today.** The automaton side (`BA.compatible`, `Product.getSuccessors`/`isAccepting`) is built on the same unconditionally-proven machinery `fullPipeline`/the table above relies on — nothing new or less trustworthy there. What's *not yet proven*: the theorem connecting `modelCheck`'s result back to "every run of your system satisfies `φ`" / "here is a genuine counterexample run" — the `Product`-level analogue of `fullPipeline_empty_unsat`/`fullPipeline_nonEmpty_sat`, and `Product.finiteReach` carries one explicit `sorry`. `modelCheck` is a real, executable, total `def` you can run today; until that theorem lands, treat its answer the way you'd treat any carefully-constructed but not-yet-formally-verified model checker. See `ProductModelChecker.md` for exactly what's open, why, and the CAVA source (`inter_spec`/`prod_run`/`prod_acc`) that theorem would port.
+**What's proven and what isn't, today.** The automaton side (`BA.compatible`, `Product.getSuccessors`/`isAccepting`) is built on the same unconditionally-proven machinery `fullPipeline`/the table above relies on — nothing new or less trustworthy there. `Product.finiteReach` is fully proven (no `sorry`). What's *not yet proven*: the theorem connecting `modelCheck`'s result back to "every run of your system satisfies `φ`" / "here is a genuine counterexample run" — the `Product`-level analogue of `fullPipeline_empty_unsat`/`fullPipeline_nonEmpty_sat`. `modelCheck` is a real, executable, total `def` you can run today; until that theorem lands, treat its answer the way you'd treat any carefully-constructed but not-yet-formally-verified model checker. See `ProductModelChecker.md` for exactly what's open, why, and the CAVA source (`inter_spec`/`prod_run`/`prod_acc`) that theorem would port.
 
 ### Lower-level: building the product yourself
 
@@ -219,11 +222,11 @@ have hbawf : ba.WellFormed := degeneralize_wellFormed_any gba (constructGBA_well
 -- 3. Product against your own sysSucc/sysLabel (Product.lean) — or roll your own
 --    using `BA.compatible`/`ba.getSuccessors`/`ba.isAccepting` directly
 let prodSucc := Product.getSuccessors ba sysSucc sysLabel
-have prodFR := Product.finiteReach ba hbawf sysSucc sysLabel sysFR
+have prodFR := Product.finiteReach ba hbawf sysSucc sysLabel sysInit sysFR
 
 -- 4. Any EmptinessChecker works here, not just nestedDFSChecker
-let result := nestedDFSChecker.check prodSucc prodFR (Product.isAccepting ba)
-  (Product.initialStates ba sysInit)
+let result := nestedDFSChecker.check prodSucc (Product.initialStates ba sysInit)
+  prodFR (Product.isAccepting ba)
 ```
 
 Both directions of `nestedDFSChecker` (equivalently, `nestedDFSWF` directly) come with unconditional correctness, in terms of `AcceptingCycle` (`EmptinessCheck.lean`) — a stem+cycle witness over *whatever* `succs`/`isAccepting` you hand it, not tied to this library's own automata:
