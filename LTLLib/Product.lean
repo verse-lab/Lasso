@@ -28,7 +28,6 @@ namespace LTLLib
 namespace Product
 
 variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
-  [BEq SysState] [Hashable SysState]
 
 /-- Corresponds to CAVA's `g_V0 = igba.V0 × sa.V0`
 (`igba_sys_prod_precond.prod`, `Automata.thy`) — the *unfiltered* full
@@ -38,6 +37,56 @@ harmless dead weight for the DFS; CAVA doesn't filter it out either. -/
 def initialStates (ba : BA α) (sysInit : List SysState) :
     List (SysState × BAState) :=
   sysInit.flatMap fun s => ba.initialStates.toList.map fun q => (s, q)
+
+/-- Wraps a successor function so that a state with no outgoing edges gets a
+self-loop instead — every state under `totalizeSucc succs` has at least one
+successor.
+
+LTL/Büchi-automaton semantics are defined over *infinite* words: a run that
+simply stops is not something any standard Kripke structure admits. Left
+untouched, a genuinely terminal client state becomes a dead end in the
+product graph too, so nested DFS can never close a cycle through it —
+`modelCheck` would silently miss a real counterexample whose violation only
+manifests by the system stalling forever there (e.g. `□◇p` failing because
+the system gets stuck somewhere `p` never holds again). The standard
+model-checking convention (matching how NuSMV/SPIN treat deadlock states)
+reads a terminal state as "the system stays here forever"; this wrapper
+makes that reading literal by inserting the missing self-loop, so every
+finite prefix into the client's system extends to a genuine infinite run. -/
+def totalizeSucc {State : Type u} (succs : State → Array State) : State → Array State :=
+  fun s =>
+    let ss := succs s
+    if ss.isEmpty then #[s] else ss
+
+/-- The states reachable under `totalizeSucc succs` are exactly the states
+reachable under `succs` — the wrapper only ever adds a self-loop on a
+state that is *already* reachable, it never makes a new state reachable.
+Only this direction (totalized-reachable → original-reachable) is needed:
+`finiteReach` below uses it to transport the caller's `sysFR` witness across
+the wrapper without asking the caller to re-prove anything about
+`totalizeSucc sysSucc`. -/
+theorem reachable_totalizeSucc_imp {State : Type u} (initialStates : List State)
+    (succs : State → Array State) :
+    ∀ {s : State}, Reachable initialStates (totalizeSucc succs) s →
+      Reachable initialStates succs s := by
+  intro s hs
+  induction hs with
+  | base hi => exact .base hi
+  | step _ hmem ih =>
+    rename_i s t
+    dsimp only [totalizeSucc] at hmem
+    split at hmem
+    · exact (Array.mem_singleton.mp hmem) ▸ ih
+    · exact .step ih hmem
+
+/-- Transport a `FiniteReach` witness for the client's raw `sysSucc` across
+the `totalizeSucc` wrapper: totalizing never grows the reachable set (see
+`reachable_totalizeSucc_imp`), so the same finiteness proof applies to
+`totalizeSucc sysSucc` unchanged. -/
+theorem finiteReach_totalizeSucc {State : Type u} (initialStates : List State)
+    (succs : State → Array State) (fr : FiniteReach initialStates succs) :
+    FiniteReach initialStates (totalizeSucc succs) :=
+  fr.subset (fun _ hs => reachable_totalizeSucc_imp initialStates succs hs)
 
 /-- Corresponds to CAVA's on-the-fly `g_E` in `cava_inter_impl_loc`
 (`CAVA_Impl.thy`):
@@ -55,13 +104,17 @@ not "is q' consistent with s'". Getting this backwards (checking the
 successor pair instead) was an actual mistake made once while designing
 this, corrected by re-reading `Automata.thy` directly — the gate decides
 whether `(s, q)` has *any* outgoing edges at all; it says nothing about the
-successor pair once produced. -/
+successor pair once produced.
+
+Uses `totalizeSucc sysSucc`, not the caller's raw `sysSucc`, as the actual
+source of system-side edges — see `totalizeSucc`'s docstring for why a
+terminal client state must be read as a self-loop for LTL/Büchi purposes. -/
 def getSuccessors (ba : BA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) :
     (SysState × BAState) → Array (SysState × BAState) :=
   fun (s, q) =>
     if ba.compatible q (sysLabel s) then
-      (sysSucc s).flatMap fun s' => (ba.getSuccessors q).map fun q' => (s', q')
+      (totalizeSucc sysSucc s).flatMap fun s' => (ba.getSuccessors q).map fun q' => (s', q')
     else #[]
 
 /-- Corresponds to CAVA's `igbg_acc = λ(q,s). if s∈sa.V then igba.acc q else
@@ -79,12 +132,16 @@ Mechanical retargeting of the same `hcompat`/`Array.mem_flatMap`/
 `Array.mem_map` case split `finiteReach.closed` always needed (back when
 `FiniteReach` carried a `Std.HashSet` witness); the combinatorial content is
 unchanged, only the conclusion (`Reachable.step` instead of a `HashSet.
-contains` fact) differs. -/
+contains` fact) differs.
+
+System-side conclusion is stated over `totalizeSucc sysSucc`, matching what
+`getSuccessors` actually steps through — see `totalizeSucc`'s docstring. -/
 private theorem reachable_imp (ba : BA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) :
     ∀ {p : SysState × BAState},
       Reachable (initialStates ba sysInit) (getSuccessors ba sysSucc sysLabel) p →
-      Reachable sysInit sysSucc p.1 ∧ Reachable ba.initialStates.toList ba.getSuccessors p.2 := by
+      Reachable sysInit (totalizeSucc sysSucc) p.1 ∧
+        Reachable ba.initialStates.toList ba.getSuccessors p.2 := by
   intro p h
   induction h with
   | base hi =>
@@ -109,18 +166,21 @@ private theorem reachable_imp (ba : BA α) (sysSucc : SysState → Array SysStat
 /-- Corresponds to CAVA's `prod_finite_reachable` (`Automata.thy`,
 `igba_sys_prod_precond`): the product's reachable states are contained in
 `reachable(sys) × reachable(ba)`. The caller supplies their own system's
-`FiniteReach` witness (their system being finitely-reachable is *their*
-proof obligation, exactly as CAVA's `inter_spec` takes
-`finite (sa.E⇧* `` sa.V0)` as a precondition rather than deriving it), and
-this combines it with `BA.finiteReach` (`NestedDFS/NestedDFSTermination.lean`).
-A pure existence proof — no cross-product `Std.HashSet` materialization
-(`hashSetProd`, deleted) of any kind, cheap regardless of how large `sysFR`'s
-own witness would have needed to be under the old design. -/
+`FiniteReach` witness for their raw `sysSucc` (their system being
+finitely-reachable is *their* proof obligation, exactly as CAVA's
+`inter_spec` takes `finite (sa.E⇧* `` sa.V0)` as a precondition rather than
+deriving it), and this combines it with `BA.finiteReach`
+(`NestedDFS/NestedDFSTermination.lean`) — transporting `sysFR` across
+`totalizeSucc` first (`finiteReach_totalizeSucc`) since that's the successor
+function `getSuccessors` actually steps through. A pure existence proof — no
+cross-product `Std.HashSet` materialization (`hashSetProd`, deleted) of any
+kind, cheap regardless of how large `sysFR`'s own witness would have needed
+to be under the old design. -/
 def finiteReach (ba : BA α) (hbawf : ba.WellFormed)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysInit : List SysState) (sysFR : FiniteReach sysInit sysSucc) :
     FiniteReach (initialStates ba sysInit) (getSuccessors ba sysSucc sysLabel) :=
-  (sysFR.prod (ba.finiteReach hbawf)).subset
+  ((finiteReach_totalizeSucc sysInit sysSucc sysFR).prod (ba.finiteReach hbawf)).subset
     (fun p hp => reachable_imp ba sysSucc sysLabel sysInit hp)
 
 end Product
