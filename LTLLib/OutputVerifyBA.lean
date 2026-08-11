@@ -12,6 +12,7 @@
 import LTLLib.Lasso
 import LTLLib.BA
 import LTLLib.NestedDFS.NestedDFSCorrectness
+import LTLLib.Product
 
 namespace LTLLib
 
@@ -104,21 +105,55 @@ a one-line repackaging of the raw `(pr, pl)` witness into a `lasso` record.
 same shape as CAVA's `is_lasso_prpl_pre`, so the Lean analogue is just as
 mechanical: convert each field into `ValidLasso`'s vocabulary. -/
 
-/-- An `AcceptingCycle` over a concrete `BA`'s own successor/initial/accepting
-functions is exactly a `ValidLasso` for that `BA`'s `toSpec` — pure
-repackaging, no new mathematical content (mirrors CAVA's `lasso_of_prpl`). -/
-def AcceptingCycle.toValidLasso [BEq α] [Hashable α] {ba : BA α}
-    (ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting) :
-    ValidLasso ba.toSpec ac.stem ac.cycle where
+/-- An `AcceptingCycle` over *any* graph is exactly a `ValidLasso` for any
+`OASpec` whose `trans`/`initial`/`acceptSet` agree with that graph's
+`succs`/`initialStates`/`isAccepting` — pure repackaging, no new
+mathematical content (mirrors CAVA's `lasso_of_prpl`, which is likewise a
+single polymorphic definition applying uniformly to a standalone automaton
+*or* a product graph, since CAVA's product is declared to literally be
+another `igb_graph` instance — see `ModelCheckCorrectnessPlan.md` §5 for the
+full correspondence). `AcceptingCycle.toValidLasso`/`toValidLassoProduct`
+below are the two concrete specializations this repo currently needs. -/
+def AcceptingCycle.toValidLassoOf {State : Type u} {α : Type v}
+    {succs : State → Array State} {initialStates : List State}
+    {isAccepting : State → Bool} {A : OASpec State α 1}
+    (htrans : ∀ {s t : State}, t ∈ succs s ↔ A.trans s t)
+    (hinit : ∀ {s : State}, s ∈ initialStates ↔ A.initial s)
+    (hacc : ∀ {s : State}, isAccepting s = true ↔ A.acceptSet ⟨0, by omega⟩ s)
+    (ac : AcceptingCycle initialStates succs isAccepting) :
+    ValidLasso A ac.stem ac.cycle where
   stem_nonempty := ac.stem_nonempty
   cycle_nonempty := ac.cycle_nonempty
-  stem_initial :=
-    Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp ac.stem_head_initial)
-  stem_chain := ac.stem_chain
+  stem_initial := hinit.mp ac.stem_head_initial
+  stem_chain := fun i hi => htrans.mp (ac.stem_chain i hi)
   overlap := ac.overlap
-  cycle_chain := ac.cycle_chain
-  cycle_back := ac.cycle_back
-  cycle_accepting := ac.cycle_head_accepting
+  cycle_chain := fun i hi => htrans.mp (ac.cycle_chain i hi)
+  cycle_back := htrans.mp ac.cycle_back
+  cycle_accepting := hacc.mp ac.cycle_head_accepting
+
+/-- The `BA.toSpec` specialization of `toValidLassoOf` — signature unchanged
+from before the generalization, so every existing call site (`ac.toValidLasso`
+in this file and `Pipeline.lean`) keeps working with no changes there. -/
+def AcceptingCycle.toValidLasso [BEq α] [Hashable α] {ba : BA α}
+    (ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting) :
+    ValidLasso ba.toSpec ac.stem ac.cycle :=
+  ac.toValidLassoOf Iff.rfl (Std.HashSet.mem_toList.trans Std.HashSet.mem_iff_contains) Iff.rfl
+
+/-- The `Product.toSpec` specialization of `toValidLassoOf` — needed for
+`modelCheck_nonEmpty_sat` (`ModelCheckCorrectnessPlan.md` §3.4) to turn
+`nestedDFSChecker`'s raw `AcceptingCycle` output over the product graph into
+an actual infinite product run. All three compatibility obligations are
+`Iff.rfl`: `Product.toSpec`'s `trans`/`initial`/`acceptSet` fields are
+`Product.getSuccessors`/`Product.initialStates`/`Product.isAccepting`
+restated verbatim, unlike `BA.toSpec.initial`'s `Std.HashSet.contains` check
+against `AcceptingCycle`'s plain `List` membership above. -/
+def AcceptingCycle.toValidLassoProduct {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
+    {ba : BA α} {sysSucc : SysState → Array SysState}
+    {sysLabel : SysState → Std.HashSet α} {sysInit : List SysState}
+    (ac : AcceptingCycle (Product.initialStates ba sysInit)
+      (Product.getSuccessors ba sysSucc sysLabel) (Product.isAccepting ba)) :
+    ValidLasso (Product.toSpec ba sysSucc sysLabel sysInit) ac.stem ac.cycle :=
+  ac.toValidLassoOf Iff.rfl Iff.rfl Iff.rfl
 
 /-! ## Every state on the cycle stays inside a well-formed `BA`'s state set
 

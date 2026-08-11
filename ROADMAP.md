@@ -89,18 +89,25 @@ were assembled together — both closed, not deferred:
 
 ## Known non-goals (deliberately out of scope)
 
-- **System-intersection / product construction** (CAVA's `inter_spec`):
-  this library checks LTL satisfiability directly; it does not intersect a
-  formula's automaton with a system/Kripke-structure model. If you have
-  your own model checker and want to build that product yourself, see
-  README.md's "Using this library" section — the automaton-construction
-  half (`constructGBA`/`GBA.degeneralize`, with unconditional correctness)
-  is fully usable standalone for exactly that.
 - **`ProbMC/`**: a separate probabilistic-model-checking library in this
   same repository/`lakefile.toml`, entirely independent of `LTLLib/` and
   untouched by the work summarized here. It has its own open `sorry` (the
   finite-horizon Bellman principle, `ProbMC/ProbStateRefinement.lean`) —
   out of scope for this file.
+
+## Beyond this file's scope, now also closed
+
+- **System-intersection / product construction** (CAVA's `inter_spec`):
+  `fullPipeline` above checks LTL satisfiability of `φ` in isolation — it
+  does not intersect `φ`'s automaton with a system/Kripke-structure model.
+  That layer exists (`Product.lean`/`ModelCheck.lean`, added 2026-08-07/
+  08-11, after this file's "all phases DONE" snapshot) and, as of
+  2026-08-11, is **also fully proven correct**: `modelCheck_empty_unsat`/
+  `modelCheck_nonEmpty_sat` (`ModelCheck.lean`) connect `modelCheck`'s
+  result back to actual system traces, the Lean analogue of CAVA's
+  `abs_model_check_correct`. Full design record, CAVA references, and
+  implementation notes: `ModelCheckCorrectnessPlan.md`. See README.md's "As
+  a component inside your own model checker" for the theorem statements.
 
 ## File-by-file line counts
 

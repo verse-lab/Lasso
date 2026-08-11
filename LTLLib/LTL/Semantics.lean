@@ -144,6 +144,15 @@ theorem Formula.toNNF_correct (ξ : OmegaWord α) (φ : Formula α) :
     φ.directSatisfies ξ ↔ (φ.toNNF true).satisfies ξ :=
   (toNNF_correct_aux ξ φ).1
 
+/-- Negative-polarity half of `toNNF_correct`: converting to NNF at negative
+polarity captures *negated* satisfaction. Public wrapper around
+`toNNF_correct_aux`'s second half (that theorem is `private`) — needed by
+`ModelCheck.lean`'s correctness proof, which negates `φ` exactly this way
+before building `¬φ`'s automaton (matching CAVA's `Not_ltlc φ`). -/
+theorem Formula.toNNF_correct_neg (ξ : OmegaWord α) (φ : Formula α) :
+    ¬ φ.directSatisfies ξ ↔ (φ.toNNF false).satisfies ξ :=
+  (toNNF_correct_aux ξ φ).2
+
 /-- The two satisfaction notions for Formula agree. -/
 theorem Formula.directSatisfies_eq_satisfies (ξ : OmegaWord α) (φ : Formula α) :
     φ.directSatisfies ξ ↔ φ.satisfies ξ :=

@@ -286,6 +286,16 @@ theorems bridging `modelCheck`'s `.empty`/`.nonEmpty` results back to an
 actual "system satisfies/violates φ" statement are **not** part of this
 plan.
 
+**Update (2026-08-11): done — see `ModelCheckCorrectnessPlan.md`.** Scoped
+out in full there (CAVA references re-verified against the AFP source for
+each item, Lean signatures sketched, file-by-file plan, execution order),
+then implemented and merged the same day: `modelCheck_empty_unsat`/
+`modelCheck_nonEmpty_sat` (`ModelCheck.lean`) are the correctness theorems
+this section originally deferred, `lake build` clean, 0 `sorry`. The rest
+of this section is kept as the original scoping discussion that plan was
+built from — see the plan doc's §10 for what changed between that scoping
+and the actual implementation.
+
 ### The target shape
 
 CAVA's own top-level correctness theorem, `abs_model_check_correct`
@@ -312,20 +322,40 @@ analogues we'd want are exactly the `modelCheck` counterparts of
 
 ### What's missing to get there
 
-- **Not yet defined**: a notion of "system run" / "system language" (an
-  `OmegaWord`-producing infinite path through `sysSucc` from `sysInit`,
-  labeled via `sysLabel`) — CAVA's `sa.is_run`/`sa.lang`
-  (`sa.accept w ≡ ∃r. is_run r ∧ w = L ∘ r`, `Automata.html:1283-1288`).
-  Doesn't exist in the repo yet and needs its own design.
-- **Not yet ported**: Lean counterparts of CAVA's `prod_run`/`prod_acc`/
-  `gsp_correct1` (`Automata.html:1370-1420`), which show a run of the
-  product graph decomposes into a `(automaton run, system run)` pair that
-  stay `compatible` at every step, and that acceptance transfers from the
-  automaton side alone — exactly what's needed to connect a `Product`
-  accepting cycle (all `nestedDFSWF` gives us) back to an actual system run.
-  A real proof effort, comparable in size to what
-  `DegeneralBridge.lean`/`Pipeline.lean`'s existing correctness theorems
-  already required.
+- ~~**Not yet defined**: a notion of "system run" / "system language"~~ —
+  **done (2026-08-11)**: `Sys.toSpec` (`Product.lean`), CAVA's `sa.is_run`/
+  `sa.lang` ported directly via `OASpec` at `k = 0` — see
+  `ModelCheckCorrectnessPlan.md` §2 for the full correspondence.
+- ~~**Not yet ported**: Lean counterparts of CAVA's `prod_run`/`prod_acc`/
+  `gsp_correct1`~~ — **done (2026-08-11)**: `Product.run_decompose`/
+  `run_combine`/`acc_iff`/`gsp_correct1`/`gsp_correct2` (`Product.lean`) —
+  see `ModelCheckCorrectnessPlan.md` §3 for the full correspondence,
+  including `gsp_correct2` (CAVA's completeness direction, not separately
+  called out in this original bullet but needed and ported alongside
+  `gsp_correct1`). The effort estimate below held up: comparable in size to,
+  not larger than, `Product.lean`'s existing proof content.
+  - **New consideration (2026-08-11), not present when this bullet was
+    first written**: `Product.getSuccessors` no longer steps through the
+    caller's raw `sysSucc` — it steps through `Product.totalizeSucc sysSucc`
+    (`Product.lean`), which inserts a self-loop on any state with no
+    outgoing edges, since LTL/Büchi semantics need an infinite run and a
+    genuinely terminal client state has none (see README.md's "Terminal
+    states, and a deliberate divergence from CAVA", and the worked example
+    `LTLLib/Examples/ModelCheckTerminalStateExample.lean`). `Sys.toSpec`
+    (the "system run"/`sa.is_run` notion this bullet was originally asking
+    for — since built, see `ModelCheckCorrectnessPlan.md` §2) is stated over
+    `totalizeSucc sysSucc`, not `sysSucc` directly, exactly per this note.
+    This is a genuine, deliberate divergence from CAVA's own `sa.is_run`,
+    which is defined directly over the client's `g_E` with no such wrapper
+    — though not an *invented* one: `CAVA_Automata/Stuttering_Extension.thy`
+    formalizes this exact same self-loop-insertion construction
+    (`stutter_extend_edges`) with its own reachability/bisimulation
+    preservation proofs, just as infrastructure for the SM/BoolProgs/Promela
+    concrete-system-encoding layer to apply by hand before building its own
+    `sa_rec`, never wired into `inter_spec`/`abs_model_check` automatically
+    the way `totalizeSucc` is wired into `Product.getSuccessors` here (full
+    writeup: README.md's "Terminal states" section, `Product.totalizeSucc`'s
+    own docstring).
 - ~~**Not yet proven**: `Product.finiteReach`'s `closed` field~~ — done, then
   **superseded (2026-08-07)**: the `hashSetProd_mem`/`LawfulBEq`/
   `LawfulHashable` machinery this bullet describes no longer exists.

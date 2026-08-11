@@ -8,7 +8,7 @@ The core algorithm (LTL-to-GBA via Gerth et al.) is ported from the verified Isa
 
 The LTL-to-BA pipeline and its nested-DFS emptiness check (everything through `fullPipeline`) are **0 `sorry`, 0 errors**, ~14,665 lines across 28 source files (`lake build`, 762 jobs). Every top-level correctness theorem in that pipeline is unconditional — no admitted hypotheses, no `GraphComplete`-style assumptions, no side conditions beyond the formula `φ` itself.
 
-The model-checking layer built on top of it (`Product.lean`/`ModelCheck.lean`, "As a component inside your own model checker" below) is executable today but not yet fully proven correct: the theorem connecting `modelCheck`'s result to actual system traces is still open. See `ProductModelChecker.md` for exactly what's tracked and why.
+The model-checking layer built on top of it (`Product.lean`/`ModelCheck.lean`, "As a component inside your own model checker" below) is, as of 2026-08-11, **also 0 `sorry` and fully proven correct**: `modelCheck_empty_unsat`/`modelCheck_nonEmpty_sat` connect `modelCheck`'s result all the way back to actual system traces, the Lean analogue of CAVA's `abs_model_check_correct`. See `ModelCheckCorrectnessPlan.md` for the full design record and CAVA correspondence.
 
 `FiniteReach` (the caller-supplied finite-reachability precondition every `modelCheck`/`nestedDFSWF` call needs) was strictly redesigned 2026-08-07: it's now a bare `Prop` existence certificate (`{s | Reachable initialStates succs s}.Finite`, no `Std.HashSet` witness of any kind, no data touched on any executable path), matching CAVA's own `ASSERT`-based finiteness handling literally rather than just in spirit. `Product.finiteReach`'s proof (previously tracked here as an open `sorry`) is complete and needs no `LawfulBEq`/`LawfulHashable SysState` instances. Full design record: `FiniteReachRedesign.md`.
 
@@ -159,9 +159,9 @@ LTLLib/
 
 **`Pipeline.lean`** — `fullPipeline`, chaining every stage above into one total function, plus `fullPipeline_empty_unsat`/`fullPipeline_nonEmpty_sat`.
 
-**`Product.lean`** — The on-the-fly product construction between an external system (given as `sysInit`/`sysSucc`/`sysLabel`, no bundled record type) and a `BA`: `Product.initialStates`/`getSuccessors`/`isAccepting`/`finiteReach`. Ported directly from CAVA's `igba_sys_prod_precond`/`cava_inter_impl_loc` (`CAVA_Automata/Automata.thy`, `CAVA_Impl.thy`) — see `ProductModelChecker.md` for the full derivation. `BA.compatible` (`BA.lean`) is the label-compatibility gate this construction is built on. `Product.totalizeSucc` inserts a self-loop on any client state with no outgoing edges before it ever reaches the product graph — see "Terminal states, and a deliberate divergence from CAVA" below for why this library does that automatically rather than assuming it of the caller the way CAVA does.
+**`Product.lean`** — The on-the-fly product construction between an external system (given as `sysInit`/`sysSucc`/`sysLabel`, no bundled record type) and a `BA`: `Product.initialStates`/`getSuccessors`/`isAccepting`/`finiteReach`. Ported directly from CAVA's `igba_sys_prod_precond`/`cava_inter_impl_loc` (`CAVA_Automata/Automata.thy`, `CAVA_Impl.thy`) — see `ProductModelChecker.md` for the full derivation. `BA.compatible` (`BA.lean`) is the label-compatibility gate this construction is built on. `Product.totalizeSucc` inserts a self-loop on any client state with no outgoing edges before it ever reaches the product graph — see "Terminal states, and a deliberate divergence from CAVA" below for why this library does that automatically rather than assuming it of the caller the way CAVA does. Also: `Sys.toSpec`/`Product.toSpec` (CAVA's `sa`/`prod` run-and-acceptance carriers, as `OASpec` instances) and `Product.run_decompose`/`run_combine`/`acc_iff`/`gsp_correct1`/`gsp_correct2` (CAVA's `prod_run`/`prod_acc`/`gsp_correct1`/`gsp_correct2`) — the machinery `modelCheck_empty_unsat`/`modelCheck_nonEmpty_sat` (`ModelCheck.lean`) are built from. Full design record: `ModelCheckCorrectnessPlan.md`.
 
-**`ModelCheck.lean`** — `modelCheck`: the model-checking entry point, chaining negation → `constructGBA` → degeneralize → `Product` → emptiness check (CAVA's `abs_model_check`). See "As a component inside your own model checker" below.
+**`ModelCheck.lean`** — `modelCheck`: the model-checking entry point, chaining negation → `constructGBA` → degeneralize → `Product` → emptiness check (CAVA's `abs_model_check`), plus `modelCheck_empty_unsat`/`modelCheck_nonEmpty_sat` (CAVA's `abs_model_check_correct`). See "As a component inside your own model checker" below.
 
 ## Using this library
 
@@ -204,11 +204,30 @@ let result := modelCheck φ sysInit sysSucc sysLabel sysFR
 
 **Terminal states, and a deliberate divergence from CAVA.** LTL/Büchi semantics are defined over *infinite* words, so any sound use of them presupposes a *total* transition system — every state has at least one successor. CAVA's own precondition on the system side (`fb_graph`/`sa_rec`, see `ProductModelChecker.md`) says nothing about totality at all; it's simply left to the client to hand `inter_spec` a structure that already satisfies it. If your own system has a genuinely terminal state, deciding what that should mean for an infinite run — the standard convention, matching NuSMV/SPIN, is "the system stays there forever" — is entirely the client's problem in CAVA, worked out by hand before the transition system is ever built.
 
+CAVA has in fact formalized exactly this construction — `CAVA_Automata/Stuttering_Extension.thy`'s `stutter_extend_edges V E ≡ E ∪ {(v,v) | v. v ∈ V ∧ v ∉ Domain E}` is `Product.totalizeSucc` verbatim — with proofs that it preserves reachability (`stutter_extend_edges_rtrancl`) and bisimulation (`stutter_extend`). It's just never invoked by `inter_spec`/`abs_model_check` themselves: checking CAVA's actual dependency graph, it's consumed by the SM/BoolProgs/Promela concrete-system-encoding layer (a client applying it by hand before ever building its `sa_rec`), not the abstract product-construction pipeline this library ports. So CAVA's own theorems already confirm the construction is sound *when a client does it*; this library does it automatically, inside `Product.getSuccessors` itself, and its own proofs (`Product.reachable_totalizeSucc_imp`/`finiteReach_totalizeSucc`, and `Sys.toSpec` being defined directly over `totalizeSucc sysSucc` rather than raw `sysSucc`) carry that same soundness through every caller, rather than leaving it as an obligation a client could forget.
+
 This library does not place that same burden on its caller. A Lean `sysSucc : SysState → Array SysState` gives no local signal that returning `#[]` for some state carries LTL-specific meaning, and getting it wrong doesn't fail loudly: `modelCheck` just silently under-reports, missing a real counterexample whenever the violation only manifests by the system stalling in that state (see `LTLLib/Examples/ModelCheckTerminalStateExample.lean` for a worked example, and its own docstring for the mechanism). Because this failure mode is invisible to the caller, and the fix is uniform and free for anyone it doesn't apply to, `Product.getSuccessors` applies it automatically via `Product.totalizeSucc` — every state with no outgoing edges gets a self-loop before the product is ever built — rather than adding "your `sysSucc` must already be total" to `modelCheck`'s list of caller obligations. Systems that are already total (the common case) pay nothing extra for this; `totalizeSucc` is a no-op on them.
 
 If a different emptiness-check algorithm suits your system better than nested DFS (e.g. an SCC-based one), `modelCheck` takes an optional `checker : EmptinessChecker (SysState × BAState) := nestedDFSChecker` parameter — provide your own `EmptinessChecker` instance (`EmptinessCheck.lean`) and nothing else about the call changes.
 
-**What's proven and what isn't, today.** The automaton side (`BA.compatible`, `Product.getSuccessors`/`isAccepting`) is built on the same unconditionally-proven machinery `fullPipeline`/the table above relies on — nothing new or less trustworthy there. `Product.finiteReach` is fully proven (no `sorry`). What's *not yet proven*: the theorem connecting `modelCheck`'s result back to "every run of your system satisfies `φ`" / "here is a genuine counterexample run" — the `Product`-level analogue of `fullPipeline_empty_unsat`/`fullPipeline_nonEmpty_sat`. `modelCheck` is a real, executable, total `def` you can run today; until that theorem lands, treat its answer the way you'd treat any carefully-constructed but not-yet-formally-verified model checker. See `ProductModelChecker.md` for exactly what's open, why, and the CAVA source (`inter_spec`/`prod_run`/`prod_acc`) that theorem would port.
+**What's proven.** `modelCheck`'s result is now connected all the way back to real system traces, matching CAVA's own `abs_model_check_correct` — the `Product`-level analogue of `fullPipeline_empty_unsat`/`fullPipeline_nonEmpty_sat` (`Pipeline.lean`), proven 2026-08-11 (`ModelCheckCorrectnessPlan.md` has the full design record, CAVA references, and implementation notes):
+
+```lean
+theorem modelCheck_empty_unsat (φ : Formula α) (sysInit) (sysSucc) (sysLabel)
+    (sysFR : FiniteReach sysInit sysSucc) (checker : EmptinessChecker (SysState × BAState))
+    {n : Nat} (h : modelCheck (S := S) φ sysInit sysSucc sysLabel sysFR checker = .empty n) :
+    ∀ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ →
+      Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ
+
+theorem modelCheck_nonEmpty_sat (φ : Formula α) (sysInit) (sysSucc) (sysLabel)
+    (sysFR : FiniteReach sysInit sysSucc) (checker : EmptinessChecker (SysState × BAState))
+    {stem loop : List (SysState × BAState)}
+    (h : modelCheck (S := S) φ sysInit sysSucc sysLabel sysFR checker = .nonEmpty stem loop) :
+    ∃ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ ∧
+      ¬ Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ
+```
+
+`Sys.toSpec` (`Product.lean`) is CAVA's `sa.is_run`/`sa.lang` ported directly (`graph_defs.is_run`, `CAVA_Automata/Digraph.thy`/`Automata.thy`) — a genuine run of the caller's system, over `Product.totalizeSucc sysSucc` (see "Terminal states" above), under the system's own real `sysLabel`. Both theorems are proven for *any* `checker : EmptinessChecker (SysState × BAState)`, not fixed to `nestedDFSChecker` — matching CAVA's own `abs_model_check_correct` being proven once against the abstract `find_ce_spec` contract. `modelCheck` is a real, executable, total `def`, and now comes with the same class of unconditional guarantee `fullPipeline` does.
 
 ### Lower-level: building the product yourself
 
@@ -244,7 +263,7 @@ theorem nestedDFSWF_nonEmpty_valid ... (h : nestedDFSWF ... = .nonEmpty stem loo
       ac.stem = stem ∧ ac.cycle = loop.tail
 ```
 
-Same caveat as `modelCheck` above: this proves the emptiness check is correct *for the graph you handed it*. Whether that graph is a faithful representation of your system × property — CAVA's `inter_spec`, our `Product.lean` — is exactly the piece with the open proof obligation described above.
+This proves the emptiness check is correct *for the graph you handed it* — whether that graph faithfully represents your system × property is what `modelCheck_empty_unsat`/`modelCheck_nonEmpty_sat` (above) establish for `modelCheck` itself. If you assemble the pieces manually here rather than calling `modelCheck`, you get that same guarantee only by connecting back to it (e.g. via `modelCheck_eq`, `ModelCheck.lean`) — those two theorems are stated about `modelCheck` as a function, not about an arbitrary hand-assembled call to `Product.getSuccessors`/`finiteReach`/`checker.check`, even one that happens to compute the same result.
 
 ## Isabelle correspondence
 

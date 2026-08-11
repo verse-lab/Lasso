@@ -59,12 +59,23 @@ This document outlines the plan for porting correctness proofs from the Isabelle
   well-founded `nestedDFSWF` too (`nestedDFSWF_empty_no_cycle`/`nestedDFSWF_nonEmpty_valid`, Phase 2's
   wiring). `nestedDFSWF` is a fully verified, terminating decision procedure (given a `FiniteReach`
   proof — as of 2026-08-07, `FiniteReach` is a bare `Prop` existence certificate, not a `Std.HashSet`
-  witness; see the "FiniteReach strict redesign" write-up at the end of Phase 2 below). `OutputVerifyBA.lean`'s
+  witness; see the "FiniteReach strict redesign" write-up at the end of Phase 2 below).
+
+  **Update (2026-08-11): the "BA-level semantic conclusion" this bullet
+  flagged as optional follow-up is now done, but not through the two
+  theorems named below** — `OutputVerifyBA.lean`'s
   `ba_hasAcceptingRun_of_lasso`/`ba_hasAcceptingRun_of_ndfs_output` remain
-  unwired (they take the chain facts as hypotheses rather than deriving them
-  from a real run) — connecting them to `nestedDFS_fuel_nonEmpty_valid` for a
-  BA-level semantic conclusion is optional follow-up work, not required for
-  Phase 5c's stated goal (a genuine `AcceptingCycle` witness).
+  exactly as unwired as when this was written (still sorry-free, still
+  compile, but have no callers anywhere in the codebase — confirmed by
+  grep). The actual wiring happened via a more general route added
+  alongside them the same day this file was originally correct about
+  (`AcceptingCycle.toValidLasso`/`ValidLasso.run_isRun`/
+  `accepts_of_validLasso`, `Lasso.lean`/`OutputVerifyBA.lean`), which is
+  what `Pipeline.lean`'s `fullPipeline_nonEmpty_sat` and
+  `ModelCheck.lean`'s `modelCheck_nonEmpty_sat` both actually use to get
+  from a raw `AcceptingCycle` to a genuine `OASpec`-level accepting run.
+  `ba_hasAcceptingRun_of_lasso`/`_ndfs_output` are vestigial as a result —
+  candidates for deletion, not a live gap.
 - **Phase 6 (End-to-end pipeline, GBA-level scope) is now DONE** —
   `constructGBA_correct_weak` (`GraphComplete.lean`) matches Isabelle's
   `create_name_gba_correct` accept-iff clause: `createGraph φ = some st → ∀
