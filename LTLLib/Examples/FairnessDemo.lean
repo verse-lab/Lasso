@@ -35,6 +35,6 @@ def φ : Formula Prop' :=
 
 #eval runExample φ                    /-  3 GBA states,  3 BA states -/
 #eval runExample (.implies ψWeak φ)   /- 10 GBA states, 20 BA states -/
-#eval runExample (.implies ψStrong φ) /- 14 GBA states, 42 BA states -/
+#eval runExample (.implies ψStrong φ) /- 16 GBA states, 48 BA states -/
 
 end LTLLib.Examples
