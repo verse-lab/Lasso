@@ -2,9 +2,11 @@
   Fairness combinators for LTL formulas.
 
   Provides standard fairness encodings in LTL:
+  - Unconditional fairness: □◇taken
   - Weak fairness (justice): □(◇¬enabled ∨ ◇taken)
     i.e., if an action is continuously enabled, it is eventually taken
-  - Strong fairness (compassion): □(◇enabled → ◇taken)
+                  Equivalent to:  ◇□enabled → □◇taken
+  - Strong fairness (compassion): □◇enabled → □◇taken
     i.e., if an action is infinitely often enabled, it is infinitely often taken
 
   These expand into standard LTL formulas and require no special handling
@@ -28,16 +30,22 @@ namespace LTLLib
 
 namespace Formula
 
+/-- Unconditional Fairness: □◇taken.
+Event taken will happen infinitely often.
+Equivalent to: weakFairness(⊤, taken)-/
+def unconditionalFairness (taken : Formula α) : Formula α :=
+  .always (.eventually taken)
+
 /-- Weak fairness (justice): □(◇¬enabled ∨ ◇taken).
 If `enabled` is continuously true, then `taken` must eventually become true.
-Equivalent to: □◇¬enabled ∨ □◇taken, or equivalently, □◇(¬enabled ∨ taken). -/
+Equivalent to: □◇(¬enabled ∨ taken), or equivalently, ◇□enabled → □◇taken. -/
 def weakFairness (enabled taken : Formula α) : Formula α :=
   .always (.or (.eventually enabled.not) (.eventually taken))
 
-/-- Strong fairness (compassion): □(◇enabled → ◇taken).
+/-- Strong fairness (compassion): □◇enabled → □◇taken.
 If `enabled` is true infinitely often, then `taken` must be true infinitely often. -/
 def strongFairness (enabled taken : Formula α) : Formula α :=
-  .always (.implies (.eventually enabled) (.eventually taken))
+  .implies (.always (.eventually enabled)) (.always (.eventually taken))
 
 /-- Conjunction of multiple fairness constraints. -/
 def fairnessConjunction (constraints : List (Formula α)) : Formula α :=
