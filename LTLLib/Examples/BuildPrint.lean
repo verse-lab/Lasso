@@ -1,8 +1,8 @@
 /-
-  Reusable "build and print" pipeline for the pipeline examples: given a
+  Reusable "build and print" pipeline for the examples: given a
   surface `Formula α`, compiles it to NNF, runs it through
   `createGraph → constructGBA → GBA.degeneralize`, and renders the tableau,
-  the GBA, and the degeneralized BA as readable text.
+  the GBA, and the degeneralized BA.
 -/
 import LTLLib
 
@@ -11,15 +11,9 @@ namespace LTLLib.Examples
 variable {α : Type u} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
   [DecidableEq α] [ToString α]
 
-/-- `S`, the finite-set representation used internally by the expansion
-algorithm — a `HashSet` of NNF formulas works for any atom type with the
-usual `BEq`/`Hashable` instances (see `LTLtoGBA/FSet.lean`). -/
 abbrev S (α : Type u) [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] :=
   Std.HashSet (NNF α)
 
-/-- Build the tableau (`createGraph`'s finished node graph), the GBA read off
-of it, and its degeneralization to a standard BA — if the expansion
-terminates (it always does, per `createGraph_term`). -/
 def buildAll (φNNF : NNF α) :
     Option (ExpandState α (S α) × GBA α × BA α) :=
   match createGraph (S := S α) φNNF with
@@ -51,7 +45,7 @@ def printGBA (gba : GBA α) : String :=
     ([ stateLine, initLine, s!"acceptance sets ({gba.acceptSets.size}):" ] ++ acceptLines
      ++ ["transitions:"] ++ transLines ++ ["labeling:"] ++ labelLines)
 
-/-- Render a `BA`'s states, transitions, and labeling as a readable string. -/
+/-- Render a `BA`'s states, transitions, and labeling. -/
 def printBA (ba : BA α) : String :=
   let stateLine := s!"states ({ba.states.size}): {ba.states.toList}"
   let initLine := s!"initial: {ba.initialStates.toList}"

@@ -123,32 +123,22 @@ def Formula.directSatisfies (ξ : OmegaWord α) : Formula α → Prop
 def Formula.satisfies (ξ : OmegaWord α) (φ : Formula α) : Prop :=
   (φ.toNNF true).satisfies ξ
 
-/-! ## toNNF correctness
-
-The main difficulty is handling polarity: `toNNF` takes a `Bool` parameter
-tracking whether we are in a positive or negative context. We prove the
-positive and negative cases simultaneously by induction on the formula.
-
-We use `show` to explicitly state the goal after unfolding `toNNF`,
-which avoids issues with `simp` not fully reducing Bool if-then-else. -/
+/-! ## toNNF correctness -/
 
 /-- The key generalized statement: toNNF preserves/negates satisfaction
     depending on polarity. -/
-private theorem Formula.toNNF_correct_aux (ξ : OmegaWord α) (φ : Formula α) :
+private theorem Formula.toNNF_correct_aux {α} (ξ : OmegaWord α) (φ : Formula α) :
     (φ.directSatisfies ξ ↔ (φ.toNNF true).satisfies ξ) ∧
     (¬ φ.directSatisfies ξ ↔ (φ.toNNF false).satisfies ξ) := by
   induction φ generalizing ξ <;> dsimp [toNNF, directSatisfies, NNF.satisfies, NNF.toPred, state_pred, tla_release] at * <;> tunfold_simp' <;> try grind
 
 /-- Converting to NNF preserves satisfaction. -/
-theorem Formula.toNNF_correct (ξ : OmegaWord α) (φ : Formula α) :
+theorem Formula.toNNF_correct {α} (ξ : OmegaWord α) (φ : Formula α) :
     φ.directSatisfies ξ ↔ (φ.toNNF true).satisfies ξ :=
   (toNNF_correct_aux ξ φ).1
 
 /-- Negative-polarity half of `toNNF_correct`: converting to NNF at negative
-polarity captures *negated* satisfaction. Public wrapper around
-`toNNF_correct_aux`'s second half (that theorem is `private`) — needed by
-`ModelCheck.lean`'s correctness proof, which negates `φ` exactly this way
-before building `¬φ`'s automaton (matching CAVA's `Not_ltlc φ`). -/
+polarity captures *negated* satisfaction. -/
 theorem Formula.toNNF_correct_neg (ξ : OmegaWord α) (φ : Formula α) :
     ¬ φ.directSatisfies ξ ↔ (φ.toNNF false).satisfies ξ :=
   (toNNF_correct_aux ξ φ).2

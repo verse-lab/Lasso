@@ -1,43 +1,5 @@
 /-
-  Termination of `expand` (Phase 2, `expand` half).
-
-  Ports CAVA's termination proof for `expand` (`LTL_to_GBA.thy`, "Termination
-  proof" section, lines 836-1229): `expand_ord`, `expand_inv`,
-  `expand_inv_impl`, `expand_term_prop`, `expand_eq_expand⇩T`,
-  `create_graph_finite`.
-
-  CAVA's `expand` is `REC expand_body` (an abstract, possibly-diverging
-  least fixpoint over the `nres` CPO); termination is established for a
-  *separate* `expand⇩T := RECT expand_body`, well-founded-recursion-checked
-  via `RECT_rule` against the measure `expand_ord`, then transported back to
-  `expand` via the generic library lemma `RECT_eq_REC`.
-
-  Lean's `partial_fixpoint` (our `expand`'s actual definition, `Expand.lean`)
-  is architecturally the same idea as CAVA's `REC` (both are least fixpoints
-  over a CCPO — Lean's own `Lean.Order` framework, `Init/Internal/Order/`).
-  But Lean has no `RECT`/`RECT_eq_REC` analogue: `partial_fixpoint`'s own
-  generated induction principle (`expand.partial_correctness`, `fix_induct`
-  under the hood) is Scott/fixpoint induction, which is *structurally*
-  conditional (`Option.admissible_eq_some : admissible (x = some y → P)`) —
-  it can only ever conclude "if `expand` succeeds, then P", never "`expand`
-  succeeds". This is inherent to admissibility, not a gap to work around, and
-  mirrors exactly why CAVA needs the separate `RECT`/`expand_term_prop` layer
-  in the first place.
-
-  What Lean *does* give unconditionally is `expand`'s own one-step unfolding
-  equation (`unfold expand`, already used throughout `GraphComplete.lean`) —
-  the direct analogue of Isabelle's `fix_eq`/`lfp_fix`. That is enough to
-  prove totality *directly*, by well-founded induction on the same measure
-  CAVA uses, entirely avoiding a separate fuel-indexed mirror function (the
-  `NestedDFS/NestedDFSTermination.lean` playbook) — a genuine simplification found by
-  checking what Lean's `partial_fixpoint` machinery actually offers before
-  assuming the nested-DFS approach would carry over.
-
-  CAVA's primary measure component lives in `Pow(subfrmlsr φ) × Pow(subfrmlsr φ)`
-  (Isabelle set theory). Mathlib is an actual dependency of this project
-  (`lakefile.toml`, already used in `Acceptance.lean`/`Soundness.lean`), so
-  this is ported directly via `Finset.powerset`/`Finset.card_powerset` — the
-  literal Lean analogue, not a hand-rolled encoding.
+  Termination of `expand`.
 -/
 
 import Mathlib.Data.Finset.Powerset
@@ -48,23 +10,14 @@ namespace LTLLib
 
 open NNF
 
-/-! ## Subformula-list finiteness infrastructure
-
-`NNF.subformulas` (`LTL/Subformulas.lean`) is a `List`, built via `NNF.fold`.
-`NNF.IsSubformula` (`Invariants.lean`) is the *relation* already used by
-`new1_subformula`/`new2_subformula`/`next1_subformula`. Bridges the two:
-`IsSubformula ψ φ → ψ ∈ subformulas φ`, needed to place `new1 φ`/`new2 φ`/
-`next1 φ`'s outputs (already known `IsSubformula`-related to `φ`, hence to
-any node's `old`/`new`/`next` once `φ` itself is known to be in there) inside
-the *finite* Finset universe `(subformulas topFormula).toFinset`. -/
+/-! ## Subformula-list finiteness -/
 
 section SubformulaFiniteness
 
 variable {α : Type u}
 
 /-- `fold`'s accumulator only ever grows (as membership), regardless of which
-formula is being folded over — proved once, generically, rather than
-special-cased per constructor of `NNF.IsSubformula` later. -/
+formula is being folded over -/
 theorem NNF.fold_cons_mono (χ : NNF α) {acc acc' : List (NNF α)} (h : acc ⊆ acc') :
     χ.fold (fun a f => f :: a) acc ⊆ χ.fold (fun a f => f :: a) acc' := by
   induction χ generalizing acc acc' with
@@ -103,16 +56,12 @@ theorem NNF.self_mem_fold_cons (χ : NNF α) (acc : List (NNF α)) :
     exact NNF.acc_subset_fold_cons ψ2 _ (NNF.acc_subset_fold_cons ψ1 _ (List.mem_cons_self ..))
 
 /-- `ψ ∈ subformulas χ` still holds when `χ`'s fold is seeded with a bigger
-accumulator instead of `[]` — the general-purpose step used by every case of
-`IsSubformula.mem_subformulas` below. -/
+accumulator instead of `[]` -/
 theorem NNF.mem_subformulas_imp_mem_fold {χ ψ : NNF α} (h : ψ ∈ χ.subformulas)
     (acc : List (NNF α)) : ψ ∈ χ.fold (fun a f => f :: a) acc :=
   NNF.fold_cons_mono χ (List.nil_subset acc) h
 
-/-- Bridges `NNF.IsSubformula` (the inductive relation already used by
-`new1_subformula`/`new2_subformula`/`next1_subformula`) to `NNF.subformulas`
-(the finite list) — needed to place their outputs inside a genuinely finite
-`Finset` universe. -/
+/-- Bridges `NNF.IsSubformula` to `NNF.subformulas`. -/
 theorem NNF.IsSubformula.mem_subformulas {φ ψ : NNF α} (h : NNF.IsSubformula ψ φ) :
     ψ ∈ φ.subformulas := by
   induction h with
@@ -156,16 +105,12 @@ theorem NNF.IsSubformula.mem_subformulas {φ ψ : NNF α} (h : NNF.IsSubformula 
 
 end SubformulaFiniteness
 
-/-! ## Weighted formula-size measure (`size_set` analogue)
+/-! ## Weighted formula-size measure
 
-Mirrors `size_set S ≡ sum (λx. 2 * size x + 1) S` (`LTL.thy:519`) — **not**
-`|S|` (a mistaken first read corrected by checking the actual definition):
-weighting each element by `2·size(x)+1` is what makes `new1_less_sum`/
-`new2_less_sum` (below) hold — splitting a compound formula into its
+Weighting each element by `2·size(x)+1` is what makes `new1_less_sum`/
+`new2_less_sum` hold, splitting a compound formula into its
 immediate, syntactically smaller parts strictly decreases the weighted sum,
-even though the *set* can grow (e.g. one formula becomes two). Uses Lean's
-own auto-derived `sizeOf : NNF α → Nat` as the direct analogue of Isabelle's
-auto-generated `size`. -/
+even though the *set* can grow (e.g. one formula becomes two). -/
 
 section WeightedSize
 
@@ -188,63 +133,41 @@ theorem NNF.new2_less_sum (φ : NNF α) : weightedSize (new2 φ) < weightedSize 
 
 end WeightedSize
 
-/-! ## Invariant: `old`/`new`/`next` stay within `subformulas topFormula`
-
-Mirrors `expand_inv`/`expand_inv_node`/`expand_inv_result` (`LTL_to_GBA.thy:857-866`).
-Unlike Isabelle's abstract HOL sets, `node.new : List _` and `node.old/next : S`
-(via the `FSet` abstraction, always `Std.HashSet`/`Std.TreeSet`) are automatically
-finite — Lean drops CAVA's explicit `finite(new n) ∧ finite(old n) ∧ finite(next n)`
-and `finite ns` conjuncts entirely, since they're vacuously true by construction. -/
+/-! ## Invariant: `old`/`new`/`next` stay within `subformulas topFormula`. -/
 
 section ExpandInvariant
 
 variable {α : Type u} {S : Type v} [FSet (NNF α) S]
 
-/-- Mirrors `expand_inv_node`: the current node's pending/processed/obligation
-sets are all bounded within `subfrmlsr topFormula`. Phrased via `IsSubformula`
-(matching the vocabulary already established by `expand_subformula_closure`
-and friends in `Invariants.lean`, rather than `subformulas`-list membership)
-so per-branch propagation facts can be reused directly from there. -/
 structure NodeBounded (topFormula : NNF α) (n : GBANode α S) : Prop where
   new_sub : ∀ x ∈ n.new, NNF.IsSubformula x topFormula
   old_sub : ∀ x, FSet.contains n.old x → NNF.IsSubformula x topFormula
   next_sub : ∀ x, FSet.contains n.next x → NNF.IsSubformula x topFormula
 
-/-- Mirrors `expand_inv_result`: every already-finished node in `st.nodes` is
-bounded too. -/
+/-- Every already-finished node in `st.nodes` is bounded too. -/
 def NodesBounded (topFormula : NNF α) (st : ExpandState α S) : Prop :=
   ∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n →
     (∀ x, FSet.contains n.old x → NNF.IsSubformula x topFormula) ∧
     (∀ x, FSet.contains n.next x → NNF.IsSubformula x topFormula)
 
-/-- Mirrors `expand_inv`. -/
 structure ExpandInv (topFormula : NNF α) (n : GBANode α S) (st : ExpandState α S) : Prop where
   node_bounded : NodeBounded topFormula n
   nodes_bounded : NodesBounded topFormula st
 
 end ExpandInvariant
 
-/-! ## The measure (`expand_ord` analogue)
-
-Primary component mirrors `old_next_pair `` ns`, ordered by `finite_psupset
-(old_next_limit φ)` in CAVA — here phrased as a *shrinking* `Nat` (universe
-cardinality minus used-signature cardinality), the same "shrinking
-complement of a fixed finite universe" idiom as the nested-DFS measures
-(`(fr.univ \ iv).size`), just via `Finset.card` instead of `HashSet.size`.
-Secondary mirrors `size_set (new n)`. -/
+/-! ## The measure -/
 
 section ExpandMeasure
 
 variable {α : Type u} [DecidableEq α] {S : Type v} [FSet (NNF α) S]
 
 /-- A node's "signature": its (old, next) content as `Finset`s, independent
-of the underlying `S` representation. Mirrors `old_next_pair`. -/
+of the underlying `S` representation. -/
 noncomputable def nodeSignature (n : GBANode α S) : Finset (NNF α) × Finset (NNF α) :=
   ((FSet.toList n.old).toFinset, (FSet.toList n.next).toFinset)
 
-/-- All possible signatures drawable from `subformulas topFormula`. Mirrors
-`old_next_limit φ ≡ Pow(subfrmlsr φ) × Pow(subfrmlsr φ)`, using Mathlib's
-`Finset.powerset` directly rather than a hand-rolled encoding. -/
+/-- All possible signatures drawable from `subformulas topFormula`. -/
 noncomputable def signatureUniverse (topFormula : NNF α) :
     Finset (Finset (NNF α) × Finset (NNF α)) :=
   topFormula.subformulas.toFinset.powerset ×ˢ topFormula.subformulas.toFinset.powerset
@@ -258,8 +181,7 @@ theorem nodeSignature_mem_signatureUniverse {topFormula : NNF α} {n : GBANode �
   exact ⟨fun x hx => (ho x ((FSet.mem_toList_iff x n.old).mp hx)).mem_subformulas,
     fun x hx => (hn x ((FSet.mem_toList_iff x n.next).mp hx)).mem_subformulas⟩
 
-/-- Signatures used by the accumulated, already-finished nodes. Mirrors
-`old_next_pair `` ns`. -/
+/-- Signatures used by the accumulated, already-finished nodes. -/
 noncomputable def usedSignatures (st : ExpandState α S) :
     Finset (Finset (NNF α) × Finset (NNF α)) :=
   (st.nodes.toList.map (fun p => nodeSignature p.2)).toFinset
@@ -278,7 +200,7 @@ theorem usedSignatures_subset_signatureUniverse {topFormula : NNF α} {st : Expa
 noncomputable def expandMeasure1 (topFormula : NNF α) (st : ExpandState α S) : Nat :=
   (signatureUniverse topFormula).card - (usedSignatures st).card
 
-/-- Secondary (tie-break) measure component. Mirrors `size_set (new n)`. -/
+/-- Secondary (tie-break) measure component. -/
 noncomputable def expandMeasure2 (n : GBANode α S) : Nat := weightedSize n.new
 
 omit [DecidableEq α] in
@@ -304,11 +226,7 @@ theorem weightedSize_addToNew_le (node : GBANode α S) (formulas : List (NNF α)
     weightedSize (addToNew node formulas) ≤ weightedSize node.new + weightedSize formulas :=
   weightedSize_foldl_addToNew_le node.old formulas node.new
 
-/-- Primary-measure decrease: mirrors the "used-signatures strictly grow"
-half of `expand_ord`'s `finite_psupset` component (the case CAVA's own
-`expand_term_prop` uses directly, without going through `expand_inv_impl`,
-for the "fresh successor" transition — `old_next_pair `` ns ⊂ old_next_pair
-`` (insert n ns)`). -/
+/-- Primary-measure decrease. -/
 theorem expandMeasure1_lt {topFormula : NNF α} {st st' : ExpandState α S}
     (hsub : usedSignatures st ⊂ usedSignatures st')
     (hbound' : usedSignatures st' ⊆ signatureUniverse topFormula) :
@@ -319,11 +237,7 @@ theorem expandMeasure1_lt {topFormula : NNF α} {st st' : ExpandState α S}
     Finset.card_le_card hbound'
   omega
 
-/-- Primary-measure non-increase: the weaker, non-strict form needed for the
-nondeterministic-split case, where `expand_inv_impl`'s case 3
-(`LTL_to_GBA.thy:946-964`) only assumes `old_next_pair `` ns ⊆ old_next_pair
-`` ns'` (non-strict) and relies purely on the *secondary* (`size_set`)
-measure for the actual strict decrease. -/
+/-- Primary-measure non-increase. -/
 theorem expandMeasure1_le {topFormula : NNF α} {st st' : ExpandState α S}
     (hsub : usedSignatures st ⊆ usedSignatures st') :
     expandMeasure1 topFormula st' ≤ expandMeasure1 topFormula st := by
@@ -333,16 +247,10 @@ theorem expandMeasure1_le {topFormula : NNF α} {st st' : ExpandState α S}
 
 end ExpandMeasure
 
-/-! ## Main termination theorem (`expand_term_prop` analogue)
+/-! ## Main termination theorem.
 
 Proved directly as a well-founded-recursive `theorem` (`termination_by`/
-`decreasing_by`, the same lex-pair idiom already used for `innerDFSCore`/
-`outerDFSLoopWF`), unfolding `expand`'s own equation at each step — no
-fuel-indexed mirror needed (see the file docstring for why). Mirrors
-`expand_term_prop`'s conclusion exactly: totality, plus the two facts it
-carries forward across every recursive call (`old_next_pair `` snd n_ns ⊆
-old_next_pair `` nds ∧ expand_inv_result φ nds`, here `usedSignatures`
-monotonicity and `NodesBounded` preservation). -/
+`decreasing_by`. -/
 
 section ExpandTermHelpers
 
@@ -352,9 +260,7 @@ theorem nodeSignature_incoming_irrelevant (n : GBANode α S) (inc : Std.HashSet 
     nodeSignature ({ n with incoming := inc } : GBANode α S) = nodeSignature n := rfl
 
 /-- Inserting a node at a *fresh* key (not previously present) only grows
-`usedSignatures`. Used for the "finish node, spawn successor" transition —
-mirrors the `old_next_pair n ∉ old_next_pair `` ns` fact CAVA gets for free
-from the "no duplicate found" branch condition. -/
+`usedSignatures`. -/
 theorem usedSignatures_insert_fresh_subset (st : ExpandState α S) (k : Nat) (n : GBANode α S)
     (hfresh : st.nodes[k]? = none) :
     usedSignatures st ⊆ usedSignatures { st with nodes := st.nodes.insert k n } := by
@@ -374,8 +280,7 @@ theorem usedSignatures_insert_fresh_subset (st : ExpandState α S) (k : Nat) (n 
 
 omit [DecidableEq α] in
 /-- Every node bounded before an insert stays bounded, plus the freshly
-inserted node itself if it too is bounded. Mirrors `expand_inv_result`
-preservation for both the "fresh successor" and "merge" transitions. -/
+inserted node itself if it too is bounded. -/
 theorem NodesBounded_insert {topFormula : NNF α} {st : ExpandState α S}
     (h : NodesBounded topFormula st) {k : Nat} {n : GBANode α S}
     (hold : ∀ x, FSet.contains n.old x → NNF.IsSubformula x topFormula)
@@ -392,8 +297,7 @@ theorem NodesBounded_insert {topFormula : NNF α} {st : ExpandState α S}
 
 omit [DecidableEq α] in
 /-- `mergeIncoming` only ever updates the `incoming` field of the target node
-(never `old`/`next`), so `NodesBounded` is trivially preserved. Mirrors
-`expand_inv_upd_incoming` (`LTL_to_GBA.thy:997-1000`). -/
+(never `old`/`next`), so `NodesBounded` is trivially preserved. -/
 theorem NodesBounded_mergeIncoming {topFormula : NNF α} {st : ExpandState α S}
     (h : NodesBounded topFormula st) (node : GBANode α S) (targetName : Nat) :
     NodesBounded topFormula (mergeIncoming st node targetName) := by
@@ -411,10 +315,7 @@ theorem NodesBounded_mergeIncoming {topFormula : NNF α} {st : ExpandState α S}
   · exact h
 
 /-- Inserting a signature-preserving replacement at an *existing* key leaves
-`usedSignatures` unchanged (as a `⊆`, all that's needed downstream). Mirrors
-`upd_incoming_eq_old_next_pair` (`LTL_to_GBA.thy:1003`) — used for the
-"merge" transition (`mergeIncoming`), which only ever updates `incoming`,
-never `old`/`next`. -/
+`usedSignatures` unchanged. -/
 theorem usedSignatures_insert_matching_subset (st : ExpandState α S) (k : Nat) (n target : GBANode α S)
     (htarget : st.nodes[k]? = some target) (hsig : nodeSignature n = nodeSignature target) :
     usedSignatures st ⊆ usedSignatures { st with nodes := st.nodes.insert k n } := by
@@ -448,11 +349,7 @@ theorem findStep_some_persists (node : GBANode α S) (m : Nat) (l : List (Nat ×
   | cons p ps ih => simp only [List.foldl_cons, findStep]; exact ih
 
 /-- The negative counterpart to `findDuplicate_spec`: if no duplicate is
-found, no already-finished node shares `node`'s signature. Mirrors the "no
-duplicate found" branch condition CAVA gets for free
-(`old_next_pair n ∉ old_next_pair `` ns`, used inline in `expand_term_prop`'s
-own case 2, `LTL_to_GBA.thy:1066`) — needed explicitly here since Lean has
-no such automatic negation from an `if`/`else` split on a `∃`-statement. -/
+found, no already-finished node shares `node`'s signature. -/
 theorem findDuplicate_spec_none (st : ExpandState α S) (node : GBANode α S)
     (h : findDuplicate st node = none) :
     ∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n → n.sameSignature node = false := by
@@ -513,9 +410,6 @@ theorem sameSignature_of_nodeSignature_eq {n1 n2 : GBANode α S}
       List.mem_toFinset.mpr ((FSet.mem_toList_iff x n2.next).mpr hx)
     rwa [← h2, List.mem_toFinset, FSet.mem_toList_iff] at hm
 
-/-- Mirrors the fact `expand_term_prop`'s own case 2 (`LTL_to_GBA.thy:1066`)
-gets for free from the "no duplicate found" branch condition:
-`old_next_pair n ∉ old_next_pair `` ns`. -/
 theorem nodeSignature_fresh_of_findDuplicate_none {st : ExpandState α S} {node : GBANode α S}
     (h : findDuplicate st node = none) :
     nodeSignature node ∉ usedSignatures st := by
@@ -542,17 +436,6 @@ theorem cons_head!_tail! {β : Type w} [Inhabited β] {l : List β} (h : l.isEmp
   | cons a t => rfl
 
 set_option maxHeartbeats 4000000 in
-/-- The three name-freshness hypotheses `expand_invariants` (`Invariants.lean`)
-takes as inputs — needed here (unlike in CAVA) because `ExpandState.nodes` is
-a *name-keyed* `Std.HashMap`, not a genuine mathematical set of records as in
-CAVA's `'a node set`: inserting at an already-used key would silently
-overwrite (lose) data, which is structurally impossible in CAVA's set
-encoding. `h_not_in`/`h_fresh`/`h_name` rule this out; they are threaded
-through every recursive call below and, at the nondeterministic split's
-*second* call (the only point where a call's precondition depends on an
-*earlier* call's output rather than purely local bookkeeping), obtained via
-`expand_invariants` applied as a black box to the first call's now-realized
-result. -/
 theorem expand_term (topFormula : NNF α) (node : GBANode α S) (st : ExpandState α S)
     (hinv : ExpandInv topFormula node st)
     (h_not_in : st.nodes[node.name]? = none)
@@ -833,10 +716,7 @@ decreasing_by
     · rw [heq]; exact Prod.Lex.right _ hw2
     · exact Prod.Lex.left _ _ hlt
 
-/-- `createGraph`'s totality, mirroring `create_graph_finite`/`create_graph_nofail`
-(`LTL_to_GBA.thy:1213-1226`): assembling `expand_term` at the concrete initial
-node (`name := 1`, `incoming := {expandInit}`, `new := [φ]`, `old := next := ∅`)
-with trivially-satisfiable freshness hypotheses (`initState.nodes` is empty). -/
+/-- `createGraph`'s totality. -/
 theorem createGraph_term (φ : NNF α) :
     ∃ st : ExpandState α S, createGraph φ = some st ∧ NodesBounded φ st := by
   have hinv : ExpandInv φ

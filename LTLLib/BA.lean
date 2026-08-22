@@ -6,14 +6,15 @@
   acceptance counter that tracks which acceptance set to satisfy next.
 
   This is a standard construction (see e.g., Baier & Katoen, "Principles of
-  Model Checking", Section 4.3.3). The Isabelle LTL_to_GBA formalization does
-  not include degeneralization (it works with GBA/IGBA directly), but the
-  CAVA framework's automata library supports it.
+  Model Checking", Section 4.3.3).
 
   State space: |BA| = |GBA| × max(1, k) where k = number of acceptance sets.
 -/
 
 import LTLLib.GBA
+import LTLLib.AbstractSpec.Acceptance
+import LTLLib.AbstractSpec.EmptinessCheck
+import LTLLib.AbstractSpec.Lasso
 
 namespace LTLLib
 
@@ -61,7 +62,7 @@ structure BA (α : Type u) [BEq α] [Hashable α] where
   successors : Std.HashMap BAState (Array BAState)
 
   /-- Labeling inherited from GBA: maps GBA state to (positive, negative) propositions.
-  The BAState's labeling is determined by its `gbaState` component. -/
+  The BAState's labeling is determined by its `gbaState` component only. -/
   labeling : Std.HashMap Nat (Std.HashSet α × Std.HashSet α)
 
   /-- Number of acceptance sets in the original GBA (for reference). -/
@@ -73,7 +74,7 @@ structure BA (α : Type u) [BEq α] [Hashable α] where
 
 namespace BA
 
-variable [BEq α] [Hashable α]
+variable {α} [BEq α] [Hashable α]
 
 /-- Check if a BA state is accepting.
 A state `(q, i)` is accepting iff `i = 0` and `q` is in the first GBA
@@ -85,34 +86,38 @@ def isAccepting (ba : BA α) (s : BAState) : Bool :=
 def getSuccessors (ba : BA α) (s : BAState) : Array BAState :=
   ba.successors[s]?.getD #[]
 
-/-- Get the labeling of a BA state (determined by its GBA component). -/
+/-- Get the labeling of a BA state (determined by its GBA component only). -/
 def getLabeling (ba : BA α) (s : BAState) : Std.HashSet α × Std.HashSet α :=
   ba.labeling[s.gbaState]?.getD (Std.HashSet.emptyWithCapacity 0, Std.HashSet.emptyWithCapacity 0)
 
 /-- Label-compatibility check: does `valuation` satisfy `s`'s propositional
-constraint? Corresponds to CAVA's `igba.L q l` (`CAVA_Automata/Automata.thy`,
-`igba_rec.gba_L`): `positiveProps(q) ⊆ l ∧ negativeProps(q) ∩ l = ∅`. Used by
-the system-product construction (`Product.lean`) as the gate on a product
-state's own outgoing edges — see that file's docstring for why the check is
-evaluated on the *source* state, not the destination. -/
+constraint? -/
 def compatible (ba : BA α) (s : BAState) (valuation : Std.HashSet α) : Bool :=
   let (pos, neg) := ba.getLabeling s
   pos.all valuation.contains && !neg.any valuation.contains
 
-/-- Well-formedness: initial and successor states are in the state set.
-Mirrors `GBA.WellFormed` (`GBA.lean`) — the same `graph` locale two-field
-scope (`V0_ss`/`E_ss`, `CAVA_Automata/Digraph.thy:59-64`); nothing downstream
-needs more than these two facts for the BA either. -/
+/-- Well-formedness: initial and successor states are in the state set. -/
 structure WellFormed (ba : BA α) : Prop where
   initial_mem : ∀ s, ba.initialStates.contains s → ba.states.contains s
   succ_mem : ∀ s s', ba.states.contains s → s' ∈ ba.getSuccessors s →
     ba.states.contains s'
 
+/-- Convert a computational `BA` to an abstract `OASpec` with 1 acceptance set. -/
+def toSpec [BEq α] [Hashable α] (ba : BA α) : OASpec BAState α 1 where
+  trans s s' := s' ∈ ba.getSuccessors s
+  initial s := ba.initialStates.contains s
+  labelCompat s v :=
+    match ba.labeling[s.gbaState]? with
+    | some (pos, neg) =>
+      (∀ a, pos.contains a → v a) ∧ (∀ a, neg.contains a → ¬ v a)
+    | none => True
+  acceptSet _ s := ba.isAccepting s
+
 end BA
 
 namespace GBA
 
-variable [BEq α] [Hashable α]
+variable {α} [BEq α] [Hashable α]
 
 /-- Degeneralize a GBA to a standard BA.
 
@@ -174,5 +179,72 @@ def degeneralize (gba : GBA α) : BA α :=
   }
 
 end GBA
+
+/-- The `BA.toSpec` specialization of `toValidLassoOf`. -/
+def AcceptingCycle.toValidLasso {α} [BEq α] [Hashable α] {ba : BA α}
+    (ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting) :
+    ValidLasso ba.toSpec ac.stem ac.cycle :=
+  ac.toValidLassoOf Iff.rfl (Std.HashSet.mem_toList.trans Std.HashSet.mem_iff_contains) Iff.rfl
+
+/-! ## Every state on the cycle stays inside a well-formed `BA`'s state set -/
+
+theorem AcceptingCycle.stem_states_mem {α} [BEq α] [Hashable α] {ba : BA α}
+    (hwf : ba.WellFormed)
+    (ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting) :
+    ∀ (i : Nat) (hi : i < ac.stem.length), ba.states.contains (ac.stem[i]'hi) = true := by
+  intro i
+  induction i with
+  | zero =>
+    intro hi
+    have h0 : ac.stem[0]'hi = ac.stem.head (List.ne_nil_of_length_pos (by omega)) := by
+      rw [List.head_eq_getElem]
+    rw [h0]
+    exact hwf.initial_mem _
+      (Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp ac.stem_head_initial))
+  | succ i ih =>
+    intro hi
+    have hprev := ih (by omega)
+    have hchain := ac.stem_chain i (by omega)
+    exact hwf.succ_mem _ _ hprev hchain
+
+theorem AcceptingCycle.cycle_states_mem {α} [BEq α] [Hashable α] {ba : BA α}
+    (hwf : ba.WellFormed)
+    (ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting) :
+    ∀ (i : Nat) (hi : i < ac.cycle.length), ba.states.contains (ac.cycle[i]'hi) = true := by
+  have hsn := ac.stem_nonempty
+  have hcn := ac.cycle_nonempty
+  have hhead : ba.states.contains
+      (ac.cycle.head (List.ne_nil_of_length_pos (by omega))) = true := by
+    rw [← ac.overlap]
+    have hlast : ac.stem[ac.stem.length - 1]'(by omega) =
+        ac.stem.getLast (List.ne_nil_of_length_pos (by omega)) := by
+      rw [List.getLast_eq_getElem]
+    rw [← hlast]
+    exact AcceptingCycle.stem_states_mem hwf ac (ac.stem.length - 1) (by omega)
+  intro i
+  induction i with
+  | zero =>
+    intro hi
+    have h0 : ac.cycle[0]'hi = ac.cycle.head (List.ne_nil_of_length_pos (by omega)) := by
+      rw [List.head_eq_getElem]
+    rw [h0]; exact hhead
+  | succ i ih =>
+    intro hi
+    have hprev := ih (by omega)
+    have hchain := ac.cycle_chain i (by omega)
+    exact hwf.succ_mem _ _ hprev hchain
+
+/-- Every position of the lasso-derived run stays inside a well-formed `BA`'s
+state set. -/
+theorem AcceptingCycle.run_states_mem {α} [BEq α] [Hashable α] {ba : BA α}
+    (hwf : ba.WellFormed)
+    (ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting) (n : Nat) :
+    ba.states.contains (ac.toValidLasso.run n) = true := by
+  simp only [ValidLasso.run, lassoRun]
+  split
+  · next h => exact ac.stem_states_mem hwf n (by omega)
+  · split
+    · next h2 => exact ac.cycle_states_mem hwf _ (Nat.mod_lt _ h2)
+    · next h h2 => exact absurd ac.cycle_nonempty (by omega)
 
 end LTLLib

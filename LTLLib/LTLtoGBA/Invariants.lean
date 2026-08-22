@@ -5,9 +5,6 @@
   - `NNF.IsSubformula`: inductive subformula relation
   - Properties of `new1`/`new2`/`next1` (subformula preservation)
   - `ExpandSpec`: abstract specification of what the expand output satisfies
-
-  These invariants are the building blocks for the GBA correctness proof
-  (soundness L4_9 and completeness L4_10).
 -/
 
 import LTLLib.LTLtoGBA.Expand
@@ -197,7 +194,7 @@ def ExpandState.toNodes (st : ExpandState α S) : NodeData α → Prop :=
 /-! ## Per-node propagation invariant
 
 During processing, a node's `old` set may have formulas whose consequences
-haven't been fully expanded yet — they're still in `new`. The `ProcessingInv`
+haven't been fully expanded yet, they're still in `new`. The `ProcessingInv`
 captures this: for each compound formula in `old`, its consequences are in
 `old ∪ new`. When `new` is empty (finished node), this implies `ExpandSpec`
 properties directly. -/
@@ -208,7 +205,7 @@ abbrev GBANode.oldHas (n : GBANode α S) (ψ : NNF α) : Prop := FSet.contains n
 /-- A formula is "in" a node's next set. -/
 abbrev GBANode.nextHas (n : GBANode α S) (ψ : NNF α) : Prop := FSet.contains n.next ψ
 
-/-- A formula is "reachable" — either already processed (old) or pending (new). -/
+/-- A formula is "reachable": Either already processed (old) or pending (new). -/
 def GBANode.reachable (n : GBANode α S) (ψ : NNF α) : Prop :=
   FSet.contains n.old ψ ∨ ψ ∈ n.new
 
@@ -936,11 +933,11 @@ private theorem mergeIncoming_reverse (st : ExpandState α S) (node : GBANode α
     · exact ⟨n, hk, fun _ => Iff.rfl, fun _ => Iff.rfl⟩
   · exact ⟨n, hk, fun _ => Iff.rfl, fun _ => Iff.rfl⟩
 
-theorem head!_mem_of_isEmpty_false [Inhabited β] {l : List β}
+theorem head!_mem_of_isEmpty_false {β} [Inhabited β] {l : List β}
     (h : l.isEmpty = false) : l.head! ∈ l := by
   cases l with | nil => simp at h | cons _ _ => exact .head _
 
-theorem mem_of_mem_tail! [Inhabited β] {l : List β} {ψ : β}
+theorem mem_of_mem_tail! {β} [Inhabited β] {l : List β} {ψ : β}
     (h : ψ ∈ l.tail!) : ψ ∈ l := by
   cases l with
   | nil => exact absurd h (by simp [List.tail!, default])

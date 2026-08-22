@@ -3,8 +3,8 @@
   of a Büchi automaton.
 
   Given:
-  - `stem = [s₀, ..., q]` — path from initial state to accepting state q
-  - `cycle = [q, c₁, ..., cₙ]` — cycle starting and ending at q
+  - `stem = [s₀, ..., q]`       : Path from initial state to accepting state q
+  - `cycle = [q, c₁, ..., cₙ]`  : Cycle starting and ending at q
 
   The infinite run `lassoRun stem cycle` is:
     s₀, s₁, ..., s_{m-2}, q, c₁, ..., cₙ, q, c₁, ..., cₙ, ...
@@ -13,9 +13,9 @@
   from `stem[m-2]` directly to `cycle[0] = q` without stuttering.
 
   This file is independent of any specific automaton implementation.
-  It works with `OASpec` (proof-level automaton specification).
+  It works with `OASpec` (abstract automaton specification).
 -/
-import LTLLib.Acceptance
+import LTLLib.AbstractSpec.Acceptance
 
 namespace LTLLib
 
@@ -138,9 +138,6 @@ private theorem cycle_trans (j : Nat) :
         _ = 0 := Nat.mod_self cycle.length
     have hback := hv.cycle_back
     simp only [List.getLast_eq_getElem, List.head_eq_getElem] at hback
-    -- hback : A.trans cycle[cycle.length - 1] cycle[0]
-    -- goal : A.trans cycle[j % cycle.length] cycle[(j + 1) % cycle.length]
-    -- Need: j % len = len - 1, (j+1) % len = 0
     have hcpos : cycle.length > 0 := by have := hv.cycle_nonempty; omega
     have h1 : cycle[j % cycle.length]'(Nat.mod_lt _ hcpos) =
               cycle[cycle.length - 1]'(by omega) := by congr 1

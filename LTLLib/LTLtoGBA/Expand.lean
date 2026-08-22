@@ -10,9 +10,6 @@
   - When `new` is empty: either merge with an existing node that has the same
     (old, next) signature, or create a successor node.
   - When `new` is non-empty: pick a formula and case-split based on its structure.
-
-  Corresponds to `expand_body` / `expand` in LTL_to_GBA.thy (lines 232-280),
-  and `create_graph` (the entry point that calls expand with the initial node).
 -/
 
 import LTLLib.LTLtoGBA.Node
@@ -21,20 +18,15 @@ namespace LTLLib
 
 open NNF
 
-/-! ## Expansion helper functions
-
-Correspond to `new1`, `next1`, `new2` in LTL_to_GBA.thy (lines 112-129).
-These define how each temporal operator is decomposed during node expansion.
--/
+/-! ## Expansion helper functions -/
 
 /-- First set of new formulas when expanding a formula.
-Corresponds to `new1` in LTL_to_GBA.thy (lines 112-117).
   new1 (μ ∧ ψ) = {μ, ψ}
   new1 (μ U ψ) = {μ}       -- take the "continue" branch
   new1 (μ R ψ) = {ψ}       -- take the "continue" branch
   new1 (μ ∨ ψ) = {μ}       -- take the first disjunct
   new1 _       = {} -/
-def new1 : NNF α → List (NNF α)
+def new1 {α} : NNF α → List (NNF α)
   | .and μ ψ => [μ, ψ]
   | .until μ _ => [μ]
   | .release _ ψ => [ψ]
@@ -42,24 +34,22 @@ def new1 : NNF α → List (NNF α)
   | _ => []
 
 /-- Next-state formulas when expanding a formula.
-Corresponds to `next1` in LTL_to_GBA.thy (lines 119-123).
   next1 (X ψ)   = {ψ}
   next1 (μ U ψ) = {μ U ψ}  -- Until obligation carries to next state
   next1 (μ R ψ) = {μ R ψ}  -- Release obligation carries to next state
   next1 _       = {} -/
-def next1 : NNF α → List (NNF α)
+def next1 {α} : NNF α → List (NNF α)
   | .next ψ => [ψ]
   | f@(.until _ _) => [f]
   | f@(.release _ _) => [f]
   | _ => []
 
 /-- Second set of new formulas for non-deterministic expansion.
-Corresponds to `new2` in LTL_to_GBA.thy (lines 125-129).
   new2 (μ U ψ) = {ψ}       -- take the "satisfy now" branch
   new2 (μ R ψ) = {μ, ψ}    -- take the "release now" branch
   new2 (μ ∨ ψ) = {ψ}       -- take the second disjunct
   new2 _       = {} -/
-def new2 : NNF α → List (NNF α)
+def new2 {α} : NNF α → List (NNF α)
   | .until _ ψ => [ψ]
   | .release μ ψ => [μ, ψ]
   | .or _ ψ => [ψ]
@@ -70,30 +60,24 @@ def new2 : NNF α → List (NNF α)
 /-- Mutable state maintained during graph expansion.
 
 - `nextName`: Counter for generating fresh node names. Monotonically increasing.
-  Corresponds to `expand_new_name` in LTL_to_GBA.thy (line 135), which is `Suc`.
 - `nodes`: Map from node name to finished (fully expanded) node.
-  Corresponds to the `ns` (node set) parameter threaded through `expand`. -/
+-/
 structure ExpandState (α : Type u) (S : Type v) where
   nextName : Nat
   nodes : Std.HashMap Nat (GBANode α S)
 deriving Inhabited
 
-/-- The special "init" node name, used as the incoming marker for initial states.
-Corresponds to `expand_init ≡ 0` in LTL_to_GBA.thy (line 134). -/
+/-- The special "init" node name, used as the incoming marker for initial states. -/
 def expandInit : Nat := 0
 
-variable {S : Type v} [FSet (NNF α) S]
+variable {α} {S : Type v} [FSet (NNF α) S]
 
-/-- Generate a fresh node name and advance the counter.
-Corresponds to `expand_new_name ≡ Suc` in LTL_to_GBA.thy (line 135). -/
+/-- Generate a fresh node name and advance the counter. -/
 def freshName (st : ExpandState α S) : Nat × ExpandState α S :=
   (st.nextName, { st with nextName := st.nextName + 1 })
 
 /-- Find an existing node with the same (old, next) signature.
-Returns the node name if found.
-
-Corresponds to the check `∃n'∈ns. old n' = old n ∧ next n' = next n`
-in `expand_body` (LTL_to_GBA.thy, line 236). -/
+Returns the node name if found. -/
 def findDuplicate (st : ExpandState α S) (node : GBANode α S) : Option Nat :=
   -- Search through all finished nodes for one with matching signature
   st.nodes.fold (init := none) fun acc name n =>
@@ -101,11 +85,7 @@ def findDuplicate (st : ExpandState α S) (node : GBANode α S) : Option Nat :=
     | some _ => acc
     | none => if n.sameSignature node then some name else none
 
-/-- Merge incoming edges of `node` into an existing node with matching signature.
-Corresponds to `upd_incoming n ns` in LTL_to_GBA.thy (lines 153-161).
-  upd_incoming n ns = (λn'. if old n' = old n ∧ next n' = next n
-                            then n'⟨incoming := incoming n ∪ incoming n'⟩
-                            else n') ` ns -/
+/-- Merge incoming edges of `node` into an existing node with matching signature. -/
 def mergeIncoming (st : ExpandState α S) (node : GBANode α S) (targetName : Nat)
     : ExpandState α S :=
   match st.nodes[targetName]? with
@@ -114,23 +94,18 @@ def mergeIncoming (st : ExpandState α S) (node : GBANode α S) (targetName : Na
     { st with nodes := st.nodes.insert targetName merged }
   | none => st  -- should not happen if findDuplicate returned this name
 
-/-- Check if a formula is a proposition (prop or nprop).
-Corresponds to the check `∃q. φ = prop⁼(q) ∨ φ = nprop⁼(q)`
-in `expand_body` (LTL_to_GBA.thy, line 251). -/
+/-- Check if a formula is a proposition (prop or nprop). -/
 def isLiteral : NNF α → Bool
   | .prop _ | .nprop _ => true
   | _ => false
 
-/-- Get the negation of a literal for contradiction checking.
-Corresponds to `not⁼ φ` in `expand_body` (LTL_to_GBA.thy, line 252). -/
+/-- Get the negation of a literal for contradiction checking. -/
 def negateLiteral : NNF α → NNF α
   | .prop a => .nprop a
   | .nprop a => .prop a
   | f => f  -- should not be called on non-literals
 
-/-- Check if a formula is deterministic (And or Next).
-Corresponds to the check `∃ν μ. (φ = ν and⁼ μ) ∨ (φ = X⁼ ν)`
-in `expand_body` (LTL_to_GBA.thy, line 256). -/
+/-- Check if a formula is deterministic (And or Next). -/
 def isDeterministic : NNF α → Bool
   | .and _ _ | .next _ => true
   | _ => false
@@ -147,8 +122,6 @@ def addAllToSet (s : S) (fs : List (NNF α)) : S :=
   fs.foldl FSet.insert s
 
 /-- The main expand algorithm.
-
-Corresponds to `expand_body` / `expand` in LTL_to_GBA.thy (lines 232-280).
 
 This is a recursive worklist algorithm:
 1. If `node.new` is empty:
@@ -213,14 +186,6 @@ def expand (node : GBANode α S) (st : ExpandState α S)
 partial_fixpoint
 
 /-- Create the full node graph from an LTL formula.
-
-Corresponds to `create_graph` in LTL_to_GBA.thy:
-  definition create_graph :: "'a frml ⇒ 'a node set nres" where
-    "create_graph φ ≡ do {
-      (_, nds) ← expand (⟨name = expand_new_name expand_init,
-                           incoming = {expand_init},
-                           new = {φ}, old = {}, next = {}⟩, {});
-      RETURN nds }"
 
 The initial node has:
 - `name = expand_new_name expand_init = 1` (Suc 0)

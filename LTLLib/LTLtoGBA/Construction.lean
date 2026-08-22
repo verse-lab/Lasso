@@ -1,10 +1,6 @@
 /-
   GBA construction from the expanded node graph.
 
-  Corresponds to `create_gba_from_nodes` in LTL_to_GBA.thy, and the
-  helper functions `build_succ`, `build_F`, and `pn_map` from
-  LTL_to_GBA_impl.thy.
-
   Given the output of `createGraph` (an ExpandState containing all
   finished nodes), this module constructs a GBA with:
   - States = node names
@@ -20,23 +16,14 @@ import LTLLib.LTL
 
 namespace LTLLib
 
-variable {S : Type v} [FSet (NNF α) S]
+variable {α} {S : Type v} [FSet (NNF α) S]
 
-/-- Collect all state names (the keys of the finished node graph).
-
-Corresponds to `g_V = qs` in `create_gba_from_nodes` (LTL_to_GBA.thy) — `qs`
-is treated there as an independently-named set (the result of
-`create_graph`), so we name it here too rather than inlining it, matching
-CAVA's own structure. -/
+/-- Collect all state names (the keys of the finished node graph). -/
 def buildStates (nodes : Std.HashMap Nat (GBANode α S)) : Std.HashSet Nat :=
   nodes.fold (init := Std.HashSet.emptyWithCapacity nodes.size) fun acc name _ =>
     acc.insert name
 
 /-- Build the successor (adjacency) map from the node graph.
-
-Corresponds to `build_succ` in LTL_to_GBA_impl.thy:
-  succ_of_E(q) = {q' | (q, q') ∈ E}
-where E = {(q, q') | q∈qs ∧ q'∈qs ∧ name q ∈ incoming q'}.
 
 For each node q', and for each predecessor name p ∈ incoming(q'),
 we add an edge p → q'. -/
@@ -50,10 +37,6 @@ def buildSuccessors (nodes : Std.HashMap Nat (GBANode α S))
       succMap.insert predName (existing.push node.name)
 
 /-- Build acceptance sets from Until-subformulas.
-
-Corresponds to `build_F nds φ` in LTL_to_GBA_impl.thy:
-  build_F nds φ = (λ(μ,η). name ` {q ∈ nds. (Until_ltlr μ η ∈ old q → η ∈ old q)})
-                  ` until_frmlsr φ
 
 For each Until-subformula (μ U η) of φ:
   F_{μ,η} = {q.name | q ∈ nodes, (μ U η) ∉ old(q) ∨ η ∈ old(q)}
@@ -73,12 +56,7 @@ def buildAcceptSets (nodes : Std.HashMap Nat (GBANode α S))
       else acc
 
 /-- Build labeling map: for each node, extract the positive and negative
-atomic propositions from its `old` set.
-
-Corresponds to `pn_map` in LTL_to_GBA_impl.thy:
-  pn_map(q) = (P_q, N_q)
-  where P_q = {p | prop(p) ∈ old(q)}
-        N_q = {p | nprop(p) ∈ old(q)} -/
+atomic propositions from its `old` set. -/
 def buildLabeling [BEq α] [Hashable α] (nodes : Std.HashMap Nat (GBANode α S))
     : Std.HashMap Nat (Std.HashSet α × Std.HashSet α) :=
   nodes.fold (init := Std.HashMap.emptyWithCapacity nodes.size) fun labelMap _ node =>
@@ -92,19 +70,13 @@ def buildLabeling [BEq α] [Hashable α] (nodes : Std.HashMap Nat (GBANode α S)
       node.old
     labelMap.insert node.name (pos, neg)
 
-/-- Identify initial states: nodes whose `incoming` set contains `expandInit` (= 0).
-
-Corresponds to `g_V0 = {q∈qs. expand_init ∈ incoming q}` in `create_gba_from_nodes`
-(LTL_to_GBA.thy). -/
+/-- Identify initial states: nodes whose `incoming` set contains `expandInit` (= 0). -/
 def buildInitialStates (nodes : Std.HashMap Nat (GBANode α S)) : Std.HashSet Nat :=
   nodes.fold (init := Std.HashSet.emptyWithCapacity 4) fun initSet _ node =>
     if node.incoming.contains expandInit then initSet.insert node.name
     else initSet
 
 /-- Construct a GBA from the expanded node graph and the original LTL formula.
-
-Corresponds to `create_gba_from_nodes φ qs` in LTL_to_GBA.thy, combined with
-the renaming phase `gba_rename_ext` that maps node objects to node names.
 
 The steps are:
 1. Collect all state names

@@ -2,16 +2,14 @@
   Graph completeness: proving that `createGraph` produces a graph
   satisfying `GraphComplete`.
 
-  This bridges the gap between the abstract completeness theorem
-  (which assumes `GraphComplete` as a hypothesis) and the concrete
-  `createGraph` implementation.
+  Bridges the abstract completeness theorem (assumes `GraphComplete`
+  as a hypothesis) to the concrete `createGraph` implementation.
 
-  The proof follows the Isabelle/HOL approach (LTL_to_GBA.thy, L4_10):
-  1. `expand_exist` (= Isabelle's `expand_prop_exist`): if all formulas
-     in a node are satisfied by ξ, the output contains a valid finished node.
-  2. `expand_all` (= Isabelle's `expand_prop_all`): every valid finished node
-     has a valid successor in the output.
-  3. Assembly: construct the run σ using Classical.choice.
+  1. `expand_exist`: If all formulas in a node are satisfied by ξ,
+      the output contains a valid finished node.
+  2. `expand_all`: Every valid finished node has a valid successor
+      in the output.
+  3. Assembly: construct the run σ using Classical.choice.s
 -/
 
 import LTLLib.LTLtoGBA.Invariants
@@ -24,10 +22,7 @@ open NNF TLA
 
 variable {α : Type u} {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
 
-/-! ## Semantic preconditions and postconditions
-
-These mirror the Isabelle abbreviations `expand_assm_exist`,
-`expand_rslt_exist__node_prop`, etc. (LTL_to_GBA.thy, lines 329-354). -/
+/-! ## Semantic preconditions and postconditions -/
 
 /-- Precondition for `expand_exist`: all formulas in the node are satisfied by ξ,
     and Until-RHS formulas that are satisfied are reachable (in old ∪ new). -/
@@ -188,9 +183,7 @@ structure ExpandNPIResult (st st' : ExpandState α S) (nm : Nat) : Prop where
 /-! ## Theorem 1: expand_exist
 
 If all formulas in a node are satisfied by ξ, the expand output
-contains a finished node where all old formulas are satisfied.
-
-Corresponds to `expand_prop_exist` in LTL_to_GBA.thy (line 627). -/
+contains a finished node where all old formulas are satisfied. -/
 
 /-! ### addToNew membership helpers -/
 
@@ -949,9 +942,7 @@ is what lets injectivity of `.name` among stored nodes (`h_name_ident`, used by
 threading injectivity directly (which isn't preserved by insertion without
 knowing the fresh key doesn't collide with some *other* key's stored name), we
 track this stronger, purely structural fact and derive injectivity from it
-wherever needed. Corresponds to (a strengthening of) what `expand_name_propag`
-buys us in the Isabelle set-based development, where nodes carry no separate
-key at all. -/
+wherever needed. -/
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
 private theorem expand_key_eq_name (node : GBANode α S) (st : ExpandState α S)
@@ -1031,9 +1022,7 @@ private theorem expand_name_ident_preserved (node : GBANode α S) (st : ExpandSt
 
 For every newly added finished node in the output, if its old formulas
 are satisfied by ξ, then there exists a successor node whose old formulas
-are satisfied by suffix 1 ξ.
-
-Corresponds to `expand_prop_all` in LTL_to_GBA.thy (line 1391). -/
+are satisfied by suffix 1 ξ. -/
 
 /-- Semantic validity of a finished node at ξ. -/
 structure NodeSemanticValid (ξ : OmegaWord α) (nd : GBANode α S) : Prop where
@@ -1337,7 +1326,7 @@ theorem expand_all (ξ : OmegaWord α) (node : GBANode α S) (st : ExpandState �
 
 /-! ## Lifting to createGraph level -/
 
-/-- L4_7: For any ξ ⊨ φ, createGraph produces a node with expandInit in
+/-- For any ξ ⊨ φ, createGraph produces a node with expandInit in
     incoming and semantically valid old/next. -/
 theorem createGraph_exist (φ : NNF α) {st : ExpandState α S}
     (hcg : createGraph φ = some st) (ξ : OmegaWord α) (hsat : NNF.satisfies ξ φ) :
@@ -1366,7 +1355,7 @@ theorem createGraph_exist (φ : NNF α) {st : ExpandState α S}
       ⟨hprop.old_sat, hprop.next_sat, hprop.until_rhs⟩⟩
   · simp at hcg
 
-/-- L4_5: For any semantically valid node in createGraph's output,
+/-- For any semantically valid node in createGraph's output,
     there exists a successor that is semantically valid at suffix 1 ξ. -/
 theorem createGraph_all (φ : NNF α) {st : ExpandState α S}
     (hcg : createGraph φ = some st) (ξ : OmegaWord α) :
@@ -1393,7 +1382,7 @@ theorem createGraph_all (φ : NNF α) {st : ExpandState α S}
 /-! ## WeakGraphComplete: weaker version sufficient for completeness -/
 
 /-- Weaker version of GraphComplete that doesn't require the ← direction of old ↔.
-    This is what `createGraph` actually establishes (matching the Isabelle L4_10 proof).
+    This is what `createGraph` actually establishes.
     Combined with `ExpandSpec`, it suffices to prove GBA acceptance. -/
 def WeakGraphComplete (φ : NNF α) (nodes : NodeData α → Prop) : Prop :=
   ∀ ξ : OmegaWord α, NNF.satisfies ξ φ →
@@ -1594,29 +1583,13 @@ direction (`expandOASpec_soundness`, needs only `ExpandSpec`) and the
 completeness direction proved in *this* file (`expandOASpec_completeness_weak`
 + `createGraph_weakGraphComplete`, needing only `WeakGraphComplete` — which,
 unlike the original `GraphComplete`, is proved unconditionally from
-`createGraph` above). This is the Lean analogue of Isabelle's
-`create_name_gba_correct`'s accept-iff clause:
-
-```isabelle
-theorem create_name_gba_correct:
-  "create_name_gba φ ≤ SPEC(λ𝔄. gba 𝔄 ∧ finite (g_V 𝔄) ∧
-    (∀ξ. gba.accept 𝔄 ξ ↔ ξ ⊨ᵣ φ))"
-```
-
-`gba 𝔄` (well-formedness) and `finite (g_V 𝔄)` don't need a separate proof
-obligation in the Lean port the way they do in Isabelle's abstract
-`graph_rec_scheme` locale: `GBA.states`/`GBA.successors` are concrete
-`Std.HashSet`/`Std.HashMap` values by construction, so they're finite
-unconditionally (no infinite-cardinality states are representable at all),
-and `GBA.WellFormed` (`GBA.lean`) is a separate, independent structural fact
-not needed for this accept-iff correspondence. -/
+`createGraph` above). -/
 
 /-- Full, unconditional correctness of the computational GBA construction:
     it accepts exactly the ω-words satisfying `φ`. Unlike `constructGBA_correct`
     (`Bridge.lean`), this needs no `GraphComplete` hypothesis — completeness
     comes from `createGraph_weakGraphComplete` (this file), which holds
-    unconditionally for any `createGraph φ = some st`. This is the Lean
-    analogue of Isabelle's `create_name_gba_correct`. -/
+    unconditionally for any `createGraph φ = some st`. -/
 theorem constructGBA_correct_weak
     [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
     {φ : NNF α} {st : ExpandState α S}

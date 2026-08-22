@@ -1,37 +1,19 @@
 /-
-  End-to-end pipeline: LTL formula φ → satisfiability decision.
-
-  Track B, item 4 (`ProofPlan.md`): chains `createGraph → constructGBA →
-  GBA.degeneralize → nestedDFSWF` into a single total function, and proves
-  its correctness. Assembles items 1-3 (`GBA.WellFormed`/`BA.WellFormed`/
-  `FiniteReach`, the `AcceptingCycle` → `ValidLasso` wiring, and
-  `canonicalLabel` compatibility) plus the pumping lemma
-  (`exists_acceptingCycle_of_run`, `NestedDFS/NestedDFSTermination.lean`) into a
-  genuinely usable decision procedure — no new mathematical content beyond
-  the wiring itself.
-
-  Corresponds to CAVA's `CAVA_Abstract.thy`'s `abs_model_check`, minus the
-  `inter_spec`/system-intersection stage (this project checks `φ`'s own
-  realizability directly, not model checking against a system) — closer to
-  `create_name_gba_correct` combined with a `find_ce_spec`-shaped oracle.
+  End-to-end pipeline for satisfiability:
+  LTL formula φ → satisfiability decision.
 -/
 import LTLLib.LTLtoGBA.GraphComplete
 import LTLLib.DegeneralBridge
 import LTLLib.LTLtoGBA.ExpandTermination
 import LTLLib.NestedDFS.NestedDFSTermination
-import LTLLib.OutputVerifyBA
 
 namespace LTLLib
 
 variable {α : Type u} {S : Type v} [FSet (NNF α) S]
   [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
 
-/-- Chain `createGraph → constructGBA → GBA.degeneralize → nestedDFSWF` into
-a single total decision procedure for `φ`'s satisfiability. `createGraph`'s
-`none` branch is defensive dead code — `createGraph_term` guarantees success
-for every `φ`; a genuine `Option` pattern match still needs *some* value
-there, matching the "junk value on unreachable input" pattern already used
-throughout Phase 2's termination work. -/
+/-- Chain `createGraph → constructGBA → GBA.degeneralize → nestedDFSWF` a
+a single total decision procedure for `φ`'s satisfiability. -/
 def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
   match hcg : createGraph (S := S) φ with
   | some st =>
@@ -42,7 +24,6 @@ def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
   | none => .empty 0
 
 omit [LawfulBEq α] [LawfulHashable α] [DecidableEq α] in
-/-- Unfolding lemma: `fullPipeline` at a known `createGraph` result. -/
 theorem fullPipeline_eq (φ : NNF α) {st : ExpandState α S} (hcg : createGraph φ = some st) :
     fullPipeline (S := S) φ =
       nestedDFSWF (constructGBA φ st).degeneralize.getSuccessors
@@ -87,10 +68,7 @@ theorem fullPipeline_nonEmpty_sat (φ : NNF α) {stem loop : List BAState}
     ((degeneralize_accepts_any gba hwf ξ).mp
       (ac.toValidLasso.accepts_of_validLasso hcompat))⟩
 
-/-- `.empty` case: `fullPipeline` correctly certifies `φ`'s unsatisfiability.
-Needs the pumping lemma (`exists_acceptingCycle_of_run`) to bridge from
-"some `ξ` satisfies `φ`" (word-level) down to "an `AcceptingCycle` exists"
-(graph-level) for the contradiction — the CAVA-`accepted_lasso` step. -/
+/-- `.empty` case: `fullPipeline` correctly certifies `φ`'s unsatisfiability. -/
 theorem fullPipeline_empty_unsat (φ : NNF α) {n : Nat}
     (h : fullPipeline (S := S) φ = .empty n) :
     ∀ ξ : OmegaWord α, ¬ NNF.satisfies ξ φ := by
@@ -105,6 +83,7 @@ theorem fullPipeline_empty_unsat (φ : NNF α) {n : Nat}
   have hba_acc : ba.toSpec.accepts ξ := (degeneralize_accepts_any gba hwf ξ).mpr hgba_acc
   obtain ⟨σ, hrun, _, hacc⟩ := hba_acc
   have hcyc : ∃ _ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting, True :=
+    -- Need pumping lemma to bridge "some `ξ` satisfies `φ`" (word level) to "an `AcceptingCycle` exists" (graph level)
     exists_acceptingCycle_of_run (ba.finiteReach hbawf)
       (Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr hrun.1))
       hrun.2

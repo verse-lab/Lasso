@@ -1,5 +1,5 @@
 /-
-  Correctness of the nested DFS emptiness check (Phase 5b).
+  Correctness of the nested DFS emptiness check.
 
   We prove: if nestedDFS returns `empty`, then the graph has no accepting cycle
   reachable from the initial states.
@@ -18,8 +18,8 @@
 
   The proof structure follows the "color" formulation of Schwoon & Esparza:
   - States are conceptually colored white/cyan/blue/red during execution.
-  - The key invariant (`blue_basic_invar` in CAVA terminology) states that
-    from any red state, no cyan/stack state is reachable through red states.
+  - The key invariant states that from any red state, no cyan/stack state
+    is reachable through red states.
   - When inner DFS finishes without finding a cycle, the seed's reachable
     set (through non-innerFinished states) has been fully explored.
 
@@ -39,23 +39,19 @@
     — Local color invariants verified in Dafny; confirms the monotonicity
     and exploration properties we formalize here.
 -/
-import LTLLib.EmptinessCheck
+import LTLLib.AbstractSpec.EmptinessCheck
 
 namespace LTLLib
 
 /-! ## Graph paths -/
 
 /-- There is a non-empty path from `s` to `t` via `succs`, where all
-    INTERMEDIATE states (not `s` or `t`) satisfy `¬blocked`.
-    The source and target are not checked against `blocked`.
-
-    This corresponds to "restricted reachability" (`restr_invar`) in the
-    CAVA Isabelle DFS framework: reachability through a restricted set. -/
+    INTERMEDIATE states (not `s` or `t`) satisfy `¬blocked`. -/
 inductive PathTo (succs : State → Array State) (blocked : State → Prop)
     : State → State → Prop where
-  /-- Direct edge: t is a successor of s. -/
+  -- t is a successor of s.
   | direct {s t : State} (ht : t ∈ succs s) : PathTo succs blocked s t
-  /-- Through an intermediate: s → mid →* t, where mid is unblocked. -/
+  -- Through an intermediate: s → mid →* t where mid is unblocked.
   | through {s mid t : State} (hmid : mid ∈ succs s) (hunblocked : ¬blocked mid)
     (h : PathTo succs blocked mid t) : PathTo succs blocked s t
 
@@ -70,7 +66,7 @@ theorem PathTo.weaken {succs : State → Array State}
   | through hmid hunb _ ih =>
     exact .through hmid (fun hb => hunb (hsub _ hb)) ih
 
-/-! ### Closure lemmas (Lean port of CAVA's `closed_restrict_aux`/`rel_restrict_tranclI`)
+/-! ### Closure lemmas
 
     These let us upgrade a *restricted* no-cycle fact (no path through
     never-blocked intermediates) into an *unrestricted* one (no path at all),
@@ -80,7 +76,7 @@ theorem PathTo.weaken {succs : State → Array State}
 
 /-- If `F` is closed under `succs` and `s ∈ F`, any unrestricted path from `s`
     stays entirely inside `F` — in particular its endpoint is in `F`. -/
-theorem PathTo.mem_of_closed {succs : State → Array State} {F : State → Prop}
+theorem PathTo.mem_of_closed {State} {succs : State → Array State} {F : State → Prop}
     (hclosed : ∀ s, F s → ∀ t, t ∈ succs s → F t) :
     ∀ {s t : State}, PathTo succs (fun _ => False) s t → F s → F t := by
   intro s t h
@@ -92,7 +88,7 @@ theorem PathTo.mem_of_closed {succs : State → Array State} {F : State → Prop
     outside `F` must avoid `F` entirely, i.e. is also a path restricted to
     avoid `F`. This is the bridge lemma: combined with `s = t` and a
     restricted no-cycle fact, it yields the unrestricted no-cycle fact. -/
-theorem PathTo.of_unrestricted_avoiding_closed {succs : State → Array State}
+theorem PathTo.of_unrestricted_avoiding_closed {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t, t ∈ succs s → F t)
     {s t : State} (hnotF_t : ¬F t)
     (h : PathTo succs (fun _ => False) s t) (hnotF_s : ¬F s) :
@@ -108,7 +104,7 @@ theorem PathTo.of_unrestricted_avoiding_closed {succs : State → Array State}
 
 /-- No self-cycle through a closed set's complement, plus the set being closed
     and the state itself not being in the set, implies no self-cycle at all. -/
-theorem PathTo.no_self_loop_of_closed {succs : State → Array State}
+theorem PathTo.no_self_loop_of_closed {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t, t ∈ succs s → F t)
     {s : State} (hnotF_s : ¬F s)
     (hno_restricted : ¬PathTo succs (fun x => F x) s s) :
@@ -118,16 +114,15 @@ theorem PathTo.no_self_loop_of_closed {succs : State → Array State}
 /-! ### A second closure upgrade, for when `s ∈ F` is unavoidable
 
     `PathTo.no_self_loop_of_closed` needs `s ∉ F`, but for `F := innerFinished`
-    right after `s`'s own successful inner-DFS call, `s` is *always* in `F`
-    (that's the whole point of the call). The fix: instead of "`s ∉ F`",
-    it's enough that *nothing in `F` has an edge back to `s`* — a weaker,
-    differently-shaped fact, but one inner DFS gives us for a different
+    right after `s`'s own successful inner-DFS call, `s` is *always* in `F`.
+    The fix: instead of "`s ∉ F`", it's enough that *nothing in `F` has an
+    edge back to `s`*. A weaker fact, but one inner DFS gives us for a different
     reason (its own `succ == seed` check). -/
 
 /-- If nothing in the closed set `F` has an edge to `t`, then `F` can't be
-    re-entered from a member and still reach `t` — reaching `t` from an
+    re-entered from a member and still reach `t`. Reaching `t` from an
     `F`-member is impossible outright. -/
-theorem PathTo.false_of_mem_closed_reaches {succs : State → Array State}
+theorem PathTo.false_of_mem_closed_reaches {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t ∈ succs s, F t)
     {t : State} (hno_edge : ∀ x, F x → t ∉ succs x) :
     ∀ {mid : State}, PathTo succs (fun _ => False) mid t → F mid → False := by
@@ -141,7 +136,7 @@ theorem PathTo.false_of_mem_closed_reaches {succs : State → Array State}
     edge to `t`, is automatically `F`-avoiding: it can never dip into `F`,
     since doing so would trap it there (closedness) and it could never reach
     `t` again (`hno_edge`). -/
-theorem PathTo.avoids_closed_of_no_incoming {succs : State → Array State}
+theorem PathTo.avoids_closed_of_no_incoming {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t ∈ succs s, F t)
     {t : State} (hno_edge : ∀ x, F x → t ∉ succs x) :
     ∀ {s : State}, PathTo succs (fun _ => False) s t → PathTo succs (fun x => F x) s t := by
@@ -153,9 +148,9 @@ theorem PathTo.avoids_closed_of_no_incoming {succs : State → Array State}
     · exact (PathTo.false_of_mem_closed_reaches hclosed hno_edge hrest hFmid).elim
     · exact .through hmid hFmid (ih hno_edge)
 
-/-- The upgrade actually needed in Phase D.1: `s` need not be outside the
-    closed set `F` — it's enough that nothing in `F` has an edge back to `s`. -/
-theorem PathTo.no_self_loop_of_closed_no_incoming {succs : State → Array State}
+/-- `s` need not be outside the closed set `F`, it's enough that
+    nothing in `F` has an edge back to `s`. -/
+theorem PathTo.no_self_loop_of_closed_no_incoming {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t ∈ succs s, F t)
     {s : State} (hno_edge : ∀ x, F x → s ∉ succs x)
     (hno_restricted : ¬PathTo succs (fun x => F x) s s) :
@@ -164,34 +159,25 @@ theorem PathTo.no_self_loop_of_closed_no_incoming {succs : State → Array State
 
 /-- Generalizes `no_self_loop_of_closed_no_incoming` from a fixed self-loop
     target to an arbitrary target `t`. Needed for the Holzmann-Peled-
-    Yannakakis inner-DFS shortcut: the widened stop condition gives a "no
-    reach to any cyan/stack state" fact directly (CAVA's `restr_invar`, which
-    is stated for the whole stack at once), rather than only a self-loop
-    fact that then needs a separate `ReachChain`-based composition to reach
-    the rest of the stack. -/
-theorem PathTo.no_reach_of_closed_no_incoming {succs : State → Array State}
+    Yannakakis inner-DFS shortcut. -/
+theorem PathTo.no_reach_of_closed_no_incoming {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t ∈ succs s, F t)
     {s t : State} (hno_edge : ∀ x, F x → t ∉ succs x)
     (hno_restricted : ¬PathTo succs (fun x => F x) s t) :
     ¬PathTo succs (fun _ => False) s t :=
   fun h => hno_restricted (PathTo.avoids_closed_of_no_incoming hclosed hno_edge h)
 
-/-- Unrestricted `PathTo` is transitive. Used to compose "s can reach t" facts,
-    e.g. an ancestor's tree-path down to a descendant, with a descendant's
-    discovered back-edge, into a single self-loop witness. -/
-theorem PathTo.trans {succs : State → Array State} {s t u : State}
+/-- Unrestricted `PathTo` is transitive. Used to compose "s can reach t" facts. -/
+theorem PathTo.trans {State} {succs : State → Array State} {s t u : State}
     (h1 : PathTo succs (fun _ => False) s t) :
     PathTo succs (fun _ => False) t u → PathTo succs (fun _ => False) s u := by
   induction h1 with
   | direct ht => intro h2; exact .through ht (fun h => h) h2
   | through hmid _ _ ih => intro h2; exact .through hmid (fun h => h) (ih h2)
 
-/-- Lean port of CAVA's `closed_restrict_aux`: if `F`'s successors stay in
-    `F ∪ S`, and nothing reachable from `x` (inclusive) escapes into `S`,
-    then everything reachable from `x` (an `F`-member) stays in `F`. This
-    handles "extend visitedness along an arbitrary witnessed path" in one
-    shot, rather than needing bespoke induction at each use site. -/
-theorem PathTo.closed_of_no_escape {succs : State → Array State} {F S : State → Prop}
+/-- If `F`'s successors stay in `F ∪ S`, and nothing reachable from `x` (inclusive)
+    escapes into `S`, then everything reachable from `x` (an `F`-member) stays in `F`. -/
+theorem PathTo.closed_of_no_escape {State} {succs : State → Array State} {F S : State → Prop}
     (hCL : ∀ x, F x → ∀ y ∈ succs x, F y ∨ S y) :
     ∀ {x v}, PathTo succs (fun _ => False) x v →
       F x → (∀ w, PathTo succs (fun _ => False) x w → ¬S w) → F v := by
@@ -213,7 +199,7 @@ theorem PathTo.closed_of_no_escape {succs : State → Array State} {F S : State 
 /-- An index-based chain condition (as used by `AcceptingCycle.stem_chain`/
     `cycle_chain`) gives a `PathTo` witness from the list's head to its last
     element — or an equality, if the list is a singleton. -/
-theorem chain_reaches {succs : State → Array State} (l : List State)
+theorem chain_reaches {State} {succs : State → Array State} (l : List State)
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
     ∀ (hne : l ≠ []), l.head hne = l.getLast hne ∨
       PathTo succs (fun _ => False) (l.head hne) (l.getLast hne) := by
@@ -242,7 +228,7 @@ theorem chain_reaches {succs : State → Array State} (l : List State)
       · exact PathTo.trans (PathTo.direct hab) hp
 
 /-- Dropping the last element of a `succs`-chain list leaves a `succs`-chain. -/
-theorem chain_dropLast {succs : State → Array State} (l : List State)
+theorem chain_dropLast {State} {succs : State → Array State} (l : List State)
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
     ∀ i, (hi : i + 1 < l.dropLast.length) → l.dropLast[i+1] ∈ succs l.dropLast[i] := by
   intro i hi
@@ -256,7 +242,7 @@ theorem chain_dropLast {succs : State → Array State} (l : List State)
 
 /-- Appending a genuine successor of a chain's last element to a `succs`-chain
     keeps it a `succs`-chain. -/
-theorem chain_append_singleton {succs : State → Array State} (l : List State) (x : State)
+theorem chain_append_singleton {State} {succs : State → Array State} (l : List State) (x : State)
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i])
     (hne : l ≠ []) (hedge : x ∈ succs (l.getLast hne)) :
     ∀ i, (hi : i + 1 < (l ++ [x]).length) → (l ++ [x])[i+1] ∈ succs (l ++ [x])[i] := by
@@ -278,9 +264,8 @@ theorem chain_append_singleton {succs : State → Array State} (l : List State) 
     rw [hlast]
     exact hedge
 
-/-- Prepending a state with an edge into a chain-list's head keeps it a
-    `succs`-chain. -/
-theorem chain_cons {succs : State → Array State} (a : State) (l : List State)
+/-- Prepending a state with an edge into a chain-list's head keeps it a `succs`-chain. -/
+theorem chain_cons {State} {succs : State → Array State} (a : State) (l : List State)
     (hne : l ≠ [])
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i])
     (hedge : l.head hne ∈ succs a) :
@@ -294,7 +279,7 @@ theorem chain_cons {succs : State → Array State} (a : State) (l : List State)
 
 /-- Dropping the head of a `succs`-chain list leaves a `succs`-chain (index
     version, sibling of `ReachChain.tail`). -/
-private theorem chain_tail {succs : State → Array State} (a : State) (l : List State)
+private theorem chain_tail {State} {succs : State → Array State} (a : State) (l : List State)
     (hchain : ∀ i, (hi : i + 1 < (a :: l).length) → (a :: l)[i+1] ∈ succs (a :: l)[i]) :
     ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i] := by
   intro i hi
@@ -304,13 +289,8 @@ private theorem chain_tail {succs : State → Array State} (a : State) (l : List
 /-- Concatenating two `succs`-chains with a boundary edge from the first's
     last element to the second's head gives a `succs`-chain over the
     concatenation. Needed for the Holzmann-Peled-Yannakakis inner-DFS
-    shortcut's witness construction: splicing the path `innerDFS` found with
-    a stack tree-path segment (cf. `chain_append_singleton`, the special case
-    where the second list is a singleton). Proved by induction on `l1`
-    (rather than raw index arithmetic) to avoid rewriting inside a
-    `getElem`/`head`/`getLast` proof-argument position — the same class of
-    Lean dependent-rewrite trap documented elsewhere in this file's history. -/
-theorem chain_append {succs : State → Array State} (l1 l2 : List State)
+    shortcut's witness construction. -/
+theorem chain_append {State} {succs : State → Array State} (l1 l2 : List State)
     (hchain1 : ∀ i, (hi : i + 1 < l1.length) → l1[i+1] ∈ succs l1[i])
     (hchain2 : ∀ i, (hi : i + 1 < l2.length) → l2[i+1] ∈ succs l2[i])
     (hne1 : l1 ≠ []) (hne2 : l2 ≠ [])
@@ -336,11 +316,8 @@ theorem chain_append {succs : State → Array State} (l1 l2 : List State)
 
 /-- A `take n` prefix of a `succs`-chain list is itself a `succs`-chain.
     Needed for the Schwoon-Esparza back-edge shortcut: slicing `pathStack` at
-    the back-edge target's index keeps the prefix a valid chain (cf. CAVA's
-    `takeWhileNot v` in `se_back_edge_lasso_inv`, `Nested_DFS.thy:494` — we use
-    an explicit index instead of a predicate to stay clear of a Lean
-    dependent-rewrite trap under `takeWhile`'s recursive unfolding). -/
-theorem chain_take {succs : State → Array State} (l : List State) (n : Nat)
+    the back-edge target's index keeps the prefix a valid chain. -/
+theorem chain_take {State} {succs : State → Array State} (l : List State) (n : Nat)
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
     ∀ i, (hi : i + 1 < (l.take n).length) → (l.take n)[i+1] ∈ succs (l.take n)[i] := by
   intro i hi
@@ -354,9 +331,8 @@ theorem chain_take {succs : State → Array State} (l : List State) (n : Nat)
 
 /-- A `drop n` suffix of a `succs`-chain list is itself a `succs`-chain.
     Needed for the Schwoon-Esparza back-edge shortcut: slicing `pathStack` at
-    the back-edge target's index keeps the suffix a valid chain (cf. CAVA's
-    `dropWhileNot v` in `se_back_edge_lasso_inv`, `Nested_DFS.thy:495`). -/
-theorem chain_drop {succs : State → Array State} (l : List State) (n : Nat)
+    the back-edge target's index keeps the suffix a valid chain. -/
+theorem chain_drop {State} {succs : State → Array State} (l : List State) (n : Nat)
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
     ∀ i, (hi : i + 1 < (l.drop n).length) → (l.drop n)[i+1] ∈ succs (l.drop n)[i] := by
   intro i hi
@@ -368,12 +344,8 @@ theorem chain_drop {succs : State → Array State} (l : List State) (n : Nat)
   rw [e1, e2]
   exact hchain (n + i) hbound
 
-/-- The left part of an append-split `succs`-chain is itself a `succs`-chain.
-    Takes the split as an explicit hypothesis (rather than requiring the
-    caller to cast an existing chain fact along an equation) to sidestep a
-    Lean dependent-rewrite trap: `subst`-ing the split *before* inducting
-    avoids ever rewriting inside the chain fact's own `∀`-quantified type. -/
-theorem chain_append_left {succs : State → Array State} (l a b : List State)
+/-- The left part of an append-split `succs`-chain is itself a `succs`-chain. -/
+theorem chain_append_left {State} {succs : State → Array State} (l a b : List State)
     (heq : l = a ++ b)
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
     ∀ i, (hi : i + 1 < a.length) → a[i+1] ∈ succs a[i] := by
@@ -392,9 +364,8 @@ theorem chain_append_left {succs : State → Array State} (l a b : List State)
       have hk : k + 1 < xs.length := by simpa using hi
       exact ih (chain_tail x (xs ++ b) hchain) k hk
 
-/-- The right part of an append-split `succs`-chain is itself a `succs`-chain.
-    Same rationale for the explicit `heq` parameter as `chain_append_left`. -/
-theorem chain_append_right {succs : State → Array State} (l a b : List State)
+/-- The right part of an append-split `succs`-chain is itself a `succs`-chain. -/
+theorem chain_append_right {State} {succs : State → Array State} (l a b : List State)
     (heq : l = a ++ b)
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
     ∀ i, (hi : i + 1 < b.length) → b[i+1] ∈ succs b[i] := by
@@ -403,12 +374,12 @@ theorem chain_append_right {succs : State → Array State} (l a b : List State)
   | nil => simpa using hchain
   | cons x xs ih => exact ih (chain_tail x (xs ++ b) hchain)
 
-/-- The edge closing off a chain-list's last step: if `l ≠ []` and
-    `l.dropLast ≠ []`, the chain property at the second-to-last index gives
-    exactly `l.getLast ∈ succs (l.dropLast.getLast)`. Needed for the
-    Schwoon-Esparza back-edge shortcut's "source accepting" case: closes the
-    cycle `current :: (loop-tail)` back to `current`. -/
-theorem chain_getLast_edge {succs : State → Array State} (l : List State)
+/-- The edge closing off a chain-list's last step:
+    if `l ≠ []` and `l.dropLast ≠ []`, the chain property at the second-to-last
+    index gives exactly `l.getLast ∈ succs (l.dropLast.getLast)`.
+    Needed for the Schwoon-Esparza back-edge shortcut's "source accepting" case:
+    closes the cycle `current :: (loop-tail)` back to `current`. -/
+theorem chain_getLast_edge {State} {succs : State → Array State} (l : List State)
     (hne : l ≠ []) (hne' : l.dropLast ≠ [])
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
     l.getLast hne ∈ succs (l.dropLast.getLast hne') := by
@@ -426,12 +397,12 @@ theorem chain_getLast_edge {succs : State → Array State} (l : List State)
   have hstep := hchain (l.length - 2) (by omega)
   simpa [show l.length - 2 + 1 = l.length - 1 from by omega] using hstep
 
-/-- The edge across an append boundary: if `l = a ++ b` with both `a` and `b`
-    nonempty, the chain property at the boundary index gives exactly
-    `b.head ∈ succs (a.getLast)`. Needed for the Schwoon-Esparza back-edge
-    shortcut's "target accepting" case: the edge from the stem's last state
-    into the loop's first state. -/
-theorem chain_append_boundary {succs : State → Array State} (l a b : List State)
+/-- The edge across an append boundary:
+    if `l = a ++ b` with both `a` and `b` nonempty, the chain property at
+    the boundary index gives exactly `b.head ∈ succs (a.getLast)`.
+    Needed for the Schwoon-Esparza back-edge shortcut's "target accepting" case:
+    the edge from the stem's last state into the loop's first state. -/
+theorem chain_append_boundary {State} {succs : State → Array State} (l a b : List State)
     (heq : l = a ++ b) (ha : a ≠ []) (hb : b ≠ [])
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
     b.head hb ∈ succs (a.getLast ha) := by
@@ -452,12 +423,9 @@ theorem chain_append_boundary {succs : State → Array State} (l a b : List Stat
       exact ih hxsne (chain_tail x ((y :: ys) ++ b) hchain)
 
 /-- If `x` occurs in `l`, dropping elements until the first occurrence of `x`
-    leaves a list whose head is `x`. Needed to identify the Schwoon-Esparza
-    back-edge target's position inside `pathStack`, mirroring CAVA's
-    `dropWhileNot v` (`Nested_DFS.thy`). Proved at the `head?` (`Option`)
-    level throughout to avoid a Lean dependent-rewrite trap under
-    `dropWhile`'s recursive unfolding (cf. `chain_take`/`chain_drop`'s own
-    workaround for the analogous issue). -/
+    leaves a list whose head is `x`.
+    Needed to identify the Schwoon-Esparza back-edge target's position inside
+    `pathStack`. -/
 theorem dropWhile_ne_head?_eq_some {State : Type u} [BEq State] [LawfulBEq State]
     (l : List State) (x : State) (hx : x ∈ l) :
     (l.dropWhile (fun y => !(y == x))).head? = some x := by
@@ -475,9 +443,9 @@ theorem dropWhile_ne_head?_eq_some {State : Type u} [BEq State] [LawfulBEq State
       simp only [List.dropWhile_cons, hax', if_true]
       exact ih hxt
 
-/-- A length-1 list's head and last element coincide. Needed for the
-    Schwoon-Esparza back-edge shortcut's degenerate case (the sliced cycle
-    has only one state left). -/
+/-- A length-1 list's head and last element coincide.
+    Needed for the Schwoon-Esparza back-edge shortcut's degenerate case
+    (the sliced cycle has only one state left). -/
 theorem head_eq_getLast_of_length_eq_one {α : Type u} (l : List α) (hl : l.length = 1)
     (hne : l ≠ []) : l.head hne = l.getLast hne := by
   cases l with
@@ -509,15 +477,15 @@ theorem head_append_singleton_eq {α : Type u} (l : List α) (x : α) (hne : l �
     *previous* element (i.e. reading left-to-right, later elements reach
     earlier ones). Used for the outer-DFS stack: with the top of the stack at
     the head, this says every ancestor can reach every one of its
-    descendants further down the stack — exactly the tree-path fact that
+    descendants further down the stack. This is the tree-path fact that
     makes reaching an ancestor via inner DFS force a self-cycle. -/
-def ReachChain (succs : State → Array State) : List State → Prop
+def ReachChain {State} (succs : State → Array State) : List State → Prop
   | [] => True
   | [_] => True
   | a :: b :: rest => PathTo succs (fun _ => False) b a ∧ ReachChain succs (b :: rest)
 
 /-- Every element in the tail of a `ReachChain` can reach the head. -/
-theorem ReachChain.reaches_head {succs : State → Array State} :
+theorem ReachChain.reaches_head {State} {succs : State → Array State} :
     ∀ (hd : State) (tl : List State), ReachChain succs (hd :: tl) →
     ∀ a ∈ tl, PathTo succs (fun _ => False) a hd := by
   intro hd tl h
@@ -531,7 +499,7 @@ theorem ReachChain.reaches_head {succs : State → Array State} :
     · exact PathTo.trans (ih b hrest a ha') hba
 
 /-- Dropping the head of a `ReachChain` leaves a `ReachChain`. -/
-theorem ReachChain.tail {succs : State → Array State} (hd : State) (tl : List State)
+theorem ReachChain.tail {State} {succs : State → Array State} (hd : State) (tl : List State)
     (h : ReachChain succs (hd :: tl)) : ReachChain succs tl := by
   cases tl with
   | nil => trivial
@@ -546,27 +514,22 @@ structure FNDFSState (State : Type u) [BEq State] [Hashable State] where
 
 /-! ## Fuel-based inner DFS
 
-The inner DFS searches for a path from `current` back to `seed` — or, with the
-Holzmann-Peled-Yannakakis shortcut, back to *any* state on the outer DFS's
-current call stack (`cyan`, CAVA's `Nested_DFS.thy:54,67-74`: `λx. x = u ∨ x ∈
-cyan s`). It uses `innerVisited` to track states visited in this inner search,
+The inner DFS searches for a path from `current` back to `seed`. Or also,
+with the Holzmann-Peled-Yannakakis shortcut, back to *any* state on the outer DFS's
+current call stack. It uses `innerVisited` to track states visited in this inner search,
 and `innerFinished` (in `FNDFSState`) as a cross-call optimization: states
-whose inner DFS already completed without finding a cycle. See
-`NestedDFSPlan.md`'s "Holzmann-Peled-Yannakakis inner-DFS shortcut" section for
-the full CAVA-correspondence write-up.
-
-Cf. Schwoon & Esparza §3, "red DFS" in CAVA terminology. -/
+whose inner DFS already completed without finding a cycle. -/
 
 /-- Result type for inner DFS: `none` = out of fuel. On success, `some (path,
     target)` records both the path found *and* which state in `{seed} ∪ cyan`
-    was actually hit (CAVA's `Inr (vs, v)`). -/
+    was actually hit. -/
 abbrev InnerResult (State : Type u) [BEq State] [Hashable State] :=
   Option (Option (List State × State) × Std.HashSet State × FNDFSState State)
 
 mutual
 /-- Inner DFS with fuel. Returns `none` if fuel runs out.
     Corresponds to the "red DFS" in Schwoon & Esparza's color formulation. -/
-def innerDFS_fuel [BEq State] [Hashable State] [LawfulBEq State]
+def innerDFS_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
     (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State)
     (innerVisited : Std.HashSet State) (st : FNDFSState State)
@@ -583,7 +546,7 @@ def innerDFS_fuel [BEq State] [Hashable State] [LawfulBEq State]
       innerDFS_fuel_fold succs seed cyan fuel current (succs current).toList innerVisited st
 
 /-- Process successor list for inner DFS. -/
-def innerDFS_fuel_fold [BEq State] [Hashable State] [LawfulBEq State]
+def innerDFS_fuel_fold {State} [BEq State] [Hashable State] [LawfulBEq State]
     (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State) (remaining : List State)
     (innerVisited : Std.HashSet State) (st : FNDFSState State)
@@ -608,7 +571,7 @@ end
 
 /-- Outer DFS loop with fuel.
     Corresponds to the "blue DFS" in Schwoon & Esparza's color formulation. -/
-def outerDFSLoop_fuel [BEq State] [Hashable State] [LawfulBEq State]
+def outerDFSLoop_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
     (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat)
     (stack : List (State × List State))
@@ -631,8 +594,7 @@ def outerDFSLoop_fuel [BEq State] [Hashable State] [LawfulBEq State]
             -- Holzmann-Peled-Yannakakis shortcut: `target` may be `current`
             -- itself or any other state on `pathStack`. When `target =
             -- current` this collapses to exactly the pre-HPY formula
-            -- `current :: cyclePath` (the appended stack-suffix is `[]`) —
-            -- no separate degenerate case needed, see `NestedDFSPlan.md`.
+            -- `current :: cyclePath` (the appended stack-suffix is `[]`).
             let loopTail := (pathStack.dropWhile (fun y => !(y == target))).dropLast
             some (.nonEmpty pathStack (current :: cyclePath ++ loopTail), st')
           | some (none, _, st') =>
@@ -642,16 +604,13 @@ def outerDFSLoop_fuel [BEq State] [Hashable State] [LawfulBEq State]
       | succ :: remainingTail =>
         let stack' := (current, remainingTail) :: rest
         if pathStack.contains succ then
-          -- Schwoon-Esparza back-edge shortcut (`se_back_edge` in CAVA's
-          -- `Nested_DFS.thy`): `succ` is cyan (currently on the outer stack),
-          -- so a cycle can be reported directly, without launching innerDFS.
+          -- Schwoon-Esparza back-edge shortcut: `succ` is cyan
+          -- (currently on the outer stack), so a cycle can be reported
+          -- directly, without launching innerDFS.
           if isAccepting current then
             if succ == current then
               -- degenerate case: current -> current is a literal self-loop.
-              -- `loop.tail` (not `loop`) is the genuine cycle, matching the
-              -- innerDFS-found case's convention (`loop = current ::
-              -- cyclePath`, `cyclePath.head = current` already) — so `loop`
-              -- itself carries one redundant leading copy of `current`.
+              -- `loop.tail` (not `loop`) is the genuine cycle.
               some (.nonEmpty pathStack [current, current], st)
             else
               let loopTail := (pathStack.dropWhile (fun y => !(y == succ))).dropLast
@@ -671,7 +630,7 @@ def outerDFSLoop_fuel [BEq State] [Hashable State] [LawfulBEq State]
           outerDFSLoop_fuel succs isAccepting fuel stack' (pathStack ++ [succ]) st
 
 /-- Full nested DFS with fuel. -/
-def nestedDFS_fuel [BEq State] [Hashable State] [LawfulBEq State]
+def nestedDFS_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
     (initialStates : List State)
     (succs : State → Array State)
     (isAccepting : State → Bool)
@@ -703,18 +662,11 @@ where
           | some (.nonEmpty stem loop, _) => some (.nonEmpty stem loop)
           | some (.empty _, st') => go succs isAccepting rest st' fuel
 
-/-! ## Accepting cycle definition
-
-`AcceptingCycle` itself now lives in `EmptinessCheck.lean` — it's the
-algorithm-agnostic "lasso" witness, not specific to nested DFS, so it moved
-out alongside `EmptinessResult`/`FiniteReach`/`EmptinessChecker`. Imported
-transitively via `NestedDFS/NestedDFSRef.lean`. -/
-
 /-! ## Predicate: blocked states -/
 
 section InnerCorrectness
 
-variable [BEq State] [Hashable State] [LawfulBEq State]
+variable {State} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- A state is "blocked" if it is in the inner visited set or in innerFinished.
     Blocked states are skipped by inner DFS.
@@ -729,7 +681,7 @@ def isBlocked (iv : Std.HashSet State) (ifin : Std.HashSet State) (s : State) : 
 The correctness argument for inner DFS follows Schwoon & Esparza (2005), §3.
 The key properties after `innerDFS_fuel` returns `none` (no cycle found) are:
 
-1. **Monotonicity**: `iv` and `innerFinished` only grow (cf. `red_dfs_inv` in CAVA).
+1. **Monotonicity**: `iv` and `innerFinished` only grow.
 2. **Complete exploration**: every successor of every visited state is either
    the seed (which would have triggered a cycle report) or is blocked in the
    output state. This means the inner DFS has fully explored the reachable
@@ -786,9 +738,7 @@ private theorem innerDFS_fuel_fold_mono_aux (succs : State → Array State) (see
 
 /-- Monotonicity of `innerDFS_fuel`: the inner visited set and innerFinished
     set only grow across a call that returns `some`.
-    Proved by induction on fuel, using `innerDFS_fuel_fold_mono_aux`.
-
-    Cf. `red_dfs_inv` monotonicity in the CAVA Isabelle DFS framework. -/
+    Proved by induction on fuel, using `innerDFS_fuel_fold_mono_aux`.. -/
 theorem innerDFS_fuel_mono (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -856,9 +806,7 @@ theorem innerDFS_fuel_current_blocked (succs : State → Array State) (seed : St
 
 /-- After `innerDFS_fuel_fold` returns `none` (no cycle), every successor in
     `remaining` is not `seed`, is not on `cyan` (Holzmann-Peled-Yannakakis: no
-    successor is any outer-stack state either — CAVA's `restr_invar`'s
-    `R' ∩ Collect P = {}`, `Nested_DFS.thy:155-159,222-226`), and is blocked
-    in the output state.
+    successor is any outer-stack state either), and is blocked in the output state.
 
     This is the "complete exploration" property: every successor was either
     already blocked, or was recursively explored and added to `iv'`.
@@ -945,8 +893,7 @@ theorem innerDFS_no_cycle_from_seed (succs : State → Array State) (seed : Stat
       | through hmid hunb _ =>
         exact hunb (hsb _ (Array.mem_toList_iff.mpr hmid)).2.2
 
-/-- After fold returns none, all states in iv' that are NOT in iv
-    are in st'.innerFinished. -/
+/-- After fold returns none, all states in iv' that are NOT in iv are in st'.innerFinished. -/
 private theorem fold_iv_subset_finished_aux (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -1035,10 +982,8 @@ theorem innerDFS_fuel_iv_subset_finished (succs : State → Array State) (seed :
           · exact absurd hiv_s hns
         · exact fold_iv_subset_finished_aux succs seed cyan n current _ _ st ih h s hs hcur
 
-/-- After innerDFS from seed with empty iv returns none,
-    seed has no self-cycle through st'.innerFinished.
-    This strengthens `innerDFS_no_cycle_from_seed` by eliminating
-    the iv' component from isBlocked, using iv' ⊆ ifin'. -/
+/-- After innerDFS from seed with empty iv returns none, seed has no self-cycle
+    through st'.innerFinished. This strengthens `innerDFS_no_cycle_from_seed`. -/
 theorem innerDFS_no_cycle_from_seed_finished (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (st : FNDFSState State) (cap : Nat)
     {iv' : Std.HashSet State} {st' : FNDFSState State}
@@ -1059,10 +1004,7 @@ theorem innerDFS_no_cycle_from_seed_finished (succs : State → Array State) (se
 
 /-- After `innerDFS_fuel_fold` returns `none`, every state newly visited during
     the fold (added to `iv` since the call started) has *all* its successors
-    blocked in the output state — not just `current`'s own direct successors
-    (`innerDFS_fuel_fold_succs_blocked` above only covers `remaining`), but
-    transitively every state the recursion visited. Same fuel/fold
-    double-induction template as `fold_iv_subset_finished_aux`. -/
+    blocked in the output state. -/
 private theorem fold_new_succs_blocked_aux (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -1142,10 +1084,7 @@ theorem innerDFS_fuel_new_succs_blocked (succs : State → Array State) (seed : 
 /-- Converse of `fold_iv_subset_finished_aux`: `innerFinished` only ever grows
     by states that were already in `iv` (the fold's `current` argument is the
     only thing inserted into `innerFinished`, and it's always already in `iv`
-    by the time the fold's nil case is reached — see `innerDFS_fuel`'s
-    definition, which inserts `current` into `iv` before ever calling the
-    fold). Needs `iv.contains current` as an explicit precondition, since
-    that's a fact about *how* the fold is invoked, not part of its type. -/
+    by the time the fold's nil case is reached. -/
 private theorem fold_new_finished_subset_iv_aux (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State) (remaining : List State)
     (ih_inner : ∀ (curr : State) (iv₀ : Std.HashSet State) (st₀ : FNDFSState State)
@@ -1215,8 +1154,7 @@ theorem innerDFS_fuel_new_finished_subset_iv (succs : State → Array State) (se
 
 /-- Specialize `innerDFS_fuel_new_succs_blocked` to the actual outer-DFS call
     site (`seed = current`, `iv = ∅`) and combine with the old `innerFinished`
-    already being closed to conclude the new `innerFinished` is closed too.
-    This is the Lean analogue of CAVA's `red_closed`. -/
+    already being closed to conclude the new `innerFinished` is closed too. -/
 theorem innerDFS_new_finished_closed (succs : State → Array State) (current : State) (cyan : List State)
     (fuel : Nat) (st : FNDFSState State) (cap : Nat)
     {iv' : Std.HashSet State} {st' : FNDFSState State}
@@ -1304,10 +1242,9 @@ theorem innerDFS_fuel_outerVisited_eq (succs : State → Array State) (seed : St
 
 /-- After `innerDFS_fuel_fold` returns `none`, no state newly visited during
     the fold has `seed`, or any `cyan` state (Holzmann-Peled-Yannakakis), as a
-    successor — if it did, the fold's own widened `if succ == seed ||
+    successor. If it did, the fold's own widened `if succ == seed ||
     cyan.contains succ then FOUND` check would have fired the moment it was
-    reached, and the whole call would have returned `some (...)`, not
-    `none`. -/
+    reached, and the whole call would have returned `some (...)`, not `none`. -/
 private theorem fold_new_no_edge_to_seed_aux (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -1341,14 +1278,9 @@ private theorem fold_new_no_edge_to_seed_aux (succs : State → Array State) (se
         · exact ih_rem iv_mid st_mid h s hs hm_s
 
 /-- After `innerDFS_fuel` returns `none`, no state newly visited during the
-    call has `seed`, or any `cyan` state, as a successor. Combines the
-    top-level `current`'s own successor list (via
-    `innerDFS_fuel_fold_succs_blocked`) with everything visited transitively
-    (via `fold_new_no_edge_to_seed_aux`). Needed to show nothing in the
-    resulting `innerFinished` has an edge back to `seed`/`cyan`, the key fact
-    `PathTo.no_self_loop_of_closed_no_incoming` needs — the Lean analogue of
-    CAVA's `restr_invar`'s `R' ∩ Collect P = {}` clause
-    (`Nested_DFS.thy:155-159,222-226`). -/
+    call has `seed`, or any `cyan` state, as a successor.
+    Needed to show nothing in the resulting `innerFinished` has an edge back
+    to `seed`/`cyan`. -/
 theorem innerDFS_fuel_new_no_edge_to_seed (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -1427,9 +1359,7 @@ private theorem fold_new_reachable_aux (succs : State → Array State) (seed : S
 /-- After `innerDFS_fuel` returns `none`, every state newly visited during the
     call is reachable from `current`. Needed to show ancestors of `current`
     (which, via `ReachChain`, reach `current` back down the outer stack)
-    cannot become newly finished during `current`'s own inner-DFS call —
-    otherwise composing the two paths would give `current` a self-loop,
-    contradicting the very fact this call establishes. -/
+    cannot become newly finished during `current`'s own inner-DFS call. -/
 theorem innerDFS_fuel_new_reachable (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -1462,16 +1392,7 @@ theorem innerDFS_fuel_new_reachable (succs : State → Array State) (seed : Stat
 /-- If `innerDFS_fuel_fold` finds a cycle back to `seed`, or (Holzmann-Peled-
     Yannakakis) back to some other `cyan` state, the returned `cyclePath` is a
     genuine `succs`-chain starting at `current` and ending with an edge into
-    the state actually hit (`target`, CAVA's `v` in `Inr (vs, v)`). This is
-    the Lean analogue of the `finish`-case core argument in CAVA's
-    `lasso_inv` (`Nested_DFS.thy`), specialized to our concrete (non-abstract)
-    fold recursion: `path E (hd (stack s)) vs v` there corresponds to
-    `cyclePath`'s chain property here, and `target` to CAVA's `v`.
-
-    `hremaining` carries "every element of `remaining` is a genuine successor
-    of `current`" — true at the top-level call (`remaining = (succs
-    current).toList`) and preserved as `remaining` shrinks; needed to justify
-    the very first edge `current → cyclePath.head`. -/
+    the state actually hit. -/
 theorem fold_cyclePath_chain_aux (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State)
     (ih_inner : ∀ (curr : State) (iv₀ : Std.HashSet State) (st₀ : FNDFSState State)
@@ -1566,47 +1487,36 @@ The outer DFS (blue DFS) maintains the invariant that every accepting state
 that has been fully processed (popped from the outer stack) has had its inner
 DFS run, and the result was added to `innerFinished`.
 
-The correctness argument (following CAVA's `DFS_Framework.Nested_DFS`, *not* a
-CVWY-style post-order/"who finishes last" argument, which turned out to be
-unnecessary): whenever an accepting `current` at the top of the stack finishes
-running inner DFS with `none` (no cycle found), `innerDFS_no_cycle_from_seed_finished`
-gives a *restricted* fact — no path back to `current` through never-finished
-intermediates. Separately, `innerDFS_new_finished_closed` shows `innerFinished`
-stays closed under `succs`. Combining the two via `PathTo.no_self_loop_of_closed`
-upgrades this into the *unrestricted* fact `current` has no self-cycle at all —
-a permanent, state-independent graph fact requiring no further justification as
-the algorithm continues. No reasoning about *other* states on a hypothetical
-cycle is ever needed. -/
+The correctness argument: whenever an accepting `current` at the top of the
+stack finishes running inner DFS with `none` (no cycle found),
+`innerDFS_no_cycle_from_seed_finished` gives a *restricted* fact, no path back
+to `current` through never-finished intermediates. Separately,
+`innerDFS_new_finished_closed` shows `innerFinished` stays closed under `succs`.
+Combining the two via `PathTo.no_self_loop_of_closed` upgrades this into the
+*unrestricted* fact `current` has no self-cycle at all. -/
 
 section OuterCorrectness
 
-variable [BEq State] [Hashable State] [LawfulBEq State]
+variable {State} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- Outer-DFS bookkeeping closure, independent of the accepting-cycle logic:
-    `outerVisited` behaves like a standard DFS discovered-set. This is the
-    Lean analogue of CAVA's generic `discovered_closed` invariant, plus a
-    stack-chain fact (`stack_chain`) that plays the role CAVA's `red_dfs`
-    fills by directly checking against cyan/stack states — here, reaching a
-    stack element via inner DFS is instead ruled out by composing this chain
-    with the no-self-cycle argument (see `PathTo.no_self_loop_of_closed`). -/
+    `outerVisited` behaves like a standard DFS discovered-set. -/
 structure OuterReachClosed
     (succs : State → Array State) (st : FNDFSState State)
     (stack : List (State × List State)) : Prop where
-  /-- Every stack element can reach every element further down the stack —
+  /-- Every stack element can reach every element further down the stack, and
       in particular, every element can reach the current top of the stack. -/
   stack_chain : ReachChain succs (stack.map Prod.fst)
   /-- Successors of an outer-done (visited, no longer on stack) state are
       also visited. -/
   done_closed : ∀ s, st.outerVisited.contains s → s ∉ stack.map Prod.fst →
     ∀ t ∈ succs s, st.outerVisited.contains t
-  /-- Already-processed (non-pending) successors of every stack frame are
-      visited. -/
+  /-- Already-processed (non-pending) successors of every stack frame are visited. -/
   stack_processed_visited : ∀ p ∈ stack, ∀ t ∈ succs p.fst, t ∉ p.snd →
     st.outerVisited.contains t
   /-- Every frame's `remaining` list only ever holds genuine successors of
       that frame's state (true by construction: `remaining` always starts as
-      the full `(succs state).toList` and is only ever shrunk from the
-      front). -/
+      the full `(succs state).toList` and is only ever shrunk from the front). -/
   stack_remaining_subset : ∀ p ∈ stack, ∀ t ∈ p.snd, t ∈ succs p.fst
 
 /-- Outer DFS invariant for the CVWY algorithm. -/
@@ -1618,8 +1528,7 @@ structure OuterInvariant
   accepting_finished : ∀ s, st.outerVisited.contains s →
     isAccepting s → s ∉ stackStates → st.innerFinished.contains s
   /-- `innerFinished` is closed under `succs`: once a state is finished, all its
-      successors are finished too. Cf. CAVA `red_closed` / `restr_invar`'s first
-      conjunct (`E `` R ⊆ R`). This is what lets us upgrade the *restricted*
+      successors are finished too. This is what lets us upgrade the *restricted*
       no-cycle fact from inner DFS into an *unrestricted* one below. -/
   finished_closed : ∀ s, st.innerFinished.contains s →
     ∀ t ∈ succs s, st.innerFinished.contains t
@@ -1630,16 +1539,10 @@ structure OuterInvariant
     st.outerVisited.contains s
   /-- `innerFinished` is disjoint from the current stack. This is what lets us
       conclude `current` (top of stack) is never already `innerFinished` when
-      its turn comes, with no case-split needed. Cf. CAVA `red_stack_disjoint`. -/
+      its turn comes, with no case-split needed. -/
   finished_stack_disjoint : ∀ s ∈ stackStates, ¬st.innerFinished.contains s
   /-- Every *accepting, no-longer-on-stack* state has no self-cycle at all,
-      through any intermediates whatsoever — this is scoped like CAVA's
-      `dom (finished s)` (which grows by exactly one state per finish-event),
-      not like raw `innerFinished` (which can grow by many states per
-      finish-event, via states an inner DFS call merely walks through without
-      checking their own self-cycle). Once established for a state this is a
-      plain, DFS-state-independent graph fact, so it never needs to be
-      re-justified as the algorithm continues. Cf. CAVA `no_accpt_cycle_in_finish`. -/
+      through any intermediates whatsoever. -/
   finished_no_cycle : ∀ s, isAccepting s → s ∉ stackStates →
     st.outerVisited.contains s → ¬PathTo succs (fun _ => False) s s
   /-- Every state on the stack has already been outer-discovered. Trivial by
@@ -1711,7 +1614,7 @@ theorem outerDFSLoop_fuel_outerVisited_mono
 
 /-- `OuterReachClosed` is maintained across `outerDFSLoop_fuel`'s recursion.
     Proved separately from `outerDFSLoop_fuel_empty_no_cycle` since it doesn't
-    depend on the accepting-cycle logic at all — purely outer-DFS bookkeeping. -/
+    depend on the accepting-cycle logic at all. -/
 theorem outerDFSLoop_fuel_reach_closed
     (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat)
@@ -1893,27 +1796,14 @@ theorem outerDFSLoop_fuel_reach_closed
 
 /-- If `pathStack` is a genuine `succs`-chain when `outerDFSLoop_fuel` is called,
     then whenever the call returns `.nonEmpty stem loop`, `(stem, loop)` is a
-    genuine accepting-cycle witness — every `AcceptingCycle` field except
-    `stem_head_initial` (which needs threading through `nestedDFS_fuel.go`'s
-    `initialStates` loop, done separately below).
+    genuine accepting-cycle witness.
 
-    `stem` is exactly `pathStack` at the moment an accepting cycle is found,
-    so its chain property is the Lean analogue of CAVA's `stack_is_path`
-    (`DFS_Invars_Basic.thy`). `loop`'s properties come from
-    `innerDFS_fuel_cyclePath_chain` — stated about `loop.tail`, not `loop`
-    itself: `loop = current :: cyclePath`, where `cyclePath` *already* starts
-    with a copy of `current` (`innerDFS_fuel_cyclePath_chain`'s `hhead0`, since
-    `seed` and the initial `current`-argument coincide at the top-level call).
+    `stem` is exactly `pathStack` at the moment an accepting cycle is found-
+    `loop`'s properties come from `innerDFS_fuel_cyclePath_chain`, stated on
+    `loop.tail`, not `loop` itself: `loop = current :: cyclePath`, where
+    `cyclePath` *already* starts with a copy of `current`.
     So `loop.tail = cyclePath` is the genuine chain; `loop` itself is not
-    (`current ∈ succs current` isn't guaranteed) — matching `OutputVerifyBA.lean`'s
-    existing convention of indexing from `loop[1]`, not `loop[0]`.
-
-    Together these are the Lean analogue of CAVA's `lasso_inv` (`Nested_DFS.thy`)
-    — specifically the `finish`-case argument, since our algorithm has no
-    Schwoon-Esparza back-edge shortcut — and this theorem plays the role
-    CAVA's `s_lasso_inv` plays in the `Some` branch of `blue_dfs_correct`:
-    unfold the invariant directly to get the witness properties, no further
-    induction needed at the call site. -/
+    (`current ∈ succs current` isn't guaranteed).  -/
 theorem outerDFSLoop_fuel_nonEmpty_witness
     (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat)
@@ -2156,11 +2046,7 @@ theorem outerDFSLoop_fuel_nonEmpty_witness
           rename_i hsucc_mem'
           have hsucc_mem : succ ∈ pathStack := by simpa using hsucc_mem'
           have hsucc_vis : st.outerVisited.contains succ := hsv succ hsucc_mem
-          -- Split `pathStack` at `succ`'s first occurrence: `A ++ B`, with
-          -- `B.head = succ` (CAVA's `dropWhileNot v`/`takeWhileNot v`). `A`/`B`
-          -- are named via `set` (not left as raw `takeWhile`/`dropWhile`
-          -- expressions) so later rewrites of `pathStack` can't loop back
-          -- through them.
+          -- Split `pathStack` at `succ`'s first occurrence: `A ++ B`, with `B.head = succ`.
           generalize hA_def : pathStack.takeWhile (fun y => !(y == succ)) = A at h ⊢
           generalize hB_def : pathStack.dropWhile (fun y => !(y == succ)) = B at h ⊢
           have hB? : B.head? = some succ := by
@@ -2406,11 +2292,7 @@ theorem outerDFSLoop_fuel_empty_no_cycle
             have hnotfin : ¬st.innerFinished.contains current :=
               hinv.finished_stack_disjoint current (List.mem_cons_self ..)
             -- Holzmann-Peled-Yannakakis: both facts below are now stated for
-            -- *every* state on `pathStack` (CAVA's `cyan`/whole-stack scope,
-            -- `restr_invar`), not just `current` — so `hno_unrestricted_all`
-            -- gives "current can't reach any stack state" directly, with no
-            -- separate `ReachChain`-based composition needed (contrast the
-            -- old, seed-only derivation this replaces).
+            -- *every* state on `pathStack`, not just `current`.
             have hno_restricted_all := innerDFS_no_cycle_from_seed_finished succs current pathStack k st
               (st.outerVisited.size / 2) (by simpa using hnotfin) heq
             have ht_mem_stack : ∀ t, t ∈ pathStack → t ∈ current :: rest.map Prod.fst := by
@@ -2771,11 +2653,7 @@ variable [BEq State] [Hashable State] [LawfulBEq State]
     loop: if it returns `.empty`, there is a final internal state
     simultaneously satisfying `OuterReachClosed`/`OuterInvariant` (both with
     an empty stack) — carrying forward everything already visited, and
-    additionally covering every element of `remaining`. This is the Lean
-    analogue of CAVA's `nc_finished_eq_reachable`, adapted to our explicit
-    `initialStates` loop (CAVA's generic multi-root DFS framework handles the
-    looping internally, so they don't need a separate composed theorem like
-    this one). -/
+    additionally covering every element of `remaining`. -/
 theorem nestedDFS_fuel_go_correct
     (succs : State → Array State) (isAccepting : State → Bool)
     (remaining : List State) (st : FNDFSState State) (fuel : Nat) {n : Nat}
@@ -2907,14 +2785,7 @@ theorem nestedDFS_fuel_go_correct
           · exact hroots' i hi'
 
 /-- If `nestedDFS_fuel.go` returns `.nonEmpty stem loop`, `(stem, loop)` is a
-    genuine accepting-cycle witness rooted at one of `remaining`'s states.
-    Composes `outerDFSLoop_fuel_nonEmpty_witness` across the `initialStates`
-    loop, exactly as `nestedDFS_fuel_go_correct` does for the `.empty` case —
-    the CAVA analogue is the same asymmetry noted there: CAVA's generic
-    multi-root framework gets this for free from `lasso_inv` being a
-    `param_DFS`-level invariant (covering `new_root` transitions
-    automatically), whereas our concrete `initialStates` recursion needs its
-    own composition theorem. -/
+    genuine accepting-cycle witness rooted at one of `remaining`'s states. -/
 theorem nestedDFS_fuel_go_nonEmpty_witness
     (succs : State → Array State) (isAccepting : State → Bool)
     (remaining : List State) (st : FNDFSState State) (fuel : Nat)
@@ -3080,12 +2951,12 @@ end GoCorrectness
     - Schwoon & Esparza (2005), Theorem 1
     - CAVA (AFP), `nested_dfs_correct`
     - van de Pol (2015), Theorem 2 -/
-theorem nestedDFS_fuel_empty_no_cycle [BEq State] [Hashable State] [LawfulBEq State]
+theorem nestedDFS_fuel_empty_no_cycle {State} [BEq State] [Hashable State] [LawfulBEq State]
     {initialStates : List State}
     {succs : State → Array State} {isAccepting : State → Bool}
     {fuel n : Nat}
     (h : nestedDFS_fuel initialStates succs isAccepting fuel = some (.empty n)) :
-    ¬∃ ac : AcceptingCycle initialStates succs isAccepting, True := by
+    ¬∃ _ : AcceptingCycle initialStates succs isAccepting, True := by
   rintro ⟨ac, -⟩
   rw [nestedDFS_fuel] at h
   have hrc₀ : OuterReachClosed succs
@@ -3139,14 +3010,11 @@ theorem nestedDFS_fuel_empty_no_cycle [BEq State] [Hashable State] [LawfulBEq St
     initial state to an accepting state, and `loop.tail` is a real cycle from
     that state back to itself.
 
-    This is the soundness direction of the emptiness check — the CAVA
-    analogue is the `Some` branch of `blue_dfs_correct` (`Nested_DFS.thy`),
-    proved there directly from `lasso_inv`. Combined with
-    `nestedDFS_fuel_empty_no_cycle` above (the completeness direction, CAVA's
-    `None` branch), `nestedDFS_fuel` is a fully verified decision procedure
-    for accepting-cycle existence (modulo the not-yet-proved
-    termination/finiteness, Phase 2). -/
-theorem nestedDFS_fuel_nonEmpty_valid [BEq State] [Hashable State] [LawfulBEq State]
+    This is the soundness direction of the emptiness check. Combined with
+    `nestedDFS_fuel_empty_no_cycle` above (the completeness direction),
+    `nestedDFS_fuel` is a fully verified decision procedure for accepting-cycle
+    existence. -/
+theorem nestedDFS_fuel_nonEmpty_valid {State} [BEq State] [Hashable State] [LawfulBEq State]
     {initialStates : List State}
     {succs : State → Array State} {isAccepting : State → Bool}
     {fuel : Nat} {stem loop : List State}

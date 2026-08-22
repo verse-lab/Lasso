@@ -4,14 +4,6 @@
   Provides a generic fold (`NNF.fold`) that traverses all subformulas
   in pre-order with an accumulator, plus derived operations:
   `subformulas`, `untilSubformulas`, and their dedup variants.
-
-  The fold is a paramorphism-style traversal (each node sees the original
-  formula, not just recursive results). Corresponds loosely to `universe`
-  from Uniplate / SYB generic programming.
-
-  `untilSubformulas` corresponds to `until_frmlsr` in the CAVA LTL framework,
-  used in LTL_to_GBA.thy for defining acceptance conditions (one per
-  Until-subformula).
 -/
 
 import Std
@@ -37,14 +29,11 @@ def fold (f : β → NNF α → β) (init : β) : NNF α → β
   | φ@(.and ψ₁ ψ₂) | φ@(.or ψ₁ ψ₂) | φ@(.until ψ₁ ψ₂) | φ@(.release ψ₁ ψ₂) =>
     ψ₂.fold f (ψ₁.fold f (f init φ))
 
-/-- Compute the list of all subformulas (pre-order).
-Corresponds to `subfrmlsr` in the CAVA LTL framework. -/
+/-- Compute the list of all subformulas (pre-order). -/
 def subformulas (φ : NNF α) : List (NNF α) :=
   φ.fold (fun acc f => f :: acc) []
 
 /-- Extract all Until-subformulas as (left, right) pairs.
-Corresponds to `until_frmlsr φ` in the CAVA LTL framework:
-  `{(μ, η) | μ U⁼ η ∈ subfrmlsr φ}`.
 Used for defining acceptance conditions: one accepting set per Until-subformula. -/
 def untilSubformulas (φ : NNF α) : List (NNF α × NNF α) :=
   φ.fold (fun acc f =>

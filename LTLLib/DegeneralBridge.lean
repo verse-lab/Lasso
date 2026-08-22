@@ -1,6 +1,5 @@
 /-
-  Bridge between computational `GBA.degeneralize` and proof-level
-  `OASpec.degeneralize`.
+  Bridge between computational `GBA.degeneralize` and abstract `OASpec.degeneralize`.
 
   Shows that the computational BA (from `GBA.degeneralize`) and the abstract
   degeneralized automaton (`OASpec.degeneralize`) accept the same ω-words,
@@ -11,7 +10,9 @@
     BA.toSpec accepts ξ ↔ OASpec.degeneralize accepts ξ   (THIS FILE)
 -/
 
-import LTLLib.Acceptance
+import LTLLib.AbstractSpec.Acceptance
+import LTLLib.GBA
+import LTLLib.BA
 
 namespace LTLLib
 
@@ -106,14 +107,6 @@ theorem degeneralize_labeling (gba : GBA α) :
     (gba.degeneralize).labeling = gba.labeling := by
   simp [GBA.degeneralize]
 
-/-- The BA-level half of Track B item 3 (`ProofPlan.md`): `canonicalLabel`
-compatibility transports across `degeneralize` for free, since `labeling`
-itself is unchanged (`degeneralize_labeling`) and both `GBA.toSpec`/
-`BA.toSpec.labelCompat` share the exact same `match ... | some (pos,neg) =>
-...` shape, keyed by `s.gbaState` on the `BA` side. Generic over any `GBA`
-— no `createGraph`/`constructGBA` specifics needed here, unlike the GBA-level
-`constructGBA_canonicalLabel_compat` (`Bridge.lean`), which does the actual
-disjointness work this theorem takes as a hypothesis. -/
 theorem degeneralize_canonicalLabel_compat (gba : GBA α) (s : BAState)
     (h : gba.toSpec.labelCompat s.gbaState (canonicalLabel gba.labeling s.gbaState)) :
     (gba.degeneralize).toSpec.labelCompat s
@@ -348,15 +341,7 @@ theorem degeneralize_getSuccessors_mem (gba : GBA α)
                Array.not_mem_empty, false_iff, not_and]
     intro h; exact absurd h hmem
 
-/-! ### States characterization
-
-Needed for `degeneralize_wellFormed` below (not by `degeneralize_bridge`
-itself, which — like CAVA's `gba`/`igba` locales' `accept` — never
-references `.states` at all, only `getSuccessors`/`initialStates`/
-`isAccepting`; see `BA.toSpec`). `allStates` is built by the same shape of
-double fold as `successors` (outer over `gba.states`, inner over
-`List.range k`), so this mirrors `outer_fold_successors` above, specialized
-to `HashSet.contains` instead of `HashMap` key lookup. -/
+/-! ### States characterization -/
 
 /-- Double fold building `allStates`: the result contains `s` iff `init` did,
 or `s.gbaState` was iterated over (`∈ l`) with `s.acceptIdx < k`. -/
@@ -400,16 +385,7 @@ theorem degeneralize_states_contains (gba : GBA α) (hk : gba.numAcceptSets > 0)
      fun h => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr h)⟩]
   simp only [GBA.numAcceptSets]
 
-/-! ### Well-formedness is preserved by degeneralize
-
-Corresponds to CAVA's `degen_invar`-style development in `Automata.thy`
-(the `degen` construction is shown to preserve the `graph`/`gb_graph`
-locale assumptions there too — see `to_gbg_alt`/`degen_invar` near
-`Automata.thy:800-1130`, established generically for *any* well-formed
-input, not specific to LTL_to_GBA). Here: assembled directly from
-`GBA.WellFormed`'s two fields plus the fold characterizations above, exactly
-mirroring `run_states_mem`'s own use of `hwf.initial_mem`/`hwf.succ_mem`
-just below. -/
+/-! ### Well-formedness is preserved by degeneralize -/
 
 /-- Degeneralizing a well-formed GBA yields a well-formed BA. -/
 theorem degeneralize_wellFormed (gba : GBA α) (hk : gba.numAcceptSets > 0)
@@ -427,8 +403,9 @@ theorem degeneralize_wellFormed (gba : GBA α) (hk : gba.numAcceptSets > 0)
 
 /-! ### Main bridge -/
 
-/-- The computational BA and the proof-level degeneralized automaton accept
+/-- The computational BA and the abstract degeneralized automaton accept
 the same ω-words. -/
+
 -- Helper: all states in an abstract run are in gba.states
 private theorem run_states_mem (gba : GBA α) (hk : gba.numAcceptSets > 0)
     (hwf : gba.WellFormed) (σ' : Nat → Nat × Fin gba.numAcceptSets)
@@ -522,26 +499,14 @@ theorem degeneralize_bridge [LawfulBEq α] [LawfulHashable α]
 
 /-! ### The `numAcceptSets = 0` case
 
-`degeneralize_bridge` above (and everything it's built from —
-`degeneralize_wellFormed`, `degeneralize_states_contains`,
-`degeneralize_getSuccessors_mem`) requires `hk : gba.numAcceptSets > 0`.
-This is a genuine gap, not a cosmetic one: `gba.numAcceptSets = 0` for any
-formula with no Until-subformula (e.g. `prop a`, pure boolean formulas,
-`next`-only formulas) — a broad, common class, not an edge case. Checked
-every line of this file mentioning `numAcceptSets` before writing anything
-here: none of them cover `= 0`, contrary to an earlier (wrong, unverified)
-note in `ProofPlan.md`.
+`gba.numAcceptSets = 0` for any formula with no Until-subformula.
 
-Rather than routing through `OASpec.degeneralize` (which needs `hk` just to
-construct `Fin k`), this proves `BA.toSpec.accepts ξ ↔ GBA.toSpec.accepts ξ`
-*directly* for `numAcceptSets = 0` — turns out cleaner than going through
-the abstract degeneralization machinery, since with `k = 0`,
-`GBA.toSpec.isAcceptingRun` is vacuous (`Fin 0` is empty) and, computationally,
-`GBA.degeneralize` clamps to `k = 1` with *every* state accepting
-(`GBA.isAccepting`'s `none ⇒ true` branch) — so the BA side's acceptance
-condition is equally trivial (satisfied at `j = 0` by any state actually
-reachable in `gba.states`, which needs `gba.WellFormed`, exactly the same
-membership induction `run_states_mem` above already uses). -/
+This proves `BA.toSpec.accepts ξ ↔ GBA.toSpec.accepts ξ` *directly* for
+`numAcceptSets = 0`.
+
+With `k = 0`, `GBA.toSpec.isAcceptingRun` is vacuous (`Fin 0` is empty) and,
+computationally, `GBA.degeneralize` clamps to `k = 1` with *every* state accepting.
+Therefore, the BA side's acceptance condition is equally trivial. -/
 
 private theorem mem_computeBASuccs_zero (gba : GBA α) (h0 : gba.acceptSets.size = 0)
     (gbaState i : Nat) (s' : BAState) :
@@ -613,7 +578,7 @@ theorem degeneralize_states_contains_zero (gba : GBA α) (h0 : gba.acceptSets.si
      fun h => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr h)⟩]
 
 /-- Degeneralizing a well-formed GBA with no acceptance sets still yields a
-well-formed BA — the `numAcceptSets = 0` twin of `degeneralize_wellFormed`. -/
+well-formed BA. -/
 theorem degeneralize_wellFormed_zero (gba : GBA α) (h0 : gba.acceptSets.size = 0)
     (hwf : gba.WellFormed) : (gba.degeneralize).WellFormed where
   initial_mem s hs := by
@@ -626,7 +591,7 @@ theorem degeneralize_wellFormed_zero (gba : GBA α) (h0 : gba.acceptSets.size = 
       ⟨hwf.succ_mem s.gbaState s'.gbaState h1 h3, by omega⟩
 
 /-- `gba.isAccepting 0` is vacuously true everywhere when there are no
-acceptance sets (the computational mirror of `OASpec`'s "when `k = 0`, every
+acceptance sets (the mirror of `OASpec`'s "when `k = 0`, every
 run is vacuously accepting"). -/
 private theorem GBA.isAccepting_zero_of_empty (gba : GBA α) (h0 : gba.acceptSets.size = 0)
     (q : Nat) : gba.isAccepting 0 q = true := by
@@ -634,9 +599,7 @@ private theorem GBA.isAccepting_zero_of_empty (gba : GBA α) (h0 : gba.acceptSet
   rw [show gba.acceptSets[0]? = none from by
     rw [Array.getElem?_eq_none_iff]; omega]
 
-/-- The `numAcceptSets = 0` twin of `degeneralize_bridge`: proved directly
-(no `OASpec.degeneralize` involved), since both sides' acceptance conditions
-are trivial in this case. -/
+/-- The `numAcceptSets = 0` twin of `degeneralize_bridge`. -/
 theorem degeneralize_accepts_zero (gba : GBA α) (h0 : gba.acceptSets.size = 0)
     (hwf : gba.WellFormed) (ξ : OmegaWord α) :
     (gba.degeneralize).toSpec.accepts ξ ↔ gba.toSpec.accepts ξ := by
@@ -680,14 +643,10 @@ theorem degeneralize_accepts_zero (gba : GBA α) (h0 : gba.acceptSets.size = 0)
       exact (degeneralize_isAccepting gba _).mpr
         ⟨hmem (n + 0), GBA.isAccepting_zero_of_empty gba h0 _, rfl⟩
 
-/-! ### Unconditional wrappers, closing the `numAcceptSets` case split for good
+/-! ### Unconditional wrappers
 
 Combine the `hk`-based (`numAcceptSets > 0`) and `h0`-based (`= 0`) halves
-into single theorems that hold for *any* well-formed `GBA`, no side
-condition — what `degeneralize_wellFormed`/`degeneralize_bridge` "should
-have been" if `OASpec.degeneralize` didn't need `hk` just to construct
-`Fin k`. These are what the rest of the pipeline (item 4, `ProofPlan.md`)
-actually calls. -/
+into single theorems that hold for *any* well-formed `GBA`. -/
 
 /-- Degeneralizing a well-formed `GBA` always yields a well-formed `BA`,
 regardless of `numAcceptSets`. -/
@@ -698,7 +657,7 @@ theorem degeneralize_wellFormed_any (gba : GBA α) (hwf : gba.WellFormed) :
   else
     degeneralize_wellFormed gba (by simp only [GBA.numAcceptSets]; omega) hwf
 
-/-- The computational `BA` and the `GBA` it was degeneralized from accept the
+/-- The `BA` and the `GBA` it was degeneralized from accept the
 same ω-words, regardless of `numAcceptSets`. -/
 theorem degeneralize_accepts_any [LawfulBEq α] [LawfulHashable α]
     (gba : GBA α) (hwf : gba.WellFormed) (ξ : OmegaWord α) :
@@ -710,10 +669,7 @@ theorem degeneralize_accepts_any [LawfulBEq α] [LawfulHashable α]
     rw [degeneralize_bridge gba hk hwf ξ]
     exact degeneralize_correct gba.toSpec hk ξ
 
-/-- If `s` is a state of `gba.degeneralize`, then `s.gbaState` is a state of
-`gba` — the one direction of `degeneralize_states_contains`/`_zero` actually
-needed downstream (Track B item 3's deferred step 4, `ProofPlan.md`),
-unconditional over `numAcceptSets`. -/
+/-- If `s` is a state of `gba.degeneralize`, then `s.gbaState` is a state of `gba`. -/
 theorem degeneralize_states_gbaState_mem_any (gba : GBA α) (s : BAState)
     (hs : (gba.degeneralize).states.contains s = true) :
     gba.states.contains s.gbaState = true :=

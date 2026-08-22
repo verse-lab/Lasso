@@ -2,26 +2,16 @@
   End-to-end model checking: system × LTL formula φ → does the system
   satisfy φ?
 
-  See `ProductModelChecker.md` at the repo root for the full design
-  rationale and the CAVA source this is ported from.
-
-  Corresponds to CAVA's `abs_model_check` (`CAVA_Abstract.thy`) — the piece
-  `fullPipeline` (`Pipeline.lean`) deliberately left out (see that file's own
-  docstring: "minus the `inter_spec`/system-intersection stage"). Standard
-  automata-theoretic model checking: negate `φ`, build a `BA` for `¬φ`,
+  Standard automata-theoretic model checking: negate `φ`, build a `BA` for `¬φ`,
   product it against the caller's system (`Product.lean`), and check the
-  product for emptiness — `sys ⊨ φ` iff the product is empty.
+  product for emptiness.
 
-  Kept in its own file, separate from `Product.lean`, since `Product.lean`
-  is the reusable on-the-fly graph-construction layer while this file is the
-  specific "chain it all together for LTL model checking" wiring, matching
-  how `Pipeline.lean` is kept separate from `NestedDFS/NestedDFSRef.lean`/`BA.lean`.
+  `sys ⊨ φ` iff the product is empty.
 -/
 import LTLLib.LTLtoGBA.GraphComplete
 import LTLLib.DegeneralBridge
 import LTLLib.LTLtoGBA.ExpandTermination
 import LTLLib.Product
-import LTLLib.OutputVerifyBA
 
 namespace LTLLib
 
@@ -32,51 +22,14 @@ variable {α : Type u} {S : Type w} [FSet (NNF α) S]
 
 /-- Does `sys` (given by `sysInit`/`sysSucc`/`sysLabel`) satisfy `φ`?
 
-Corresponds to CAVA's
-```isabelle
-abs_model_check _ _ _ _ sys φ ≡ do {
-  gba ← ltl_to_gba_spec (Not_ltlc φ);
-  (Gprod, map_state) ← inter_spec sys gba;
-  find_ce_spec Gprod }
-```
-collapsed into one total function exactly as `fullPipeline` already does for
-the system-free case: `createGraph`'s `none` branch is defensive dead code
-(`createGraph_term` guarantees success for every formula), matching the
-"junk value on unreachable input" pattern `fullPipeline` also uses.
+The caller supplies `sysFR : FiniteReach sysInit sysSucc` (proof that their
+own system is finitely reachable). This is a bare existence certificate, no
+witness required (caller must not supply the full reachable set).
+Needed only to prove termination. Caller can feel free to use "sorry" if they
+do not care about termination.
 
-`φ` is the *surface* `Formula α` (`LTL/Syntax.lean`), not `NNF α` — matching
-`Not_ltlc φ` above, which wraps the *surface* formula in negation before any
-NNF conversion runs. `fullPipeline` (`Pipeline.lean`) takes `NNF α` because it
-never negates anything (it checks `φ`'s own satisfiability directly); this
-function does need a negation, so it takes the type CAVA negates at, and
-folds "negate, then normalize" into the single call `φ.toNNF false`
-(`LTL/Syntax.lean`'s `pos`-flag convention: `toNNF pos (.not ψ) = toNNF
-(!pos) ψ`, so `(Formula.not φ).toNNF true` and `φ.toNNF false` compute the
-exact same NNF). Getting this backwards — taking `NNF α` and calling
-`.neg` on an already-normalized formula — was the first draft of this
-function; it happened to still be logically sound but did the negation at
-the wrong layer relative to CAVA, redoing normalization work `toNNF false`
-already does in one pass.
-
-The caller supplies `sysFR : FiniteReach sysInit sysSucc` — proof that their
-own system is finitely reachable — exactly as CAVA's `inter_spec` takes
-`finite (sa.E⇧* `` sa.V0)` as a precondition rather than deriving it
-(`Product.lean`'s `Product.finiteReach` docstring). This is now a bare
-existence certificate (`FiniteReach` is a `Prop`, no `Std.HashSet` witness
-of any kind) — a caller with e.g. a bounded-counter system state supplies a
-cheap structural finiteness proof instead of enumerating/hashing every
-reachable state.
-
-The emptiness check itself is parameterized by `checker : EmptinessChecker`
-(`EmptinessCheck.lean` — the algorithm-agnostic contract; `nestedDFSChecker`,
-its one existing refinement, lives in `NestedDFS/NestedDFSTermination.lean` since
-that part *is* nested-DFS-specific), defaulting to `nestedDFSChecker`. This
-mirrors how CAVA's `abs_model_check`
-is defined against the abstract `find_ce_spec` rather than any concrete
-algorithm, with nested DFS proven as one *refinement* of that spec among
-possibly several: swapping in a future SCC-based checker means proving a
-new `EmptinessChecker` instance, not touching this function or any proof
-built on top of it.
+The emptiness check is parameterized by `checker : EmptinessChecker`
+(`EmptinessCheck.lean`, An algorithm-agnostic contract).
 
 `EmptinessResult.empty` means `sys ⊨ φ`; `EmptinessResult.nonEmpty stem loop`
 means the product found a run of `sys` violating `φ`, witnessed by
@@ -98,10 +51,6 @@ def modelCheck (φ : Formula α) (sysInit : List SysState)
   | none => .empty 0
 
 omit [LawfulHashable SysState] [LawfulBEq α] [LawfulHashable α] [DecidableEq α] in
-/-- Unfolding lemma: `modelCheck` at a known `createGraph` result. Same
-role as `Pipeline.lean`'s `fullPipeline_eq` — lets the two correctness
-theorems below `rw` past the `createGraph`/`degeneralize` scaffolding
-without re-deriving `createGraph_term`'s totality argument inline. -/
 theorem modelCheck_eq (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc)
@@ -124,17 +73,8 @@ theorem modelCheck_eq (φ : Formula α) (sysInit : List SysState)
   next hcg' => exact absurd (hcg'.symm.trans hcg) (by simp)
 
 omit [LawfulHashable SysState] in
-/-- Corresponds to CAVA's `abs_model_check_correct`'s `None` case
-(`sa.lang sys ⊆ language_ltlc φ`): if `modelCheck` finds no counterexample,
-every real run of the caller's system (through `Sys.toSpec` — see
-`README.md`'s "Terminal states, and a deliberate divergence from CAVA" for
-why that's `totalizeSucc sysSucc`, not raw `sysSucc`) satisfies `φ`, under
-its own real labeling. `checker` is left universally quantified over any
-`EmptinessChecker`, not fixed to `nestedDFSChecker` — matching
-`ProductModelChecker.md`'s "keeping the correctness proof algorithm-agnostic"
-design note, and CAVA's own `abs_model_check_correct` being proven once
-against the abstract `find_ce_spec` contract rather than any concrete
-algorithm. -/
+/-- If `modelCheck` finds no counterexample, then every real run of the
+caller's system satisfies `φ` (under its own real labeling). -/
 theorem modelCheck_empty_unsat (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc)
@@ -165,16 +105,8 @@ theorem modelCheck_empty_unsat (φ : Formula α) (sysInit : List SysState)
   exact checker.empty_no_cycle h hcyc
 
 omit [LawfulHashable SysState] in
-/-- Corresponds to CAVA's `abs_model_check_correct`'s `Some (Some r)` case
-(`graph_defs.is_run sys r ∧ sa_L sys ∘ r ∉ language_ltlc φ`): if `modelCheck`
-finds a counterexample, there's a genuine, concrete infinite run of the
-system violating `φ` under its own real labeling — not just an abstract
-existence claim, the witness is literally built from the returned
-`stem`/`loop` via `AcceptingCycle.toValidLassoProduct` (`OutputVerifyBA.lean`).
-No `canonicalLabel`/`BA.WellFormed` reasoning needed here at all, unlike
-`Pipeline.lean`'s `fullPipeline_nonEmpty_sat` — `Product.gsp_correct1`
-already surfaces the caller's *real* `sysLabel` compatibility directly, see
-`ModelCheckCorrectnessPlan.md` §3.4's callout. -/
+/-- If `modelCheck` finds a counterexample, there's a concrete witness infinite run
+of the system violating `φ` under its own real labeling -/
 theorem modelCheck_nonEmpty_sat (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc)

@@ -1,19 +1,17 @@
 /-
   Soundness of the LTL-to-GBA construction.
 
-  Core theorem (L4_8): For a valid node run σ labeled by ξ,
+  Core theorem: For a valid node run σ labeled by ξ,
   if ψ ∈ old(σ n) then NNF.satisfies (ξ.drop n) ψ.
 
-  Top-level (L4_9): If the expand result satisfies ExpandSpec and there is
+  Top-level: If the expand result satisfies ExpandSpec and there is
   a valid accepting run σ through the nodes labeled by ξ, then ξ satisfies φ.
-
-  Corresponds to Lemmas 4.8 and 4.9 in LTL_to_GBA.thy.
 -/
 
 import LTLLib.LTLtoGBA.Invariants
 import LTLLib.LTLtoGBA.Construction
 import LTLLib.LTL.Semantics
-import LTLLib.Acceptance
+import LTLLib.AbstractSpec.Acceptance
 import Mathlib.Order.Nat
 
 namespace LTLLib
@@ -60,7 +58,7 @@ private theorem release_step
 
 /-! ### Core soundness theorem -/
 
-/-- Core soundness lemma (L4_8): formulas in old are satisfied.
+/-- Core soundness lemma: formulas in old are satisfied.
     For any position n, every formula in old(σ n) is satisfied
     by the suffix ξ.drop n. -/
 theorem old_implies_satisfied
@@ -177,7 +175,7 @@ theorem old_implies_satisfied
 
 /-! ### Top-level soundness (L4_9) -/
 
-/-- Top-level soundness (L4_9): If the expand result satisfies ExpandSpec
+/-- Top-level soundness: If the expand result satisfies ExpandSpec
     and there exists a valid accepting run σ through the nodes labeled by ξ,
     then ξ satisfies φ. -/
 theorem soundness

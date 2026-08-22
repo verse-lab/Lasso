@@ -10,16 +10,12 @@
 
   Direction 2 (for property-holds certification / GBA completeness):
     ξ ⊨ φ → expandOASpec accepts ξ → GBA.toSpec accepts ξ
-
-  The key technical challenge is connecting HashMap-based build functions
-  (buildSuccessors, buildInitialStates, buildLabeling, buildAcceptSets)
-  to the abstract NodeData predicates.
 -/
 
-import LTLLib.LTLtoGBA.Soundness
 import LTLLib.LTLtoGBA.Completeness
+import LTLLib.LTLtoGBA.Correctness
 import LTLLib.LTLtoGBA.Construction
-import LTLLib.Acceptance
+import LTLLib.AbstractSpec.Acceptance
 
 namespace LTLLib
 
@@ -29,9 +25,7 @@ variable {α : Type u} {S : Type v}
 
 /-! ### Node lifting
 
-Lift a node name (Nat) to a NodeData by looking up in the ExpandState.
-The predicates existentially quantify over the HashMap entry, so they
-automatically become False when the node doesn't exist. -/
+Lift a node name (Nat) to a NodeData by looking up in the ExpandState. -/
 
 /-- Pairwise distinct keys imply pairwise distinct names (when name = key). -/
 private theorem pairwise_name_of_pairwise_key
@@ -83,10 +77,7 @@ private theorem HashSet_foldl_insert_contains'
     ac_rfl
 
 /-- `buildStates` contains `q` iff `q` is a key of `nodeMap` (i.e. `q` has a
-    stored node). Corresponds to `g_V = qs` in `create_gba_from_nodes`
-    (LTL_to_GBA.thy) — there this is a tautology since `g_V` literally *is*
-    `qs`; here `buildStates` is a genuine `HashMap`-fold construction, so it
-    needs an actual (if short) proof. -/
+    stored node). -/
 theorem buildStates_mem_iff
     {nodeMap : Std.HashMap Nat (GBANode α S)} (q : Nat) :
     (buildStates nodeMap).contains q = true ↔ nodeMap.contains q = true := by
@@ -600,16 +591,7 @@ theorem createGraph_nameConsistent (φ : NNF α)
           exact ih _ _ _ _ hr h1
   · nomatch hcg
 
-/-! ### Literal consistency from createGraph
-
-Needed for `buildLabeling_disjoint` below (in turn needed for
-`constructGBA_canonicalLabel_compat`, Track B item 3 — see
-`ProofPlan.md`). Ported from `ExpandSpec.literal_consistent`
-(`Invariants.lean`), which already establishes this at the abstract
-`NodeData`/`toNodes` level for `createGraph`'s output (`createGraph_spec`);
-here it's transported down to a concrete `GBANode` via `liftNode`, the same
-move `createGraph_nameConsistent`'s callers already make for other
-`ExpandSpec`-level facts. -/
+/-! ### Literal consistency from createGraph -/
 
 omit [Hashable α] [LawfulHashable α] in
 /-- A finished node's `old` set never contains both `prop a` and `nprop a`. -/
@@ -625,8 +607,7 @@ theorem createGraph_literal_consistent (φ : NNF α) {st : ExpandState α S}
   exact hspec.literal_consistent (st.liftNode q) hmem a hp' hn'
 
 /-- The positive/negative atom sets `buildLabeling` computes for a
-`createGraph` node are always disjoint — via `createGraph_literal_consistent`,
-the fact `canonicalLabel_compat` (`Acceptance.lean`) needs. -/
+`createGraph` node are always disjoint. -/
 theorem buildLabeling_disjoint (φ : NNF α) {st : ExpandState α S}
     (hcg : createGraph φ = some st) {q : Nat} {node : GBANode α S}
     (hnode : st.nodes[q]? = some node)
@@ -847,21 +828,7 @@ theorem constructGBA_correct
   rw [constructGBA_iff_expandOASpec hcg]
   exact gba_abstract_correct hcg h_complete ξ
 
-/-! ### Well-formedness of constructGBA
-
-Corresponds to `create_gba_from_nodes__invar : gba (create_gba_from_nodes φ qs)`
-(`LTL_to_GBA.thy`, `create_gba_from_nodes_precond` locale). CAVA gets this
-almost for free because `g_E`'s set-builder definition already has
-`q∈qs ∧ q'∈qs` baked in (`g_E = {(q,q'). q∈qs ∧ q'∈qs ∧ name q∈incoming q'}`),
-so `E ⊆ V×V` (the `graph` locale's `V0_ss`/`E_ss`, which is all
-`GBA.WellFormed` ports — the `gb_graph`/`gba` locales' extra `F_ss`/`L_ss`
-conjuncts aren't needed by anything downstream in this port) unfolds to a
-near-tautology there, closed by `unfold_locales; auto`. Our
-`buildSuccessors`/`buildInitialStates` don't filter against `states` inline,
-so this needs an actual (if short) proof, assembled here from
-`buildStates_mem_iff`/`buildSuccessors_mem_iff`/`buildInitialStates_correct`
-— each already proven for other reasons (the `constructGBA_iff_expandOASpec`
-bridge above), never previously assembled into a `WellFormed` value. -/
+/-! ### Well-formedness of constructGBA -/
 
 omit [LawfulBEq α] [LawfulHashable α] in
 /-- `constructGBA`'s output is well-formed: initial states and successors of
@@ -887,16 +854,10 @@ theorem constructGBA_wellFormed {φ : NNF α} {st : ExpandState α S}
     obtain ⟨node, hnode, _⟩ := (buildSuccessors_mem_iff hname q q').mp hq'
     exact hcontains hnode
 
-/-! ### Canonical labeling for constructGBA
-
-Track B item 3 (`ProofPlan.md`) — assembled from `buildLabeling_some` +
-`buildLabeling_disjoint` (above) + `canonicalLabel_compat`
-(`Acceptance.lean`), exactly as planned there. -/
+/-! ### Canonical labeling for constructGBA -/
 
 /-- `canonicalLabel`, applied to `constructGBA`'s own `labeling` map, always
-satisfies `labelCompat` at any state with a stored node — the concrete
-per-state valuation this project uses in place of CAVA's system-level
-`sa_L` (see `Acceptance.lean`'s `canonicalLabel` docstring). -/
+satisfies `labelCompat` at any state with a stored node. -/
 theorem constructGBA_canonicalLabel_compat (φ : NNF α) {st : ExpandState α S}
     (hcg : createGraph φ = some st) {q : Nat} {node : GBANode α S}
     (hnode : st.nodes[q]? = some node) :

@@ -12,16 +12,6 @@
   These expand into standard LTL formulas and require no special handling
   in the GBA construction. Note that fairness-encoded LTL formulas can
   produce larger automata.
-
-  Operate on the surface `Formula α` (`LTL/Syntax.lean`), not the internal
-  `NNF α` IR: `modelCheck` (`ModelCheck.lean`) is the client-facing entry
-  point and takes `Formula α`, so a client builds their property, conjoins
-  it with fairness assumptions via `underFairness`, and passes the result
-  straight to `modelCheck` without ever touching `NNF`.
-
-  No direct Isabelle correspondence — the Isabelle LTL_to_GBA formalization
-  does not include fairness combinators (fairness is handled at a different
-  level in the CAVA framework).
 -/
 
 import LTLLib.LTL.Syntax

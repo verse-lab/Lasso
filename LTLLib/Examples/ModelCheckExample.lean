@@ -1,24 +1,22 @@
 /-
-  A minimal end-to-end example of `modelCheck` (`ModelCheck.lean`): given an
-  external system as a plain Kripke structure — initial states, a successor
-  function, and a labeling function assigning atomic propositions to
-  states — check it against an LTL formula, with no manual BA/product
-  construction required from the caller.
+  Minimal end-to-end example of `modelCheck`: given an
+  external system as a plain Kripke structure:
+    - initial states,
+    - a successor function
+    - labeling function assigning atomic propositions to states
+
+  Check it against an LTL formula.
 
   System: a three-state traffic light, cycling `red → green → yellow →
   red → …` forever, starting at `red`.
 
-  Formula: `□◇green` ("the light turns green infinitely often") — a
-  liveness property that holds, since the light visits `green` on every
-  cycle of the loop.
+  Formula: `□◇green` ("the light turns green infinitely often"): Holds
 -/
-import LTLLib
+import LTLLib.Examples.MCPrint
 import Mathlib.Tactic.DeriveFintype
 
 namespace LTLLib.Examples
 
-/-- The three states of a traffic light, forming a fixed cycle
-`red → green → yellow → red → …`. -/
 inductive Light where
   | red | yellow | green
 deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
@@ -36,40 +34,35 @@ instance : LawfulBEq Light where
 instance : LawfulHashable Light where
   hash_eq {a b} h := by have := eq_of_beq h; subst this; rfl
 
-/-- Atomic propositions labeling the traffic light's states. -/
-abbrev Prop' := String
+instance : ToString Light where
+  toString
+    | .red => "red"
+    | .yellow => "yellow"
+    | .green => "green"
 
-/-- The light cycles `red → green → yellow → red → …` with no branching. -/
+
+
+abbrev Prop' := String -- Atomic Propositions type
+
 def lightSucc : Light → Array Light
   | .red => #[.green]
   | .green => #[.yellow]
   | .yellow => #[.red]
 
-/-- Only `green` is ever asserted; `red`/`yellow` states hold no
-propositions in this example. -/
 def lightLabel : Light → Std.HashSet Prop'
   | .red => ∅
+  -- Only green is ever asserted
   | .green => {"green"}
   | .yellow => ∅
 
-/-- The system starts at `red`. -/
 def lightInit : List Light := [.red]
 
-/-- `Light` is a `Fintype`, so *any* `Set Light` is finite for free — no
-manual enumeration/closure proof needed, unlike the old `Std.HashSet`-witness
-design. -/
 def lightFR : FiniteReach lightInit lightSucc := Set.toFinite _
+
+
 
 /-- `□◇green`: the light turns green infinitely often. -/
 def ψ : Formula Prop' := .always (.eventually (.atom "green"))
-
-/-- `Std.HashSet (NNF Prop')`, the finite-set representation `modelCheck`
-needs for its internal tableau construction (matches `BuildPrint.S`). -/
-abbrev S := Std.HashSet (NNF Prop')
-
-#eval
-  match modelCheck (S := S) ψ lightInit lightSucc lightLabel lightFR with
-  | .empty n => s!"sys ⊨ ψ (no counterexample; explored {n} product states)"
-  | .nonEmpty stem loop => s!"sys ⊭ ψ; counterexample stem={reprStr stem} loop={reprStr loop}"
+#eval report lightLabel (modelCheck (S := S) ψ lightInit lightSucc lightLabel lightFR)
 
 end LTLLib.Examples

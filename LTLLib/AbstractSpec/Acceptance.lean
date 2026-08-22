@@ -1,5 +1,5 @@
 /-
-  Proof-level automata acceptance definitions.
+  Abstract automata acceptance definitions.
 
   Defines `OASpec`, a unified abstract specification for both Generalized
   Büchi Automata (GBA, with `k` acceptance sets) and standard Büchi Automata
@@ -9,14 +9,11 @@
   Key definitions:
   - `OASpec`: Proof-level automaton with `k` acceptance sets (parameter)
   - `OASpec.degeneralize`: Abstract degeneralization construction (k → 1)
-  - `GBA.toSpec`: Bridge from computational `GBA` to `OASpec`
 
   Key theorems:
   - `degeneralize_correct`: Degeneralized BA accepts the same ω-words as the GBA
 -/
 import Lentil
-import LTLLib.GBA
-import LTLLib.BA
 import LTLLib.LTL.Semantics
 import Mathlib.Order.Nat
 
@@ -332,44 +329,11 @@ theorem degeneralize_correct (ξ : OmegaWord α) :
 
 end DegeneralizationCorrectness
 
-/-! ## Bridge from computational GBA to proof-level spec -/
-
-/-- Convert a computational `GBA` to a proof-level `OASpec`. -/
-def GBA.toSpec [BEq α] [Hashable α] (gba : GBA α) : OASpec Nat α gba.numAcceptSets where
-  trans q q' := q' ∈ gba.getSuccessors q
-  initial q := gba.isInitial q
-  labelCompat q v :=
-    match gba.labeling[q]? with
-    | some (pos, neg) =>
-      (∀ a, pos.contains a → v a) ∧ (∀ a, neg.contains a → ¬ v a)
-    | none => True
-  acceptSet i q := gba.isAccepting i.val q
-
-/-- Convert a computational `BA` to a proof-level `OASpec` with 1 acceptance set. -/
-def BA.toSpec [BEq α] [Hashable α] (ba : BA α) : OASpec BAState α 1 where
-  trans s s' := s' ∈ ba.getSuccessors s
-  initial s := ba.initialStates.contains s
-  labelCompat s v :=
-    match ba.labeling[s.gbaState]? with
-    | some (pos, neg) =>
-      (∀ a, pos.contains a → v a) ∧ (∀ a, neg.contains a → ¬ v a)
-    | none => True
-  acceptSet _ s := ba.isAccepting s
-
 /-! ## Canonical labeling
 
-`labelCompat` above is a *relation* — a state may be compatible with many
+`labelCompat` is a *relation*. A state may be compatible with many
 valuations (it only constrains atoms actually mentioned in `pos`/`neg`).
-CAVA's own automaton-level labeling (`igba_L`/`gba_L`, `Automata.thy`) is
-exactly as relational; CAVA never needs to pick a canonical word from it
-alone, because it always eventually composes with a *system*'s `sa_L`, a
-genuine deterministic function on Kripke-structure states
-(`CAVA_Abstract.thy`'s `abs_model_check_correct`: the returned counterexample
-is `sa_L sys ∘ r`, a run composed with an already-total labeling — see
-`ProofPlan.md`, Track B item 3). This project has no system layer, so
-there is no such function to inherit a word from; `canonicalLabel` builds
-one directly from the automaton's own `labeling` map, playing exactly the
-role CAVA's `sa_L` plays. -/
+-/
 
 /-- The canonical valuation at state `q`: true exactly on `q`'s positive
 atoms (per `labeling`), `False` everywhere if `q` isn't in `labeling`'s

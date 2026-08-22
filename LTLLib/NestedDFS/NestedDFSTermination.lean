@@ -1,59 +1,20 @@
 /-
-  Phase 2 (partial): fuel-sufficiency for the nested DFS emptiness check.
+  Executable nested DFS: well-founded definitions and the fuel bridge.
 
-  `innerDFS`/`outerDFSLoop` (`NestedDFS/NestedDFSRef.lean`) are marked `partial`. CAVA proves
-  termination of the analogous generic DFS framework (`Param_DFS.thy`) from a
-  single locale assumption: the set of states reachable from the roots is
-  finite (`fb_graph`; finite branching is free there too, since `E x` is
-  required finite per-state). The well-founded measure used is
+  `innerDFSCore`/`outerDFSLoopWF`/`nestedDFSWF` are the actual executable
+  (structurally-terminating, `Set.ncard`-measure-based) versions of the
+  algorithm. Each is bridged to a fuel-indexed twin (proved correct in
+  `NestedDFSCorrectness.lean` by induction on fuel) transferring that
+  correctness to the executable version.
 
-    `param_dfs_variant ≡ inv_image
-       (finite_psupset reachable <*lex*> finite_psubset <*lex*> less_than)
-       (λs. (dom (discovered s), pending s, length (stack s)))`
+  Also packages `nestedDFSWF` as an `EmptinessChecker` instance, and proves
+  the reverse direction: an accepting run implies an `AcceptingCycle` exists
+  (the "pumping" lemma, `exists_acceptingCycle_of_run`).
 
-  i.e. a *lexicographic* order: (1) the discovered-state set, growing inside
-  the fixed finite `reachable` univ: (2) the pending-successor multiset at
-  the top stack frame, shrinking; (3) stack length, as a final tie-break.
-
-  We port the finiteness hypothesis as `FiniteReach` below (a finite `univ`
-  closed under `succs`, containing `initialStates` — this is exactly what
-  `constructGBA`'s or a degeneralized `BA`'s state set gives for free, since
-  those are `Std.HashMap`/`Std.HashSet`-backed by construction).
-
-  This file proves the *inner* DFS half of fuel-sufficiency. A key structural
-  fact makes this half easy, and is worth recording: `innerDFS_fuel`'s fuel
-  argument is *not* a depleting total-work counter. Every sibling call inside
-  `innerDFS_fuel_fold` (one per successor of `current`) receives the *same*
-  fuel value, not a further-decremented share of it — Lean's `fuel : Nat`
-  argument is a plain value, not a resource that is threaded/returned, so
-  each sibling call — and each *continuation* after a sub-call resolves —
-  gets to reuse the full numeral its caller had. Consequently fuel here plays
-  the role of a *maximum recursion depth* cap, reusable across branches, not
-  a total-step budget: `univ.size + 1` uniformly suffices for any
-  `innerDFS_fuel` call, regardless of how many successors `current` (or any
-  state reachable from it) has.
-
-  This reuse phenomenon does *not* carry over to `outerDFSLoop_fuel`: its own
-  recursion is a single non-branching chain (no fold over siblings), so fuel
-  there really is consumed once per actual step of the whole outer traversal.
-  A fuel-sufficiency proof was attempted here and abandoned: combining the
-  "launch inner DFS" and "continue the outer traversal" sub-obligations via
-  `max` of two independently-obtained existential thresholds hit a genuine
-  circularity (the second threshold depends on the post-inner-DFS state,
-  which isn't known until a fuel value — the very thing being chosen — is
-  fixed). Re-checking CAVA at that point showed it doesn't hit this at all:
-  Isabelle's `RECT`/WF-recursion package uses `wf param_dfs_variant` *directly*
-  to justify the recursive definition, with no separate fuel parameter ever
-  threaded through the code, so there is nothing to "combine" across nested
-  calls in the first place. The fuel-based encoding (right tool for Phase
-  5b/5c's *correctness*-modulo-termination proofs) is the wrong tool for
-  termination itself — using it forces reconstructing, by hand, exactly the
-  bookkeeping `termination_by`/`decreasing_by` already provides natively.
-  Current plan (not yet done): convert `innerDFS`/`outerDFSLoop`
-  (`NestedDFS/NestedDFSRef.lean`) directly to well-founded recursion via `termination_by`,
-  using the same `(A, B) := (univ.size - visited.size, pendingSum + stack
-  length)` measure, matching `param_dfs_variant` structurally — see
-  `NestedDFSPlan.md` for the up-to-date plan.
+  References:
+  - Baier & Katoen: "Principles of Model Checking" — Büchi automaton
+    non-emptiness via ultimately periodic (lasso-shaped) accepting runs,
+    the fact `exists_acceptingCycle_of_run` establishes.
 -/
 import LTLLib.NestedDFS.NestedDFSCorrectness
 import LTLLib.BA
@@ -65,9 +26,7 @@ section HashSetCard
 
 variable {α : Type u} [BEq α] [Hashable α] [EquivBEq α] [LawfulHashable α]
 
-/-- If every element of `s` is in `t`, `s` is no bigger than `t`. Std's
-`HashSet` doesn't expose a `Subset`-implies-`size≤` lemma directly, so we
-derive it from the `inter`/`diff` size identities it does provide. -/
+/-- If every element of `s` is in `t`, `s` is no bigger than `t`. -/
 theorem HashSet.size_le_of_subset {s t : Std.HashSet α}
     (h : ∀ x, s.contains x → t.contains x) : s.size ≤ t.size := by
   have heq : (t ∩ s).size = s.size := Std.HashSet.size_inter_eq_size_right h
@@ -101,49 +60,25 @@ theorem HashSet.size_lt_of_ssubset {s t : Std.HashSet α}
 
 end HashSetCard
 
-/-! ## Finite-reachability hypothesis
-
-`Reachable`/`FiniteReach` themselves now live in `EmptinessCheck.lean`
-alongside `EmptinessResult`/`AcceptingCycle`/`EmptinessChecker` — bare
-`Prop`s, no `Std.HashSet` witness, matching CAVA's `fb_graph`/`ASSERT`-once
-discipline exactly (see `FiniteReachRedesign.md` §8). Imported transitively
-via `NestedDFS/NestedDFSCorrectness.lean`/`NestedDFS/NestedDFSRef.lean`.
-
-`RFrame` below is the executable-path replacement for the old bare
-`(State × List State)` stack-frame pair: same two pieces of *data*
-(`state`/`remaining`, compiled identically — `remaining`-tracking is the
-algorithm's own pre-existing bookkeeping, CAVA's `pending s`, untouched by
-this redesign), plus two `Prop`-valued fields (`hreach`/`hsuffix`) that Lean
-erases entirely at compile time (proof irrelevance — the same mechanism
-that makes `Subtype`'s `.property` never exist at runtime). Their only role
-is letting `decreasing_by` obtain "this successor is reachable" *for free*,
-by construction (`Reachable.step`), instead of via a runtime `fr.univ.
-contains` check. Validated in isolation first via a standalone toy spike
-(`LTLLib/Spike/FiniteReachSpike.lean`, see `FiniteReachRedesign.md` §8.6) —
-in particular, `rw [<fn>.eq_N]; grind` (not bare `rw [.eq_def]`/`simp`) is
-the reliable idiom for one-step unfolding lemmas about `RFrame`-based
-well-founded recursive defs throughout this file. -/
+/-! ## Finite-reachability hypothesis -/
 
 section RFrameDef
 
 variable {State : Type u}
 
-/-- One frame of an explicit-stack DFS worklist, now carrying its own
+/-- One frame of an explicit-stack DFS worklist, carrying its own
 reachability proof (`hreach`) and a proof that its pending-successor list is
-a suffix of the state's actual successor list (`hsuffix`) — together these
-let a fresh push derive the new frame's `Reachable` proof for free
-(`Reachable.step frame.hreach hmem`), with no runtime `FiniteReach` lookup of
-any kind. Shared between `innerDFSCore` and `outerDFSLoopWF`. -/
+a suffix of the state's actual successor list (`hsuffix`).
+Together these let a fresh push derive the new frame's `Reachable` proof for free
+(`Reachable.step frame.hreach hmem`).
+Shared between `innerDFSCore` and `outerDFSLoopWF`. -/
 structure RFrame (initialStates : List State) (succs : State → Array State) where
   state : State
   hreach : Reachable initialStates succs state
   remaining : List State
   hsuffix : remaining <:+ (succs state).toList
 
-/-- Consume the head of a frame's `remaining` list, updating `hsuffix`
-accordingly. Kept as its own `def` (rather than an inline anonymous-
-constructor update at each call site) so equation lemmas about callers stay
-simple. -/
+/-- Consume the head of a frame's `remaining` list, updating `hsuffix` accordingly. -/
 def RFrame.consumeOne {initialStates : List State} {succs : State → Array State}
     (frame : RFrame initialStates succs) (succ : State) (tl : List State)
     (heq : frame.remaining = succ :: tl) : RFrame initialStates succs where
@@ -152,10 +87,7 @@ def RFrame.consumeOne {initialStates : List State} {succs : State → Array Stat
   remaining := tl
   hsuffix := (List.suffix_cons succ tl).trans (heq ▸ frame.hsuffix)
 
-/-- Push a fresh successor as a new active frame on top — no runtime
-`FiniteReach`/`.contains` check needed, `succ`'s reachability comes directly
-from `frame`'s own (already-established) reachability plus the syntactic
-fact `succ ∈ succs frame.state`. -/
+/-- Push a fresh successor as a new active frame on top. -/
 def RFrame.push {initialStates : List State} {succs : State → Array State}
     (frame : RFrame initialStates succs) (succ : State) (hmem : succ ∈ succs frame.state) :
     RFrame initialStates succs where
@@ -164,8 +96,7 @@ def RFrame.push {initialStates : List State} {succs : State → Array State}
   remaining := (succs succ).toList
   hsuffix := List.suffix_refl _
 
-/-- Total pending-successor count across every stack frame — the Lean
-analogue of CAVA's `pending s` (`Param_DFS.thy`'s `param_dfs_variant`). -/
+/-- Total pending-successor count across every stack frame. -/
 def pendingSum {initialStates : List State} {succs : State → Array State}
     (stack : List (RFrame initialStates succs)) : Nat :=
   (stack.map (fun f => f.remaining.length)).sum
@@ -182,15 +113,11 @@ end RFrameDef
 
 /-! ## `Set.ncard`-based termination-measure helpers
 
-`Set.ncard`-based analogues of `HashSet.sdiff_insert_lt`/
-`HashSet.size_le_of_subset` above, for the new `{s | Reachable ...} \ {x |
-iv.contains x}`-shaped measure. Kept as a `Nat × Nat` tuple in every
-`termination_by` clause below (never a bare `Nat`), so elaboration stays on
-the erased `WellFounded.fix` path regardless of `Set.ncard` being
-noncomputable (confirmed via direct read of
-`Lean/Elab/PreDefinition/WF/Fix.lean`'s `isNatLtWF`, and empirically: this
-file's own measures already compile and run today with an analogous tuple
-shape). -/
+`Set.ncard`-based analogues of `HashSet.sdiff_insert_lt`/ `HashSet.size_le_of_subset`
+above, for the `{s | Reachable ...} \ {x | iv.contains x}` measure.
+Kept as a `Nat × Nat` tuple in every `termination_by` clause below
+(never a bare `Nat`), so elaboration stays on the erased `WellFounded.fix` path
+regardless of `Set.ncard` being noncomputable. -/
 
 section ReachableSetCard
 
@@ -238,85 +165,12 @@ theorem Reachable.ncard_diff_le_of_subset (fr : FiniteReach initialStates succs)
 
 end ReachableSetCard
 
-/-! ## Well-founded `innerDFS` (Phase 2, `innerDFS` half)
-
-**Rebuilt 2026-07-25, later still, to align with CAVA's actual architecture.**
-The first attempt (kept in git history) converted `innerDFS` directly,
-preserving its *original* shape: a fold over `current`'s successors, with a
-genuine nested nested Lean recursive call to "descend into a fresh
-successor's subtree" before continuing the fold on the remaining siblings.
-That forced the "continue the fold" call's termination proof to depend on a
-fact about the *previous* (nested) call's actual return value — unrecoverable
-without bundling that fact into the return type as a `Subtype`, which in turn
-made the function impossible to unfold/rewrite externally later (`.eq_def`
-on a `Subtype`-returning well-founded definition whose bundled property is
-itself stated in terms of the return value's own projections hits an
-unavoidable "motive is not type correct" error — confirmed exhaustively
-across every rewrite-family tactic).
-
-Re-reading CAVA's actual sources (`Param_DFS.thy`, `DFS_Find_Path.thy`)
-resolved this: CAVA's red (inner) DFS is *not* a separate hand-written
-recursive function at all. `Nested_DFS.thy` defines `red_dfs` as literally
-`find_path1_restr_spec`, an abstract `SPEC`; its concrete implementation
-(`find_path1_restr`, `DFS_Find_Path.thy`) is built from the refinement
-framework's generic `FOREACHc` combinator — an explicit-worklist iteration
-whose *termination* is a single generic fact ("the iteration set shrinks by
-one element per step"), entirely independent of whatever the loop body
-computes. Concretely: **both CAVA's blue and red DFS reduce to the same
-generic `param_DFS`/`it_dfs` engine** (`Param_DFS.thy`) — one flat
-explicit-stack `WHILE` loop over a single state record, never nested
-recursive-descent-with-fold. There is no CAVA analogue of "prove a fact
-about a sibling call's return value to justify continuing a fold", because
-there are no nested calls in the first place — only single-step transitions
-on an explicit stack, exactly like `outerDFSLoopWF` below (which *was*
-already built this way from `NestedDFS/NestedDFSRef.lean`'s original design, which is
-*why* its own conversion needed no `Subtype` at all).
-
-`innerDFSCore` is rebuilt here the same way: an explicit stack of
-`(state, remaining successors)` frames plus a `pathStack` (mirroring
-`outerDFSLoopWF`'s own `pathStack` bookkeeping, used to reconstruct the
-witness path on success), structurally identical in shape to
-`outerDFSLoopWF` and reusing the exact same measure/`decreasing_by` idioms
-(already proven to work there, 0 sorry). No `Subtype`-bundled return type is
-needed any more: every recursive call's termination is justified purely from
-*local, syntactic* facts about that call's own arguments (either `iv`
-strictly shrinks `fr.univ \ iv`, or `pendingSum stack + stack.length`
-strictly decreases), never from a fact about a previous call's result. -/
+/-! ## Well-founded `innerDFS` -/
 
 section InnerDFSWellFounded
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
-/-- The well-founded engine, an **explicit-stack single flat loop**,
-structurally identical to `outerDFSLoopWF` below: `stack` holds `RFrame`s
-(deepest/active frame at the head), `pathStack` mirrors `outerDFSLoopWF`'s
-own bookkeeping (`++ [x]` on push, `.dropLast` on pop) and — since it always
-holds exactly the states of the frames currently on `stack`, from outermost
-to innermost — doubles as the witness path the moment a successor equal to
-`seed` is found.
-
-`succs`/`fr`/`seed` stay explicit parameters on the def itself (not
-`variable`-bound) for unambiguous argument position at every recursive call
-site. `[LawfulBEq State] [LawfulHashable State]` are listed explicitly
-(not left to section-variable auto-inclusion) because `decreasing_by`'s
-proof needs them and `def`-level auto-inclusion only looks at the
-signature — confirmed by the toy spike (`FiniteReachRedesign.md` §8.6).
-
-**Now genuinely zero proof-carrying *hypothesis arguments*** — the earlier
-"no proof-carrying arguments" design (kept for history: threading
-`hstack_states : ∀ p ∈ stack, …`/`hstack_remaining` as a *whole-stack*
-quantified hypothesis proved fragile to `rw [innerDFSCore.eq_def]`, which
-"intermittently failed to fire depending on how those proof terms were
-phrased at the call site") is superseded: `RFrame` bundles the reachability
-proof *per stack element* instead of as a separate whole-stack hypothesis —
-Lean 4's definitional proof irrelevance for `Prop` means no `rw`/`.induct`
-call ever needs to inspect *which* proof populates `RFrame.hreach`, and the
-toy spike confirmed `rw [<fn>.eq_2]; grind` (not bare `rw [.eq_def]`/`simp`)
-reliably resolves the resulting one-step unfolding goals. The old runtime
-`if fr.univ.contains succ then … else <fallback: treat as blocked>` check is
-gone entirely (not merely made unreachable) — `succ`'s reachability now
-comes for free from `Reachable.step`, so there is nothing left to check and
-no fallback branch to keep dead. -/
 def innerDFSCore [LawfulBEq State] [LawfulHashable State] {initialStates : List State}
     (succs : State → Array State) (fr : FiniteReach initialStates succs)
     (seed : State) (cyan : Std.HashSet State)
@@ -358,18 +212,6 @@ decreasing_by
     exact Prod.Lex.left _ _ (Reachable.ncard_diff_insert_lt fr
       (Reachable.step frame.hreach hmemsuccs) hsucc_niv)
 
-/-- Thin, non-recursive entry point matching the *public* shape of the
-original `partial def innerDFS` (`NestedDFS/NestedDFSRef.lean`): the "already
-finished"/"already visited" checks for the top-level `current` happen here,
-once; `innerDFSCore` handles everything below that, assuming freshness, seeded
-with the singleton stack `[(current, succs current)]` and `pathStack :=
-[current]` — mirroring `nestedDFS`'s own top-level `pathStack := [init]`
-initialization for the outer loop. Trivially total (a single non-recursive
-call to the already-total `innerDFSCore`), so no termination proof of its own
-is needed. Gains one new argument relative to the old design,
-`hcurrent_reach`, seeding the initial `RFrame`'s own reachability proof —
-purely mechanical, no equation-lemma risk since this function is
-non-recursive. -/
 def innerDFSWF [LawfulHashable State] (succs : State → Array State)
     {initialStates : List State} (fr : FiniteReach initialStates succs) (seed : State)
     (cyan : List State) (current : State) (hcurrent_reach : Reachable initialStates succs current)
@@ -383,10 +225,7 @@ def innerDFSWF [LawfulHashable State] (succs : State → Array State)
           hsuffix := List.suffix_refl _ }]
       [current] (iv.insert current) st
 
-/-- `innerDFSWF`'s "already blocked" case, as a reusable equation — needed by
-the fuel bridge (`InnerFuelBridge`, below `OuterDFSWellFounded`) to align
-`innerDFS_fuel`'s uniform "always call the top-level function" style with
-`innerDFSCore`'s own explicit `hblocked` branch. -/
+
 theorem innerDFSWF_blocked [LawfulHashable State] (succs : State → Array State)
     {initialStates : List State} (fr : FiniteReach initialStates succs) (seed : State)
     (cyan : List State) (current : State) (hcurrent_reach : Reachable initialStates succs current)
@@ -400,7 +239,6 @@ theorem innerDFSWF_blocked [LawfulHashable State] (succs : State → Array State
     · simp [h1]
     · simp [h1, h]
 
-/-- `innerDFSWF`'s "fresh" case, as a reusable equation. -/
 theorem innerDFSWF_fresh [LawfulHashable State] (succs : State → Array State)
     {initialStates : List State} (fr : FiniteReach initialStates succs) (seed : State)
     (cyan : List State) (current : State) (hcurrent_reach : Reachable initialStates succs current)
@@ -415,12 +253,7 @@ theorem innerDFSWF_fresh [LawfulHashable State] (succs : State → Array State)
   unfold innerDFSWF
   simp [hnotfin, hnotvisited]
 
-/-- `innerDFSCore` never touches `outerVisited` (only `innerFinished`) —
-needed by `outerDFSLoop`'s well-founded conversion below, whose measure is
-defined purely from `outerVisited`/the outer stack. Proved via the
-`rw [innerDFSCore.eq_N]; grind` idiom the toy spike validated, not bare
-`induction … using .induct` + `unfold`/`simp_all` (which the spike found
-insufficient on the deepest case). -/
+/-- `innerDFSCore` never touches `outerVisited` (only `innerFinished`). -/
 theorem innerDFSCore_outerVisited_pres [LawfulHashable State] {initialStates : List State}
     (succs : State → Array State) (fr : FiniteReach initialStates succs)
     (seed : State) (cyan : Std.HashSet State)
@@ -434,10 +267,6 @@ theorem innerDFSCore_outerVisited_pres [LawfulHashable State] {initialStates : L
     | rw [innerDFSCore.eq_1]
     | (rw [innerDFSCore.eq_2]; grind)
 
-/-- Thin wrapper around `innerDFSCore_outerVisited_pres` for `innerDFSWF`
-itself — needed by `outerDFSLoopWF`'s own `decreasing_by`, which calls
-`innerDFSWF` (not `innerDFSCore` directly; see that function's docstring for
-why) at its accepting-leaf branch. -/
 theorem innerDFSWF_outerVisited_pres [LawfulHashable State] (succs : State → Array State)
     {initialStates : List State} (fr : FiniteReach initialStates succs) (seed : State)
     (cyan : List State) (current : State) (hcurrent_reach : Reachable initialStates succs current)
@@ -457,19 +286,16 @@ theorem innerDFSWF_outerVisited_pres [LawfulHashable State] (succs : State → A
 
 end InnerDFSWellFounded
 
-/-! ## Fuel ↔ well-founded bridge, inner half (Phase 2, 2026-07-25)
+/-! ## Fuel ↔ well-founded bridge, inner half
 
-Mirrors CAVA's own `it_dfsT_eq_it_dfs`/`WHILET_eq_WHILE_tproof`: rather than
-re-proving `NestedDFS/NestedDFSCorrectness.lean`'s ~2000 sorry-free lines of `innerDFS_fuel`
-correctness against the new well-founded `innerDFSCore`/`innerDFSWF`, prove a
-single equation showing the two agree (for sufficient fuel), then transport
-every existing fuel-based theorem across it for free.
+Rather than re-proving `NestedDFS/NestedDFSCorrectness.lean`'s ~2000 lines of
+`innerDFS_fuel` correctness against the well-founded `innerDFSCore`/`innerDFSWF`,
+prove a single equation showing the two agree (for sufficient fuel), then transport
+every existing fuel-based theorem across it.
 
 Strengthens the old `innerDFS_fuel_sufficient`/`innerDFS_fuel_fold_sufficient_aux`
 (same double-induction template, same fuel/fold shape) to conclude the
-fuel-indexed and well-founded results are *equal*, not just that the
-fuel-indexed one "succeeds" — the old conclusion is a trivial corollary of
-the new one, so nothing is lost by only keeping this version. -/
+fuel-indexed and well-founded results are *equal*. -/
 
 section InnerFuelBridge
 
@@ -477,42 +303,13 @@ variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State] [Lawful
   {initialStates : List State} (succs : State → Array State) (fr : FiniteReach initialStates succs)
   (seed : State) (cyan : List State)
 
-/-- Sufficient-fuel measure — same role as `innerDFSCore`'s own well-founded
-measure, now `Set.ncard`-based (`{s | Reachable ...} \ {x | iv.contains x}`)
-rather than `Std.HashSet.size`-subtraction, since `FiniteReach` no longer
-carries a `Std.HashSet` witness. Kept as a *named* `Nat`-valued def (not
-inlined) specifically so the ~30 call sites throughout this section that
-reference `innerFuelMeasure succs fr iv` as an opaque arithmetic quantity
-need no further changes beyond this one definition swapping what it's built
-from. -/
+/-- Sufficient-fuel measure. -/
 private noncomputable def innerFuelMeasure (succs : State → Array State)
     (fr : FiniteReach initialStates succs)
     (iv : Std.HashSet State) : Nat :=
   ({s | Reachable initialStates succs s} \ {x | iv.contains x}).ncard
 
-/-- Chains `innerDFS_fuel_fold` calls across an explicit stack of pending
-frames — the fuel-side companion to `innerDFSCore`'s own `stack` argument.
-`innerDFS_fuel`/`innerDFS_fuel_fold` encode "descend into a fresh successor"
-via a genuine *nested Lean call* (their own call stack *is* the frame
-stack); this makes that implicit stack explicit, so it can be related to
-`innerDFSCore`'s. Plain structural recursion on `stack` — no termination
-proof needed at all (unlike `innerDFSCore`, this never needs to *push* a
-longer stack; "descending" is still handled entirely by the nested
-`innerDFS_fuel`/`innerDFS_fuel_fold` call inside `hd`'s own fold, exactly as
-before — only "this frame finished, move to the next one" is new here).
-
-`pathStack` bookkeeping mirrors `innerDFSCore`'s exactly, and is needed for
-the same reason: `innerDFS_fuel_fold current remaining iv st`'s own "found"
-result is always of the form `some (current :: suffix)` (built by its own
-pre-existing `current :: cyclePath` wrapping around nested calls) —
-*relative* to `current`'s own frame, not the full witness path. Replacing
-the leading `current` with the full `pathStack` (which — by the same
-invariant `innerDFSCore` maintains — already ends in `current`) recovers
-the absolute path: `pathStack ++ suffix`. Verified algebraically for both
-the "descend into a fresh successor" and "backtrack to the parent frame"
-transitions before implementing (see `ProofPlan.md`'s Phase 2 write-up) —
-this is *not* simply "propagate the cycle unchanged", which is wrong by
-exactly one `current ::`/`succ ::` layer at every frame boundary. -/
+/-- Chains `innerDFS_fuel_fold` calls across an explicit stack of pending frames. -/
 def innerDFS_fuel_chain [BEq State] [Hashable State] [LawfulBEq State]
     (succs : State → Array State) (seed : State) (cyan : List State) (fuel : Nat)
     (stack : List (State × List State)) (pathStack : List State)
@@ -526,14 +323,7 @@ def innerDFS_fuel_chain [BEq State] [Hashable State] [LawfulBEq State]
     | some (some (cyc, target), iv', st') => some (some (pathStack ++ cyc.tail, target), iv', st')
     | some (none, iv', st') => innerDFS_fuel_chain succs seed cyan fuel rest pathStack.dropLast iv' st'
 
-/-- One-step unfolding lemmas for `innerDFS_fuel`/`innerDFS_fuel_fold`/
-`innerDFS_fuel_chain` — all ordinary structural/fuel recursion (no
-proof-carrying arguments), so these go through by plain `rfl`/`unfold` +
-`simp`, unlike the old fold-shaped `innerDFSCore`'s equation lemmas. Kept as
-small reusable rewrite facts rather than inlining `unfold`/`simp [name]` at
-every call site in the main bridge proof below, both for readability and to
-avoid simp's "possibly looping" concern on self-referential equations (each
-of these exposes exactly *one* layer, never simp-normalizing recursively). -/
+/-- One-step unfolding lemmas for `innerDFS_fuel`/`innerDFS_fuel_fold`/`innerDFS_fuel_chain`. -/
 theorem innerDFS_fuel_fold_nil (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State) :
     innerDFS_fuel_fold succs seed cyan fuel current [] iv st =
@@ -599,9 +389,7 @@ decrements fuel by one on every "descend into a fresh successor" (via
 (more generous) fuel `innerDFS_fuel_chain` hands to a pushed frame's fold
 call computes the *same* result as the slightly smaller amount the
 original nested call would actually have used, provided the smaller amount
-was already enough. Proved by the same fuel/fold mutual-induction template
-used throughout this file (cf. `innerDFS_fuel_mono` in
-`NestedDFS/NestedDFSCorrectness.lean`). -/
+was already enough. -/
 private theorem innerDFS_fuel_fold_add_aux (succs : State → Array State) (seed : State)
     (cyan : List State) (extra fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -635,9 +423,7 @@ private theorem innerDFS_fuel_fold_add_aux (succs : State → Array State) (seed
         | some cyclePath => exact h
         | none => exact ih_rem iv_mid st_mid result iv' st' h
 
-/-- Fuel-increase preserves a successful result, for `innerDFS_fuel` itself.
-Proved by induction on `fuel`, using `innerDFS_fuel_fold_add_aux` for the
-mutual recursion — the same shape as `innerDFS_fuel_mono`'s own proof. -/
+/-- Fuel-increase preserves a successful result, for `innerDFS_fuel` itself. -/
 theorem innerDFS_fuel_add_preserves (succs : State → Array State) (seed : State)
     (cyan : List State) (extra fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -675,20 +461,7 @@ theorem innerDFS_fuel_fold_add_preserves (succs : State → Array State) (seed :
       innerDFS_fuel_add_preserves succs seed cyan extra fuel curr iv₀ st₀ res iv₁ st₁ h)
     result iv' st' h
 
-/-- Sufficient fuel guarantees success — the existence counterpart to
-`innerDFS_fuel_add_preserves`'s "more fuel can't hurt". Needed for the
-"fresh push" case of the main bridge below: relating a *uniform* fuel value
-(what `innerDFS_fuel_chain` uses) to the *naturally decremented* fuel a
-nested `innerDFS_fuel` call would actually use (via `innerDFS_fuel_fresh`)
-requires knowing the decremented amount is *already* enough on its own —
-this is exactly that fact. Mirrors the deleted `innerDFS_fuel_sufficient`
-from the file's very first (fold-based) design, resurrected here in the
-mutual-aux style used throughout this section. Proved by ordinary induction
-on `fuel` (not strong induction on the measure): each recursive descent
-both decrements `fuel` by exactly one *and* strictly shrinks
-`innerFuelMeasure` by exactly one (since the descended-into state is
-freshly inserted), so they stay in lockstep and structural induction on
-`fuel` suffices. -/
+/-- Sufficient fuel guarantees success. -/
 private theorem innerDFS_fuel_fold_exists_aux (succs : State → Array State)
     (fr : FiniteReach initialStates succs)
     (seed : State) (cyan : List State) (fuel : Nat) (current : State) (remaining : List State)
@@ -762,13 +535,7 @@ theorem innerDFS_fuel_exists (succs : State → Array State) (fr : FiniteReach i
         (iv.insert current) st hiv' hcurrent (fun x hx => Array.mem_toList_iff.mp hx)
         (fun curr iv₀ st₀ hiv₀ hcurr hf => ih curr iv₀ st₀ hiv₀ hcurr hf) hmeasure
 
-/-- The main bridge: `innerDFS_fuel_chain` (nested-call semantics, made
-explicit-stack) equals `innerDFSCore` (well-founded, explicit-stack), for
-sufficient fuel. Driven by `innerDFSCore.induct` — each case unfolds the
-*matching* `innerDFS_fuel_fold`/`innerDFS_fuel`/`innerDFS_fuel_chain` step
-(all ordinary structural/fuel recursion, no proof-carrying arguments, so
-`simp`/`rw` on their equations is reliable, unlike the old fold-shaped
-`innerDFSCore`). -/
+/-- The main bridge: `innerDFS_fuel_chain` equals `innerDFSCore` for sufficient fuel. -/
 theorem innerDFS_fuel_chain_eq_innerDFSCore
     (fuel : Nat) (stack : List (RFrame initialStates succs)) (pathStack : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -910,12 +677,7 @@ theorem innerDFS_fuel_chain_eq_innerDFSCore
     · rw [innerDFSCore.eq_2]
       grind
 
-/-- `innerDFS_fuel_fold`'s own "found" result always starts with `current` —
-the same invariant `innerDFS_fuel_cyclePath_chain` establishes for plain
-`innerDFS_fuel`, needed here in the `_fold`-level form to relate a
-singleton-stack `innerDFS_fuel_chain` call to `innerDFS_fuel_fold` exactly
-(no `pathStack`-prefix mismatch, since a singleton stack's `pathStack` is
-just `[current]` itself). -/
+/-- `innerDFS_fuel_fold`'s own "found" result always starts with `current`. -/
 private theorem innerDFS_fuel_fold_cyclePath_head (fuel : Nat) (current : State)
     (remaining : List State) (iv : Std.HashSet State) (st : FNDFSState State)
     {cyclePath : List State} {target : State} {iv' : Std.HashSet State} {st' : FNDFSState State}
@@ -944,12 +706,7 @@ private theorem innerDFS_fuel_fold_cyclePath_head (fuel : Nat) (current : State)
           rfl
         | none => exact ih_rem iv2 st2 h
 
-/-- A singleton-stack `innerDFS_fuel_chain` call is exactly
-`innerDFS_fuel_fold` — no `pathStack`-rewrapping discrepancy, since
-`[current]`'s only element already *is* `current`. This is what lets the
-top-level bridge below reuse `innerDFS_fuel_chain_eq_innerDFSCore` (proved
-against the general stack shape) at `innerDFSWF`'s own entry point, which
-calls `innerDFSCore` with the singleton stack `[(current, succs current)]`. -/
+/-- A singleton-stack `innerDFS_fuel_chain` call is exactly `innerDFS_fuel_fold`. -/
 theorem innerDFS_fuel_chain_singleton (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State) :
     innerDFS_fuel_chain succs seed cyan fuel [(current, remaining)] [current] iv st =
@@ -971,8 +728,7 @@ theorem innerDFS_fuel_chain_singleton (fuel : Nat) (current : State) (remaining 
         subst hhead
         rfl
 
-/-- Top-level bridge: for sufficient fuel, `innerDFS_fuel` equals
-`innerDFSWF`. -/
+/-- Top-level bridge: for sufficient fuel, `innerDFS_fuel` equals `innerDFSWF`. -/
 theorem innerDFS_fuel_eq_innerDFSWF
     (fuel : Nat) (current : State) (hcurrent_reach : Reachable initialStates succs current)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -1020,41 +776,17 @@ theorem innerDFS_fuel_eq_innerDFSWF
 
 end InnerFuelBridge
 
-/-! ## Well-founded `outerDFSLoop` (Phase 2, `outerDFSLoop` half, 2026-07-25)
-
-The second, independent conversion — CAVA's own blue DFS, matching
-`param_dfs_variant`'s `(discovered, pending, stack-length)` triple about as
-directly as `outerDFSLoop`'s explicit-stack representation allows: primary
-component `(fr.univ \ st.outerVisited).size` (`discovered` growth, same
-`sdiff`-based measure and reasoning as `innerDFSCore`'s own `iv`), secondary
-`pendingSum stack + stack.length` (CAVA's `pending`+stack-length tie-break,
-combined into one `Nat` since both only ever need to *weakly* decrease
-together as one unit here — see the "skip already-visited successor" branch
-below, which decreases `pendingSum` by exactly 1 while leaving `stack.length`
-untouched).
-
-Confirms the corrected Phase 2 plan's step-2 prediction: **no Subtype-bundled
-return type is needed here**, unlike `innerDFSCore`. `outerDFSLoop` has no
-fold over siblings (a single self-call per branch, never two in sequence
-within one equation), and the one place it calls into the *other* well-
-founded function (`innerDFSCore`, at the accepting-leaf branch) only needs
-the `outerVisited`-preservation fact already bundled into *that* function's
-own return type (see `innerDFSCore`'s docstring) — no new induction
-principle, no circularity. This is the Lean-native mirror of CAVA gluing
-blue/red DFS via ordinary composition rather than a joint measure. -/
+/-! ## Well-founded `outerDFSLoop` -/
 
 section OuterDFSWellFounded
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- Well-founded `outerDFSLoop`, `RFrame`-based like `innerDFSCore`. The two
-optimizations — the **Holzmann-Peled-Yannakakis shortcut** (accepting-leaf
+optimizations. Includes the **Holzmann-Peled-Yannakakis shortcut** (accepting-leaf
 branch, `target` may be any state on `pathStack`, not just `current`) and the
 **Schwoon-Esparza back-edge shortcut** (`pathStack.contains succ` detects a
-cycle directly, no inner DFS launched) — are unchanged in logic; only the
-final "push a fresh successor" branch changes, from a runtime `dite
-fr.univ.contains succ` with a dead fallback to an unconditional push
-(`succ`'s reachability now comes from `Reachable.step`, for free). -/
+cycle directly, no inner DFS launched). -/
 def outerDFSLoopWF [LawfulHashable State] {initialStates : List State}
     (succs : State → Array State) (isAccepting : State → Bool)
     (fr : FiniteReach initialStates succs)
@@ -1072,8 +804,7 @@ def outerDFSLoopWF [LawfulHashable State] {initialStates : List State}
         match _hr : innerDFSWF succs fr frame.state pathStack frame.state frame.hreach
             innerVisited st with
         | (some (cyclePath, target), _, st') =>
-          -- Holzmann-Peled-Yannakakis shortcut (mirroring `outerDFSLoop_fuel`
-          -- exactly, `NestedDFS/NestedDFSCorrectness.lean`): `target` may be `current`
+          -- Holzmann-Peled-Yannakakis shortcut: `target` may be `current`
           -- itself or any other state on `pathStack`; collapses to the
           -- pre-HPY `current :: cyclePath` formula when `target = current`.
           let loopTail := (pathStack.dropWhile (fun y => !(y == target))).dropLast
@@ -1085,8 +816,7 @@ def outerDFSLoopWF [LawfulHashable State] {initialStates : List State}
     | succ :: remainingTail =>
       let stack' := frame.consumeOne succ remainingTail hrem :: rest
       if pathStack.contains succ then
-        -- Schwoon-Esparza back-edge shortcut, mirroring `outerDFSLoop_fuel`
-        -- exactly (`NestedDFS/NestedDFSCorrectness.lean`).
+        -- Schwoon-Esparza back-edge shortcut
         if isAccepting frame.state then
           if succ == frame.state then
             (.nonEmpty pathStack [frame.state, frame.state], st)
@@ -1128,51 +858,13 @@ decreasing_by
 
 end OuterDFSWellFounded
 
-/-! ## Fuel ↔ well-founded bridge, outer half (Phase 2, 2026-07-25, continued)
-
-Mirrors `InnerFuelBridge`, but simpler: `outerDFSLoop_fuel`/`outerDFSLoopWF` are
-*already* the same explicit-stack shape (unlike inner's original fold-vs-stack
-mismatch), so no `_chain`-style reindexing function is needed — a direct
-induction via `outerDFSLoopWF.induct` suffices.
-
-The one genuine new subtlety: `outerDFSLoop_fuel` spends exactly one fuel unit
-per *loop iteration* (every recursive call pattern-matches `fuel = _ + 1` and
-passes the decremented value on), unlike `innerDFS_fuel`/`innerDFS_fuel_fold`
-which only spent fuel on a *descend*. So there is no single closed-form
-Nat measure playing the role `innerFuelMeasure` did — the number of
-iterations isn't bounded by `(fr.univ \ outerVisited).size` alone (backtrack/
-skip transitions leave it unchanged while still costing fuel). Re-checking
-CAVA (`Param_DFS.thy`) confirms this is expected, not a gap: CAVA's own
-`it_dfsT_eq_it_dfs` never computes a numeral fuel bound either — it transports
-`WHILET` to `WHILE` via `WHILET_eq_WHILE_tproof`, an abstract well-founded
-argument keyed on `param_dfs_variant`'s lex order directly, with no explicit
-step-count formula anywhere. We do the same: `outerDFSLoop_fuel_eq_outerDFSLoopWF`
-below proves *existence* of a sufficient fuel by induction on `outerDFSLoopWF`'s
-own recursion (i.e. on the same lex measure), never a formula in `fuel`. This
-matches how the existing fuel-based correctness theorems in
-`NestedDFS/NestedDFSCorrectness.lean` are already stated (e.g. `nestedDFS_fuel_empty_no_cycle`
-takes an arbitrary implicit `fuel` and only assumes *success*, never a lower
-bound) — so existence-of-*some*-sufficient-fuel is exactly what's needed to
-transport them across the bridge, nothing stronger.
-
-Every branch of `outerDFSLoopWF.induct` has exactly one nested computation to
-solve for fuel, EXCEPT the "accepting, cycle not found" branch, which has two
-independent ones sharing the same fuel slot (the `innerDFS_fuel` call and the
-"continue with `rest`" recursive call) — that one needs an explicit max, hence
-needs its own fuel-monotonicity fact for `outerDFSLoop_fuel` itself
-(`outerDFSLoop_fuel_add_preserves`, proved first, mirroring
-`innerDFS_fuel_add_preserves`) to reconcile the two to a shared value. -/
+/-! ## Fuel ↔ well-founded bridge, outer half -/
 
 section OuterFuelBridge
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
-/-! One-step unfolding equations for `outerDFSLoop_fuel`, mirroring the
-`innerDFS_fuel_blocked`/`innerDFS_fuel_fresh`/etc. family — a clean `rw`-based
-alternative to raw `split`, avoiding any dependence on well-founded-recursion
-equation-lemma machinery (`outerDFSLoop_fuel` is ordinary structural recursion
-on `fuel`, so these are all provable by `unfold`/`simp`/`rfl`, exactly as
-reliably as the inner ones were). -/
+/-! One-step unfolding equations for `outerDFSLoop_fuel` -/
 
 theorem outerDFSLoop_fuel_nil (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat) (pathStack : List State) (st : FNDFSState State) :
@@ -1201,8 +893,7 @@ theorem outerDFSLoop_fuel_accept_none (succs : State → Array State) (isAccepti
 
 /-- Holzmann-Peled-Yannakakis shortcut: `target` may be `current` itself or
     any other state on `pathStack`; the witness formula collapses to the
-    pre-HPY `current :: cyclePath` when `target = current` (see
-    `NestedDFS/NestedDFSCorrectness.lean`'s `outerDFSLoop_fuel` for the same formula). -/
+    pre-HPY `current :: cyclePath` when `target = current`. -/
 theorem outerDFSLoop_fuel_accept_found (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat) (current : State) (rest : List (State × List State)) (pathStack : List State)
     (st : FNDFSState State) (hacc : isAccepting current = true)
@@ -1292,10 +983,7 @@ theorem outerDFSLoop_fuel_back_edge_succ_acc (succs : State → Array State)
   conv => lhs; rw [outerDFSLoop_fuel.eq_def]
   simp [hb, hacc, hsacc]
 
-/-- Fuel-increase preserves a successful `outerDFSLoop_fuel` result. Proved by
-induction on `fuel`, mirroring `innerDFS_fuel_add_preserves`; needs
-`innerDFS_fuel_add_preserves` itself at the "accepting" branch, since that
-branch's nested `innerDFS_fuel` call also receives the same bumped fuel. -/
+/-- Fuel-increase preserves a successful `outerDFSLoop_fuel` result. -/
 theorem outerDFSLoop_fuel_add_preserves (succs : State → Array State) (isAccepting : State → Bool)
     (extra fuel : Nat)
     (stack : List (State × List State)) (pathStack : List State) (st : FNDFSState State)
@@ -1390,9 +1078,7 @@ variable {initialStates : List State} [LawfulHashable State] (succs : State → 
 
 /-- Top-level bridge: for a suitable `stack`/`pathStack`/`st`, there is a fuel
 value for which `outerDFSLoop_fuel` succeeds and agrees exactly with
-`outerDFSLoopWF`. Proved by induction on `outerDFSLoopWF`'s own recursion
-(rather than on `fuel`, or via a closed-form fuel formula — see this
-section's docstring for why). -/
+`outerDFSLoopWF`. -/
 theorem outerDFSLoop_fuel_eq_outerDFSLoopWF
     (stack : List (RFrame initialStates succs)) (pathStack : List State) (st : FNDFSState State)
     (hfin : ∀ x, st.innerFinished.contains x → Reachable initialStates succs x) :
@@ -1557,53 +1243,13 @@ theorem outerDFSLoop_fuel_eq_outerDFSLoopWF
 
 end OuterFuelBridge
 
-/-! ## Top-level `nestedDFS`, well-founded (Phase 2, wiring, 2026-07-25 continued)
-
-CAVA's actual top-level assembly (`Nested_DFS.thy`): `nested_dfs G accpt ≡ do
-{ s ← it_dfs G accpt; RETURN (lasso s) }` — a *single* call into the generic
-`it_dfs` engine, which handles the entire `V0` (multi-root) traversal
-internally via `get_new_root`/`do_new_root`, folded into `step` itself and
-covered by the *same* well-founded `param_dfs_variant` measure used for
-ordinary successor discovery (picking a new root is just another kind of
-"discover a new state" transition, per `step`'s own `is_empty_stack s then
-get_new_root ...` branch).
-
-Our own `nestedDFS_fuel`/`nestedDFS_fuel.go` (`NestedDFS/NestedDFSCorrectness.lean`,
-Phase 5, ✅ done, ~2000 sorry-free lines) does *not* mirror this exactly: it
-factors multi-root handling as a second, outer structural loop over
-`initialStates`, calling `outerDFSLoop_fuel` once per unvisited root, rather
-than folding root-selection into one generic engine. That's a consequence of
-not having ported CAVA's generic, reusable `param_DFS` locale (a
-substantially larger undertaking, well out of scope here) — not a deviation
-from the *algorithm* CAVA describes (CVWY nested DFS over multiple initial
-states), which is identical either way; CAVA's single-engine shape is a
-framework-engineering artifact of `param_DFS` being shared across many
-different DFS-based algorithms, not a property of nested DFS itself.
-Rebuilding `nestedDFS_fuel`/`outerDFSLoop_fuel` to match CAVA's single-loop
-code shape would mean reopening and re-proving all of Phase 5's already-
-complete, already-verified correctness proof for a purely organizational
-gain — so `nestedDFSWF` below instead mirrors `nestedDFS_fuel`'s *existing*
-two-loop shape exactly, keeping faithful to the algorithm without touching
-already-finished work.
-
-`nestedDFSWF.go`'s own recursion is *plain* structural recursion on
-`remaining : List State` (`init :: rest → rest`, strictly smaller) — no
-fuel, no well-founded measure, no `termination_by` needed at all; only the
-*single* call it makes into `outerDFSLoopWF` per root needs the well-founded
-machinery, already built above. -/
+/-! ## Top-level `nestedDFS`, well-founded -/
 
 section TopLevelWF
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
-/-- Well-founded top-level nested DFS emptiness check. Mirrors
-`nestedDFS_fuel`'s exact shape (see this section's docstring for why),
-using `outerDFSLoopWF` in place of `outerDFSLoop_fuel`. `initialStates`
-moves before `fr` since `FiniteReach initialStates succs`'s type now depends
-on it. `go`'s own plain structural recursion threads `hsub : remaining <:+
-initialStates` — ordinary, non-fragile proof-carrying-argument threading
-(no well-founded recursion involved here at all), giving `Reachable.base`
-for free at each root via `hsub.mem`. -/
+/-- Well-founded top-level nested DFS emptiness check. -/
 def nestedDFSWF [LawfulHashable State] (succs : State → Array State) (initialStates : List State)
     (fr : FiniteReach initialStates succs) (isAccepting : State → Bool) : EmptinessResult State :=
   let st : FNDFSState State := {
@@ -1636,17 +1282,7 @@ where
 
 end TopLevelWF
 
-/-! ## Fuel ↔ well-founded bridge, top level (Phase 2, wiring, continued)
-
-Mirrors `OuterFuelBridge` one level up: `nestedDFS_fuel.go`'s own recursion
-spends exactly one fuel unit per *iteration* over `initialStates`, same
-"per-iteration, not per-descend" shape as `outerDFSLoop_fuel`, so the same
-recipe applies verbatim — one-step unfolding equations, a fuel-monotonicity
-lemma, then an existence-style bridge by induction (here on `remaining`
-directly, matching `nestedDFSWF.go`'s own *plain* structural recursion,
-rather than on `fuel` or on a `.induct` principle — there is no well-founded
-recursion on the top-level loop at all, so this is the simplest bridge in
-the file). -/
+/-! ## Fuel ↔ well-founded bridge, top level -/
 
 section TopLevelFuelBridge
 
@@ -1699,10 +1335,7 @@ theorem nestedDFS_fuel_go_continue (succs : State → Array State) (isAccepting 
   conv => lhs; rw [nestedDFS_fuel.go.eq_def]
   simp [hvis, houter]
 
-/-- Fuel-increase preserves a successful `nestedDFS_fuel.go` result. Mirrors
-`outerDFSLoop_fuel_add_preserves`; needs it directly at the "fresh root"
-branch, since that branch's nested `outerDFSLoop_fuel` call also receives
-the same bumped fuel. -/
+/-- Fuel-increase preserves a successful `nestedDFS_fuel.go` result. -/
 theorem nestedDFS_fuel_go_add_preserves (succs : State → Array State) (isAccepting : State → Bool)
     (extra fuel : Nat) (remaining : List State) (st : FNDFSState State)
     (result : EmptinessResult State)
@@ -1756,12 +1389,7 @@ variable {initialStates : List State} [LawfulHashable State] (succs : State → 
 
 /-- Top-level bridge: for a suitable `remaining`/`st`, there is a fuel value
 for which `nestedDFS_fuel.go` succeeds and agrees exactly with
-`nestedDFSWF.go`. Proved by induction on `remaining` directly — matching
-`nestedDFSWF.go`'s own plain structural recursion — rather than on `fuel` or
-via a `.induct` principle. `hremaining`'s old role (every element of
-`remaining` is reachable) is now derived from `hsub : remaining <:+
-initialStates` via `Reachable.base`, since `nestedDFSWF.go` itself now
-requires that suffix proof as an argument. -/
+`nestedDFSWF.go`. -/
 theorem nestedDFS_fuel_go_eq_nestedDFSWF_go
     (remaining : List State) (hsub : remaining <:+ initialStates) (st : FNDFSState State)
     (hfin : ∀ x, st.innerFinished.contains x → Reachable initialStates succs x) :
@@ -1835,9 +1463,7 @@ theorem nestedDFS_fuel_go_eq_nestedDFSWF_go
           exact heqCR
 
 /-- Top-level bridge: there is a fuel value for which `nestedDFS_fuel`
-succeeds and agrees exactly with `nestedDFSWF`. The old `hinitial : ∀ x ∈
-initialStates, fr.univ.contains x` hypothesis is gone — subsumed by
-`Reachable.base`. -/
+succeeds and agrees exactly with `nestedDFSWF`. -/
 theorem nestedDFS_fuel_eq_nestedDFSWF :
     ∃ fuel, nestedDFS_fuel initialStates succs isAccepting fuel =
       some (nestedDFSWF succs initialStates fr isAccepting) := by
@@ -1849,9 +1475,7 @@ theorem nestedDFS_fuel_eq_nestedDFSWF :
       (fun x hx => absurd hx (by simp [Std.HashSet.contains_emptyWithCapacity]))
   exact ⟨fuel, heqC ▸ heq⟩
 
-/-- `nestedDFSWF`'s `.empty` case implies no accepting cycle exists — the
-well-founded mirror of `nestedDFS_fuel_empty_no_cycle`, obtained for free by
-transporting across `nestedDFS_fuel_eq_nestedDFSWF`. -/
+/-- `nestedDFSWF`'s `.empty` case implies no accepting cycle exists. -/
 theorem nestedDFSWF_empty_no_cycle
     (n : Nat) (h : nestedDFSWF succs initialStates fr isAccepting = .empty n) :
     ¬∃ _ac : AcceptingCycle initialStates succs isAccepting, True := by
@@ -1859,8 +1483,7 @@ theorem nestedDFSWF_empty_no_cycle
   rw [h] at heq
   exact nestedDFS_fuel_empty_no_cycle heq
 
-/-- `nestedDFSWF`'s `.nonEmpty` case yields a genuine accepting-cycle witness
-— the well-founded mirror of `nestedDFS_fuel_nonEmpty_valid`. -/
+/-- `nestedDFSWF`'s `.nonEmpty` case yields a genuine accepting-cycle witness. -/
 theorem nestedDFSWF_nonEmpty_valid
     (stem loop : List State)
     (h : nestedDFSWF succs initialStates fr isAccepting = .nonEmpty stem loop) :
@@ -1874,19 +1497,11 @@ end TopLevelFuelBridge
 
 section EmptinessCheckerInterface
 
-/-! ## `nestedDFSWF` as an `EmptinessChecker` instance
-
-`EmptinessChecker` itself (the algorithm-agnostic `find_ce_spec`-style
-contract) now lives in `EmptinessCheck.lean`, alongside
-`EmptinessResult`/`AcceptingCycle`/`FiniteReach` — imported transitively via
-`NestedDFS/NestedDFSCorrectness.lean`/`NestedDFS/NestedDFSRef.lean`. What belongs here, in the
-nested-DFS-specific file, is just this one concrete instance of it. -/
+/-! ## `nestedDFSWF` as an `EmptinessChecker` instance. -/
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
-/-- `nestedDFSWF` packaged as an `EmptinessChecker` instance — the (so far)
-only refinement of the contract in `EmptinessCheck.lean`. Corresponds to
-CAVA's `find_ce_impl` being proven to refine `find_ce_spec`. -/
+/-- `nestedDFSWF` packaged as an `EmptinessChecker` instance. -/
 def nestedDFSChecker [LawfulHashable State] : EmptinessChecker State where
   check := nestedDFSWF
   nonEmpty_valid := fun {succs initialStates fr isAccepting stem loop} h =>
@@ -1898,29 +1513,11 @@ end EmptinessCheckerInterface
 
 section BAFiniteReach
 
-/-! ## Packaging a `FiniteReach` witness from `BA.WellFormed`
-
-Matches CAVA's own two-layer split noted above under "Should the old
-`partial def innerDFS`/... be deleted?": `nested_dfs_code`'s precondition is
-an explicit `ASSERT (fb_graph G)` threaded through as an argument-level
-assumption, never internally re-derived (`Nested_DFS.thy`) — exactly the
-role `FiniteReach succs` plays for `nestedDFSWF`. Here, `BA.WellFormed`
-(`BA.lean`) supplies exactly the closure fact `FiniteReach.closed` needs,
-with `univ := ba.states`; nothing about *why* `ba` is well-formed is needed
-at this layer, only the two `WellFormed` fields themselves (which, for a
-`BA` produced by `GBA.degeneralize` from a well-formed `GBA`, come from
-`degeneralize_wellFormed`; for `constructGBA`'s own `GBA`, from
-`constructGBA_wellFormed`). -/
+/-! ## Packaging a `FiniteReach` witness from `BA.WellFormed` -/
 
 variable {α : Type u} [BEq α] [Hashable α]
 
-/-- A well-formed `BA`'s own state set is a `FiniteReach` witness for its
-`getSuccessors` function — now a pure *proof*, not data: `ba.states`/
-`hwf.succ_mem` are used only as internal proof tooling (a convenient
-already-finite superset), never surfacing as `FiniteReach`'s own witness.
-The old `BA.initialStates_subset_finiteReach` (the `hinitial` hypothesis
-every `nestedDFSWF` call used to need) is gone entirely — subsumed by
-`Reachable.base`. -/
+/-- A well-formed `BA`'s own state set is a `FiniteReach` witness for its `getSuccessors` function. -/
 def BA.finiteReach (ba : BA α) (hwf : ba.WellFormed) :
     FiniteReach ba.initialStates.toList ba.getSuccessors := by
   show {s | Reachable ba.initialStates.toList ba.getSuccessors s}.Finite
@@ -1945,45 +1542,12 @@ end BAFiniteReach
 
 section PumpingLemma
 
-/-! ## From an accepting run to an `AcceptingCycle`
-
-The reverse direction `nestedDFSWF_empty_no_cycle`/`nestedDFSWF_nonEmpty_valid`
-don't give: those connect `nestedDFSWF`'s *output* to a graph-cycle witness,
-but say nothing about whether "no accepting cycle" actually implies "no
-accepting infinite run" of the underlying automaton. CAVA needs exactly this
-too — not inside `blue_dfs_correct` itself (which, like our
-`nestedDFSWF_empty_no_cycle`, is stated purely at the graph-cycle level), but
-one layer out, when assembling a genuinely usable decision procedure:
-`CAVA_Impl.thy`'s `ndfs_find_ce` (which has to satisfy the *run*-level
-`find_ce_spec` contract) explicitly invokes `gb_graph.accepted_lasso`
-(`CAVA_Automata/Lasso.thy`):
-```isabelle
-lemma accepted_lasso:
-  assumes "finite (E⇧* `` V0)" and A: "is_acc_run r"
-  shows "∃L. is_lasso L"
-```
-proved via CAVA's abstract `limit`/`ipath` machinery (a state visited
-infinitely often exists by pigeonhole on the finite reachable set; any two
-`limit`-points are connected by a path since the run passes through both
-infinitely often).
-
-This port takes a more concrete route, avoiding CAVA's `limit`/`ipath`
-abstractions entirely: since we only ever need this for a *single*
-acceptance set (`AcceptingCycle`/`OASpec _ _ 1`, never the general `igb_graph`
-case), the argument reduces to finding *one* accepting state that repeats —
-a finite pigeonhole on an explicit prefix of length `univ.size + 1`, not an
-argument about the infinite limit set. Concretely: sample the run at
-`univ.size + 1` increasing accepting-visit indices; since all these visited
-states lie in the finite `univ`, two of them must coincide (pigeonhole);
-the run segment between those two repeated indices is *exactly* the cycle,
-by construction (each step is a genuine `succs`-edge, since it comes from
-`σ`'s own transition hypothesis). -/
+/-! ## From an accepting run to an `AcceptingCycle` -/
 
 variable {State : Type u}
 
 /-- An increasing sequence of indices at which `σ` is accepting, built by
-repeatedly re-invoking `hacc` past the previous index. Classical/noncomputable
-(existence witnesses only, never executed). -/
+repeatedly re-invoking `hacc` past the previous index (existence witnesses only). -/
 private noncomputable def accIdxSeq (σ : Nat → State) (isAccepting : State → Bool)
     (hacc : ∀ N, ∃ n ≥ N, isAccepting (σ n) = true) : Nat → Nat
   | 0 => (hacc 0).choose
@@ -2023,13 +1587,7 @@ private theorem accIdxSeq_lt_of_lt (σ : Nat → State) (isAccepting : State →
 
 /-- The reverse direction of `nestedDFSWF_empty_no_cycle`/
 `nestedDFS_fuel_empty_no_cycle`: an accepting run yields an `AcceptingCycle`
-witness. Direct analogue of CAVA's `gb_graph.accepted_lasso`
-(`CAVA_Automata/Lasso.thy`), specialized to a single acceptance set. Uses
-Mathlib's `Set.Infinite.exists_ne_map_eq_of_mapsTo` pigeonhole lemma directly
-(an infinite domain — every `Nat` — mapped into a finite codomain — the
-reachable set, via `fr` — must repeat), replacing the old hand-rolled
-`Std.HashSet`-accumulator version (`exists_dup_of_size_lt`, since deleted):
-no `BEq`/`Hashable` instances needed anywhere in this theorem any more. -/
+witness. -/
 theorem exists_acceptingCycle_of_run
     {succs : State → Array State} {isAccepting : State → Bool}
     {initialStates : List State} (fr : FiniteReach initialStates succs)

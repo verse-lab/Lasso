@@ -1,18 +1,20 @@
 /-
   Completeness of the LTL-to-GBA construction.
 
-  Core theorem (L4_10): If ξ satisfies φ and the node graph is complete
+  Core theorem: If ξ satisfies φ and the node graph is complete
   (contains nodes matching all satisfiable types), then the abstract
   automaton accepts ξ.
 
   The graph completeness hypothesis (`GraphComplete`) states that for any
   ω-word satisfying φ, there exists a run through the nodes where each
   node's `old` set captures exactly the subformulas satisfied at that position.
-
-  Corresponds to Lemma 4.10 in LTL_to_GBA.thy.
 -/
 
 import LTLLib.LTLtoGBA.Soundness
+import LTLLib.LTL.Semantics
+import LTLLib.LTLtoGBA.Invariants
+import LTLLib.LTLtoGBA.Construction
+import LTLLib.AbstractSpec.Acceptance
 
 namespace LTLLib
 
@@ -23,7 +25,7 @@ variable {α : Type u}
 /-! ### Graph completeness hypothesis
 
 The key hypothesis for completeness: the node graph produced by `createGraph`
-is "complete" — for any ω-word satisfying φ, there exists a run through the
+is *complete*: For any ω-word satisfying φ, there exists a run through the
 nodes such that each node's `old` set captures exactly the subformulas
 satisfied at that position.
 
@@ -64,7 +66,7 @@ private theorem satisfies_nprop_iff (ξ : OmegaWord α) (a : α) :
 
 /-! ### Core completeness theorem -/
 
-/-- Completeness (L4_10): if ξ satisfies φ and the node graph is complete,
+/-- Completeness: if ξ satisfies φ and the node graph is complete,
     then the abstract automaton accepts ξ. -/
 theorem expandOASpec_completeness
     {φ : NNF α} {nodes : NodeData α → Prop}
@@ -131,34 +133,5 @@ theorem gba_abstract_completeness
     (hsat : NNF.satisfies ξ φ)
     : (expandOASpec φ st.toNodes φ.untilSubformulas).accepts ξ :=
   expandOASpec_completeness h_complete hsat
-
-/-! ### Combined correctness -/
-
-/-- Full correctness of the abstract automaton: accepts ξ iff ξ ⊨ φ.
-    Requires both `ExpandSpec` (soundness) and `GraphComplete` (completeness). -/
-theorem expandOASpec_correct
-    {φ : NNF α} {nodes : NodeData α → Prop}
-    (spec : ExpandSpec φ nodes)
-    {untils : List (NNF α × NNF α)}
-    (h_untils : ∀ μ η, NNF.IsSubformula (.until μ η) φ →
-      ∃ i : Fin untils.length, untils[i] = (μ, η))
-    (h_complete : GraphComplete φ nodes)
-    (ξ : OmegaWord α)
-    : (expandOASpec φ nodes untils).accepts ξ ↔ NNF.satisfies ξ φ :=
-  ⟨expandOASpec_soundness spec h_untils,
-   expandOASpec_completeness h_complete⟩
-
-/-- Full correctness via `createGraph`. -/
-theorem gba_abstract_correct
-    {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
-    {φ : NNF α} {st : ExpandState α S}
-    (hcg : createGraph φ = some st)
-    (h_complete : GraphComplete φ st.toNodes)
-    (ξ : OmegaWord α)
-    : (expandOASpec φ st.toNodes φ.untilSubformulas).accepts ξ ↔
-      NNF.satisfies ξ φ :=
-  expandOASpec_correct (createGraph_spec φ hcg)
-    (fun μ η hsub => untilSubformulas_index φ μ η hsub)
-    h_complete ξ
 
 end LTLLib
