@@ -1,5 +1,31 @@
 /-
-  Termination of `expand`.
+  Termination of `expand`, the on-the-fly tableau-expansion worklist algorithm (Gerth et al. 1995) that turns an LTL
+  formula into a `ExpansionNode` graph.
+
+  `expand` recurses on a node's `new` list, peeling off one formula at a time. The nondeterministic `or`/`until`/`release`
+  case can grow the total workload (one node becomes two), so plain structural recursion does not apply. Termination
+  instead uses the lexicographic measure `(expandMeasure1, expandMeasure2)`:
+  - `expandMeasure1`: unused node "signatures" (`old`/`next` content) left in the finite universe drawable from
+    `subformulas topFormula`, strictly decreases whenever a node is finished (merged or added fresh).
+  - `expandMeasure2`: weighted size of `node.new`, strictly decreases on every non-finishing recursive step.
+
+  Defines:
+  - `weightedSize`: the tie-break measure on `NNF` lists
+  - `NodeBounded`/`NodesBounded`/`ExpandInv`: the invariant that `old`/`new`/`next` stay within `subformulas topFormula`,
+    carried through `expand_term`
+  - `nodeSignature`/`signatureUniverse`/`usedSignatures`: the finite-universe bookkeeping behind `expandMeasure1`
+  - `expandMeasure1`/`expandMeasure2`: the termination measure
+
+  Proves:
+  - `expand_term`: `expand` always returns `some`, preserving the invariants above
+  - `createGraph_term`: `createGraph` always returns `some`
+
+  ## Sections
+  - Subformula-list finiteness
+  - Weighted formula-size measure
+  - Invariant: `old`/`new`/`next` stay within `subformulas topFormula`.
+  - The measure
+  - Main termination theorem.
 -/
 
 import Mathlib.Data.Finset.Powerset
@@ -16,8 +42,7 @@ section SubformulaFiniteness
 
 variable {α : Type u}
 
-/-- `fold`'s accumulator only ever grows (as membership), regardless of which
-formula is being folded over -/
+/-- `fold`'s accumulator only ever grows (as membership), regardless of which formula is being folded over -/
 theorem NNF.fold_cons_mono (χ : NNF α) {acc acc' : List (NNF α)} (h : acc ⊆ acc') :
     χ.fold (fun a f => f :: a) acc ⊆ χ.fold (fun a f => f :: a) acc' := by
   induction χ generalizing acc acc' with
@@ -31,6 +56,7 @@ theorem NNF.fold_cons_mono (χ : NNF α) {acc acc' : List (NNF α)} (h : acc ⊆
     simp only [fold]
     exact ih2 (ih1 (List.cons_subset_cons _ h))
 
+/-- The accumulator is always a subset of the fold's result. -/
 theorem NNF.acc_subset_fold_cons (χ : NNF α) (acc : List (NNF α)) :
     acc ⊆ χ.fold (fun a f => f :: a) acc := by
   induction χ generalizing acc with
@@ -44,6 +70,7 @@ theorem NNF.acc_subset_fold_cons (χ : NNF α) (acc : List (NNF α)) :
     simp only [fold]
     exact ((List.subset_cons_self _ _).trans (ih1 _)).trans (ih2 _)
 
+/-- `χ` is always a member of its own fold. -/
 theorem NNF.self_mem_fold_cons (χ : NNF α) (acc : List (NNF α)) :
     χ ∈ χ.fold (fun a f => f :: a) acc := by
   cases χ with
@@ -55,8 +82,7 @@ theorem NNF.self_mem_fold_cons (χ : NNF α) (acc : List (NNF α)) :
     simp only [fold]
     exact NNF.acc_subset_fold_cons ψ2 _ (NNF.acc_subset_fold_cons ψ1 _ (List.mem_cons_self ..))
 
-/-- `ψ ∈ subformulas χ` still holds when `χ`'s fold is seeded with a bigger
-accumulator instead of `[]` -/
+/-- `ψ ∈ subformulas χ` still holds when `χ`'s fold is seeded with a bigger accumulator instead of `[]` -/
 theorem NNF.mem_subformulas_imp_mem_fold {χ ψ : NNF α} (h : ψ ∈ χ.subformulas)
     (acc : List (NNF α)) : ψ ∈ χ.fold (fun a f => f :: a) acc :=
   NNF.fold_cons_mono χ (List.nil_subset acc) h
@@ -107,10 +133,9 @@ end SubformulaFiniteness
 
 /-! ## Weighted formula-size measure
 
-Weighting each element by `2·size(x)+1` is what makes `new1_less_sum`/
-`new2_less_sum` hold, splitting a compound formula into its
-immediate, syntactically smaller parts strictly decreases the weighted sum,
-even though the *set* can grow (e.g. one formula becomes two). -/
+Weighting each element by `2·size(x)+1` is what makes `new1_less_sum`/`new2_less_sum` hold, splitting a compound
+formula into its immediate, syntactically smaller parts strictly decreases the weighted sum, even though the set
+can grow (e.g. one formula becomes two). -/
 
 section WeightedSize
 
@@ -125,9 +150,11 @@ noncomputable def weightedSize (l : List (NNF α)) : Nat := (l.map (fun x => 2 *
 @[simp] theorem weightedSize_cons (φ : NNF α) (l : List (NNF α)) :
     weightedSize (φ :: l) = (2 * sizeOf φ + 1) + weightedSize l := rfl
 
+/-- `new1` strictly reduces weighted size. -/
 theorem NNF.new1_less_sum (φ : NNF α) : weightedSize (new1 φ) < weightedSize ([φ] : List (NNF α)) := by
   cases φ <;> simp [new1, weightedSize] <;> omega
 
+/-- `new2` strictly reduces weighted size. -/
 theorem NNF.new2_less_sum (φ : NNF α) : weightedSize (new2 φ) < weightedSize ([φ] : List (NNF α)) := by
   cases φ <;> simp [new2, weightedSize] <;> omega
 
@@ -139,18 +166,20 @@ section ExpandInvariant
 
 variable {α : Type u} {S : Type v} [FSet (NNF α) S]
 
-structure NodeBounded (topFormula : NNF α) (n : GBANode α S) : Prop where
+/-- `n`'s `old`/`new`/`next` sets contain only subformulas of `topFormula`. -/
+structure NodeBounded (topFormula : NNF α) (n : ExpansionNode α S) : Prop where
   new_sub : ∀ x ∈ n.new, NNF.IsSubformula x topFormula
   old_sub : ∀ x, FSet.contains n.old x → NNF.IsSubformula x topFormula
   next_sub : ∀ x, FSet.contains n.next x → NNF.IsSubformula x topFormula
 
 /-- Every already-finished node in `st.nodes` is bounded too. -/
 def NodesBounded (topFormula : NNF α) (st : ExpandState α S) : Prop :=
-  ∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n →
+  ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n →
     (∀ x, FSet.contains n.old x → NNF.IsSubformula x topFormula) ∧
     (∀ x, FSet.contains n.next x → NNF.IsSubformula x topFormula)
 
-structure ExpandInv (topFormula : NNF α) (n : GBANode α S) (st : ExpandState α S) : Prop where
+/-- Bundles `NodeBounded` for the in-progress node with `NodesBounded` for the already-finished ones. -/
+structure ExpandInv (topFormula : NNF α) (n : ExpansionNode α S) (st : ExpandState α S) : Prop where
   node_bounded : NodeBounded topFormula n
   nodes_bounded : NodesBounded topFormula st
 
@@ -162,9 +191,8 @@ section ExpandMeasure
 
 variable {α : Type u} [DecidableEq α] {S : Type v} [FSet (NNF α) S]
 
-/-- A node's "signature": its (old, next) content as `Finset`s, independent
-of the underlying `S` representation. -/
-noncomputable def nodeSignature (n : GBANode α S) : Finset (NNF α) × Finset (NNF α) :=
+/-- A node's "signature": its (old, next) content as `Finset`s, independent of the underlying `S` representation. -/
+noncomputable def nodeSignature (n : ExpansionNode α S) : Finset (NNF α) × Finset (NNF α) :=
   ((FSet.toList n.old).toFinset, (FSet.toList n.next).toFinset)
 
 /-- All possible signatures drawable from `subformulas topFormula`. -/
@@ -172,7 +200,8 @@ noncomputable def signatureUniverse (topFormula : NNF α) :
     Finset (Finset (NNF α) × Finset (NNF α)) :=
   topFormula.subformulas.toFinset.powerset ×ˢ topFormula.subformulas.toFinset.powerset
 
-theorem nodeSignature_mem_signatureUniverse {topFormula : NNF α} {n : GBANode α S}
+/-- A node bounded by `topFormula` has its signature drawn from `signatureUniverse topFormula`. -/
+theorem nodeSignature_mem_signatureUniverse {topFormula : NNF α} {n : ExpansionNode α S}
     (ho : ∀ x, FSet.contains n.old x → NNF.IsSubformula x topFormula)
     (hn : ∀ x, FSet.contains n.next x → NNF.IsSubformula x topFormula) :
     nodeSignature n ∈ signatureUniverse topFormula := by
@@ -186,6 +215,7 @@ noncomputable def usedSignatures (st : ExpandState α S) :
     Finset (Finset (NNF α) × Finset (NNF α)) :=
   (st.nodes.toList.map (fun p => nodeSignature p.2)).toFinset
 
+/-- `NodesBounded` lifts `nodeSignature_mem_signatureUniverse` to all signatures used by `st`. -/
 theorem usedSignatures_subset_signatureUniverse {topFormula : NNF α} {st : ExpandState α S}
     (h : NodesBounded topFormula st) :
     usedSignatures st ⊆ signatureUniverse topFormula := by
@@ -196,19 +226,16 @@ theorem usedSignatures_subset_signatureUniverse {topFormula : NNF α} {st : Expa
   obtain ⟨ho, hn⟩ := h k n hmem
   exact nodeSignature_mem_signatureUniverse ho hn
 
-/-- Primary measure component. -/
+/-- Primary measure: unused signatures remaining in the finite universe. -/
 noncomputable def expandMeasure1 (topFormula : NNF α) (st : ExpandState α S) : Nat :=
   (signatureUniverse topFormula).card - (usedSignatures st).card
 
-/-- Secondary (tie-break) measure component. -/
-noncomputable def expandMeasure2 (n : GBANode α S) : Nat := weightedSize n.new
+/-- Secondary (tie-break) measure: weighted size of `node.new`. -/
+noncomputable def expandMeasure2 (n : ExpansionNode α S) : Nat := weightedSize n.new
 
 omit [DecidableEq α] in
-/-- `addToNew` (`Expand.lean`) only ever *filters or reorders* `formulas`
-before prepending onto `node.new` — never duplicates weight — so this bound
-holds regardless of the `old`-membership filtering specifics (an
-optimization beyond `expand_body`'s own `new n' = new1 ψ ∪ (new n - {ψ})`,
-safe here since filtering can only shrink `weightedSize` further). -/
+/-- `addToNew` only filters/reorders `formulas` before prepending onto `node.new`, so the weighted sum can only shrink
+relative to appending everything. -/
 theorem weightedSize_foldl_addToNew_le (existing : S) (formulas acc : List (NNF α)) :
     weightedSize (formulas.foldl (fun a f => if FSet.contains existing f then a else f :: a) acc)
       ≤ weightedSize acc + weightedSize formulas := by
@@ -222,7 +249,7 @@ theorem weightedSize_foldl_addToNew_le (existing : S) (formulas acc : List (NNF 
         _ = weightedSize acc + weightedSize (f :: fs) := by simp; omega
 
 omit [DecidableEq α] in
-theorem weightedSize_addToNew_le (node : GBANode α S) (formulas : List (NNF α)) :
+theorem weightedSize_addToNew_le (node : ExpansionNode α S) (formulas : List (NNF α)) :
     weightedSize (addToNew node formulas) ≤ weightedSize node.new + weightedSize formulas :=
   weightedSize_foldl_addToNew_le node.old formulas node.new
 
@@ -249,19 +276,18 @@ end ExpandMeasure
 
 /-! ## Main termination theorem.
 
-Proved directly as a well-founded-recursive `theorem` (`termination_by`/
-`decreasing_by`. -/
+Helper lemmas for `insert`/`mergeIncoming` bookkeeping, duplicate detection, and signature freshness, followed by
+`expand_term` itself. -/
 
 section ExpandTermHelpers
 
 variable {α : Type u} [DecidableEq α] {S : Type v} [FSet (NNF α) S]
 
-theorem nodeSignature_incoming_irrelevant (n : GBANode α S) (inc : Std.HashSet Nat) :
-    nodeSignature ({ n with incoming := inc } : GBANode α S) = nodeSignature n := rfl
+theorem nodeSignature_incoming_irrelevant (n : ExpansionNode α S) (inc : Std.HashSet Nat) :
+    nodeSignature ({ n with incoming := inc } : ExpansionNode α S) = nodeSignature n := rfl
 
-/-- Inserting a node at a *fresh* key (not previously present) only grows
-`usedSignatures`. -/
-theorem usedSignatures_insert_fresh_subset (st : ExpandState α S) (k : Nat) (n : GBANode α S)
+/-- Inserting a node at a fresh key (not previously present) only grows `usedSignatures`. -/
+theorem usedSignatures_insert_fresh_subset (st : ExpandState α S) (k : Nat) (n : ExpansionNode α S)
     (hfresh : st.nodes[k]? = none) :
     usedSignatures st ⊆ usedSignatures { st with nodes := st.nodes.insert k n } := by
   intro sig hsig
@@ -279,10 +305,9 @@ theorem usedSignatures_insert_fresh_subset (st : ExpandState α S) (k : Nat) (n 
   · rw [if_neg hk]; exact h
 
 omit [DecidableEq α] in
-/-- Every node bounded before an insert stays bounded, plus the freshly
-inserted node itself if it too is bounded. -/
+/-- Every node bounded before an insert stays bounded, plus the freshly inserted node itself if it too is bounded. -/
 theorem NodesBounded_insert {topFormula : NNF α} {st : ExpandState α S}
-    (h : NodesBounded topFormula st) {k : Nat} {n : GBANode α S}
+    (h : NodesBounded topFormula st) {k : Nat} {n : ExpansionNode α S}
     (hold : ∀ x, FSet.contains n.old x → NNF.IsSubformula x topFormula)
     (hnext : ∀ x, FSet.contains n.next x → NNF.IsSubformula x topFormula) :
     NodesBounded topFormula { st with nodes := st.nodes.insert k n } := by
@@ -296,10 +321,10 @@ theorem NodesBounded_insert {topFormula : NNF α} {st : ExpandState α S}
     exact h k' n' hk'
 
 omit [DecidableEq α] in
-/-- `mergeIncoming` only ever updates the `incoming` field of the target node
-(never `old`/`next`), so `NodesBounded` is trivially preserved. -/
+/-- `mergeIncoming` only ever updates the `incoming` field of the target node (never `old`/`next`), so `NodesBounded`
+is trivially preserved. -/
 theorem NodesBounded_mergeIncoming {topFormula : NNF α} {st : ExpandState α S}
-    (h : NodesBounded topFormula st) (node : GBANode α S) (targetName : Nat) :
+    (h : NodesBounded topFormula st) (node : ExpansionNode α S) (targetName : Nat) :
     NodesBounded topFormula (mergeIncoming st node targetName) := by
   unfold mergeIncoming
   split
@@ -314,9 +339,8 @@ theorem NodesBounded_mergeIncoming {topFormula : NNF α} {st : ExpandState α S}
       exact h k n hk
   · exact h
 
-/-- Inserting a signature-preserving replacement at an *existing* key leaves
-`usedSignatures` unchanged. -/
-theorem usedSignatures_insert_matching_subset (st : ExpandState α S) (k : Nat) (n target : GBANode α S)
+/-- Inserting a signature-preserving replacement at an existing key leaves `usedSignatures` unchanged. -/
+theorem usedSignatures_insert_matching_subset (st : ExpandState α S) (k : Nat) (n target : ExpansionNode α S)
     (htarget : st.nodes[k]? = some target) (hsig : nodeSignature n = nodeSignature target) :
     usedSignatures st ⊆ usedSignatures { st with nodes := st.nodes.insert k n } := by
   intro sig hsig'
@@ -342,24 +366,24 @@ section FindDuplicateNone
 
 variable {α : Type u} {S : Type v} [FSet (NNF α) S]
 
-theorem findStep_some_persists (node : GBANode α S) (m : Nat) (l : List (Nat × GBANode α S)) :
+theorem findStep_some_persists (node : ExpansionNode α S) (m : Nat) (l : List (Nat × ExpansionNode α S)) :
     List.foldl (fun a b => findStep node a b) (some m) l = some m := by
   induction l with
   | nil => rfl
   | cons p ps ih => simp only [List.foldl_cons, findStep]; exact ih
 
-/-- The negative counterpart to `findDuplicate_spec`: if no duplicate is
-found, no already-finished node shares `node`'s signature. -/
-theorem findDuplicate_spec_none (st : ExpandState α S) (node : GBANode α S)
+/-- The negative counterpart to `findDuplicate_spec`: if no duplicate is found, no already-finished node shares
+`node`'s signature. -/
+theorem findDuplicate_spec_none (st : ExpandState α S) (node : ExpansionNode α S)
     (h : findDuplicate st node = none) :
-    ∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n → n.sameSignature node = false := by
+    ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n → n.sameSignature node = false := by
   unfold findDuplicate at h
   rw [Std.HashMap.fold_eq_foldl_toList] at h
   change List.foldl (fun a b => findStep node a b) none st.nodes.toList = none at h
   intro k n hk
   have hmem : (k, n) ∈ st.nodes.toList := Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hk
   clear hk
-  suffices hgen : ∀ (l : List (Nat × GBANode α S)),
+  suffices hgen : ∀ (l : List (Nat × ExpansionNode α S)),
       List.foldl (fun a b => findStep node a b) none l = none →
       (k, n) ∈ l → n.sameSignature node = false by
     exact hgen st.nodes.toList h hmem
@@ -390,9 +414,10 @@ section SignatureFreshness
 
 variable {α : Type u} [DecidableEq α] {S : Type v} [FSet (NNF α) S]
 
-theorem sameSignature_of_nodeSignature_eq {n1 n2 : GBANode α S}
+/-- Equal signatures imply `sameSignature`. -/
+theorem sameSignature_of_nodeSignature_eq {n1 n2 : ExpansionNode α S}
     (h : nodeSignature n1 = nodeSignature n2) : n1.sameSignature n2 = true := by
-  unfold GBANode.sameSignature
+  unfold ExpansionNode.sameSignature
   simp only [nodeSignature, Prod.mk.injEq] at h
   obtain ⟨h1, h2⟩ := h
   rw [Bool.and_eq_true, FSet.setEq_correct, FSet.setEq_correct]
@@ -410,7 +435,8 @@ theorem sameSignature_of_nodeSignature_eq {n1 n2 : GBANode α S}
       List.mem_toFinset.mpr ((FSet.mem_toList_iff x n2.next).mpr hx)
     rwa [← h2, List.mem_toFinset, FSet.mem_toList_iff] at hm
 
-theorem nodeSignature_fresh_of_findDuplicate_none {st : ExpandState α S} {node : GBANode α S}
+/-- If `findDuplicate` finds nothing, `node`'s signature isn't among the already-used ones. -/
+theorem nodeSignature_fresh_of_findDuplicate_none {st : ExpandState α S} {node : ExpansionNode α S}
     (h : findDuplicate st node = none) :
     nodeSignature node ∉ usedSignatures st := by
   intro hmem
@@ -436,7 +462,11 @@ theorem cons_head!_tail! {β : Type w} [Inhabited β] {l : List β} (h : l.isEmp
   | cons a t => rfl
 
 set_option maxHeartbeats 4000000 in
-theorem expand_term (topFormula : NNF α) (node : GBANode α S) (st : ExpandState α S)
+/-- `expand` always terminates given `ExpandInv` and freshness of `node.name`, returning `some r` with `usedSignatures`
+growing monotonically and `NodesBounded` preserved. Terminates on the lexicographic measure `(expandMeasure1,
+expandMeasure2)`: finishing a node strictly decreases `expandMeasure1`, every other step strictly decreases
+`expandMeasure2`. Formalizes the finite-state-space termination argument of Gerth et al. 1995. -/
+theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : ExpandState α S)
     (hinv : ExpandInv topFormula node st)
     (h_not_in : st.nodes[node.name]? = none)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
@@ -444,12 +474,11 @@ theorem expand_term (topFormula : NNF α) (node : GBANode α S) (st : ExpandStat
     ∃ r : Nat × ExpandState α S, expand node st = some r ∧
       usedSignatures st ⊆ usedSignatures r.2 ∧ NodesBounded topFormula r.2 := by
   by_cases h_empty : node.new.isEmpty
-  · -- `node.new = []`
-    match h_fd : findDuplicate st node with
+  · match h_fd : findDuplicate st node with
     | some existingName =>
       -- MERGE: terminal, only `incoming` of the target changes.
       obtain ⟨target, htarget, _⟩ := findDuplicate_spec st node existingName h_fd
-      set merged : GBANode α S := { target with incoming := target.incoming.union node.incoming }
+      set merged : ExpansionNode α S := { target with incoming := target.incoming.union node.incoming }
         with hmerged_def
       have hmerge_eq : mergeIncoming st node existingName
           = { st with nodes := st.nodes.insert existingName merged } := by
@@ -505,7 +534,7 @@ theorem expand_term (topFormula : NNF α) (node : GBANode α S) (st : ExpandStat
              incoming := Std.HashSet.emptyWithCapacity 4 |>.insert node.name
              new := FSet.foldl (fun acc f => f :: acc) [] node.next
              old := FSet.empty
-             next := FSet.empty } : GBANode α S)
+             next := FSet.empty } : ExpansionNode α S)
           ({ st with nodes := st.nodes.insert node.name node, nextName := st.nextName + 1 }) := by
         refine ⟨⟨h_succ_bounded, ?_, ?_⟩, ?_⟩
         · intro x hx; exact absurd hx (by simp [FSet.contains_empty])
@@ -517,8 +546,7 @@ theorem expand_term (topFormula : NNF α) (node : GBANode α S) (st : ExpandStat
         simp only [freshName]
         exact hr1
       exact ⟨r, heq, h_grow_sub.trans hr2, hr3⟩
-  · -- `node.new ≠ []`
-    have h_ne : node.new.isEmpty = false := by
+  · have h_ne : node.new.isEmpty = false := by
       revert h_empty; cases node.new.isEmpty <;> decide
     have hcons : node.new.head! :: node.new.tail! = node.new := cons_head!_tail! h_ne
     have hφ_mem : node.new.head! ∈ node.new := head!_mem_of_isEmpty_false h_ne
@@ -546,10 +574,10 @@ theorem expand_term (topFormula : NNF α) (node : GBANode α S) (st : ExpandStat
         exact ⟨(node.name, st), heq, Finset.Subset.refl _, hinv.nodes_bounded⟩
       · -- literal insert: single recursive call, unchanged `st`
         have hinv' : ExpandInv topFormula
-            ({ node with new := node.new.tail!, old := FSet.insert node.old node.new.head! } : GBANode α S) st :=
+            ({ node with new := node.new.tail!, old := FSet.insert node.old node.new.head! } : ExpansionNode α S) st :=
           ⟨⟨h_tail_sub, h_old_ins, hinv.node_bounded.next_sub⟩, hinv.nodes_bounded⟩
         have hw2 : expandMeasure2
-            ({ node with new := node.new.tail!, old := FSet.insert node.old node.new.head! } : GBANode α S)
+            ({ node with new := node.new.tail!, old := FSet.insert node.old node.new.head! } : ExpansionNode α S)
             < expandMeasure2 node := by
           show weightedSize node.new.tail! < weightedSize node.new
           rw [hweight]; omega
@@ -563,10 +591,10 @@ theorem expand_term (topFormula : NNF α) (node : GBANode α S) (st : ExpandStat
     · by_cases htt_eq : node.new.head! = NNF.tt
       · -- tt: single recursive call, unchanged `st`
         have hinv' : ExpandInv topFormula
-            ({ node with new := node.new.tail!, old := FSet.insert node.old node.new.head! } : GBANode α S) st :=
+            ({ node with new := node.new.tail!, old := FSet.insert node.old node.new.head! } : ExpansionNode α S) st :=
           ⟨⟨h_tail_sub, h_old_ins, hinv.node_bounded.next_sub⟩, hinv.nodes_bounded⟩
         have hw2 : expandMeasure2
-            ({ node with new := node.new.tail!, old := FSet.insert node.old node.new.head! } : GBANode α S)
+            ({ node with new := node.new.tail!, old := FSet.insert node.old node.new.head! } : ExpansionNode α S)
             < expandMeasure2 node := by
           show weightedSize node.new.tail! < weightedSize node.new
           rw [hweight]; omega
@@ -607,10 +635,10 @@ theorem expand_term (topFormula : NNF α) (node : GBANode α S) (st : ExpandStat
               · exact hinv.node_bounded.next_sub _ h1
               · exact h_next1_sub _ h2
             have hinv' : ExpandInv topFormula
-                ({ node with new := addToNew { node with new := node.new.tail! } (new1 node.new.head!), old := FSet.insert node.old node.new.head!, next := addAllToSet node.next (next1 node.new.head!) } : GBANode α S) st :=
+                ({ node with new := addToNew { node with new := node.new.tail! } (new1 node.new.head!), old := FSet.insert node.old node.new.head!, next := addAllToSet node.next (next1 node.new.head!) } : ExpansionNode α S) st :=
               ⟨⟨h_new_sub', h_old_ins, h_next_sub'⟩, hinv.nodes_bounded⟩
             have hw2 : expandMeasure2
-                ({ node with new := addToNew { node with new := node.new.tail! } (new1 node.new.head!), old := FSet.insert node.old node.new.head!, next := addAllToSet node.next (next1 node.new.head!) } : GBANode α S)
+                ({ node with new := addToNew { node with new := node.new.tail! } (new1 node.new.head!), old := FSet.insert node.old node.new.head!, next := addAllToSet node.next (next1 node.new.head!) } : ExpansionNode α S)
                 < expandMeasure2 node := by
               show weightedSize (addToNew { node with new := node.new.tail! } (new1 node.new.head!))
                 < weightedSize node.new
@@ -651,10 +679,10 @@ theorem expand_term (topFormula : NNF α) (node : GBANode α S) (st : ExpandStat
               · exact hinv.node_bounded.next_sub _ h1
               · exact h_next1_sub _ h2
             have hinv1 : ExpandInv topFormula
-                ({ node with new := addToNew { node with new := node.new.tail! } (new1 node.new.head!), old := FSet.insert node.old node.new.head!, next := addAllToSet node.next (next1 node.new.head!) } : GBANode α S) st :=
+                ({ node with new := addToNew { node with new := node.new.tail! } (new1 node.new.head!), old := FSet.insert node.old node.new.head!, next := addAllToSet node.next (next1 node.new.head!) } : ExpansionNode α S) st :=
               ⟨⟨h_new_sub1, h_old_ins, h_next_sub1⟩, hinv.nodes_bounded⟩
             have hw1 : expandMeasure2
-                ({ node with new := addToNew { node with new := node.new.tail! } (new1 node.new.head!), old := FSet.insert node.old node.new.head!, next := addAllToSet node.next (next1 node.new.head!) } : GBANode α S)
+                ({ node with new := addToNew { node with new := node.new.tail! } (new1 node.new.head!), old := FSet.insert node.old node.new.head!, next := addAllToSet node.next (next1 node.new.head!) } : ExpansionNode α S)
                 < expandMeasure2 node := by
               show weightedSize (addToNew { node with new := node.new.tail! } (new1 node.new.head!))
                 < weightedSize node.new
@@ -677,12 +705,12 @@ theorem expand_term (topFormula : NNF α) (node : GBANode α S) (st : ExpandStat
               · exact h_tail_sub _ h1
               · exact h_new2_sub _ h2
             have hinv2 : ExpandInv topFormula
-                ({ node with name := r1.1, new := addToNew { node with new := node.new.tail! } (new2 node.new.head!), old := FSet.insert node.old node.new.head! } : GBANode α S) r1.2 :=
+                ({ node with name := r1.1, new := addToNew { node with new := node.new.tail! } (new2 node.new.head!), old := FSet.insert node.old node.new.head! } : ExpansionNode α S) r1.2 :=
               ⟨⟨h_new_sub2, h_old_ins, hinv.node_bounded.next_sub⟩, hr1_3⟩
             have hm1_le : expandMeasure1 topFormula r1.2 ≤ expandMeasure1 topFormula st :=
               expandMeasure1_le hr1_2
             have hw2 : expandMeasure2
-                ({ node with name := r1.1, new := addToNew { node with new := node.new.tail! } (new2 node.new.head!), old := FSet.insert node.old node.new.head! } : GBANode α S)
+                ({ node with name := r1.1, new := addToNew { node with new := node.new.tail! } (new2 node.new.head!), old := FSet.insert node.old node.new.head! } : ExpansionNode α S)
                 < expandMeasure2 node := by
               show weightedSize (addToNew { node with new := node.new.tail! } (new2 node.new.head!))
                 < weightedSize node.new
@@ -721,21 +749,21 @@ theorem createGraph_term (φ : NNF α) :
     ∃ st : ExpandState α S, createGraph φ = some st ∧ NodesBounded φ st := by
   have hinv : ExpandInv φ
       ({ name := 1, incoming := Std.HashSet.emptyWithCapacity 4 |>.insert expandInit,
-         new := [φ], old := FSet.empty, next := FSet.empty } : GBANode α S)
+         new := [φ], old := FSet.empty, next := FSet.empty } : ExpansionNode α S)
       ({ nextName := 2, nodes := Std.HashMap.emptyWithCapacity 16 } : ExpandState α S) := by
     refine ⟨⟨?_, ?_, ?_⟩, ?_⟩
     · intro x hx; simp only [List.mem_singleton] at hx; exact hx ▸ NNF.IsSubformula.refl
     · intro x hx; exact absurd hx (by simp [FSet.contains_empty])
     · intro x hx; exact absurd hx (by simp [FSet.contains_empty])
     · intro k n hk; simp at hk
-  have h_not_in : (Std.HashMap.emptyWithCapacity 16 : Std.HashMap Nat (GBANode α S))[(1 : Nat)]? = none := by
+  have h_not_in : (Std.HashMap.emptyWithCapacity 16 : Std.HashMap Nat (ExpansionNode α S))[(1 : Nat)]? = none := by
     simp
-  have h_fresh : ∀ k, (Std.HashMap.emptyWithCapacity 16 : Std.HashMap Nat (GBANode α S))[k]? ≠ none → k < 2 := by
+  have h_fresh : ∀ k, (Std.HashMap.emptyWithCapacity 16 : Std.HashMap Nat (ExpansionNode α S))[k]? ≠ none → k < 2 := by
     intro k hk; simp at hk
   have h_name : (1 : Nat) < 2 := by omega
   obtain ⟨r, hr1, _, hr3⟩ := expand_term φ
       ({ name := 1, incoming := Std.HashSet.emptyWithCapacity 4 |>.insert expandInit,
-         new := [φ], old := FSet.empty, next := FSet.empty } : GBANode α S)
+         new := [φ], old := FSet.empty, next := FSet.empty } : ExpansionNode α S)
       ({ nextName := 2, nodes := Std.HashMap.emptyWithCapacity 16 } : ExpandState α S)
       hinv h_not_in h_fresh h_name
   refine ⟨r.2, ?_, hr3⟩

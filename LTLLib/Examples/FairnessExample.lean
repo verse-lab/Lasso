@@ -1,5 +1,5 @@
 /-
-  Slightly more complicated example that exercises a *generalized* Büchi
+  Slightly more complicated example that exercises a generalized Büchi
   acceptance condition with two acceptance sets.
 
   Formula: □◇a ∧ □◇b

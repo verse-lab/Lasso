@@ -1,9 +1,14 @@
 /-
   Product construction between an external system (Kripke structure) and a
-  Büchi Automaton `BA.lean`, built on-the-fly as a plain successor function,
-  never a materialized graph.
+  Büchi Automaton `BA.lean`, built on-the-fly as a plain successor function.
 
   Product state order is `SysState × BAState`.
+
+  Sections:
+  - Product construction
+  - System run / system language
+  - Product run decomposition + acceptance transfer
+  - Lasso witness
 -/
 import LTLLib.NestedDFS.NestedDFSTermination
 import LTLLib.AbstractSpec.Acceptance
@@ -15,23 +20,16 @@ namespace LTLLib
 
 namespace Product
 
+/-! ## Product construction -/
+
 variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
 
 def initialStates (ba : BA α) (sysInit : List SysState) :
     List (SysState × BAState) :=
   sysInit.flatMap fun s => ba.initialStates.toList.map fun q => (s, q)
 
-/-- Terminal state handling: Wraps a successor function so that a state
-with no outgoing edges gets a self-loop instead, so every state under
-`totalizeSucc succs` has at least one successor.
-
-LTL/Büchi Automata semantics are defined over *infinite* words. Requiring
-a product with a Kripke structure that has a total transition relation (every
-state has at least one successor).
-Semantics are "Stay in the same state forever" if no transition is possible
-instead of a cut-off trace, which would not be well-defined for a Büchi
-Automaton. See `ModelCheckTerminalStateExample.lean` for a test that would
-fail to find the counter example if totalizeSucc were not applied. -/
+/-- Wraps a successor function so a terminal state gets a self-loop instead, giving every state
+a total transition relation, as required by Büchi semantics over infinite words. -/
 def totalizeSucc {State : Type u} (succs : State → Array State) : State → Array State :=
   fun s =>
     let ss := succs s
@@ -56,14 +54,8 @@ theorem finiteReach_totalizeSucc {State : Type u} (initialStates : List State)
     FiniteReach initialStates (totalizeSucc succs) :=
   fr.subset (fun _ hs => reachable_totalizeSucc_imp initialStates succs hs)
 
-/--
-Construction on-the-fly: Never materialized as an explicit edge set.
-
-Compatibility is evaluated at the *source* state `(s, q)`.
-The `compatible` gate decides whether `(s, q)` has *any* outgoing edges at all.
-
-Uses `totalizeSucc sysSucc`. See `totalizeSucc` for why a terminal client state
-must be read as a self-loop for LTL/Büchi purposes. -/
+/-- Successors of a product state, computed on the fly (never materialized as an edge set).
+Compatibility is checked at the source state `(s, q)`, if it fails, `(s, q)` has no outgoing edges. -/
 def getSuccessors (ba : BA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) :
     (SysState × BAState) → Array (SysState × BAState) :=
@@ -75,8 +67,7 @@ def getSuccessors (ba : BA α) (sysSucc : SysState → Array SysState)
 def isAccepting (ba : BA α) : (SysState × BAState) → Bool :=
   fun (_, q) => ba.isAccepting q
 
-/-- Every `Reachable` product state's halves are themselves reachable in
-their own component graphs. -/
+/-- Every `Reachable` product state's halves are themselves reachable in their own component graphs. -/
 private theorem reachable_imp (ba : BA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) :
     ∀ {p : SysState × BAState},
@@ -104,8 +95,7 @@ private theorem reachable_imp (ba : BA α) (sysSucc : SysState → Array SysStat
       obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. |>.mp heq
       exact ⟨.step ih1 hs''_mem, .step ih2 hq''_mem⟩
 
-/-- The product's reachable states are contained in
-`reachable(sys) × reachable(ba)`.
+/-- The product's reachable states are contained in `reachable(sys) × reachable(ba)`.
 The model checking caller supplies their own system's `FiniteReach` witness -/
 def finiteReach (ba : BA α) (hbawf : ba.WellFormed)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
@@ -166,8 +156,7 @@ private theorem getSuccessors_mem_iff (ba : BA α) (sysSucc : SysState → Array
     simp only [hcompat, if_true, Array.mem_flatMap, Array.mem_map]
     exact ⟨s', hs'_mem, q', hq'_mem, rfl⟩
 
-/-- A product run decomposes into a BA run and a `Sys.toSpec` run that
-stay `compatible` at every step. -/
+/-- A product run decomposes into a BA run and a `Sys.toSpec` run that stay `compatible` at every step. -/
 theorem run_decompose (ba : BA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
     {r : Nat → SysState × BAState} (hrun : (toSpec ba sysSucc sysLabel sysInit).isRun r) :
@@ -187,8 +176,7 @@ theorem run_decompose (ba : BA α) (sysSucc : SysState → Array SysState)
     rw [← heq]
     exact hs_mem
 
-/-- A BA run and a `Sys.toSpec` run that agree at every step under `ba.compatible`
-combine into a genuine product run. -/
+/-- A BA run and a `Sys.toSpec` run that agree at every step under `ba.compatible` combine into a genuine product run. -/
 theorem run_combine (ba : BA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
     {σ : Nat → BAState} {τ : Nat → SysState}
@@ -224,8 +212,8 @@ private theorem compatible_iff_labelCompat [LawfulBEq α] (ba : BA α) (s : BASt
       Std.HashSet.all_eq_true_iff_forall_mem, Std.HashSet.any_eq_false_iff_forall_mem,
       Std.HashSet.mem_iff_contains, Bool.not_eq_true]
 
-/-- An accepting product run decomposes into a `Sys.toSpec` run and a genuine
-BA-language membership witness for the system's *real* labeling along that run. -/
+/-- An accepting product run decomposes into a `Sys.toSpec` run and a BA-language membership
+witness for the system's real labeling. -/
 theorem gsp_correct1 [LawfulBEq α] (ba : BA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
     {r : Nat → SysState × BAState}
@@ -241,8 +229,8 @@ theorem gsp_correct1 [LawfulBEq α] (ba : BA α) (sysSucc : SysState → Array S
   obtain ⟨j, hj⟩ := hacc i n
   exact ⟨j, by simpa [acc_iff] using hj⟩
 
-/-- A genuine system run whose real labeling lies in the BA's language combines
-(via `run_combine`) into an accepting product run projecting back down to it. -/
+/-- A genuine system run whose real labeling lies in the BA's language lifts to an accepting
+product run projecting back down to it. -/
 theorem gsp_correct2 [LawfulBEq α] (ba : BA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
     {τ : Nat → SysState}
@@ -260,6 +248,8 @@ theorem gsp_correct2 [LawfulBEq α] (ba : BA α) (sysSucc : SysState → Array S
   exact ⟨j, by simpa [acc_iff] using hj⟩
 
 end Product
+
+/-! ## Lasso witness -/
 
 /-- The `Product.toSpec` specialization of `toValidLassoOf`. -/
 def AcceptingCycle.toValidLassoProduct {α : Type u} {SysState : Type v} [BEq α] [Hashable α]

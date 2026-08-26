@@ -2,7 +2,7 @@
   End-to-end pipeline for satisfiability:
   LTL formula φ → satisfiability decision.
 -/
-import LTLLib.LTLtoGBA.GraphComplete
+import LTLLib.LTLtoGBA.Correctness
 import LTLLib.DegeneralBridge
 import LTLLib.LTLtoGBA.ExpandTermination
 import LTLLib.NestedDFS.NestedDFSTermination
@@ -12,8 +12,7 @@ namespace LTLLib
 variable {α : Type u} {S : Type v} [FSet (NNF α) S]
   [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
 
-/-- Chain `createGraph → constructGBA → GBA.degeneralize → nestedDFSWF` a
-a single total decision procedure for `φ`'s satisfiability. -/
+/-- Chain `createGraph → constructGBA → GBA.degeneralize → nestedDFSWF` -/
 def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
   match hcg : createGraph (S := S) φ with
   | some st =>
@@ -24,6 +23,7 @@ def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
   | none => .empty 0
 
 omit [LawfulBEq α] [LawfulHashable α] [DecidableEq α] in
+/-- `fullPipeline` restated with the `createGraph` result exposed as `st`. -/
 theorem fullPipeline_eq (φ : NNF α) {st : ExpandState α S} (hcg : createGraph φ = some st) :
     fullPipeline (S := S) φ =
       nestedDFSWF (constructGBA φ st).degeneralize.getSuccessors
@@ -64,7 +64,7 @@ theorem fullPipeline_nonEmpty_sat (φ : NNF α) {stem loop : List BAState}
     obtain ⟨node, hnode⟩ := Option.isSome_iff_exists.mp h2
     exact degeneralize_canonicalLabel_compat gba (ac.toValidLasso.run n)
       (constructGBA_canonicalLabel_compat φ hcg hnode)
-  exact ⟨ξ, (constructGBA_correct_weak hcg ξ).mp
+  exact ⟨ξ, (constructGBA_correct hcg ξ).mp
     ((degeneralize_accepts_any gba hwf ξ).mp
       (ac.toValidLasso.accepts_of_validLasso hcompat))⟩
 
@@ -79,7 +79,7 @@ theorem fullPipeline_empty_unsat (φ : NNF α) {n : Nat}
   set ba := gba.degeneralize with hba
   have hwf := constructGBA_wellFormed hcg
   have hbawf := degeneralize_wellFormed_any gba hwf
-  have hgba_acc : gba.toSpec.accepts ξ := (constructGBA_correct_weak hcg ξ).mpr hξ
+  have hgba_acc : gba.toSpec.accepts ξ := (constructGBA_correct hcg ξ).mpr hξ
   have hba_acc : ba.toSpec.accepts ξ := (degeneralize_accepts_any gba hwf ξ).mpr hgba_acc
   obtain ⟨σ, hrun, _, hacc⟩ := hba_acc
   have hcyc : ∃ _ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting, True :=

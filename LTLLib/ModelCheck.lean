@@ -1,14 +1,22 @@
 /-
-  End-to-end model checking: system × LTL formula φ → does the system
-  satisfy φ?
+  End-to-end model checking: system × LTL formula φ → does the system satisfy φ?
 
-  Standard automata-theoretic model checking: negate `φ`, build a `BA` for `¬φ`,
-  product it against the caller's system (`Product.lean`), and check the
-  product for emptiness.
+  Standard automata-theoretic model checking: negate `φ`, build a `BA` for `¬φ`, product it against the
+  caller's system (`Product.lean`), and check the product for emptiness. `sys ⊨ φ` iff the product is empty.
 
-  `sys ⊨ φ` iff the product is empty.
+  Defines:
+  - `modelCheck`: runs an `EmptinessChecker` on the product of `sys` and the `¬φ`-automaton
+  - `modelCheck_eq`: unfolds `modelCheck` once `createGraph` is known to succeed
+  - `modelCheck_empty_unsat`:   (Soundness)    An `.empty` result implies every real run of `sys` satisfies `φ`
+  - `modelCheck_nonEmpty_sat`:  (Completeness) A `.nonEmpty` result yields a concrete violating run
+
+  Sections:
+  - Model checking
+  - Helper: unfolding modelCheck
+  - Soundness
+  - Completeness
 -/
-import LTLLib.LTLtoGBA.GraphComplete
+import LTLLib.LTLtoGBA.Correctness
 import LTLLib.DegeneralBridge
 import LTLLib.LTLtoGBA.ExpandTermination
 import LTLLib.Product
@@ -20,19 +28,15 @@ variable {α : Type u} {S : Type w} [FSet (NNF α) S]
   [LawfulHashable SysState]
   [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
 
+/-! ## Model checking -/
+
 /-- Does `sys` (given by `sysInit`/`sysSucc`/`sysLabel`) satisfy `φ`?
 
-The caller supplies `sysFR : FiniteReach sysInit sysSucc` (proof that their
-own system is finitely reachable). This is a bare existence certificate, no
-witness required (caller must not supply the full reachable set).
-Needed only to prove termination. Caller can feel free to use "sorry" if they
-do not care about termination.
+`sysFR` is a bare existence certificate (no witness) that `sys` is finitely reachable, needed only to
+prove termination. Callers uninterested in termination may discharge it with `sorry`. The emptiness
+check itself is supplied via an algorithm-agnostic `checker : EmptinessChecker` (`EmptinessCheck.lean`).
 
-The emptiness check is parameterized by `checker : EmptinessChecker`
-(`EmptinessCheck.lean`, An algorithm-agnostic contract).
-
-`EmptinessResult.empty` means `sys ⊨ φ`; `EmptinessResult.nonEmpty stem loop`
-means the product found a run of `sys` violating `φ`, witnessed by
+`.empty` means `sys ⊨ φ` whereas `.nonEmpty stem loop` witnesses a run of `sys` violating `φ`, given by
 `(system state, ¬φ-automaton state)` pairs along `stem`/`loop`. -/
 def modelCheck (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
@@ -49,6 +53,8 @@ def modelCheck (φ : Formula α) (sysInit : List SysState)
       (Product.initialStates ba sysInit)
       (Product.finiteReach ba hbawf sysSucc sysLabel sysInit sysFR) (Product.isAccepting ba)
   | none => .empty 0
+
+/-! ## Helper: unfolding modelCheck -/
 
 omit [LawfulHashable SysState] [LawfulBEq α] [LawfulHashable α] [DecidableEq α] in
 theorem modelCheck_eq (φ : Formula α) (sysInit : List SysState)
@@ -72,9 +78,10 @@ theorem modelCheck_eq (φ : Formula α) (sysInit : List SysState)
     rfl
   next hcg' => exact absurd (hcg'.symm.trans hcg) (by simp)
 
+/-! ## Soundness -/
+
 omit [LawfulHashable SysState] in
-/-- If `modelCheck` finds no counterexample, then every real run of the
-caller's system satisfies `φ` (under its own real labeling). -/
+/-- If `modelCheck` finds no counterexample, then every real run of the caller's system satisfies `φ`. -/
 theorem modelCheck_empty_unsat (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc)
@@ -91,7 +98,7 @@ theorem modelCheck_empty_unsat (φ : Formula α) (sysInit : List SysState)
   have hwf := constructGBA_wellFormed hcg
   have hbawf := degeneralize_wellFormed_any gba hwf
   have hgba_acc : gba.toSpec.accepts (fun i a => a ∈ sysLabel (τ i)) :=
-    (constructGBA_correct_weak hcg _).mpr ((Formula.toNNF_correct_neg _ φ).mp hviolate)
+    (constructGBA_correct hcg _).mpr ((Formula.toNNF_correct_neg _ φ).mp hviolate)
   have hba_acc : ba.toSpec.accepts (fun i a => a ∈ sysLabel (τ i)) :=
     (degeneralize_accepts_any gba hwf _).mpr hgba_acc
   obtain ⟨r, _, hrrun, hracc⟩ := Product.gsp_correct2 ba sysSucc sysLabel sysInit hτ hba_acc
@@ -104,9 +111,10 @@ theorem modelCheck_empty_unsat (φ : Formula α) (sysInit : List SysState)
         exact ⟨N + j, by omega, hj⟩)
   exact checker.empty_no_cycle h hcyc
 
+/-! ## Completeness -/
+
 omit [LawfulHashable SysState] in
-/-- If `modelCheck` finds a counterexample, there's a concrete witness infinite run
-of the system violating `φ` under its own real labeling -/
+/-- If `modelCheck` finds a counterexample, there's a concrete witness run of `sys` violating `φ`. -/
 theorem modelCheck_nonEmpty_sat (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc)
@@ -129,6 +137,6 @@ theorem modelCheck_nonEmpty_sat (φ : Formula α) (sysInit : List SysState)
   obtain ⟨σ, hσrun, hσcompat, hσacc⟩ := hlang
   have hgba_acc : gba.toSpec.accepts (fun n a => a ∈ sysLabel (ac.toValidLassoProduct.run n).1) :=
     (degeneralize_accepts_any gba hwf _).mp ⟨σ, hσrun, hσcompat, hσacc⟩
-  exact (Formula.toNNF_correct_neg _ φ).mpr ((constructGBA_correct_weak hcg _).mp hgba_acc) hsat
+  exact (Formula.toNNF_correct_neg _ φ).mpr ((constructGBA_correct hcg _).mp hgba_acc) hsat
 
 end LTLLib

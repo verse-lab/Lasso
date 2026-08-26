@@ -17,29 +17,19 @@ namespace LTLLib
 /-- A Generalized Büchi Automaton. Parametrized by the type of atomic propositions.
   States are identified by Nat (node names). -/
 structure GBA (α : Type u) [BEq α] [Hashable α] where
-  /-- All state identifiers. -/
   states : Std.HashSet Nat
-
-  /-- Initial state identifiers. -/
   initialStates : Std.HashSet Nat
-
-  /-- Transition map: state → list of successor states. -/
-  successors : Std.HashMap Nat (Array Nat)
-
-  /-- Labeling: for each state, the sets of positive and negative propositions.
-  A state q is compatible with a valuation L iff:
-    positiveProps(q) ⊆ L ∧ negativeProps(q) ∩ L = ∅ -/
+  successors : Std.HashMap Nat (Array Nat)  -- state → successor states
+  -- For each state, the sets of positive and negative propositions. A state q is
+  -- compatible with a valuation L iff positiveProps(q) ⊆ L ∧ negativeProps(q) ∩ L = ∅.
   labeling : Std.HashMap Nat (Std.HashSet α × Std.HashSet α)
-
-  /-- Acceptance sets: one per Until-subformula.
-  A state q is in acceptance set F_{μ,η} iff:
-    (μ U η) ∉ old(q) ∨ η ∈ old(q)
-  i.e., the Until obligation is either not present or already satisfied. -/
+  -- One acceptance set per Until-subformula. State q is in F_{μ,η} iff
+  -- (μ U η) ∉ old(q) ∨ η ∈ old(q), i.e. the obligation is absent or already satisfied.
   acceptSets : Array (Std.HashSet Nat)
 
 namespace GBA
 
-variable [BEq α] [Hashable α]
+variable {α} [BEq α] [Hashable α]
 
 /-- Number of states in the GBA. -/
 def numStates (gba : GBA α) : Nat := gba.states.size

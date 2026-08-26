@@ -12,6 +12,15 @@
   Key theorems:
   - `NNF.neg_correct`: Negation correctness for NNF
   - `toNNF_correct`: `Formula.directSatisfies` ↔ `NNF.satisfies ∘ toNNF`
+
+  Sections:
+  - ω-words
+  - Release operator
+  - NNF denotation
+  - Unfolding lemmas for NNF.satisfies
+  - Negation correctness
+  - Formula-level semantics
+  - toNNF correctness
 -/
 import Lentil
 import LTLLib.LTL.Syntax
@@ -35,9 +44,8 @@ abbrev OmegaWord (α : Type u) := exec (α → Prop)
 Lentil provides `tla_until` but not its dual `release`.
 We define it here and prove the key properties. -/
 
-/-- Release operator: `p R q` holds iff for every `j`, either `q` holds at suffix `j`,
-    or there exists some `i < j` where `p` holds.
-    This is the dual of Until: `p R q ≡ ¬(¬p U ¬q)`. -/
+/-- Release operator: `p R q` holds iff for every `j`, `q` holds at suffix `j` or `p` held at some `i < j`.
+    Dual of Until: `p R q ≡ ¬(¬p U ¬q)`. -/
 def tla_release {α : Type u} (p q : pred α) : pred α :=
   fun σ => ∀ j, (q <| σ.drop j) ∨ ∃ i, i < j ∧ (p <| σ.drop i)
 
@@ -65,7 +73,7 @@ theorem always_eq_release_false {α : Type u} (p : pred α) :
 
 /-- Denotational semantics: map an NNF formula to a Lentil predicate over ω-words.
     Each ω-word position is a valuation `α → Prop`. -/
-def NNF.toPred : NNF α → pred (α → Prop)
+def NNF.toPred {α} : NNF α → pred (α → Prop)
   | .tt        => tla_true
   | .ff        => tla_false
   | .prop a    => state_pred (fun v => v a)
@@ -77,7 +85,7 @@ def NNF.toPred : NNF α → pred (α → Prop)
   | .release φ ψ => tla_release φ.toPred ψ.toPred
 
 /-- An ω-word `ξ` satisfies an NNF formula `φ`. -/
-def NNF.satisfies (ξ : OmegaWord α) (φ : NNF α) : Prop :=
+def NNF.satisfies {α} (ξ : OmegaWord α) (φ : NNF α) : Prop :=
   φ.toPred ξ
 
 /-! ## Unfolding lemmas for NNF.satisfies -/
@@ -96,13 +104,12 @@ theorem NNF.neg_correct (ξ : OmegaWord α) (φ : NNF α) :
 
 /-! ## Formula-level semantics
 
-`directSatisfies` is intentionally defined using plain Prop operations rather
-than Lentil combinators. This keeps it independent of the TLA layer so that
-`toNNF_correct` (which proves `directSatisfies ↔ NNF.satisfies ∘ toNNF`)
-serves as a genuine cross-check between two independent semantics. -/
+`directSatisfies` is defined with plain `Prop` operations rather than Lentil combinators, keeping it
+independent of the TLA layer so `toNNF_correct` is a genuine cross-check between two independent
+semantics. -/
 
 /-- Direct semantics on the user-facing Formula type, independent of NNF. -/
-def Formula.directSatisfies (ξ : OmegaWord α) : Formula α → Prop
+def Formula.directSatisfies {α} (ξ : OmegaWord α) : Formula α → Prop
   | .tt => True
   | .ff => False
   | .atom a => ξ 0 a
@@ -120,13 +127,12 @@ def Formula.directSatisfies (ξ : OmegaWord α) : Formula α → Prop
   | .always φ => ∀ j, φ.directSatisfies (ξ.drop j)
 
 /-- NNF-based satisfaction on the user-facing Formula type. -/
-def Formula.satisfies (ξ : OmegaWord α) (φ : Formula α) : Prop :=
+def Formula.satisfies {α} (ξ : OmegaWord α) (φ : Formula α) : Prop :=
   (φ.toNNF true).satisfies ξ
 
 /-! ## toNNF correctness -/
 
-/-- The key generalized statement: toNNF preserves/negates satisfaction
-    depending on polarity. -/
+/-- `toNNF` preserves satisfaction at positive polarity and negates it at negative polarity. -/
 private theorem Formula.toNNF_correct_aux {α} (ξ : OmegaWord α) (φ : Formula α) :
     (φ.directSatisfies ξ ↔ (φ.toNNF true).satisfies ξ) ∧
     (¬ φ.directSatisfies ξ ↔ (φ.toNNF false).satisfies ξ) := by
@@ -137,14 +143,13 @@ theorem Formula.toNNF_correct {α} (ξ : OmegaWord α) (φ : Formula α) :
     φ.directSatisfies ξ ↔ (φ.toNNF true).satisfies ξ :=
   (toNNF_correct_aux ξ φ).1
 
-/-- Negative-polarity half of `toNNF_correct`: converting to NNF at negative
-polarity captures *negated* satisfaction. -/
-theorem Formula.toNNF_correct_neg (ξ : OmegaWord α) (φ : Formula α) :
+/-- Negative-polarity half of `toNNF_correct`: converting to NNF at negative polarity captures negated satisfaction. -/
+theorem Formula.toNNF_correct_neg {α} (ξ : OmegaWord α) (φ : Formula α) :
     ¬ φ.directSatisfies ξ ↔ (φ.toNNF false).satisfies ξ :=
   (toNNF_correct_aux ξ φ).2
 
 /-- The two satisfaction notions for Formula agree. -/
-theorem Formula.directSatisfies_eq_satisfies (ξ : OmegaWord α) (φ : Formula α) :
+theorem Formula.directSatisfies_eq_satisfies {α} (ξ : OmegaWord α) (φ : Formula α) :
     φ.directSatisfies ξ ↔ φ.satisfies ξ :=
   toNNF_correct ξ φ
 

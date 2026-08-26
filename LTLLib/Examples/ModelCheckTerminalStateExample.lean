@@ -4,7 +4,7 @@
   used to make `modelCheck` miss real counterexamples whose violation only
   manifests by the system stalling forever in that state.
 
-  LTL/Büchi-automaton semantics are defined over *infinite* words, so a
+  LTL/Büchi-automaton semantics are defined over infinite words, so a
   Kripke structure's successor function is required to be total:
     Every state has at least one successor.
 
@@ -18,7 +18,7 @@
   `Product.totalizeSucc` is automatically applied now, so the client need not
   to worry to provide a total Kripke structure.
 
-  System: a light that switches on once, then off, then stops responding —
+  System: a light that switches on once, then off, then stops responding.
   `off` has no outgoing transitions at all.
 
   Formula: `□◇on` ("the light turns on infinitely often"): Does not hold.
@@ -71,7 +71,7 @@ def breakableLightFR : FiniteReach breakableLightInit breakableLightSucc := Set.
 
 
 
-/-- `□◇on`: the light turns on infinitely often — Does not hold. -/
+/-- `□◇on`: the light turns on infinitely often: Does not hold. -/
 def ψ : Formula Prop' := .always (.eventually (.atom "on"))
 #eval report breakableLightLabel (modelCheck (S := S) ψ breakableLightInit breakableLightSucc breakableLightLabel breakableLightFR)
 

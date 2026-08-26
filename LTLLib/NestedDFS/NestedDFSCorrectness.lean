@@ -23,6 +23,11 @@
   - When inner DFS finishes without finding a cycle, the seed's reachable
     set (through non-innerFinished states) has been fully explored.
 
+  Two extra shortcuts from the literature are baked into the algorithm and its proof:
+  the Schwoon-Esparza back-edge shortcut (report a cycle directly off a stack-edge,
+  skipping inner DFS) and the Holzmann-Peled-Yannakakis inner-DFS shortcut (inner DFS
+  stops at any cyan/stack state, not just its own seed).
+
   References:
   - Courcoubetis, Vardi, Wolper, Yannakakis (CVWY): "Memory-efficient
     algorithms for the verification of temporal properties" (1992)
@@ -30,7 +35,10 @@
   - Schwoon & Esparza: "A Note on On-The-Fly Verification Algorithms"
     (TACAS 2005) — Color-based reformulation; proof that inner DFS explores
     all reachable non-finished states; Lemma 1 (no accepting cycle through
-    finished states).
+    finished states); the back-edge shortcut.
+  - Holzmann, Peled, Yannakakis: "On Nested Depth First Search"
+    (SPIN 1996) — The inner-DFS shortcut of stopping at any state on the
+    outer DFS's current stack, not just the inner DFS's own seed.
   - Peter Lammich et al.: CAVA Isabelle DFS Framework (AFP)
     — Mechanized proof with `blue_basic_invar`, `restr_invar`,
     `no_accpt_cycle_in_finish`. Our inner DFS correctness mirrors their
@@ -38,6 +46,15 @@
   - Jaco van de Pol: "Automated Verification of Nested DFS" (FMICS 2015)
     — Local color invariants verified in Dafny; confirms the monotonicity
     and exploration properties we formalize here.
+
+  Sections:
+  - Graph paths (Closure lemmas; A second closure upgrade, for when `s ∈ F` is unavoidable)
+  - NDFSState (fuel version)
+  - Fuel-based inner DFS
+  - Fuel-based outer DFS
+  - Predicate: blocked states (Inner DFS correctness proofs)
+  - Outer DFS invariants
+  - Main correctness theorem
 -/
 import LTLLib.AbstractSpec.EmptinessCheck
 
@@ -68,14 +85,14 @@ theorem PathTo.weaken {succs : State → Array State}
 
 /-! ### Closure lemmas
 
-    These let us upgrade a *restricted* no-cycle fact (no path through
-    never-blocked intermediates) into an *unrestricted* one (no path at all),
+    These let us upgrade a restricted no-cycle fact (no path through
+    never-blocked intermediates) into an unrestricted one (no path at all),
     given that the blocking set is closed under `succs`. This is the key step
     in the CVWY/Schwoon-Esparza argument that doesn't reduce to a simple
     monotonicity/weakening fact. -/
 
-/-- If `F` is closed under `succs` and `s ∈ F`, any unrestricted path from `s`
-    stays entirely inside `F` — in particular its endpoint is in `F`. -/
+/-- If `F` is closed under `succs` and `s ∈ F`, any unrestricted path from `s` stays entirely inside `F`,
+    in particular its endpoint is in `F`. -/
 theorem PathTo.mem_of_closed {State} {succs : State → Array State} {F : State → Prop}
     (hclosed : ∀ s, F s → ∀ t, t ∈ succs s → F t) :
     ∀ {s t : State}, PathTo succs (fun _ => False) s t → F s → F t := by
@@ -114,9 +131,9 @@ theorem PathTo.no_self_loop_of_closed {State} {succs : State → Array State}
 /-! ### A second closure upgrade, for when `s ∈ F` is unavoidable
 
     `PathTo.no_self_loop_of_closed` needs `s ∉ F`, but for `F := innerFinished`
-    right after `s`'s own successful inner-DFS call, `s` is *always* in `F`.
-    The fix: instead of "`s ∉ F`", it's enough that *nothing in `F` has an
-    edge back to `s`*. A weaker fact, but one inner DFS gives us for a different
+    right after `s`'s own successful inner-DFS call, `s` is always in `F`.
+    The fix: instead of "`s ∉ F`", it's enough that nothing in `F` has an
+    edge back to `s`. A weaker fact, but one inner DFS gives us for a different
     reason (its own `succ == seed` check). -/
 
 /-- If nothing in the closed set `F` has an edge to `t`, then `F` can't be
@@ -157,9 +174,8 @@ theorem PathTo.no_self_loop_of_closed_no_incoming {State} {succs : State → Arr
     ¬PathTo succs (fun _ => False) s s :=
   fun h => hno_restricted (PathTo.avoids_closed_of_no_incoming hclosed hno_edge h)
 
-/-- Generalizes `no_self_loop_of_closed_no_incoming` from a fixed self-loop
-    target to an arbitrary target `t`. Needed for the Holzmann-Peled-
-    Yannakakis inner-DFS shortcut. -/
+/-- Generalizes `no_self_loop_of_closed_no_incoming` from a fixed self-loop target to an
+    arbitrary target `t`. -/
 theorem PathTo.no_reach_of_closed_no_incoming {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t ∈ succs s, F t)
     {s t : State} (hno_edge : ∀ x, F x → t ∉ succs x)
@@ -196,9 +212,8 @@ theorem PathTo.closed_of_no_escape {State} {succs : State → Array State} {F S 
       exact ih hF hNRmid
     · exact absurd hS (hNRx _ (.direct hmid))
 
-/-- An index-based chain condition (as used by `AcceptingCycle.stem_chain`/
-    `cycle_chain`) gives a `PathTo` witness from the list's head to its last
-    element — or an equality, if the list is a singleton. -/
+/-- An index-based chain condition gives a `PathTo` witness from the list's head
+    to its last element, or an equality, if the list is a singleton. -/
 theorem chain_reaches {State} {succs : State → Array State} (l : List State)
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
     ∀ (hne : l ≠ []), l.head hne = l.getLast hne ∨
@@ -286,10 +301,8 @@ private theorem chain_tail {State} {succs : State → Array State} (a : State) (
   have h := hchain (i + 1) (by simpa using hi)
   simpa using h
 
-/-- Concatenating two `succs`-chains with a boundary edge from the first's
-    last element to the second's head gives a `succs`-chain over the
-    concatenation. Needed for the Holzmann-Peled-Yannakakis inner-DFS
-    shortcut's witness construction. -/
+/-- Concatenating two `succs`-chains with a boundary edge from the first's last element
+    to the second's head gives a `succs`-chain over the concatenation. -/
 theorem chain_append {State} {succs : State → Array State} (l1 l2 : List State)
     (hchain1 : ∀ i, (hi : i + 1 < l1.length) → l1[i+1] ∈ succs l1[i])
     (hchain2 : ∀ i, (hi : i + 1 < l2.length) → l2[i+1] ∈ succs l2[i])
@@ -314,9 +327,7 @@ theorem chain_append {State} {succs : State → Array State} (l1 l2 : List State
       have hab : b ∈ succs a := by simpa using hchain1 0 (by simp)
       simpa using chain_cons a ((b :: bs) ++ l2) (by simp) hrec (by simpa using hab)
 
-/-- A `take n` prefix of a `succs`-chain list is itself a `succs`-chain.
-    Needed for the Schwoon-Esparza back-edge shortcut: slicing `pathStack` at
-    the back-edge target's index keeps the prefix a valid chain. -/
+/-- A `take n` prefix of a `succs`-chain list is itself a `succs`-chain. -/
 theorem chain_take {State} {succs : State → Array State} (l : List State) (n : Nat)
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
     ∀ i, (hi : i + 1 < (l.take n).length) → (l.take n)[i+1] ∈ succs (l.take n)[i] := by
@@ -329,9 +340,7 @@ theorem chain_take {State} {succs : State → Array State} (l : List State) (n :
   rw [e1, e2]
   exact hchain i hi'
 
-/-- A `drop n` suffix of a `succs`-chain list is itself a `succs`-chain.
-    Needed for the Schwoon-Esparza back-edge shortcut: slicing `pathStack` at
-    the back-edge target's index keeps the suffix a valid chain. -/
+/-- A `drop n` suffix of a `succs`-chain list is itself a `succs`-chain. -/
 theorem chain_drop {State} {succs : State → Array State} (l : List State) (n : Nat)
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
     ∀ i, (hi : i + 1 < (l.drop n).length) → (l.drop n)[i+1] ∈ succs (l.drop n)[i] := by
@@ -374,11 +383,9 @@ theorem chain_append_right {State} {succs : State → Array State} (l a b : List
   | nil => simpa using hchain
   | cons x xs ih => exact ih (chain_tail x (xs ++ b) hchain)
 
-/-- The edge closing off a chain-list's last step:
-    if `l ≠ []` and `l.dropLast ≠ []`, the chain property at the second-to-last
-    index gives exactly `l.getLast ∈ succs (l.dropLast.getLast)`.
-    Needed for the Schwoon-Esparza back-edge shortcut's "source accepting" case:
-    closes the cycle `current :: (loop-tail)` back to `current`. -/
+/-- The edge closing off a chain-list's last step: if `l ≠ []` and `l.dropLast ≠ []`,
+    the chain property at the second-to-last index gives exactly
+    `l.getLast ∈ succs (l.dropLast.getLast)`. -/
 theorem chain_getLast_edge {State} {succs : State → Array State} (l : List State)
     (hne : l ≠ []) (hne' : l.dropLast ≠ [])
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
@@ -397,11 +404,8 @@ theorem chain_getLast_edge {State} {succs : State → Array State} (l : List Sta
   have hstep := hchain (l.length - 2) (by omega)
   simpa [show l.length - 2 + 1 = l.length - 1 from by omega] using hstep
 
-/-- The edge across an append boundary:
-    if `l = a ++ b` with both `a` and `b` nonempty, the chain property at
-    the boundary index gives exactly `b.head ∈ succs (a.getLast)`.
-    Needed for the Schwoon-Esparza back-edge shortcut's "target accepting" case:
-    the edge from the stem's last state into the loop's first state. -/
+/-- The edge across an append boundary: if `l = a ++ b` with both `a` and `b` nonempty,
+    the chain property at the boundary index gives exactly `b.head ∈ succs (a.getLast)`. -/
 theorem chain_append_boundary {State} {succs : State → Array State} (l a b : List State)
     (heq : l = a ++ b) (ha : a ≠ []) (hb : b ≠ [])
     (hchain : ∀ i, (hi : i + 1 < l.length) → l[i+1] ∈ succs l[i]) :
@@ -423,9 +427,7 @@ theorem chain_append_boundary {State} {succs : State → Array State} (l a b : L
       exact ih hxsne (chain_tail x ((y :: ys) ++ b) hchain)
 
 /-- If `x` occurs in `l`, dropping elements until the first occurrence of `x`
-    leaves a list whose head is `x`.
-    Needed to identify the Schwoon-Esparza back-edge target's position inside
-    `pathStack`. -/
+    leaves a list whose head is `x`. -/
 theorem dropWhile_ne_head?_eq_some {State : Type u} [BEq State] [LawfulBEq State]
     (l : List State) (x : State) (hx : x ∈ l) :
     (l.dropWhile (fun y => !(y == x))).head? = some x := by
@@ -443,9 +445,7 @@ theorem dropWhile_ne_head?_eq_some {State : Type u} [BEq State] [LawfulBEq State
       simp only [List.dropWhile_cons, hax', if_true]
       exact ih hxt
 
-/-- A length-1 list's head and last element coincide.
-    Needed for the Schwoon-Esparza back-edge shortcut's degenerate case
-    (the sliced cycle has only one state left). -/
+/-- A length-1 list's head and last element coincide. -/
 theorem head_eq_getLast_of_length_eq_one {α : Type u} (l : List α) (hl : l.length = 1)
     (hne : l ≠ []) : l.head hne = l.getLast hne := by
   cases l with
@@ -473,12 +473,10 @@ theorem head_append_singleton_eq {α : Type u} (l : List α) (x : α) (hne : l �
   | nil => exact absurd rfl hne
   | cons a t => rfl
 
-/-- `ReachChain succs l` holds when every element of `l` can reach the
-    *previous* element (i.e. reading left-to-right, later elements reach
-    earlier ones). Used for the outer-DFS stack: with the top of the stack at
-    the head, this says every ancestor can reach every one of its
-    descendants further down the stack. This is the tree-path fact that
-    makes reaching an ancestor via inner DFS force a self-cycle. -/
+/-- `ReachChain succs l` holds when every element of `l` can reach the previous
+    element (later elements reach earlier ones). On the outer-DFS stack (top at the
+    head), this is the tree-path fact that makes reaching an ancestor via inner DFS
+    force a self-cycle. -/
 def ReachChain {State} (succs : State → Array State) : List State → Prop
   | [] => True
   | [_] => True
@@ -507,7 +505,7 @@ theorem ReachChain.tail {State} {succs : State → Array State} (hd : State) (tl
 
 /-! ## NDFSState (fuel version) -/
 
-/-- Mutable state for the nested DFS algorithm (mirroring the private version). -/
+/-- Mutable state threaded through the nested DFS algorithm. -/
 structure FNDFSState (State : Type u) [BEq State] [Hashable State] where
   outerVisited : Std.HashSet State
   innerFinished : Std.HashSet State
@@ -515,14 +513,13 @@ structure FNDFSState (State : Type u) [BEq State] [Hashable State] where
 /-! ## Fuel-based inner DFS
 
 The inner DFS searches for a path from `current` back to `seed`. Or also,
-with the Holzmann-Peled-Yannakakis shortcut, back to *any* state on the outer DFS's
+with the Holzmann-Peled-Yannakakis shortcut, back to any state on the outer DFS's
 current call stack. It uses `innerVisited` to track states visited in this inner search,
 and `innerFinished` (in `FNDFSState`) as a cross-call optimization: states
 whose inner DFS already completed without finding a cycle. -/
 
-/-- Result type for inner DFS: `none` = out of fuel. On success, `some (path,
-    target)` records both the path found *and* which state in `{seed} ∪ cyan`
-    was actually hit. -/
+/-- Result type for inner DFS: `none` = out of fuel. On success, `some (path, target)` records
+    both the path found and which state in `{seed} ∪ cyan` was actually hit. -/
 abbrev InnerResult (State : Type u) [BEq State] [Hashable State] :=
   Option (Option (List State × State) × Std.HashSet State × FNDFSState State)
 
@@ -668,11 +665,8 @@ section InnerCorrectness
 
 variable {State} [BEq State] [Hashable State] [LawfulBEq State]
 
-/-- A state is "blocked" if it is in the inner visited set or in innerFinished.
-    Blocked states are skipped by inner DFS.
-
-    Corresponds to "red ∪ pink" in Schwoon & Esparza's color scheme, or
-    states that are not white from the inner DFS's perspective. -/
+/-- `s` is blocked if visited in the current inner DFS call, or already `innerFinished`.
+    Corresponds to "red ∪ pink" in Schwoon & Esparza's color scheme. -/
 def isBlocked (iv : Std.HashSet State) (ifin : Std.HashSet State) (s : State) : Prop :=
   iv.contains s ∨ ifin.contains s
 
@@ -690,12 +684,8 @@ The key properties after `innerDFS_fuel` returns `none` (no cycle found) are:
    a cycle would have been reported).
 
 These together imply that there is no path from `current` back to `seed`
-through non-blocked intermediates — which is the core of Lemma 1 in
-Schwoon & Esparza. -/
+through non-blocked intermediates, which is the core of Lemma 1 in Schwoon & Esparza. -/
 
-/-- Helper for monotonicity: `innerDFS_fuel_fold` monotonicity assuming
-    `innerDFS_fuel` monotonicity at the same fuel level.
-    Proved by induction on `remaining`. -/
 private theorem innerDFS_fuel_fold_mono_aux (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -736,9 +726,8 @@ private theorem innerDFS_fuel_fold_mono_aux (succs : State → Array State) (see
         have ⟨hiv2, hfin2⟩ := ih_rem iv_mid st_mid _ _ _ h
         exact ⟨fun s hs => hiv2 s (hiv1 s hs), fun s hs => hfin2 s (hfin1 s hs)⟩
 
-/-- Monotonicity of `innerDFS_fuel`: the inner visited set and innerFinished
-    set only grow across a call that returns `some`.
-    Proved by induction on fuel, using `innerDFS_fuel_fold_mono_aux`.. -/
+/-- Monotonicity of `innerDFS_fuel`: the inner visited set and `innerFinished`
+    set only grow across a call that returns `some`. -/
 theorem innerDFS_fuel_mono (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -858,9 +847,8 @@ theorem innerDFS_fuel_fold_succs_blocked (succs : State → Array State) (seed :
     itself through non-blocked intermediates.
 
     Precondition: seed is NOT already in `innerFinished` (guaranteed by the
-    outer DFS invariant — seed is still on the stack when inner DFS is called).
+    outer DFS invariant, seed is still on the stack when inner DFS is called).
 
-    This is the direct consequence used by the outer DFS correctness argument.
     Cf. Schwoon & Esparza §3, Lemma 1: after red DFS from seed returns
     without finding a cycle, seed is not reachable from itself through
     unfinished states. -/
@@ -1003,8 +991,7 @@ theorem innerDFS_no_cycle_from_seed_finished (succs : State → Array State) (se
     · exact hfin
 
 /-- After `innerDFS_fuel_fold` returns `none`, every state newly visited during
-    the fold (added to `iv` since the call started) has *all* its successors
-    blocked in the output state. -/
+    the fold (added to `iv` since the call started) has all its successors blocked in the output state. -/
 private theorem fold_new_succs_blocked_aux (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -1045,9 +1032,7 @@ private theorem fold_new_succs_blocked_aux (succs : State → Array State) (seed
         · exact ih_rem iv_mid st_mid h s hs hm_s t ht
 
 /-- After `innerDFS_fuel` returns `none`, every state newly visited during the
-    call (added to `iv`) has all its successors blocked by the end. Combines
-    `innerDFS_fuel_fold_succs_blocked` (for `current`'s own direct successors)
-    with `fold_new_succs_blocked_aux` (for everything visited transitively). -/
+    call (added to `iv`) has all its successors blocked by the end. -/
 theorem innerDFS_fuel_new_succs_blocked (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -1081,10 +1066,9 @@ theorem innerDFS_fuel_new_succs_blocked (succs : State → Array State) (seed : 
         · exact fold_new_succs_blocked_aux succs seed cyan n current _ (iv.insert current) st
             ih h s hs hcur t ht
 
-/-- Converse of `fold_iv_subset_finished_aux`: `innerFinished` only ever grows
-    by states that were already in `iv` (the fold's `current` argument is the
-    only thing inserted into `innerFinished`, and it's always already in `iv`
-    by the time the fold's nil case is reached. -/
+/-- Converse of `fold_iv_subset_finished_aux`: everything newly `innerFinished` during the
+    fold was already in `iv`, the fold only ever inserts its own `current`, which is
+    always already in `iv` by the time it does so. -/
 private theorem fold_new_finished_subset_iv_aux (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State) (remaining : List State)
     (ih_inner : ∀ (curr : State) (iv₀ : Std.HashSet State) (st₀ : FNDFSState State)
@@ -1182,10 +1166,7 @@ theorem innerDFS_new_finished_closed (succs : State → Array State) (current : 
     · exact hiv_sub t hiv_t (by simp [Std.HashSet.contains_emptyWithCapacity])
     · exact hfin_t
 
-/-- Inner DFS never touches `outerVisited` — only `innerFinished` is ever
-    updated (the fold's nil case, `{st with innerFinished := ...}`). Needed to
-    know the outer-DFS bookkeeping invariant (`OuterReachClosed`) survives an
-    inner-DFS call unchanged. -/
+/-- Inner DFS never touches `outerVisited`, only `innerFinished` is ever updated. -/
 private theorem innerDFS_fuel_fold_outerVisited_eq_aux (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -1278,9 +1259,7 @@ private theorem fold_new_no_edge_to_seed_aux (succs : State → Array State) (se
         · exact ih_rem iv_mid st_mid h s hs hm_s
 
 /-- After `innerDFS_fuel` returns `none`, no state newly visited during the
-    call has `seed`, or any `cyan` state, as a successor.
-    Needed to show nothing in the resulting `innerFinished` has an edge back
-    to `seed`/`cyan`. -/
+    call has `seed`, or any `cyan` state, as a successor. -/
 theorem innerDFS_fuel_new_no_edge_to_seed (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -1357,9 +1336,7 @@ private theorem fold_new_reachable_aux (succs : State → Array State) (seed : S
         · exact ih_rem (fun x hx => hsub x (List.mem_cons_of_mem _ hx)) iv_mid st_mid h s hs hm_s
 
 /-- After `innerDFS_fuel` returns `none`, every state newly visited during the
-    call is reachable from `current`. Needed to show ancestors of `current`
-    (which, via `ReachChain`, reach `current` back down the outer stack)
-    cannot become newly finished during `current`'s own inner-DFS call. -/
+    call is reachable from `current`. -/
 theorem innerDFS_fuel_new_reachable (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -1489,11 +1466,11 @@ DFS run, and the result was added to `innerFinished`.
 
 The correctness argument: whenever an accepting `current` at the top of the
 stack finishes running inner DFS with `none` (no cycle found),
-`innerDFS_no_cycle_from_seed_finished` gives a *restricted* fact, no path back
+`innerDFS_no_cycle_from_seed_finished` gives a restricted fact, no path back
 to `current` through never-finished intermediates. Separately,
 `innerDFS_new_finished_closed` shows `innerFinished` stays closed under `succs`.
 Combining the two via `PathTo.no_self_loop_of_closed` upgrades this into the
-*unrestricted* fact `current` has no self-cycle at all. -/
+unrestricted fact `current` has no self-cycle at all. -/
 
 section OuterCorrectness
 
@@ -1504,19 +1481,18 @@ variable {State} [BEq State] [Hashable State] [LawfulBEq State]
 structure OuterReachClosed
     (succs : State → Array State) (st : FNDFSState State)
     (stack : List (State × List State)) : Prop where
-  /-- Every stack element can reach every element further down the stack, and
-      in particular, every element can reach the current top of the stack. -/
+  -- Every stack element can reach every element further down the stack, and in
+  -- particular, every element can reach the current top of the stack.
   stack_chain : ReachChain succs (stack.map Prod.fst)
-  /-- Successors of an outer-done (visited, no longer on stack) state are
-      also visited. -/
+  -- Successors of an outer-done (visited, no longer on stack) state are also visited.
   done_closed : ∀ s, st.outerVisited.contains s → s ∉ stack.map Prod.fst →
     ∀ t ∈ succs s, st.outerVisited.contains t
-  /-- Already-processed (non-pending) successors of every stack frame are visited. -/
+  -- Already-processed (non-pending) successors of every stack frame are visited.
   stack_processed_visited : ∀ p ∈ stack, ∀ t ∈ succs p.fst, t ∉ p.snd →
     st.outerVisited.contains t
-  /-- Every frame's `remaining` list only ever holds genuine successors of
-      that frame's state (true by construction: `remaining` always starts as
-      the full `(succs state).toList` and is only ever shrunk from the front). -/
+  -- Every frame's `remaining` list only ever holds genuine successors of that frame's
+  -- state (true by construction: `remaining` starts as the full successor list and is
+  -- only ever shrunk from the front).
   stack_remaining_subset : ∀ p ∈ stack, ∀ t ∈ p.snd, t ∈ succs p.fst
 
 /-- Outer DFS invariant for the CVWY algorithm. -/
@@ -1524,36 +1500,31 @@ structure OuterInvariant
     (succs : State → Array State) (isAccepting : State → Bool)
     (st : FNDFSState State)
     (stackStates : List State) : Prop where
-  /-- Every accepting, visited, non-stack state is in innerFinished. -/
+  -- Every accepting, visited, non-stack state is in innerFinished.
   accepting_finished : ∀ s, st.outerVisited.contains s →
     isAccepting s → s ∉ stackStates → st.innerFinished.contains s
-  /-- `innerFinished` is closed under `succs`: once a state is finished, all its
-      successors are finished too. This is what lets us upgrade the *restricted*
-      no-cycle fact from inner DFS into an *unrestricted* one below. -/
+  -- `innerFinished` is closed under `succs`: once a state is finished, all its
+  -- successors are finished too. Lets us upgrade the restricted no-cycle fact from
+  -- inner DFS into an unrestricted one below.
   finished_closed : ∀ s, st.innerFinished.contains s →
     ∀ t ∈ succs s, st.innerFinished.contains t
-  /-- `innerFinished ⊆ outerVisited`. Needed to maintain `finished_stack_disjoint`
-      through the "push a fresh successor" transition: a freshly-discovered
-      (¬outerVisited) successor can't already be `innerFinished`. -/
+  -- `innerFinished ⊆ outerVisited`: a freshly-discovered (¬outerVisited) successor
+  -- can't already be `innerFinished`.
   finished_subset_visited : ∀ s, st.innerFinished.contains s →
     st.outerVisited.contains s
-  /-- `innerFinished` is disjoint from the current stack. This is what lets us
-      conclude `current` (top of stack) is never already `innerFinished` when
-      its turn comes, with no case-split needed. -/
+  -- `innerFinished` is disjoint from the current stack, so `current` (top of stack)
+  -- is never already `innerFinished` when its turn comes.
   finished_stack_disjoint : ∀ s ∈ stackStates, ¬st.innerFinished.contains s
-  /-- Every *accepting, no-longer-on-stack* state has no self-cycle at all,
-      through any intermediates whatsoever. -/
+  -- Every accepting, no-longer-on-stack state has no self-cycle at all, through any
+  -- intermediates whatsoever.
   finished_no_cycle : ∀ s, isAccepting s → s ∉ stackStates →
     st.outerVisited.contains s → ¬PathTo succs (fun _ => False) s s
-  /-- Every state on the stack has already been outer-discovered. Trivial by
-      construction (a state is inserted into `outerVisited` at the same time
-      it's pushed), but needed explicitly to know `current` itself is
-      `outerVisited` when reasoning about `finished_subset_visited`. -/
+  -- Every state on the stack has already been outer-discovered (trivial by
+  -- construction, a state enters `outerVisited` when it's pushed).
   stack_subset_visited : ∀ s ∈ stackStates, st.outerVisited.contains s
 
-/-- `outerVisited` only grows across an `outerDFSLoop_fuel` call, for any
-    result (not just `.empty`). Needed to carry "already visited before this
-    call" facts through to the end. -/
+/-- `outerVisited` only grows across an `outerDFSLoop_fuel` call, for any result
+    (not just `.empty`). -/
 theorem outerDFSLoop_fuel_outerVisited_mono
     (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat) (stack : List (State × List State)) (pathStack : List State)
@@ -1801,7 +1772,7 @@ theorem outerDFSLoop_fuel_reach_closed
     `stem` is exactly `pathStack` at the moment an accepting cycle is found-
     `loop`'s properties come from `innerDFS_fuel_cyclePath_chain`, stated on
     `loop.tail`, not `loop` itself: `loop = current :: cyclePath`, where
-    `cyclePath` *already* starts with a copy of `current`.
+    `cyclePath` already starts with a copy of `current`.
     So `loop.tail = cyclePath` is the genuine chain; `loop` itself is not
     (`current ∈ succs current` isn't guaranteed).  -/
 theorem outerDFSLoop_fuel_nonEmpty_witness
@@ -2291,8 +2262,7 @@ theorem outerDFSLoop_fuel_empty_no_cycle
               | succ k => exact ⟨k, rfl⟩
             have hnotfin : ¬st.innerFinished.contains current :=
               hinv.finished_stack_disjoint current (List.mem_cons_self ..)
-            -- Holzmann-Peled-Yannakakis: both facts below are now stated for
-            -- *every* state on `pathStack`, not just `current`.
+            -- Holzmann-Peled-Yannakakis: both facts below are now stated for every state on `pathStack`, not just `current`.
             have hno_restricted_all := innerDFS_no_cycle_from_seed_finished succs current pathStack k st
               (st.outerVisited.size / 2) (by simpa using hnotfin) heq
             have ht_mem_stack : ∀ t, t ∈ pathStack → t ∈ current :: rest.map Prod.fst := by
@@ -2652,7 +2622,7 @@ variable [BEq State] [Hashable State] [LawfulBEq State]
 /-- `nestedDFS_fuel.go`'s loop over `initialStates`, composed across the whole
     loop: if it returns `.empty`, there is a final internal state
     simultaneously satisfying `OuterReachClosed`/`OuterInvariant` (both with
-    an empty stack) — carrying forward everything already visited, and
+    an empty stack), carrying forward everything already visited, and
     additionally covering every element of `remaining`. -/
 theorem nestedDFS_fuel_go_correct
     (succs : State → Array State) (isAccepting : State → Bool)
@@ -3008,12 +2978,8 @@ theorem nestedDFS_fuel_empty_no_cycle {State} [BEq State] [Hashable State] [Lawf
 /-- If the fuel-based nested DFS returns `nonEmpty stem loop`, then `(stem,
     loop.tail)` is a genuine accepting cycle: `stem` is a real path from an
     initial state to an accepting state, and `loop.tail` is a real cycle from
-    that state back to itself.
-
-    This is the soundness direction of the emptiness check. Combined with
-    `nestedDFS_fuel_empty_no_cycle` above (the completeness direction),
-    `nestedDFS_fuel` is a fully verified decision procedure for accepting-cycle
-    existence. -/
+    that state back to itself. This is the soundness direction of the
+    emptiness check. -/
 theorem nestedDFS_fuel_nonEmpty_valid {State} [BEq State] [Hashable State] [LawfulBEq State]
     {initialStates : List State}
     {succs : State → Array State} {isAccepting : State → Bool}

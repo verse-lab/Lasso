@@ -14,6 +14,14 @@
 
   This file is independent of any specific automaton implementation.
   It works with `OASpec` (abstract automaton specification).
+
+  Sections:
+  - Lasso run construction
+  - lassoRun lemmas
+  - Validity conditions for a lasso
+  - The run is valid (initial + transitions)
+  - The run is accepting
+  - Connecting lasso to non-emptiness
 -/
 import LTLLib.AbstractSpec.Acceptance
 
@@ -26,10 +34,8 @@ private theorem List.ne_nil_of_length_ge_one {l : List α} (h : l.length ≥ 1) 
 
 /-! ## Lasso run construction -/
 
-/-- Construct an infinite run from a stem and a cycle.
-    The stem and cycle overlap at one state: `stem.getLast = cycle.head`.
-    Positions `0` to `stem.length - 2` come from the stem.
-    Position `stem.length - 1` onwards cycles through `cycle`. -/
+/-- Infinite run built from a stem and a cycle overlapping at one state (`stem.getLast = cycle.head`).
+Positions `0` to `stem.length - 2` come from the stem, the rest cycle through `cycle`. -/
 noncomputable def lassoRun {State : Type u}
     (stem cycle : List State) (default : State) : Nat → State :=
   fun i =>
@@ -179,7 +185,7 @@ theorem run_isRun : A.isRun hv.run :=
 /-! ## The run is accepting -/
 
 /-- The cycle head appears at position `n + j` for some `j`, for any `n`. -/
-private theorem find_cycle_position (n : Nat) :
+theorem find_cycle_position (n : Nat) :
     ∃ j, hv.run (n + j) = cycle.head
       (List.ne_nil_of_length_ge_one hv.cycle_nonempty) := by
   have hcpos : cycle.length > 0 := by have := hv.cycle_nonempty; omega
@@ -198,6 +204,7 @@ private theorem find_cycle_position (n : Nat) :
     rw [show stem.length - 1 + n * cycle.length - (stem.length - 1) =
         n * cycle.length from by omega, Nat.mul_comm, Nat.mul_mod_right]
 
+/-- The lasso run visits the accepting state infinitely often. -/
 theorem run_isAccepting : A.isAcceptingRun hv.run := by
   intro i n
   obtain ⟨j, hj⟩ := find_cycle_position hv n

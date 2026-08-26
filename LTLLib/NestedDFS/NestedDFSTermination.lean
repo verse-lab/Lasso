@@ -15,12 +15,33 @@
   - Baier & Katoen: "Principles of Model Checking" — Büchi automaton
     non-emptiness via ultimately periodic (lasso-shaped) accepting runs,
     the fact `exists_acceptingCycle_of_run` establishes.
+  - Holzmann, Peled & Yannakakis: "On Nested Depth First Search" — the
+    accepting-leaf shortcut in `outerDFSLoopWF` (`target` may be any state on `pathStack`, not just `current`).
+  - Schwoon & Esparza: "A Note on On-The-Fly Verification Algorithms" — the
+    back-edge shortcut in `outerDFSLoopWF` that detects a cycle from
+    `pathStack.contains succ` alone, without launching an inner DFS.
+
+  Sections:
+  - HashSet cardinality helpers
+  - Finite-reachability hypothesis
+  - `Set.ncard`-based termination-measure helpers
+  - Well-founded `innerDFS`
+  - Fuel ↔ well-founded bridge, inner half
+  - Well-founded `outerDFSLoop`
+  - Fuel ↔ well-founded bridge, outer half
+  - Top-level `nestedDFS`, well-founded
+  - Fuel ↔ well-founded bridge, top level
+  - `nestedDFSWF` as an `EmptinessChecker` instance
+  - Packaging a `FiniteReach` witness from `BA.WellFormed`
+  - From an accepting run to an `AcceptingCycle`
 -/
 import LTLLib.NestedDFS.NestedDFSCorrectness
 import LTLLib.BA
 import Mathlib.Data.Set.Card
 
 namespace LTLLib
+
+/-! ## HashSet cardinality helpers -/
 
 section HashSetCard
 
@@ -45,8 +66,8 @@ theorem HashSet.size_pos_of_contains {s : Std.HashSet α} {k : α}
     exact absurd h (by decide)
   · exact hp
 
-/-- A strict-subset cardinality bound: if `s ⊆ t` (via `contains`) and some
-element of `t` is not in `s`, then `s` is strictly smaller than `t`. -/
+/-- A strict-subset cardinality bound: if `s ⊆ t` (via `contains`) and some element of `t` is
+not in `s`, then `s` is strictly smaller than `t`. -/
 theorem HashSet.size_lt_of_ssubset {s t : Std.HashSet α}
     (hsub : ∀ x, s.contains x → t.contains x)
     {k : α} (hk : t.contains k) (hks : ¬ s.contains k) : s.size < t.size := by
@@ -66,16 +87,12 @@ section RFrameDef
 
 variable {State : Type u}
 
-/-- One frame of an explicit-stack DFS worklist, carrying its own
-reachability proof (`hreach`) and a proof that its pending-successor list is
-a suffix of the state's actual successor list (`hsuffix`).
-Together these let a fresh push derive the new frame's `Reachable` proof for free
-(`Reachable.step frame.hreach hmem`).
-Shared between `innerDFSCore` and `outerDFSLoopWF`. -/
+/-- One frame of an explicit-stack DFS worklist. -/
 structure RFrame (initialStates : List State) (succs : State → Array State) where
   state : State
   hreach : Reachable initialStates succs state
   remaining : List State
+  -- `remaining` is a suffix of `state`'s actual successor list.
   hsuffix : remaining <:+ (succs state).toList
 
 /-- Consume the head of a frame's `remaining` list, updating `hsuffix` accordingly. -/
@@ -113,17 +130,17 @@ end RFrameDef
 
 /-! ## `Set.ncard`-based termination-measure helpers
 
-`Set.ncard`-based analogues of `HashSet.sdiff_insert_lt`/ `HashSet.size_le_of_subset`
-above, for the `{s | Reachable ...} \ {x | iv.contains x}` measure.
-Kept as a `Nat × Nat` tuple in every `termination_by` clause below
-(never a bare `Nat`), so elaboration stays on the erased `WellFounded.fix` path
-regardless of `Set.ncard` being noncomputable. -/
+`Set.ncard`-based analogues of `HashSet.size_lt_of_ssubset`/`HashSet.size_le_of_subset` above,
+for the `{s | Reachable ...} \ {x | iv.contains x}` measure. Kept as a `Nat × Nat` tuple in
+every `termination_by` clause below (never a bare `Nat`), so elaboration stays on the erased
+`WellFounded.fix` path regardless of `Set.ncard` being noncomputable. -/
 
 section ReachableSetCard
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
   {initialStates : List State} {succs : State → Array State}
 
+/-- Inserting a fresh reachable state into `iv` strictly shrinks the reachable-minus-`iv` measure. -/
 theorem Reachable.ncard_diff_insert_lt (fr : FiniteReach initialStates succs)
     {iv : Std.HashSet State} {x : State} (hx_reach : Reachable initialStates succs x)
     (hx_niv : iv.contains x = false) :
@@ -152,8 +169,8 @@ theorem Reachable.ncard_diff_insert_lt (fr : FiniteReach initialStates succs)
       ⟨hx_reach, Bool.eq_false_iff.mp hx_niv⟩
     exact (hsub hx).2 (Set.mem_insert x _)
 
-/-- Growing `iv` (as a `Std.HashSet`, via a `.contains`-subset relation)
-can't increase the reachable-set-minus-`iv` difference's cardinality. -/
+/-- Growing `iv` (as a `Std.HashSet`, via a `.contains`-subset relation) can't increase the
+reachable-set-minus-`iv` difference's cardinality. -/
 theorem Reachable.ncard_diff_le_of_subset (fr : FiniteReach initialStates succs)
     {iv iv' : Std.HashSet State} (hsub : ∀ x, iv.contains x → iv'.contains x) :
     ({s | Reachable initialStates succs s} \ {y | iv'.contains y}).ncard ≤
@@ -171,6 +188,8 @@ section InnerDFSWellFounded
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
+/-- Well-founded (`Set.ncard`-measure-terminating) inner-DFS loop over an explicit `RFrame`
+stack, looking for a path back to `seed` or into `cyan`. -/
 def innerDFSCore [LawfulBEq State] [LawfulHashable State] {initialStates : List State}
     (succs : State → Array State) (fr : FiniteReach initialStates succs)
     (seed : State) (cyan : Std.HashSet State)
@@ -212,6 +231,8 @@ decreasing_by
     exact Prod.Lex.left _ _ (Reachable.ncard_diff_insert_lt fr
       (Reachable.step frame.hreach hmemsuccs) hsucc_niv)
 
+/-- Well-founded inner DFS from `current`, short-circuiting on an already-finished or
+already-visited start state. -/
 def innerDFSWF [LawfulHashable State] (succs : State → Array State)
     {initialStates : List State} (fr : FiniteReach initialStates succs) (seed : State)
     (cyan : List State) (current : State) (hcurrent_reach : Reachable initialStates succs current)
@@ -288,14 +309,10 @@ end InnerDFSWellFounded
 
 /-! ## Fuel ↔ well-founded bridge, inner half
 
-Rather than re-proving `NestedDFS/NestedDFSCorrectness.lean`'s ~2000 lines of
-`innerDFS_fuel` correctness against the well-founded `innerDFSCore`/`innerDFSWF`,
-prove a single equation showing the two agree (for sufficient fuel), then transport
-every existing fuel-based theorem across it.
-
-Strengthens the old `innerDFS_fuel_sufficient`/`innerDFS_fuel_fold_sufficient_aux`
-(same double-induction template, same fuel/fold shape) to conclude the
-fuel-indexed and well-founded results are *equal*. -/
+Bridges `innerDFS_fuel` (fuel-indexed) to `innerDFSCore`/`innerDFSWF` (well-founded): for
+sufficient fuel, the two compute equal results. Every fuel-based correctness theorem from
+`NestedDFSCorrectness.lean` transports across this equation, instead of being reproved
+against the well-founded version. -/
 
 section InnerFuelBridge
 
@@ -323,7 +340,8 @@ def innerDFS_fuel_chain [BEq State] [Hashable State] [LawfulBEq State]
     | some (some (cyc, target), iv', st') => some (some (pathStack ++ cyc.tail, target), iv', st')
     | some (none, iv', st') => innerDFS_fuel_chain succs seed cyan fuel rest pathStack.dropLast iv' st'
 
-/-- One-step unfolding lemmas for `innerDFS_fuel`/`innerDFS_fuel_fold`/`innerDFS_fuel_chain`. -/
+/-! One-step unfolding lemmas for `innerDFS_fuel`/`innerDFS_fuel_fold`/`innerDFS_fuel_chain`. -/
+
 theorem innerDFS_fuel_fold_nil (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State) :
     innerDFS_fuel_fold succs seed cyan fuel current [] iv st =
@@ -379,17 +397,9 @@ theorem innerDFS_fuel_chain_cons (fuel : Nat) (current : State) (remaining : Lis
       | some (none, iv', st') =>
           innerDFS_fuel_chain succs seed cyan fuel rest pathStack.dropLast iv' st' := rfl
 
-/-- Fuel-increase preserves a successful result: more fuel than strictly
-needed can't change what `innerDFS_fuel_fold` computes. Needed because
-`innerDFS_fuel_chain` reuses one *uniform* fuel value across every stack
-frame — matching how the bridge theorem's own induction keeps `fuel` fixed
-throughout — whereas the *original* nested-call semantics genuinely
-decrements fuel by one on every "descend into a fresh successor" (via
-`innerDFS_fuel_fresh`). This lemma is what reconciles the two: the uniform
-(more generous) fuel `innerDFS_fuel_chain` hands to a pushed frame's fold
-call computes the *same* result as the slightly smaller amount the
-original nested call would actually have used, provided the smaller amount
-was already enough. -/
+-- More fuel doesn't change a successful `innerDFS_fuel_fold` result. Needed since
+-- `innerDFS_fuel_chain` reuses one uniform fuel value across the whole stack, unlike the
+-- original nested-call semantics which decrements fuel by one per descent.
 private theorem innerDFS_fuel_fold_add_aux (succs : State → Array State) (seed : State)
     (cyan : List State) (extra fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -782,11 +792,10 @@ section OuterDFSWellFounded
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
-/-- Well-founded `outerDFSLoop`, `RFrame`-based like `innerDFSCore`. The two
-optimizations. Includes the **Holzmann-Peled-Yannakakis shortcut** (accepting-leaf
-branch, `target` may be any state on `pathStack`, not just `current`) and the
-**Schwoon-Esparza back-edge shortcut** (`pathStack.contains succ` detects a
-cycle directly, no inner DFS launched). -/
+/-- Well-founded `outerDFSLoop`, `RFrame`-based like `innerDFSCore`. Implements the
+**Holzmann-Peled-Yannakakis shortcut** (accepting-leaf branch, `target` may be any state on
+`pathStack`, not just `current`) and the **Schwoon-Esparza back-edge shortcut**
+(`pathStack.contains succ` detects a cycle directly, no inner DFS launched). -/
 def outerDFSLoopWF [LawfulHashable State] {initialStates : List State}
     (succs : State → Array State) (isAccepting : State → Bool)
     (fr : FiniteReach initialStates succs)
@@ -804,9 +813,8 @@ def outerDFSLoopWF [LawfulHashable State] {initialStates : List State}
         match _hr : innerDFSWF succs fr frame.state pathStack frame.state frame.hreach
             innerVisited st with
         | (some (cyclePath, target), _, st') =>
-          -- Holzmann-Peled-Yannakakis shortcut: `target` may be `current`
-          -- itself or any other state on `pathStack`; collapses to the
-          -- pre-HPY `current :: cyclePath` formula when `target = current`.
+          -- Holzmann-Peled-Yannakakis shortcut: `target` may be `current` itself or any other
+          -- state on `pathStack`; collapses to `current :: cyclePath` when `target = current`.
           let loopTail := (pathStack.dropWhile (fun y => !(y == target))).dropLast
           (.nonEmpty pathStack (frame.state :: cyclePath ++ loopTail), st')
         | (none, _, st') =>
@@ -891,9 +899,8 @@ theorem outerDFSLoop_fuel_accept_none (succs : State → Array State) (isAccepti
   unfold outerDFSLoop_fuel
   simp [hacc, hinner]
 
-/-- Holzmann-Peled-Yannakakis shortcut: `target` may be `current` itself or
-    any other state on `pathStack`; the witness formula collapses to the
-    pre-HPY `current :: cyclePath` when `target = current`. -/
+/-- Holzmann-Peled-Yannakakis shortcut: `target` may be `current` itself or any other state
+on `pathStack`; the witness formula collapses to `current :: cyclePath` when `target = current`. -/
 theorem outerDFSLoop_fuel_accept_found (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat) (current : State) (rest : List (State × List State)) (pathStack : List State)
     (st : FNDFSState State) (hacc : isAccepting current = true)
@@ -940,10 +947,9 @@ theorem outerDFSLoop_fuel_push (succs : State → Array State) (isAccepting : St
   conv => lhs; rw [outerDFSLoop_fuel.eq_def]
   simp [hnb, hvis]
 
-/-- Schwoon-Esparza back-edge shortcut, "neither accepting" sub-case: behaves
-    exactly like `outerDFSLoop_fuel_skip_visited` (recurse with `succ`
-    dropped), just reached via the back-edge branch instead of the
-    already-visited one. -/
+/-- Schwoon-Esparza back-edge shortcut, "neither accepting" sub-case: behaves exactly like
+`outerDFSLoop_fuel_skip_visited` (recurse with `succ` dropped), just reached via the
+back-edge branch instead of the already-visited one. -/
 theorem outerDFSLoop_fuel_back_edge_skip (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat) (current succ : State) (remainingTail : List State)
     (rest : List (State × List State)) (pathStack : List State) (st : FNDFSState State)
@@ -955,8 +961,8 @@ theorem outerDFSLoop_fuel_back_edge_skip (succs : State → Array State) (isAcce
   conv => lhs; rw [outerDFSLoop_fuel.eq_def]
   simp [hb, hacc, hsacc]
 
-/-- Schwoon-Esparza back-edge shortcut, "source accepting" sub-case: an
-    immediate, fuel-independent `.nonEmpty` result (self-loop or general). -/
+/-- Schwoon-Esparza back-edge shortcut, "source accepting" sub-case: an immediate,
+fuel-independent `.nonEmpty` result (self-loop or general). -/
 theorem outerDFSLoop_fuel_back_edge_current_acc (succs : State → Array State)
     (isAccepting : State → Bool) (fuel : Nat) (current succ : State)
     (remainingTail : List State) (rest : List (State × List State)) (pathStack : List State)
@@ -969,8 +975,8 @@ theorem outerDFSLoop_fuel_back_edge_current_acc (succs : State → Array State)
   conv => lhs; rw [outerDFSLoop_fuel.eq_def]
   by_cases hsc : succ == current <;> simp [hb, hacc, hsc]
 
-/-- Schwoon-Esparza back-edge shortcut, "target accepting" sub-case: an
-    immediate, fuel-independent `.nonEmpty` result. -/
+/-- Schwoon-Esparza back-edge shortcut, "target accepting" sub-case: an immediate,
+fuel-independent `.nonEmpty` result. -/
 theorem outerDFSLoop_fuel_back_edge_succ_acc (succs : State → Array State)
     (isAccepting : State → Bool) (fuel : Nat) (current succ : State)
     (remainingTail : List State) (rest : List (State × List State)) (pathStack : List State)
@@ -1076,9 +1082,8 @@ theorem outerDFSLoop_fuel_add_preserves (succs : State → Array State) (isAccep
 variable {initialStates : List State} [LawfulHashable State] (succs : State → Array State)
   (fr : FiniteReach initialStates succs) (isAccepting : State → Bool)
 
-/-- Top-level bridge: for a suitable `stack`/`pathStack`/`st`, there is a fuel
-value for which `outerDFSLoop_fuel` succeeds and agrees exactly with
-`outerDFSLoopWF`. -/
+/-- Top-level bridge: for a suitable `stack`/`pathStack`/`st`, there is a fuel value for which
+`outerDFSLoop_fuel` succeeds and agrees exactly with `outerDFSLoopWF`. -/
 theorem outerDFSLoop_fuel_eq_outerDFSLoopWF
     (stack : List (RFrame initialStates succs)) (pathStack : List State) (st : FNDFSState State)
     (hfin : ∀ x, st.innerFinished.contains x → Reachable initialStates succs x) :
@@ -1387,9 +1392,8 @@ theorem nestedDFS_fuel_go_add_preserves (succs : State → Array State) (isAccep
 variable {initialStates : List State} [LawfulHashable State] (succs : State → Array State)
   (fr : FiniteReach initialStates succs) (isAccepting : State → Bool)
 
-/-- Top-level bridge: for a suitable `remaining`/`st`, there is a fuel value
-for which `nestedDFS_fuel.go` succeeds and agrees exactly with
-`nestedDFSWF.go`. -/
+/-- Top-level bridge: for a suitable `remaining`/`st`, there is a fuel value for which
+`nestedDFS_fuel.go` succeeds and agrees exactly with `nestedDFSWF.go`. -/
 theorem nestedDFS_fuel_go_eq_nestedDFSWF_go
     (remaining : List State) (hsub : remaining <:+ initialStates) (st : FNDFSState State)
     (hfin : ∀ x, st.innerFinished.contains x → Reachable initialStates succs x) :
@@ -1462,8 +1466,8 @@ theorem nestedDFS_fuel_go_eq_nestedDFSWF_go
           rw [← heqCI]
           exact heqCR
 
-/-- Top-level bridge: there is a fuel value for which `nestedDFS_fuel`
-succeeds and agrees exactly with `nestedDFSWF`. -/
+/-- Top-level bridge: there is a fuel value for which `nestedDFS_fuel` succeeds and agrees
+exactly with `nestedDFSWF`. -/
 theorem nestedDFS_fuel_eq_nestedDFSWF :
     ∃ fuel, nestedDFS_fuel initialStates succs isAccepting fuel =
       some (nestedDFSWF succs initialStates fr isAccepting) := by
@@ -1495,9 +1499,9 @@ theorem nestedDFSWF_nonEmpty_valid
 
 end TopLevelFuelBridge
 
-section EmptinessCheckerInterface
+/-! ## `nestedDFSWF` as an `EmptinessChecker` instance -/
 
-/-! ## `nestedDFSWF` as an `EmptinessChecker` instance. -/
+section EmptinessCheckerInterface
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
@@ -1511,9 +1515,9 @@ def nestedDFSChecker [LawfulHashable State] : EmptinessChecker State where
 
 end EmptinessCheckerInterface
 
-section BAFiniteReach
-
 /-! ## Packaging a `FiniteReach` witness from `BA.WellFormed` -/
+
+section BAFiniteReach
 
 variable {α : Type u} [BEq α] [Hashable α]
 
@@ -1540,14 +1544,14 @@ def BA.finiteReach (ba : BA α) (hwf : ba.WellFormed) :
 
 end BAFiniteReach
 
-section PumpingLemma
-
 /-! ## From an accepting run to an `AcceptingCycle` -/
+
+section PumpingLemma
 
 variable {State : Type u}
 
-/-- An increasing sequence of indices at which `σ` is accepting, built by
-repeatedly re-invoking `hacc` past the previous index (existence witnesses only). -/
+/-- An increasing sequence of indices at which `σ` is accepting, built by repeatedly
+re-invoking `hacc` past the previous index. -/
 private noncomputable def accIdxSeq (σ : Nat → State) (isAccepting : State → Bool)
     (hacc : ∀ N, ∃ n ≥ N, isAccepting (σ n) = true) : Nat → Nat
   | 0 => (hacc 0).choose
@@ -1585,9 +1589,8 @@ private theorem accIdxSeq_lt_of_lt (σ : Nat → State) (isAccepting : State →
     · rw [heq]; exact accIdxSeq_mono σ isAccepting hacc j
     · exact Nat.lt_trans (ih (by omega)) (accIdxSeq_mono σ isAccepting hacc j)
 
-/-- The reverse direction of `nestedDFSWF_empty_no_cycle`/
-`nestedDFS_fuel_empty_no_cycle`: an accepting run yields an `AcceptingCycle`
-witness. -/
+/-- The reverse direction of `nestedDFSWF_empty_no_cycle`/`nestedDFS_fuel_empty_no_cycle`:
+an accepting run yields an `AcceptingCycle` witness. -/
 theorem exists_acceptingCycle_of_run
     {succs : State → Array State} {isAccepting : State → Bool}
     {initialStates : List State} (fr : FiniteReach initialStates succs)

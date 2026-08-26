@@ -1,59 +1,50 @@
 /-
-  Structural invariants of the LTL-to-GBA expansion algorithm.
+  Structural invariants maintained by the `expand`/`createGraph` worklist algorithm (Expand.lean), used to show that
+  its output satisfies the abstract `ExpandSpec` (AbstractSpec/ExpansionSpec.lean).
 
   Defines:
-  - `NNF.IsSubformula`: inductive subformula relation
-  - Properties of `new1`/`new2`/`next1` (subformula preservation)
-  - `ExpandSpec`: abstract specification of what the expand output satisfies
+  - `ProcessingInv`: per-node invariant relating `old` to `old ∪ new` while a node is still being expanded
+  - `StateInv`: `ProcessingInv` (with `new = []`) for every finished node in an `ExpandState`
+  - `NodesPreserved`, `ExpandInvariants`: monotonicity/freshness bookkeeping across `expand` calls
+  - `findStep`: fold step underlying `findDuplicate`
+
+  Proves:
+  - `new1`/`new2`/`next1` only ever produce subformulas of their input
+  - `expand` preserves prior node data (`NodesPreserved`), name freshness, and `StateInv`
+  - finished nodes stay within the subformula closure of the top-level formula
+  - `findDuplicate`, `mergeIncoming`, and the `expandInit`/successor bookkeeping behave as expected
+  - `createGraph_spec`: the concrete `createGraph φ` output satisfies the abstract `ExpandSpec φ`
+
+  ## Sections
+  - Properties of new1, new2, next1
+  - Characterization lemmas for new1, new2, next1
+  - Per-node propagation invariant
+  - Monotonicity: nodes are preserved across expand calls
+  - Freshness and naming invariants
+  - StateInv preservation
+  - Bridge: ProcessingInv with new = [] implies ExpandSpec propagation
+  - Subformula closure
+  - findDuplicate spec
+  - mergeIncoming incoming membership
+  - Initial old
+  - Successor old
+  - No expandInit key
+  - Main correctness theorem
 -/
 
 import LTLLib.LTLtoGBA.Expand
+import LTLLib.LTLtoGBA.ExpansionNode
+import LTLLib.LTLtoGBA.AbstractSpec.ExpansionSpec
 import LTLLib.LTL.Semantics
+import LTLLib.LTL.Subformulas
 
 namespace LTLLib
 
 open NNF
 
-/-! ## Subformula relation -/
-
-/-- `IsSubformula ψ φ` means ψ is a (reflexive) subformula of φ. -/
-inductive NNF.IsSubformula : NNF α → NNF α → Prop where
-  | refl : IsSubformula φ φ
-  | and_left : IsSubformula ψ φ₁ → IsSubformula ψ (.and φ₁ φ₂)
-  | and_right : IsSubformula ψ φ₂ → IsSubformula ψ (.and φ₁ φ₂)
-  | or_left : IsSubformula ψ φ₁ → IsSubformula ψ (.or φ₁ φ₂)
-  | or_right : IsSubformula ψ φ₂ → IsSubformula ψ (.or φ₁ φ₂)
-  | until_left : IsSubformula ψ φ₁ → IsSubformula ψ (.until φ₁ φ₂)
-  | until_right : IsSubformula ψ φ₂ → IsSubformula ψ (.until φ₁ φ₂)
-  | release_left : IsSubformula ψ φ₁ → IsSubformula ψ (.release φ₁ φ₂)
-  | release_right : IsSubformula ψ φ₂ → IsSubformula ψ (.release φ₁ φ₂)
-  | next_sub : IsSubformula ψ φ → IsSubformula ψ (.next φ)
-
-namespace NNF.IsSubformula
-
-variable {α : Type u} {φ ψ χ : NNF α}
-
-theorem trans (h₁ : IsSubformula ψ χ) (h₂ : IsSubformula χ φ) :
-    IsSubformula ψ φ := by
-  induction h₂ with
-  | refl => exact h₁
-  | and_left _ ih => exact .and_left ih
-  | and_right _ ih => exact .and_right ih
-  | or_left _ ih => exact .or_left ih
-  | or_right _ ih => exact .or_right ih
-  | until_left _ ih => exact .until_left ih
-  | until_right _ ih => exact .until_right ih
-  | release_left _ ih => exact .release_left ih
-  | release_right _ ih => exact .release_right ih
-  | next_sub _ ih => exact .next_sub ih
-
-end NNF.IsSubformula
-
 /-! ## Properties of new1, new2, next1
 
-These lemmas show that the expansion helpers produce subformulas (or the
-formula itself), ensuring the subformula closure property is maintained
-during expansion. -/
+`new1`, `new2`, `next1` only ever produce subformulas of their input. -/
 
 theorem new1_subformula {φ : NNF α} {ψ : NNF α} (h : ψ ∈ new1 φ) :
     NNF.IsSubformula ψ φ := by
@@ -86,7 +77,7 @@ theorem next1_subformula {φ : NNF α} {ψ : NNF α} (h : ψ ∈ next1 φ) :
 
 /-! ## Characterization lemmas for new1, new2, next1
 
-Spell out exactly what each function produces, for use in propagation proofs. -/
+Spell out exactly what each function produces. -/
 
 @[simp] theorem new1_and (μ ψ : NNF α) : new1 (.and μ ψ) = [μ, ψ] := rfl
 @[simp] theorem new1_or (μ ψ : NNF α) : new1 (.or μ ψ) = [μ] := rfl
@@ -101,152 +92,50 @@ Spell out exactly what each function produces, for use in propagation proofs. -/
 @[simp] theorem next1_until (μ ψ : NNF α) : next1 (.until μ ψ) = [.until μ ψ] := rfl
 @[simp] theorem next1_release (μ ψ : NNF α) : next1 (.release μ ψ) = [.release μ ψ] := rfl
 
-/-! ## Expansion specification
+/-! ## Per-node propagation invariant
 
-`ExpandSpec φ nodes` describes the invariants that the output of `expand`
-(applied to the initial node for formula φ) must satisfy. These are stated
-abstractly over spec-level node data, independent of the computational
-details of the expand implementation. -/
-
-/-- Spec-level representation of a finished node.
-Uses predicates instead of hash sets for proof convenience. -/
-structure NodeData (α : Type u) where
-  name : Nat
-  incoming : Nat → Prop
-  old : NNF α → Prop
-  next : NNF α → Prop
-
-/-- The abstract specification of a valid expansion result for formula φ.
-`nodes` is a predicate selecting the finished nodes. -/
-structure ExpandSpec {α : Type u} (φ : NNF α) (nodes : NodeData α → Prop) : Prop where
-  /-- Literal consistency: no node contains both prop(a) and nprop(a). -/
-  literal_consistent :
-    ∀ q, nodes q → ∀ a, q.old (.prop a) → ¬ q.old (.nprop a)
-
-  /-- No node contains ⊥ (false). -/
-  no_false :
-    ∀ q, nodes q → ¬ q.old .ff
-
-  /-- And propagation. -/
-  and_propag :
-    ∀ q, nodes q → ∀ μ ψ, q.old (.and μ ψ) → q.old μ ∧ q.old ψ
-
-  /-- Or propagation: at least one disjunct is in old. -/
-  or_propag :
-    ∀ q, nodes q → ∀ μ ψ, q.old (.or μ ψ) → q.old μ ∨ q.old ψ
-
-  /-- Next propagation: the inner formula goes to next. -/
-  next_propag :
-    ∀ q, nodes q → ∀ ψ, q.old (.next ψ) → q.next ψ
-
-  /-- Until propagation: either the RHS is satisfied now, or the LHS holds
-      and the obligation carries forward. -/
-  until_propag :
-    ∀ q, nodes q → ∀ μ ψ, q.old (.until μ ψ) →
-      q.old ψ ∨ (q.old μ ∧ q.next (.until μ ψ))
-
-  /-- Release propagation: the RHS must hold now, and either the LHS holds
-      (releasing the obligation) or the obligation carries forward. -/
-  release_propag :
-    ∀ q, nodes q → ∀ μ ψ, q.old (.release μ ψ) →
-      q.old ψ ∧ (q.old μ ∨ q.next (.release μ ψ))
-
-  /-- Subformula closure: everything in old is a subformula of φ. -/
-  old_subformula :
-    ∀ q, nodes q → ∀ ψ, q.old ψ → NNF.IsSubformula ψ φ
-
-  /-- Subformula closure: everything in next is a subformula of φ. -/
-  next_subformula :
-    ∀ q, nodes q → ∀ ψ, q.next ψ → NNF.IsSubformula ψ φ
-
-  /-- Successor inheritance: if q' is a successor of q (i.e., q.name is in
-      q'.incoming and both are in nodes), then next(q) ⊆ old(q'). -/
-  successor_old :
-    ∀ q, nodes q → ∀ q', nodes q' → q'.incoming q.name →
-      ∀ ψ, q.next ψ → q'.old ψ
-
-  /-- Initial formula: nodes reachable from the init marker contain φ in old. -/
-  initial_old :
-    ∀ q, nodes q → q.incoming expandInit → q.old φ
-
-/-! ## Bridge: computational → abstract
-
-Convert `GBANode` (with `HashSet`) to `NodeData` (with predicates),
-and `ExpandState` to a predicate on `NodeData`. -/
+For each compound formula in `old`, its consequences must be in `old ∪ new`.
+When `new = []` this gives the `ExpandSpec` propagation properties directly. -/
 
 variable {α : Type u} {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
 
-/-- Convert a computational node to its abstract representation. -/
-def GBANode.toNodeData (n : GBANode α S) : NodeData α where
-  name := n.name
-  incoming k := n.incoming.contains k
-  old ψ := FSet.contains n.old ψ
-  next ψ := FSet.contains n.next ψ
-
-/-- The abstract node predicate induced by an `ExpandState`:
-    a `NodeData` is in the predicate iff it matches some finished node. -/
-def ExpandState.toNodes (st : ExpandState α S) : NodeData α → Prop :=
-  fun nd => ∃ n, st.nodes[nd.name]? = some n ∧
-    (∀ k, nd.incoming k ↔ n.incoming.contains k) ∧
-    (∀ ψ, nd.old ψ ↔ FSet.contains n.old ψ) ∧
-    (∀ ψ, nd.next ψ ↔ FSet.contains n.next ψ)
-
-/-! ## Per-node propagation invariant
-
-During processing, a node's `old` set may have formulas whose consequences
-haven't been fully expanded yet, they're still in `new`. The `ProcessingInv`
-captures this: for each compound formula in `old`, its consequences are in
-`old ∪ new`. When `new` is empty (finished node), this implies `ExpandSpec`
-properties directly. -/
-
-/-- A formula is "in" a node's old set. -/
-abbrev GBANode.oldHas (n : GBANode α S) (ψ : NNF α) : Prop := FSet.contains n.old ψ
-
-/-- A formula is "in" a node's next set. -/
-abbrev GBANode.nextHas (n : GBANode α S) (ψ : NNF α) : Prop := FSet.contains n.next ψ
-
-/-- A formula is "reachable": Either already processed (old) or pending (new). -/
-def GBANode.reachable (n : GBANode α S) (ψ : NNF α) : Prop :=
-  FSet.contains n.old ψ ∨ ψ ∈ n.new
-
-/-- Per-node propagation invariant during processing.
-    For compound formulas in `old`, consequences are in `old ∪ new`. -/
-structure ProcessingInv (n : GBANode α S) : Prop where
-  /-- No literal contradiction: prop(a) ∈ old → nprop(a) ∉ old. -/
+/-- Per-node propagation invariant during processing. For compound formulas in `old`, consequences are in
+    `old ∪ new`. -/
+structure ProcessingInv (n : ExpansionNode α S) : Prop where
+  -- No literal contradiction.
   literal_consistent : ∀ a, n.oldHas (.prop a) → ¬ n.oldHas (.nprop a)
-  /-- No ff in old. -/
+  -- No ff in old.
   no_false : ¬ n.oldHas .ff
-  /-- And: both conjuncts reachable. -/
+  -- And: both conjuncts reachable.
   and_propag : ∀ μ ψ, n.oldHas (.and μ ψ) → n.reachable μ ∧ n.reachable ψ
-  /-- Or: at least one disjunct reachable. -/
+  -- Or: at least one disjunct reachable.
   or_propag : ∀ μ ψ, n.oldHas (.or μ ψ) → n.reachable μ ∨ n.reachable ψ
-  /-- Next: inner formula in next set. -/
+  -- Next: inner formula in next set.
   next_propag : ∀ ψ, n.oldHas (.next ψ) → n.nextHas ψ
-  /-- Until: RHS reachable, or LHS reachable and self in next. -/
+  -- Until: RHS reachable, or LHS reachable and self in next.
   until_propag : ∀ μ ψ, n.oldHas (.until μ ψ) →
     n.reachable ψ ∨ (n.reachable μ ∧ n.nextHas (.until μ ψ))
-  /-- Release: RHS reachable, and (LHS reachable or self in next). -/
+  -- Release: RHS reachable, and (LHS reachable or self in next).
   release_propag : ∀ μ ψ, n.oldHas (.release μ ψ) →
     n.reachable ψ ∧ (n.reachable μ ∨ n.nextHas (.release μ ψ))
 
 /-- Invariant for all finished nodes in a state. -/
 def StateInv (st : ExpandState α S) : Prop :=
-  ∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n → ProcessingInv n ∧ n.new = []
+  ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n → ProcessingInv n ∧ n.new = []
 
 /-! ## Monotonicity: nodes are preserved across expand calls -/
 
-/-- Nodes in `st` are preserved in `st'` (their old/next don't change,
-    only incoming may grow via mergeIncoming). -/
+/-- Nodes in `st` are preserved in `st'` (their old/next don't change, only incoming may grow via mergeIncoming). -/
 def NodesPreserved (st st' : ExpandState α S) : Prop :=
-  ∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n →
-    ∃ n' : GBANode α S, st'.nodes[k]? = some n' ∧
+  ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n →
+    ∃ n' : ExpansionNode α S, st'.nodes[k]? = some n' ∧
       (∀ ψ, FSet.contains n'.old ψ ↔ FSet.contains n.old ψ) ∧
       (∀ ψ, FSet.contains n'.next ψ ↔ FSet.contains n.next ψ)
 
 /-! ### Helper lemmas -/
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-theorem mergeIncoming_nodesPreserved (st : ExpandState α S) (node : GBANode α S) (targetName : Nat) :
+theorem mergeIncoming_nodesPreserved (st : ExpandState α S) (node : ExpansionNode α S) (targetName : Nat) :
     NodesPreserved st (mergeIncoming st node targetName) := by
   intro k n hk; unfold mergeIncoming; simp only
   split
@@ -260,12 +149,12 @@ theorem mergeIncoming_nodesPreserved (st : ExpandState α S) (node : GBANode α 
   · exact ⟨n, hk, fun ψ => Iff.rfl, fun ψ => Iff.rfl⟩
 
 omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] in
-theorem mergeIncoming_nextName (st : ExpandState α S) (node : GBANode α S) (targetName : Nat) :
+theorem mergeIncoming_nextName (st : ExpandState α S) (node : ExpansionNode α S) (targetName : Nat) :
     (mergeIncoming st node targetName).nextName = st.nextName := by
   unfold mergeIncoming; split <;> rfl
 
 omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] in
-theorem mergeIncoming_preserves_absent (st : ExpandState α S) (node : GBANode α S)
+theorem mergeIncoming_preserves_absent (st : ExpandState α S) (node : ExpansionNode α S)
     (targetName : Nat) (k : Nat) (hk : st.nodes[k]? = none) :
     (mergeIncoming st node targetName).nodes[k]? = none := by
   unfold mergeIncoming; split
@@ -278,7 +167,7 @@ theorem mergeIncoming_preserves_absent (st : ExpandState α S) (node : GBANode �
   · exact hk
 
 omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] in
-theorem mergeIncoming_freshInv (st : ExpandState α S) (node : GBANode α S)
+theorem mergeIncoming_freshInv (st : ExpandState α S) (node : ExpansionNode α S)
     (targetName : Nat) (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName) :
     ∀ k, (mergeIncoming st node targetName).nodes[k]? ≠ none →
       k < (mergeIncoming st node targetName).nextName := by
@@ -307,7 +196,7 @@ private theorem NodesPreserved_trans {st₁ st₂ st₃ : ExpandState α S}
   exact ⟨n'', hk'', fun ψ => (ho'' ψ).trans (ho' ψ), fun ψ => (hn'' ψ).trans (hn' ψ)⟩
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-theorem insert_nodesPreserved (st : ExpandState α S) (node : GBANode α S)
+theorem insert_nodesPreserved (st : ExpandState α S) (node : ExpansionNode α S)
     (h_not_in : st.nodes[node.name]? = none) :
     NodesPreserved st { st with nodes := st.nodes.insert node.name node } := by
   intro k n hk
@@ -317,7 +206,7 @@ theorem insert_nodesPreserved (st : ExpandState α S) (node : GBANode α S)
   · exact ⟨n, hk, fun ψ => Iff.rfl, fun ψ => Iff.rfl⟩
 
 omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] in
-theorem insert_fresh_key (st : ExpandState α S) (nodeName : Nat) (node : GBANode α S)
+theorem insert_fresh_key (st : ExpandState α S) (nodeName : Nat) (node : ExpansionNode α S)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
     (h_name : nodeName < st.nextName) :
     (st.nodes.insert nodeName node)[st.nextName]? = none := by
@@ -326,7 +215,7 @@ theorem insert_fresh_key (st : ExpandState α S) (nodeName : Nat) (node : GBANod
   · by_contra h; exact absurd (h_fresh st.nextName h) (by omega)
 
 omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] in
-theorem insert_freshInv (st : ExpandState α S) (nodeName : Nat) (node : GBANode α S)
+theorem insert_freshInv (st : ExpandState α S) (nodeName : Nat) (node : ExpansionNode α S)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
     (h_name : nodeName < st.nextName) :
     ∀ k, (st.nodes.insert nodeName node)[k]? ≠ none →
@@ -336,10 +225,9 @@ theorem insert_freshInv (st : ExpandState α S) (nodeName : Nat) (node : GBANode
   · rename_i heq; have := (beq_iff_eq (α := Nat)).mp heq; omega
   · have := h_fresh k hk; omega
 
-/-! ### Combined expansion invariants -/
+/-! ## Freshness and naming invariants -/
 
-/-- Combined invariants maintained by expand:
-    monotonicity, name freshness, freshness invariant preservation. -/
+/-- Combined invariants maintained by expand: monotonicity, name freshness, freshness invariant preservation. -/
 structure ExpandInvariants (st st' : ExpandState α S) (nm : Nat) : Prop where
   nodesPreserved : NodesPreserved st st'
   nameFresh : st'.nodes[nm]? = none
@@ -348,7 +236,8 @@ structure ExpandInvariants (st st' : ExpandState α S) (nm : Nat) : Prop where
   nextNameMono : st.nextName ≤ st'.nextName
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-theorem expand_invariants (node : GBANode α S)
+/-- `expand` preserves prior nodes, keeps the fresh-name bound, and returns a name below the new `nextName`. -/
+theorem expand_invariants (node : ExpansionNode α S)
     (st : ExpandState α S) {r : Nat × ExpandState α S}
     (h_result : expand node st = some r)
     (h_not_in : st.nodes[node.name]? = none)
@@ -375,7 +264,7 @@ theorem expand_invariants (node : GBANode α S)
         nameFresh := mergeIncoming_preserves_absent st node existingName _ h_not_in
         freshInv := mergeIncoming_freshInv st node existingName h_fresh
         nameBound := by rw [mergeIncoming_nextName]; exact h_name
-        nextNameMono := by rw [mergeIncoming_nextName]; omega
+        nextNameMono := by rw [mergeIncoming_nextName]
       }
     · -- Insert + recurse
       simp only [freshName] at h_result
@@ -402,7 +291,6 @@ theorem expand_invariants (node : GBANode α S)
         exact ⟨NodesPreserved_refl st, h_not_in, h_fresh, h_name, Nat.le.refl⟩
       · exact ih _ _ _ h_result h_not_in h_fresh h_name
     · -- After isLiteral=false: handle tt/ff/det/nondet
-      -- Chain splits across all goals with try to handle branches needing different depth
       split at h_result <;> (try split at h_result) <;> (try split at h_result) <;>
         (try split at h_result) <;> (try split at h_result)
       all_goals (
@@ -425,7 +313,8 @@ theorem expand_invariants (node : GBANode α S)
              }))
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-theorem expand_nodes_preserved (node : GBANode α S)
+/-- `expand` preserves the old/next data of every node already present in `st`. -/
+theorem expand_nodes_preserved (node : ExpansionNode α S)
     (st : ExpandState α S) {r : Nat × ExpandState α S}
     (h_result : expand node st = some r)
     (h_not_in : st.nodes[node.name]? = none)
@@ -434,7 +323,10 @@ theorem expand_nodes_preserved (node : GBANode α S)
     NodesPreserved st r.2 :=
   (expand_invariants node st h_result h_not_in h_fresh h_name).nodesPreserved
 
-/-! ### Helper lemmas for StateInv preservation -/
+/-! ## StateInv preservation
+
+Case-by-case lemmas showing `ProcessingInv` survives each step of `expand`: literal, tt, deterministic, and the
+two nondeterministic branches. -/
 
 theorem oldHas_insert {s : S} {φ ψ : NNF α}
     (h : FSet.contains (FSet.insert s φ) ψ = true) :
@@ -520,17 +412,17 @@ private theorem addToNew_foldl_inv (old : S)
     · exact Or.inr (List.mem_cons_of_mem _ h2)
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-theorem addToNew_inv (node : GBANode α S) (formulas : List (NNF α)) :
+theorem addToNew_inv (node : ExpansionNode α S) (formulas : List (NNF α)) :
     ∀ ψ, ψ ∈ addToNew node formulas → ψ ∈ node.new ∨ ψ ∈ formulas :=
   addToNew_foldl_inv node.old formulas node.new
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem addToNew_preserves (node : GBANode α S) (formulas : List (NNF α)) :
+private theorem addToNew_preserves (node : ExpansionNode α S) (formulas : List (NNF α)) :
     ∀ ψ, ψ ∈ node.new → ψ ∈ addToNew node formulas :=
   addToNew_foldl_preserves node.old formulas node.new
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem addToNew_adds (node : GBANode α S) (formulas : List (NNF α)) :
+private theorem addToNew_adds (node : ExpansionNode α S) (formulas : List (NNF α)) :
     ∀ ψ, ψ ∈ formulas → FSet.contains node.old ψ = false → ψ ∈ addToNew node formulas :=
   addToNew_foldl_adds node.old formulas node.new
 
@@ -542,7 +434,7 @@ private theorem mem_head_or_tail' [Inhabited β] {l : List β} (h : l.isEmpty = 
   | cons a rest => subst hφ; exact List.mem_cons.mp hψ
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem reachable_step {node : GBANode α S} {φ : NNF α}
+private theorem reachable_step {node : ExpansionNode α S} {φ : NNF α}
     (h_ne : node.new.isEmpty = false) (hφ : node.new.head! = φ)
     (h : node.reachable ψ) {old' : S}
     (h_old : ∀ χ, FSet.contains node.old χ = true → FSet.contains old' χ = true)
@@ -557,7 +449,7 @@ private theorem reachable_step {node : GBANode α S} {φ : NNF α}
     · exact Or.inr (h_new ψ hmem)
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem reachable_via_formulas {node : GBANode α S}
+private theorem reachable_via_formulas {node : ExpansionNode α S}
     (formulas : List (NNF α)) {ψ : NNF α} (h : ψ ∈ formulas)
     {old' : S}
     (h_old : ∀ χ, FSet.contains node.old χ = true → FSet.contains old' χ = true) :
@@ -568,18 +460,18 @@ private theorem reachable_via_formulas {node : GBANode α S}
     exact Or.inr (addToNew_adds node formulas ψ h hψ)
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem processingInv_empty_old (node : GBANode α S)
+private theorem processingInv_empty_old (node : ExpansionNode α S)
     (h : ∀ ψ, FSet.contains node.old ψ = false) : ProcessingInv node where
-  literal_consistent a ha := by simp [GBANode.oldHas, h] at ha
-  no_false hf := by simp [GBANode.oldHas, h] at hf
-  and_propag _ _ ha := by simp [GBANode.oldHas, h] at ha
-  or_propag _ _ ha := by simp [GBANode.oldHas, h] at ha
-  next_propag _ ha := by simp [GBANode.oldHas, h] at ha
-  until_propag _ _ ha := by simp [GBANode.oldHas, h] at ha
-  release_propag _ _ ha := by simp [GBANode.oldHas, h] at ha
+  literal_consistent a ha := by simp [ExpansionNode.oldHas, h] at ha
+  no_false hf := by simp [ExpansionNode.oldHas, h] at hf
+  and_propag _ _ ha := by simp [ExpansionNode.oldHas, h] at ha
+  or_propag _ _ ha := by simp [ExpansionNode.oldHas, h] at ha
+  next_propag _ ha := by simp [ExpansionNode.oldHas, h] at ha
+  until_propag _ _ ha := by simp [ExpansionNode.oldHas, h] at ha
+  release_propag _ _ ha := by simp [ExpansionNode.oldHas, h] at ha
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem mergeIncoming_stateInv (st : ExpandState α S) (node : GBANode α S)
+private theorem mergeIncoming_stateInv (st : ExpandState α S) (node : ExpansionNode α S)
     (targetName : Nat) (h_inv : StateInv st) :
     StateInv (mergeIncoming st node targetName) := by
   intro k n hk; unfold mergeIncoming at hk; split at hk
@@ -599,7 +491,7 @@ private theorem mergeIncoming_stateInv (st : ExpandState α S) (node : GBANode �
     · exact h_inv k n hk
   · exact h_inv k n hk
 
-private theorem processingInv_literal {node : GBANode α S}
+private theorem processingInv_literal {node : ExpansionNode α S}
     (h_proc : ProcessingInv node) (h_ne : node.new.isEmpty = false)
     (h_lit : isLiteral node.new.head! = true)
     (h_no_neg : FSet.contains node.old (negateLiteral node.new.head!) = false) :
@@ -610,7 +502,7 @@ private theorem processingInv_literal {node : GBANode α S}
       FSet.contains (FSet.insert node.old φ) ψ = true ∨ ψ ∈ node.new.tail! :=
     fun ψ h => reachable_step h_ne hφ h (old_subset_insert _ φ) h_φ_old (fun _ h => h)
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro a ha hna; simp only [GBANode.oldHas] at ha hna
+  · intro a ha hna; simp only [ExpansionNode.oldHas] at ha hna
     rcases oldHas_insert ha with ha' | rfl
     · rcases oldHas_insert hna with hna' | rfl
       · exact h_proc.literal_consistent a ha' hna'
@@ -620,7 +512,7 @@ private theorem processingInv_literal {node : GBANode α S}
       · simp at heq
   all_goals (
     first | (intro _ _ ha) | (intro _ ha) | (intro ha)
-    simp only [GBANode.oldHas] at ha
+    simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · first
       | exact h_proc.no_false ha'
@@ -632,7 +524,7 @@ private theorem processingInv_literal {node : GBANode α S}
          exact ⟨reach _ h1, h2.imp (reach _) id⟩)
     · simp [isLiteral] at h_lit)
 
-private theorem processingInv_tt {node : GBANode α S}
+private theorem processingInv_tt {node : ExpansionNode α S}
     (h_proc : ProcessingInv node) (h_ne : node.new.isEmpty = false)
     (h_tt : node.new.head! = NNF.tt) :
     ProcessingInv { node with new := node.new.tail!, old := FSet.insert node.old node.new.head! } := by
@@ -643,7 +535,7 @@ private theorem processingInv_tt {node : GBANode α S}
       FSet.contains (FSet.insert node.old NNF.tt) ψ = true ∨ ψ ∈ node.new.tail! :=
     fun ψ h => reachable_step h_ne hφ h (old_subset_insert _ _) h_φ_old (fun _ h => h)
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro a ha hna; simp only [GBANode.oldHas] at ha hna
+  · intro a ha hna; simp only [ExpansionNode.oldHas] at ha hna
     rcases oldHas_insert ha with ha' | heq
     · rcases oldHas_insert hna with hna' | heq
       · exact h_proc.literal_consistent a ha' hna'
@@ -651,7 +543,7 @@ private theorem processingInv_tt {node : GBANode α S}
     · simp at heq
   all_goals (
     first | (intro _ _ ha) | (intro _ ha) | (intro ha)
-    simp only [GBANode.oldHas] at ha
+    simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | heq
     · first
       | exact h_proc.no_false ha'
@@ -663,7 +555,7 @@ private theorem processingInv_tt {node : GBANode α S}
          exact ⟨reach _ h1, h2.imp (reach _) id⟩)
     · simp at heq)
 
-private theorem processingInv_deterministic {node : GBANode α S}
+private theorem processingInv_deterministic {node : ExpansionNode α S}
     (h_proc : ProcessingInv node) (h_ne : node.new.isEmpty = false)
     (h_det : isDeterministic node.new.head! = true) :
     let φ := node.new.head!
@@ -690,39 +582,39 @@ private theorem processingInv_deterministic {node : GBANode α S}
   have in_next1 : ∀ ψ, ψ ∈ next1 φ → FSet.contains (addAllToSet node.next (next1 φ)) ψ = true :=
     fun ψ h => addAllToSet_mem node.next (next1 φ) ψ h
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro a ha hna; simp only [GBANode.oldHas] at ha hna
+  · intro a ha hna; simp only [ExpansionNode.oldHas] at ha hna
     rcases oldHas_insert ha with ha' | rfl
     · rcases oldHas_insert hna with hna' | rfl
       · exact h_proc.literal_consistent a ha' hna'
       · simp [isDeterministic] at h_det
     · simp [isDeterministic] at h_det
-  · intro hf; simp only [GBANode.oldHas] at hf
+  · intro hf; simp only [ExpansionNode.oldHas] at hf
     rcases oldHas_insert hf with hf' | rfl
     · exact h_proc.no_false hf'
     · simp [isDeterministic] at h_det
-  · intro μ ψ ha; simp only [GBANode.oldHas] at ha
+  · intro μ ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · have ⟨h1, h2⟩ := h_proc.and_propag μ ψ ha'; exact ⟨reach _ h1, reach _ h2⟩
     · exact ⟨reach_new1 μ (by simp [new1]), reach_new1 ψ (by simp [new1])⟩
-  · intro μ ψ ha; simp only [GBANode.oldHas] at ha
+  · intro μ ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact (h_proc.or_propag μ ψ ha').imp (reach _) (reach _)
     · simp [isDeterministic] at h_det
-  · intro ψ ha; simp only [GBANode.oldHas] at ha
+  · intro ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact h_next_sub ψ (h_proc.next_propag ψ ha')
     · exact in_next1 ψ (by simp [next1])
-  · intro μ ψ ha; simp only [GBANode.oldHas] at ha
+  · intro μ ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact (h_proc.until_propag μ ψ ha').imp (reach _) (fun ⟨h1, h2⟩ => ⟨reach _ h1, h_next_sub _ h2⟩)
     · simp [isDeterministic] at h_det
-  · intro μ ψ ha; simp only [GBANode.oldHas] at ha
+  · intro μ ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · have ⟨h1, h2⟩ := h_proc.release_propag μ ψ ha'
       exact ⟨reach _ h1, h2.imp (reach _) (h_next_sub _)⟩
     · simp [isDeterministic] at h_det
 
-private theorem processingInv_nondet1 {node : GBANode α S}
+private theorem processingInv_nondet1 {node : ExpansionNode α S}
     (h_proc : ProcessingInv node) (h_ne : node.new.isEmpty = false)
     (h_nondet : isDeterministic node.new.head! = false)
     (h_not_lit : isLiteral node.new.head! = false)
@@ -752,39 +644,39 @@ private theorem processingInv_nondet1 {node : GBANode α S}
   have in_next1 : ∀ ψ, ψ ∈ next1 φ → FSet.contains (addAllToSet node.next (next1 φ)) ψ = true :=
     fun ψ h => addAllToSet_mem node.next (next1 φ) ψ h
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro a ha hna; simp only [GBANode.oldHas] at ha hna
+  · intro a ha hna; simp only [ExpansionNode.oldHas] at ha hna
     rcases oldHas_insert ha with ha' | rfl
     · rcases oldHas_insert hna with hna' | rfl
       · exact h_proc.literal_consistent a ha' hna'
       · simp_all [isLiteral, isDeterministic]
     · simp_all [isLiteral, isDeterministic]
-  · intro hf; simp only [GBANode.oldHas] at hf
+  · intro hf; simp only [ExpansionNode.oldHas] at hf
     rcases oldHas_insert hf with hf' | rfl
     · exact h_proc.no_false hf'
     · simp_all [isLiteral, isDeterministic]
-  · intro μ ψ ha; simp only [GBANode.oldHas] at ha
+  · intro μ ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · have ⟨h1, h2⟩ := h_proc.and_propag μ ψ ha'; exact ⟨reach _ h1, reach _ h2⟩
     · simp_all [isDeterministic]
-  · intro μ ψ ha; simp only [GBANode.oldHas] at ha
+  · intro μ ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact (h_proc.or_propag μ ψ ha').imp (reach _) (reach _)
     · exact Or.inl (reach_new1 μ (by simp [new1]))
-  · intro ψ ha; simp only [GBANode.oldHas] at ha
+  · intro ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact h_next_sub ψ (h_proc.next_propag ψ ha')
     · simp_all [isDeterministic]
-  · intro μ ψ ha; simp only [GBANode.oldHas] at ha
+  · intro μ ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact (h_proc.until_propag μ ψ ha').imp (reach _) (fun ⟨h1, h2⟩ => ⟨reach _ h1, h_next_sub _ h2⟩)
     · exact Or.inr ⟨reach_new1 μ (by simp [new1]), in_next1 _ (by simp [next1])⟩
-  · intro μ ψ ha; simp only [GBANode.oldHas] at ha
+  · intro μ ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · have ⟨h1, h2⟩ := h_proc.release_propag μ ψ ha'
       exact ⟨reach _ h1, h2.imp (reach _) (h_next_sub _)⟩
     · exact ⟨reach_new1 ψ (by simp [new1]), Or.inr (in_next1 _ (by simp [next1]))⟩
 
-private theorem processingInv_nondet2 {node : GBANode α S}
+private theorem processingInv_nondet2 {node : ExpansionNode α S}
     (h_proc : ProcessingInv node) (h_ne : node.new.isEmpty = false)
     (h_nondet : isDeterministic node.new.head! = false)
     (h_not_lit : isLiteral node.new.head! = false)
@@ -809,39 +701,41 @@ private theorem processingInv_nondet2 {node : GBANode α S}
       FSet.contains (FSet.insert node.old φ) ψ = true ∨ ψ ∈ addToNew node_tail (new2 φ) :=
     fun ψ h => reachable_via_formulas (new2 φ) h h_old_sub
   refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro a ha hna; simp only [GBANode.oldHas] at ha hna
+  · intro a ha hna; simp only [ExpansionNode.oldHas] at ha hna
     rcases oldHas_insert ha with ha' | rfl
     · rcases oldHas_insert hna with hna' | rfl
       · exact h_proc.literal_consistent a ha' hna'
       · simp_all [isLiteral, isDeterministic]
     · simp_all [isLiteral, isDeterministic]
-  · intro hf; simp only [GBANode.oldHas] at hf
+  · intro hf; simp only [ExpansionNode.oldHas] at hf
     rcases oldHas_insert hf with hf' | rfl
     · exact h_proc.no_false hf'
     · simp_all [isLiteral, isDeterministic]
-  · intro μ ψ ha; simp only [GBANode.oldHas] at ha
+  · intro μ ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · have ⟨h1, h2⟩ := h_proc.and_propag μ ψ ha'; exact ⟨reach _ h1, reach _ h2⟩
     · simp_all [isDeterministic]
-  · intro μ ψ ha; simp only [GBANode.oldHas] at ha
+  · intro μ ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact (h_proc.or_propag μ ψ ha').imp (reach _) (reach _)
     · exact Or.inr (reach_new2 ψ (by simp [new2]))
-  · intro ψ ha; simp only [GBANode.oldHas] at ha
+  · intro ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact h_proc.next_propag ψ ha'
     · simp_all [isDeterministic]
-  · intro μ ψ ha; simp only [GBANode.oldHas] at ha
+  · intro μ ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · exact (h_proc.until_propag μ ψ ha').imp (reach _) (fun ⟨h1, h2⟩ => ⟨reach _ h1, h2⟩)
     · exact Or.inl (reach_new2 ψ (by simp [new2]))
-  · intro μ ψ ha; simp only [GBANode.oldHas] at ha
+  · intro μ ψ ha; simp only [ExpansionNode.oldHas] at ha
     rcases oldHas_insert ha with ha' | rfl
     · have ⟨h1, h2⟩ := h_proc.release_propag μ ψ ha'
       exact ⟨reach _ h1, h2.imp (reach _) id⟩
     · exact ⟨reach_new2 ψ (by simp [new2]), Or.inl (reach_new2 μ (by simp [new2]))⟩
 
-theorem expand_preserves_stateInv (node : GBANode α S)
+/-- If `st` satisfies `StateInv` and `node` satisfies `ProcessingInv`, the result of expanding `node` into `st` again
+    satisfies `StateInv`. -/
+theorem expand_preserves_stateInv (node : ExpansionNode α S)
     (st : ExpandState α S) {r : Nat × ExpandState α S}
     (h_result : expand node st = some r)
     (h_inv : StateInv st)
@@ -912,15 +806,15 @@ theorem expand_preserves_stateInv (node : GBANode α S)
 
 /-! ## Bridge: ProcessingInv with new = [] implies ExpandSpec propagation -/
 
-private theorem reachable_iff_old (n : GBANode α S) (h : n.new = []) (ψ : NNF α) :
+private theorem reachable_iff_old (n : ExpansionNode α S) (h : n.new = []) (ψ : NNF α) :
     n.reachable ψ ↔ n.oldHas ψ := by
-  simp [GBANode.reachable, h]
+  simp [ExpansionNode.reachable, h]
 
-/-- Reverse lookup for mergeIncoming: every node in the merged state
-    has a preimage in the original state with the same old/next. -/
-private theorem mergeIncoming_reverse (st : ExpandState α S) (node : GBANode α S) (targetName : Nat)
-    (k : Nat) (n : GBANode α S) (hk : (mergeIncoming st node targetName).nodes[k]? = some n) :
-    ∃ (n' : GBANode α S), st.nodes[k]? = some n' ∧
+/-- Reverse lookup for mergeIncoming: every node in the merged state has a preimage in the original state with the
+    same old/next. -/
+private theorem mergeIncoming_reverse (st : ExpandState α S) (node : ExpansionNode α S) (targetName : Nat)
+    (k : Nat) (n : ExpansionNode α S) (hk : (mergeIncoming st node targetName).nodes[k]? = some n) :
+    ∃ (n' : ExpansionNode α S), st.nodes[k]? = some n' ∧
       (∀ ψ, FSet.contains n.old ψ ↔ FSet.contains n'.old ψ) ∧
       (∀ ψ, FSet.contains n.next ψ ↔ FSet.contains n'.next ψ) := by
   unfold mergeIncoming at hk; split at hk
@@ -991,37 +885,34 @@ theorem fset_fold_cons_mem (s : S) :
     (foldl_cons_subset (FSet.toList s) [] ψ hψ).resolve_left (by intro h; exact nomatch h)
   exact (FSet.mem_toList_iff ψ s).mp hmem
 
-/-- Subformula closure: expand preserves the property that all formulas
-    in old/next of finished nodes are subformulas of the top-level formula. -/
-theorem expand_subformula_closure (φ_top : NNF α) (node : GBANode α S) (st : ExpandState α S)
+/-- Subformula closure: expand preserves the property that all formulas in old/next of finished nodes are
+    subformulas of the top-level formula. -/
+theorem expand_subformula_closure (φ_top : NNF α) (node : ExpansionNode α S) (st : ExpandState α S)
     {r : Nat × ExpandState α S}
     (h_result : expand node st = some r)
     (h_node_old : ∀ ψ, node.oldHas ψ → NNF.IsSubformula ψ φ_top)
     (h_node_new : ∀ ψ, ψ ∈ node.new → NNF.IsSubformula ψ φ_top)
     (h_node_next : ∀ ψ, node.nextHas ψ → NNF.IsSubformula ψ φ_top)
-    (h_st_old : ∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n → ∀ ψ, FSet.contains n.old ψ → NNF.IsSubformula ψ φ_top)
-    (h_st_next : ∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n → ∀ ψ, FSet.contains n.next ψ → NNF.IsSubformula ψ φ_top) :
-    (∀ (k : Nat) (n : GBANode α S), r.2.nodes[k]? = some n → ∀ ψ, FSet.contains n.old ψ → NNF.IsSubformula ψ φ_top) ∧
-    (∀ (k : Nat) (n : GBANode α S), r.2.nodes[k]? = some n → ∀ ψ, FSet.contains n.next ψ → NNF.IsSubformula ψ φ_top) := by
+    (h_st_old : ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n → ∀ ψ, FSet.contains n.old ψ → NNF.IsSubformula ψ φ_top)
+    (h_st_next : ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n → ∀ ψ, FSet.contains n.next ψ → NNF.IsSubformula ψ φ_top) :
+    (∀ (k : Nat) (n : ExpansionNode α S), r.2.nodes[k]? = some n → ∀ ψ, FSet.contains n.old ψ → NNF.IsSubformula ψ φ_top) ∧
+    (∀ (k : Nat) (n : ExpansionNode α S), r.2.nodes[k]? = some n → ∀ ψ, FSet.contains n.next ψ → NNF.IsSubformula ψ φ_top) := by
   revert h_node_old h_node_new h_node_next h_st_old h_st_next
   apply expand.partial_correctness
     (motive := fun node st r =>
       (∀ ψ, node.oldHas ψ → NNF.IsSubformula ψ φ_top) →
       (∀ ψ, ψ ∈ node.new → NNF.IsSubformula ψ φ_top) →
       (∀ ψ, node.nextHas ψ → NNF.IsSubformula ψ φ_top) →
-      (∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n → ∀ ψ, FSet.contains n.old ψ → NNF.IsSubformula ψ φ_top) →
-      (∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n → ∀ ψ, FSet.contains n.next ψ → NNF.IsSubformula ψ φ_top) →
-      (∀ (k : Nat) (n : GBANode α S), r.2.nodes[k]? = some n → ∀ ψ, FSet.contains n.old ψ → NNF.IsSubformula ψ φ_top) ∧
-      (∀ (k : Nat) (n : GBANode α S), r.2.nodes[k]? = some n → ∀ ψ, FSet.contains n.next ψ → NNF.IsSubformula ψ φ_top))
+      (∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n → ∀ ψ, FSet.contains n.old ψ → NNF.IsSubformula ψ φ_top) →
+      (∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n → ∀ ψ, FSet.contains n.next ψ → NNF.IsSubformula ψ φ_top) →
+      (∀ (k : Nat) (n : ExpansionNode α S), r.2.nodes[k]? = some n → ∀ ψ, FSet.contains n.old ψ → NNF.IsSubformula ψ φ_top) ∧
+      (∀ (k : Nat) (n : ExpansionNode α S), r.2.nodes[k]? = some n → ∀ ψ, FSet.contains n.next ψ → NNF.IsSubformula ψ φ_top))
     _ node st r h_result
   intro expand_ih ih node st r h_result h_node_old h_node_new h_node_next h_st_old h_st_next
-  -- Helper: formula at head of new is a subformula
   have h_head_sub : node.new.isEmpty = false → NNF.IsSubformula node.new.head! φ_top :=
     fun hne => h_node_new _ (head!_mem_of_isEmpty_false hne)
-  -- Helper: formulas in tail of new are subformulas
   have h_tail_sub : ∀ ψ, ψ ∈ node.new.tail! → NNF.IsSubformula ψ φ_top :=
     fun _ hψ => h_node_new _ (mem_of_mem_tail! hψ)
-  -- Helper: old.insert preserves subformula closure
   have h_old_insert_sub : node.new.isEmpty = false →
       ∀ ψ, FSet.contains (FSet.insert node.old node.new.head!) ψ = true → NNF.IsSubformula ψ φ_top := by
     intro hne ψ hψ; rcases oldHas_insert hψ with h1 | rfl
@@ -1029,7 +920,6 @@ theorem expand_subformula_closure (φ_top : NNF α) (node : GBANode α S) (st : 
     · exact h_head_sub hne
   split at h_result
   case isTrue h_empty =>
-    -- new is empty
     split at h_result
     · -- merge case: old/next unchanged (mergeIncoming_reverse)
       rename_i existingName _
@@ -1043,13 +933,13 @@ theorem expand_subformula_closure (φ_top : NNF α) (node : GBANode α S) (st : 
     · -- insert + successor case
       simp only [freshName] at h_result
       -- After insert: state includes node
-      have h_st_old' : ∀ (k : Nat) (n' : GBANode α S), (st.nodes.insert node.name node)[k]? = some n' →
+      have h_st_old' : ∀ (k : Nat) (n' : ExpansionNode α S), (st.nodes.insert node.name node)[k]? = some n' →
           ∀ ψ, FSet.contains n'.old ψ → NNF.IsSubformula ψ φ_top := by
         intro k n' hk ψ hψ
         simp only [Std.HashMap.getElem?_insert] at hk; split at hk
         · obtain rfl := Option.some.inj hk; exact h_node_old _ hψ
         · exact h_st_old _ _ hk _ hψ
-      have h_st_next' : ∀ (k : Nat) (n' : GBANode α S), (st.nodes.insert node.name node)[k]? = some n' →
+      have h_st_next' : ∀ (k : Nat) (n' : ExpansionNode α S), (st.nodes.insert node.name node)[k]? = some n' →
           ∀ ψ, FSet.contains n'.next ψ → NNF.IsSubformula ψ φ_top := by
         intro k n' hk ψ hψ
         simp only [Std.HashMap.getElem?_insert] at hk; split at hk
@@ -1136,16 +1026,17 @@ theorem expand_subformula_closure (φ_top : NNF α) (node : GBANode α S) (st : 
 
 /-! ## findDuplicate spec -/
 
-def findStep (node : GBANode α S) (acc : Option Nat) (b : Nat × GBANode α S) : Option Nat :=
+def findStep (node : ExpansionNode α S) (acc : Option Nat) (b : Nat × ExpansionNode α S) : Option Nat :=
   match acc with | some _ => acc | none => if b.2.sameSignature node then some b.1 else none
 
-theorem findDuplicate_spec (st : ExpandState α S) (node : GBANode α S)
+/-- `findDuplicate` returns the name of an existing node with the same signature as `node`. -/
+theorem findDuplicate_spec (st : ExpandState α S) (node : ExpansionNode α S)
     (name : Nat) (h : findDuplicate st node = some name) :
     ∃ n, st.nodes[name]? = some n ∧ n.sameSignature node = true := by
   unfold findDuplicate at h
   rw [Std.HashMap.fold_eq_foldl_toList] at h
   change List.foldl (fun a b => findStep node a b) none st.nodes.toList = some name at h
-  suffices ∀ (init : Option Nat) (l : List (Nat × GBANode α S)),
+  suffices ∀ (init : Option Nat) (l : List (Nat × ExpansionNode α S)),
       (∀ p ∈ l, st.nodes[p.1]? = some p.2) →
       (init = some name →
         ∃ m, st.nodes[name]? = some m ∧ m.sameSignature node = true) →
@@ -1188,8 +1079,8 @@ private theorem foldl_insert_contains {l : List Nat} {base : Std.HashSet Nat} {j
     · exact Or.inr (.tail _ h)
 
 omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem mergeIncoming_incoming (st : ExpandState α S) (node : GBANode α S)
-    (targetName k j : Nat) (n : GBANode α S)
+private theorem mergeIncoming_incoming (st : ExpandState α S) (node : ExpansionNode α S)
+    (targetName k j : Nat) (n : ExpansionNode α S)
     (hk : (mergeIncoming st node targetName).nodes[k]? = some n)
     (hj : n.incoming.contains j = true) :
     (∃ n', st.nodes[k]? = some n' ∧ n'.incoming.contains j = true) ∨
@@ -1206,9 +1097,7 @@ private theorem mergeIncoming_incoming (st : ExpandState α S) (node : GBANode �
         · rfl
         · by_contra h2
           simp only [Bool.not_eq_true] at h h2
-          -- `target.incoming.union node.incoming` is `target.incoming ∪ node.incoming`;
-          -- `Std.HashSet.contains_union` gives contains-of-union as a boolean `||`,
-          -- which `h`/`h2` (both `= false`) then collapse to `false = true`.
+          -- j is in neither target's nor node's incoming set, contradicting hj.
           simp [Std.HashSet.union_eq, h, h2] at hj
     · exact Or.inl ⟨n, hk, hj⟩
   · exact Or.inl ⟨n, hk, hj⟩
@@ -1216,18 +1105,18 @@ private theorem mergeIncoming_incoming (st : ExpandState α S) (node : GBANode �
 /-! ## Initial old -/
 
 /-- Expand preserves the property that nodes with expandInit in incoming contain φ in old. -/
-theorem expand_initial_old (φ_top : NNF α) (node : GBANode α S) (st : ExpandState α S)
+theorem expand_initial_old (φ_top : NNF α) (node : ExpansionNode α S) (st : ExpandState α S)
     {r : Nat × ExpandState α S}
     (h_result : expand node st = some r)
     (h_node_init : node.incoming.contains expandInit →
       node.oldHas φ_top ∨ φ_top ∈ node.new)
-    (h_st_init : ∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n →
+    (h_st_init : ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n →
       n.incoming.contains expandInit → FSet.contains n.old φ_top)
     (h_not_in : st.nodes[node.name]? = none)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
     (h_name : node.name < st.nextName)
     (h_name_ne : node.name ≠ expandInit) :
-    (∀ (k : Nat) (n : GBANode α S), r.2.nodes[k]? = some n →
+    (∀ (k : Nat) (n : ExpansionNode α S), r.2.nodes[k]? = some n →
       n.incoming.contains expandInit → FSet.contains n.old φ_top) ∧
     r.1 ≠ expandInit ∧
     r.2.nodes[r.1]? = none ∧
@@ -1238,13 +1127,13 @@ theorem expand_initial_old (φ_top : NNF α) (node : GBANode α S) (st : ExpandS
     (motive := fun node st r =>
       (node.incoming.contains expandInit →
         node.oldHas φ_top ∨ φ_top ∈ node.new) →
-      (∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n →
+      (∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n →
         n.incoming.contains expandInit → FSet.contains n.old φ_top) →
       st.nodes[node.name]? = none →
       (∀ k, st.nodes[k]? ≠ none → k < st.nextName) →
       node.name < st.nextName →
       node.name ≠ expandInit →
-      (∀ (k : Nat) (n : GBANode α S), r.2.nodes[k]? = some n →
+      (∀ (k : Nat) (n : ExpansionNode α S), r.2.nodes[k]? = some n →
         n.incoming.contains expandInit → FSet.contains n.old φ_top) ∧
       r.1 ≠ expandInit ∧
       r.2.nodes[r.1]? = none ∧
@@ -1286,7 +1175,7 @@ theorem expand_initial_old (φ_top : NNF α) (node : GBANode α S) (st : ExpandS
         rw [h_new_nil] at hφ
         rcases hφ with hφ | hφ
         · obtain ⟨target, htarget, hsig⟩ := findDuplicate_spec st node existingName h_fd
-          have hφ_target := GBANode.sameSignature_old_left target node hsig φ_top hφ
+          have hφ_target := ExpansionNode.sameSignature_old_left target node hsig φ_top hφ
           rw [hk_eq] at hk
           obtain ⟨n', hn', hold, _⟩ := mergeIncoming_reverse st node existingName existingName n hk
           rw [htarget] at hn'; obtain rfl := Option.some.inj hn'
@@ -1295,7 +1184,7 @@ theorem expand_initial_old (φ_top : NNF α) (node : GBANode α S) (st : ExpandS
     | none =>
       -- Insert + successor
       simp only [freshName] at h_result
-      have h_st_init' : ∀ (k : Nat) (n : GBANode α S),
+      have h_st_init' : ∀ (k : Nat) (n : ExpansionNode α S),
           (st.nodes.insert node.name node)[k]? = some n →
           n.incoming.contains expandInit → FSet.contains n.old φ_top := by
         intro k n hk hj
@@ -1361,23 +1250,22 @@ theorem expand_initial_old (φ_top : NNF α) (node : GBANode α S) (st : ExpandS
 
 /-! ## Successor old -/
 
-/-- Expand preserves the successor_old property:
-    for finished nodes, predecessors' next ⊆ node's old. -/
-theorem expand_successor_old (node : GBANode α S) (st : ExpandState α S)
+/-- Expand preserves the successor_old property: for finished nodes, predecessors' next ⊆ node's old. -/
+theorem expand_successor_old (node : ExpansionNode α S) (st : ExpandState α S)
     {r : Nat × ExpandState α S}
     (h_result : expand node st = some r)
-    (h_st_succ : ∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n →
+    (h_st_succ : ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n →
       ∀ k', k' ≠ expandInit → n.incoming.contains k' →
-      ∃ (n' : GBANode α S), st.nodes[k']? = some n' ∧ ∀ ψ, FSet.contains n'.next ψ → FSet.contains n.old ψ)
+      ∃ (n' : ExpansionNode α S), st.nodes[k']? = some n' ∧ ∀ ψ, FSet.contains n'.next ψ → FSet.contains n.old ψ)
     (h_node_succ : ∀ k', k' ≠ expandInit → node.incoming.contains k' →
-      ∃ (n' : GBANode α S), st.nodes[k']? = some n' ∧ ∀ ψ, FSet.contains n'.next ψ → node.oldHas ψ ∨ ψ ∈ node.new)
+      ∃ (n' : ExpansionNode α S), st.nodes[k']? = some n' ∧ ∀ ψ, FSet.contains n'.next ψ → node.oldHas ψ ∨ ψ ∈ node.new)
     (h_not_in : st.nodes[node.name]? = none)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
     (h_name : node.name < st.nextName)
     (h_name_ne : node.name ≠ expandInit) :
-    (∀ (k : Nat) (n : GBANode α S), r.2.nodes[k]? = some n →
+    (∀ (k : Nat) (n : ExpansionNode α S), r.2.nodes[k]? = some n →
       ∀ k', k' ≠ expandInit → n.incoming.contains k' →
-      ∃ (n' : GBANode α S), r.2.nodes[k']? = some n' ∧ ∀ ψ, FSet.contains n'.next ψ → FSet.contains n.old ψ) ∧
+      ∃ (n' : ExpansionNode α S), r.2.nodes[k']? = some n' ∧ ∀ ψ, FSet.contains n'.next ψ → FSet.contains n.old ψ) ∧
     NodesPreserved st r.2 ∧
     r.2.nodes[r.1]? = none ∧
     (∀ k, r.2.nodes[k]? ≠ none → k < r.2.nextName) ∧
@@ -1386,18 +1274,18 @@ theorem expand_successor_old (node : GBANode α S) (st : ExpandState α S)
   revert h_st_succ h_node_succ h_not_in h_fresh h_name h_name_ne
   apply expand.partial_correctness
     (motive := fun node st r =>
-      (∀ (k : Nat) (n : GBANode α S), st.nodes[k]? = some n →
+      (∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n →
         ∀ k', k' ≠ expandInit → n.incoming.contains k' →
-        ∃ (n' : GBANode α S), st.nodes[k']? = some n' ∧ ∀ ψ, FSet.contains n'.next ψ → FSet.contains n.old ψ) →
+        ∃ (n' : ExpansionNode α S), st.nodes[k']? = some n' ∧ ∀ ψ, FSet.contains n'.next ψ → FSet.contains n.old ψ) →
       (∀ k', k' ≠ expandInit → node.incoming.contains k' →
-        ∃ (n' : GBANode α S), st.nodes[k']? = some n' ∧ ∀ ψ, FSet.contains n'.next ψ → node.oldHas ψ ∨ ψ ∈ node.new) →
+        ∃ (n' : ExpansionNode α S), st.nodes[k']? = some n' ∧ ∀ ψ, FSet.contains n'.next ψ → node.oldHas ψ ∨ ψ ∈ node.new) →
       st.nodes[node.name]? = none →
       (∀ k, st.nodes[k]? ≠ none → k < st.nextName) →
       node.name < st.nextName →
       node.name ≠ expandInit →
-      (∀ (k : Nat) (n : GBANode α S), r.2.nodes[k]? = some n →
+      (∀ (k : Nat) (n : ExpansionNode α S), r.2.nodes[k]? = some n →
         ∀ k', k' ≠ expandInit → n.incoming.contains k' →
-        ∃ (n' : GBANode α S), r.2.nodes[k']? = some n' ∧ ∀ ψ, FSet.contains n'.next ψ → FSet.contains n.old ψ) ∧
+        ∃ (n' : ExpansionNode α S), r.2.nodes[k']? = some n' ∧ ∀ ψ, FSet.contains n'.next ψ → FSet.contains n.old ψ) ∧
       NodesPreserved st r.2 ∧
       r.2.nodes[r.1]? = none ∧
       (∀ k, r.2.nodes[k]? ≠ none → k < r.2.nextName) ∧
@@ -1409,7 +1297,7 @@ theorem expand_successor_old (node : GBANode α S) (st : ExpandState α S)
   have h_node_succ_preserved : node.new.isEmpty = false →
       ∀ (new' : List (NNF α)), (∀ ψ, ψ ∈ node.new.tail! → ψ ∈ new') →
       ∀ k', k' ≠ expandInit → node.incoming.contains k' →
-        ∃ (n' : GBANode α S), st.nodes[k']? = some n' ∧
+        ∃ (n' : ExpansionNode α S), st.nodes[k']? = some n' ∧
         ∀ ψ, FSet.contains n'.next ψ → FSet.contains (FSet.insert node.old node.new.head!) ψ = true ∨ ψ ∈ new' := by
     intro hne new' hsub k' hk'_ne hk'
     obtain ⟨n', hn', hpred⟩ := h_node_succ k' hk'_ne hk'
@@ -1455,15 +1343,15 @@ theorem expand_successor_old (node : GBANode α S) (st : ExpandState α S)
         obtain ⟨pred', hpred', _, hpred_nxt'⟩ := mergeIncoming_nodesPreserved st node existingName k' pred hpred
         exact ⟨pred', hpred', fun ψ hψ => by
           rcases hpred_next ψ ((hpred_nxt' ψ).mp hψ) with hold' | hmem
-          · exact (hold ψ).mpr (GBANode.sameSignature_old_left target node hsig ψ hold')
+          · exact (hold ψ).mpr (ExpansionNode.sameSignature_old_left target node hsig ψ hold')
           · exact absurd hmem (by simp)⟩
     | none =>
       -- Insert + successor case
       simp only [freshName] at h_result
-      have h_st_succ' : ∀ (k : Nat) (n : GBANode α S),
+      have h_st_succ' : ∀ (k : Nat) (n : ExpansionNode α S),
           (st.nodes.insert node.name node)[k]? = some n →
           ∀ k', k' ≠ expandInit → n.incoming.contains k' →
-          ∃ (n' : GBANode α S), (st.nodes.insert node.name node)[k']? = some n' ∧
+          ∃ (n' : ExpansionNode α S), (st.nodes.insert node.name node)[k']? = some n' ∧
           ∀ ψ, FSet.contains n'.next ψ → FSet.contains n.old ψ := by
         intro k n hk k' hk'_ne hk'
         simp only [Std.HashMap.getElem?_insert] at hk ⊢; split at hk
@@ -1487,7 +1375,7 @@ theorem expand_successor_old (node : GBANode α S) (st : ExpandState α S)
           · exact ⟨pred, hpred, hpred_next⟩
       have h_succ_node_succ : ∀ k', k' ≠ expandInit →
           (Std.HashSet.emptyWithCapacity 4 |>.insert node.name : Std.HashSet Nat).contains k' →
-          ∃ (n' : GBANode α S), (st.nodes.insert node.name node)[k']? = some n' ∧
+          ∃ (n' : ExpansionNode α S), (st.nodes.insert node.name node)[k']? = some n' ∧
           ∀ ψ, FSet.contains n'.next ψ →
             FSet.contains (FSet.empty : S) ψ ∨
             ψ ∈ FSet.foldl (fun acc f => f :: acc) [] node.next := by
@@ -1549,7 +1437,7 @@ theorem expand_successor_old (node : GBANode α S) (st : ExpandState α S)
             h_not_in h_fresh h_name h_name_ne
         -- Lift h_node_succ for branch2 using NodesPreserved st st_mid
         have h_node_succ2 : ∀ k', k' ≠ expandInit → node.incoming.contains k' →
-            ∃ (n' : GBANode α S), st_mid.nodes[k']? = some n' ∧
+            ∃ (n' : ExpansionNode α S), st_mid.nodes[k']? = some n' ∧
             ∀ ψ, FSet.contains n'.next ψ → FSet.contains (FSet.insert node.old node.new.head!) ψ = true ∨
             ψ ∈ addToNew { node with new := node.new.tail! } (new2 node.new.head!) := by
           intro k' hk'_ne hk'
@@ -1570,7 +1458,7 @@ theorem expand_successor_old (node : GBANode α S) (st : ExpandState α S)
 /-! ## No expandInit key -/
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem mergeIncoming_keys_subset (st : ExpandState α S) (node : GBANode α S)
+private theorem mergeIncoming_keys_subset (st : ExpandState α S) (node : ExpansionNode α S)
     (targetName : Nat) (k : Nat) (hk : (mergeIncoming st node targetName).nodes[k]? ≠ none) :
     st.nodes[k]? ≠ none := by
   unfold mergeIncoming at hk; split at hk
@@ -1581,7 +1469,7 @@ private theorem mergeIncoming_keys_subset (st : ExpandState α S) (node : GBANod
   · exact hk
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
-private theorem expand_no_init_key (node : GBANode α S) (st : ExpandState α S)
+private theorem expand_no_init_key (node : ExpansionNode α S) (st : ExpandState α S)
     {r : Nat × ExpandState α S}
     (h_result : expand node st = some r)
     (h_st_keys : ∀ k, st.nodes[k]? ≠ none → k ≠ expandInit)
@@ -1661,16 +1549,16 @@ private theorem expand_no_init_key (node : GBANode α S) (st : ExpandState α S)
 
 The output of `createGraph` satisfies `ExpandSpec`. -/
 
+/-- The concrete `createGraph φ` output satisfies the abstract `ExpandSpec φ`: its nodes are propagation-consistent,
+    stay within the subformula closure of `φ`, and correctly track successor/initial-old membership. -/
 theorem createGraph_spec (φ : NNF α) {st : ExpandState α S}
     (h : createGraph φ = some st) :
     ExpandSpec φ st.toNodes := by
-  -- Unfold createGraph and split on expand result
   simp only [createGraph] at h
   split at h
   · -- some case: expand succeeded
     rename_i nm finalState heq
     obtain rfl := Option.some.inj h
-    -- heq : expand initNode initState = some (nm, finalState)
     -- Initial state satisfies StateInv (no nodes)
     have h_initStateInv : StateInv
         { nextName := 2, nodes := Std.HashMap.emptyWithCapacity 16 : ExpandState α S } := by
@@ -1681,9 +1569,9 @@ theorem createGraph_spec (φ : NNF α) {st : ExpandState α S}
            incoming := Std.HashSet.emptyWithCapacity 4 |>.insert expandInit,
            new := [φ],
            old := FSet.empty,
-           next := FSet.empty } : GBANode α S) := by
-      constructor <;> simp (config := { contextual := true }) [GBANode.oldHas, GBANode.reachable,
-        GBANode.nextHas, FSet.contains_empty]
+           next := FSet.empty } : ExpansionNode α S) := by
+      constructor <;> simp (config := { contextual := true }) [ExpansionNode.oldHas, ExpansionNode.reachable,
+        ExpansionNode.nextHas, FSet.contains_empty]
     -- Get StateInv for final state
     have h_stateInv : StateInv finalState :=
       expand_preserves_stateInv _ _ heq h_initStateInv h_initProcInv
@@ -1739,9 +1627,9 @@ theorem createGraph_spec (φ : NNF α) {st : ExpandState α S}
                           (fun h => (hnxt _).mpr h)⟩
       old_subformula := by
         have ⟨h_old, _⟩ := expand_subformula_closure φ _ _ heq
-          (fun ψ hψ => by simp [GBANode.oldHas, FSet.contains_empty] at hψ)
+          (fun ψ hψ => by simp [ExpansionNode.oldHas, FSet.contains_empty] at hψ)
           (fun ψ hψ => by cases hψ with | head => exact .refl | tail _ h => exact nomatch h)
-          (fun ψ hψ => by simp [GBANode.nextHas, FSet.contains_empty] at hψ)
+          (fun ψ hψ => by simp [ExpansionNode.nextHas, FSet.contains_empty] at hψ)
           (fun k n hk => by simp [Std.HashMap.getElem?_emptyWithCapacity] at hk)
           (fun k n hk => by simp [Std.HashMap.getElem?_emptyWithCapacity] at hk)
         intro q hq ψ hψ
@@ -1749,9 +1637,9 @@ theorem createGraph_spec (φ : NNF α) {st : ExpandState α S}
         exact h_old _ _ hn _ ((hold _).mp hψ)
       next_subformula := by
         have ⟨_, h_next⟩ := expand_subformula_closure φ _ _ heq
-          (fun ψ hψ => by simp [GBANode.oldHas, FSet.contains_empty] at hψ)
+          (fun ψ hψ => by simp [ExpansionNode.oldHas, FSet.contains_empty] at hψ)
           (fun ψ hψ => by cases hψ with | head => exact .refl | tail _ h => exact nomatch h)
-          (fun ψ hψ => by simp [GBANode.nextHas, FSet.contains_empty] at hψ)
+          (fun ψ hψ => by simp [ExpansionNode.nextHas, FSet.contains_empty] at hψ)
           (fun k n hk => by simp [Std.HashMap.getElem?_emptyWithCapacity] at hk)
           (fun k n hk => by simp [Std.HashMap.getElem?_emptyWithCapacity] at hk)
         intro q hq ψ hψ

@@ -8,6 +8,19 @@
     GBA.toSpec accepts ξ ↔ ξ ⊨ φ               (constructGBA_correct)
     OASpec.degeneralize accepts ξ ↔ OASpec accepts ξ  (degeneralize_correct)
     BA.toSpec accepts ξ ↔ OASpec.degeneralize accepts ξ   (THIS FILE)
+
+  Sections:
+  - Generic fold helpers
+  - Simplification: k > 0 implies the `if` in degeneralize simplifies
+  - Labeling is preserved
+  - Initial states characterization
+  - Accepting states characterization
+  - Successor characterization
+  - States characterization
+  - Well-formedness is preserved by degeneralize
+  - Main bridge
+  - The `numAcceptSets = 0` case
+  - Unconditional wrappers
 -/
 
 import LTLLib.AbstractSpec.Acceptance
@@ -18,9 +31,8 @@ namespace LTLLib
 
 variable {α : Type u} [BEq α] [Hashable α]
 
-/-! ### Generic fold helpers -/
+/-! ## Generic fold helpers -/
 
-/-- Folding conditional inserts into a HashSet with a mapping function. -/
 private theorem HashSet_foldl_cond_insert_contains
     [BEq γ] [Hashable γ] [LawfulBEq γ] [LawfulHashable γ]
     (l : List β) (p : β → Bool) (f : β → γ) (init : Std.HashSet γ) (q : γ) :
@@ -36,7 +48,6 @@ private theorem HashSet_foldl_cond_insert_contains
     · next hp =>
       rw [ih]; simp only [Bool.not_eq_true] at hp; simp [hp]
 
-/-- Folding unconditional inserts into a HashSet with a mapping function. -/
 private theorem HashSet_foldl_map_insert_contains
     [BEq γ] [Hashable γ] [LawfulBEq γ] [LawfulHashable γ]
     (l : List β) (f : β → γ) (init : Std.HashSet γ) (q : γ) :
@@ -48,7 +59,6 @@ private theorem HashSet_foldl_map_insert_contains
     simp only [List.foldl_cons, List.any_cons]
     rw [ih]; simp only [Std.HashSet.contains_insert]; ac_rfl
 
-/-- Folding inserts into a HashMap preserves keys not touched by the fold. -/
 private theorem HashMap_foldl_insert_preserves
     [BEq γ] [Hashable γ] [LawfulBEq γ] [LawfulHashable γ]
     {β : Type w} (l : List β) (key : β → γ) (val : β → ε)
@@ -63,7 +73,6 @@ private theorem HashMap_foldl_insert_preserves
         Std.HashMap.getElem?_insert]
     simp [h_no_key hd List.mem_cons_self]
 
-/-- Folding inserts with pairwise distinct keys: element x maps to val x. -/
 private theorem HashMap_foldl_insert_of_mem
     [BEq γ] [Hashable γ] [LawfulBEq γ] [LawfulHashable γ]
     {β : Type w} (l : List β) (key : β → γ) (val : β → ε)
@@ -85,7 +94,7 @@ private theorem HashMap_foldl_insert_of_mem
     | tail _ hmem_tl =>
       exact ih _ hmem_tl h_pw_tl
 
-/-! ### Simplification: k > 0 implies the `if` in degeneralize simplifies -/
+/-! ## Simplification: k > 0 implies the `if` in degeneralize simplifies -/
 
 private theorem degeneralize_k_eq {gba : GBA α}
     (hk : gba.numAcceptSets > 0) :
@@ -101,12 +110,14 @@ private theorem degeneralize_k_pos {gba : GBA α}
     0 < (if gba.acceptSets.size == 0 then 1 else gba.acceptSets.size) := by
   rw [degeneralize_k_eq hk]; exact hk
 
-/-! ### Labeling is preserved -/
+/-! ## Labeling is preserved -/
 
+-- Degeneralization leaves the labeling map untouched.
 theorem degeneralize_labeling (gba : GBA α) :
     (gba.degeneralize).labeling = gba.labeling := by
   simp [GBA.degeneralize]
 
+-- `canonicalLabel` compatibility at `s.gbaState` transfers to `s` in the degeneralized automaton.
 theorem degeneralize_canonicalLabel_compat (gba : GBA α) (s : BAState)
     (h : gba.toSpec.labelCompat s.gbaState (canonicalLabel gba.labeling s.gbaState)) :
     (gba.degeneralize).toSpec.labelCompat s
@@ -116,8 +127,9 @@ theorem degeneralize_canonicalLabel_compat (gba : GBA α) (s : BAState)
   simp only [BA.toSpec]
   simpa only [GBA.toSpec] using h
 
-/-! ### Initial states characterization -/
+/-! ## Initial states characterization -/
 
+-- A degeneralized state is initial iff its `gbaState` is initial in `gba` and its counter is 0.
 theorem degeneralize_initialStates_contains (gba : GBA α) (s : BAState) :
     (gba.degeneralize).initialStates.contains s ↔
       gba.initialStates.contains s.gbaState ∧ s.acceptIdx = 0 := by
@@ -136,8 +148,10 @@ theorem degeneralize_initialStates_contains (gba : GBA α) (s : BAState) :
       Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr hmem),
       by rw [beq_iff_eq]; cases s; simp_all⟩
 
-/-! ### Accepting states characterization -/
+/-! ## Accepting states characterization -/
 
+-- A degeneralized state is accepting iff `s.gbaState ∈ gba.states`, it's in `gba`'s
+-- acceptance set 0, and the counter is 0.
 theorem degeneralize_isAccepting (gba : GBA α) (s : BAState) :
     (gba.degeneralize).isAccepting s ↔
       gba.states.contains s.gbaState ∧
@@ -159,17 +173,13 @@ theorem degeneralize_isAccepting (gba : GBA α) (s : BAState) :
       Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr hmem),
       by simp [beq_iff_eq, hacc]; cases s; simp_all⟩
 
-/-! ### Successor characterization
+/-! ## Successor characterization
 
-The `GBA.degeneralize` successors are built by a double fold:
-outer over `gba.states`, inner over `List.range k`.
+The `GBA.degeneralize` successors are built by a double fold, outer over `gba.states` and
+inner over `List.range k`. The lemmas below characterize the inner fold via
+`HashMap_foldl_insert_of_mem` and then compose through the outer fold. -/
 
-Strategy: characterize the inner fold using `HashMap_foldl_insert_of_mem`,
-then compose via the outer fold.
--/
-
-/-- Keys produced by the inner fold are pairwise distinct
-(same gbaState, different acceptIdx from List.range k). -/
+/-- Keys produced by the inner fold are pairwise distinct (same gbaState, different acceptIdx). -/
 private theorem range_keys_pairwise_distinct (gbaState : Nat) (k : Nat) :
     (List.range k).Pairwise (fun a b =>
       (({ gbaState, acceptIdx := a } : BAState) ==
@@ -193,8 +203,8 @@ private def computeBASuccs (gba : GBA α) (gbaState : Nat) (i k : Nat)
                    else if gba.isAccepting i gbaState then (i + 1) % k
                    else i }
 
-/-- Inner fold: for a fixed gbaState, the fold over `List.range k` inserts
-entries for each counter value and preserves other entries. -/
+/-- Inner fold: for a fixed gbaState, folding over `List.range k` inserts an entry per
+counter value and preserves everything else. -/
 private theorem inner_range_fold
     (gba : GBA α) (gbaState : Nat) (k : Nat)
     (succMap : Std.HashMap BAState (Array BAState))
@@ -264,8 +274,7 @@ private theorem outer_fold_successors
       · have hne : s.gbaState ≠ hd := Ne.symm (h_all s.gbaState hmem_tl)
         rw [ih_inst.2.2 hmem_tl hni, inner.1 hne]
 
-/-- Membership in `computeBASuccs` characterized in terms of GBA transitions
-and counter update. -/
+/-- Membership in `computeBASuccs` characterized in terms of GBA transitions and counter update. -/
 private theorem mem_computeBASuccs (gba : GBA α)
     (hk : gba.numAcceptSets > 0) (gbaState i : Nat) (s' : BAState) :
     s' ∈ computeBASuccs gba gbaState i gba.numAcceptSets ↔
@@ -283,8 +292,7 @@ private theorem mem_computeBASuccs (gba : GBA α)
     exact ⟨s'.gbaState, h_succ, by
       cases s'; simp_all [GBA.numAcceptSets]⟩
 
-/-- The successors HashMap of `gba.degeneralize` has the double-fold structure
-expected by `outer_fold_successors`. -/
+/-- `gba.degeneralize`'s successors HashMap unfolds to the double fold above. -/
 private theorem degeneralize_successors_eq (gba : GBA α)
     (hk : gba.numAcceptSets > 0) :
     let k := gba.numAcceptSets
@@ -341,10 +349,9 @@ theorem degeneralize_getSuccessors_mem (gba : GBA α)
                Array.not_mem_empty, false_iff, not_and]
     intro h; exact absurd h hmem
 
-/-! ### States characterization -/
+/-! ## States characterization -/
 
-/-- Double fold building `allStates`: the result contains `s` iff `init` did,
-or `s.gbaState` was iterated over (`∈ l`) with `s.acceptIdx < k`. -/
+/-- The fold building `allStates` contains `s` iff `init` did or `s.gbaState ∈ l` with `s.acceptIdx < k`. -/
 private theorem outer_fold_states_mem
     (k : Nat) (l : List Nat) (init : Std.HashSet BAState) (s : BAState) :
     (l.foldl (init := init) fun acc gbaState =>
@@ -371,8 +378,7 @@ private theorem outer_fold_states_mem
         · exact Or.inr ⟨s.acceptIdx, hi, by rw [beq_iff_eq]; cases s; simp_all⟩
     rw [hinner]; grind
 
-/-- `(gba.degeneralize).states` contains `s` iff `s.gbaState ∈ gba.states`
-and `s.acceptIdx` is within range. -/
+/-- `(gba.degeneralize).states` contains `s` iff `s.gbaState ∈ gba.states` and `s.acceptIdx` is within range. -/
 theorem degeneralize_states_contains (gba : GBA α) (hk : gba.numAcceptSets > 0)
     (s : BAState) :
     (gba.degeneralize).states.contains s = true ↔
@@ -385,7 +391,7 @@ theorem degeneralize_states_contains (gba : GBA α) (hk : gba.numAcceptSets > 0)
      fun h => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr h)⟩]
   simp only [GBA.numAcceptSets]
 
-/-! ### Well-formedness is preserved by degeneralize -/
+/-! ## Well-formedness is preserved by degeneralize -/
 
 /-- Degeneralizing a well-formed GBA yields a well-formed BA. -/
 theorem degeneralize_wellFormed (gba : GBA α) (hk : gba.numAcceptSets > 0)
@@ -401,12 +407,9 @@ theorem degeneralize_wellFormed (gba : GBA α) (hk : gba.numAcceptSets > 0)
     · exact Nat.mod_lt _ hk
     · omega
 
-/-! ### Main bridge -/
+/-! ## Main bridge -/
 
-/-- The computational BA and the abstract degeneralized automaton accept
-the same ω-words. -/
-
--- Helper: all states in an abstract run are in gba.states
+-- Every state visited by an abstract run is in gba.states.
 private theorem run_states_mem (gba : GBA α) (hk : gba.numAcceptSets > 0)
     (hwf : gba.WellFormed) (σ' : Nat → Nat × Fin gba.numAcceptSets)
     (hinit : ((gba.toSpec).degeneralize hk).initial (σ' 0))
@@ -421,6 +424,7 @@ private theorem run_states_mem (gba : GBA α) (hk : gba.numAcceptSets > 0)
     exact hwf.succ_mem _ _ ih (by
       have := (htrans n).1; simp [GBA.toSpec] at this; exact this)
 
+/-- The computational BA and the abstract degeneralized automaton accept the same ω-words. -/
 theorem degeneralize_bridge [LawfulBEq α] [LawfulHashable α]
     (gba : GBA α) (hk : gba.numAcceptSets > 0)
     (hwf : gba.WellFormed) (ξ : OmegaWord α) :
@@ -497,16 +501,11 @@ theorem degeneralize_bridge [LawfulBEq α] [LawfulHashable α]
       exact ⟨j, (degeneralize_isAccepting gba _).mpr
         ⟨h_in (n + j), hj.2, congrArg Fin.val hj.1⟩⟩
 
-/-! ### The `numAcceptSets = 0` case
+/-! ## The `numAcceptSets = 0` case
 
-`gba.numAcceptSets = 0` for any formula with no Until-subformula.
-
-This proves `BA.toSpec.accepts ξ ↔ GBA.toSpec.accepts ξ` *directly* for
-`numAcceptSets = 0`.
-
-With `k = 0`, `GBA.toSpec.isAcceptingRun` is vacuous (`Fin 0` is empty) and,
-computationally, `GBA.degeneralize` clamps to `k = 1` with *every* state accepting.
-Therefore, the BA side's acceptance condition is equally trivial. -/
+`gba.numAcceptSets = 0` for any formula with no Until-subformula. With `k = 0`,
+`GBA.toSpec.isAcceptingRun` is vacuous (`Fin 0` is empty), and `GBA.degeneralize` clamps to
+`k = 1` with every state accepting, so `BA.toSpec.accepts ξ ↔ GBA.toSpec.accepts ξ` holds directly. -/
 
 private theorem mem_computeBASuccs_zero (gba : GBA α) (h0 : gba.acceptSets.size = 0)
     (gbaState i : Nat) (s' : BAState) :
@@ -577,8 +576,7 @@ theorem degeneralize_states_contains_zero (gba : GBA α) (h0 : gba.acceptSets.si
     ⟨fun h => Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp h),
      fun h => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr h)⟩]
 
-/-- Degeneralizing a well-formed GBA with no acceptance sets still yields a
-well-formed BA. -/
+/-- Degeneralizing a well-formed GBA with no acceptance sets still yields a well-formed BA. -/
 theorem degeneralize_wellFormed_zero (gba : GBA α) (h0 : gba.acceptSets.size = 0)
     (hwf : gba.WellFormed) : (gba.degeneralize).WellFormed where
   initial_mem s hs := by
@@ -590,9 +588,7 @@ theorem degeneralize_wellFormed_zero (gba : GBA α) (h0 : gba.acceptSets.size = 
     exact (degeneralize_states_contains_zero gba h0 s').mpr
       ⟨hwf.succ_mem s.gbaState s'.gbaState h1 h3, by omega⟩
 
-/-- `gba.isAccepting 0` is vacuously true everywhere when there are no
-acceptance sets (the mirror of `OASpec`'s "when `k = 0`, every
-run is vacuously accepting"). -/
+/-- `gba.isAccepting 0` is vacuously true everywhere when there are no acceptance sets. -/
 private theorem GBA.isAccepting_zero_of_empty (gba : GBA α) (h0 : gba.acceptSets.size = 0)
     (q : Nat) : gba.isAccepting 0 q = true := by
   simp only [GBA.isAccepting]
@@ -643,13 +639,12 @@ theorem degeneralize_accepts_zero (gba : GBA α) (h0 : gba.acceptSets.size = 0)
       exact (degeneralize_isAccepting gba _).mpr
         ⟨hmem (n + 0), GBA.isAccepting_zero_of_empty gba h0 _, rfl⟩
 
-/-! ### Unconditional wrappers
+/-! ## Unconditional wrappers
 
 Combine the `hk`-based (`numAcceptSets > 0`) and `h0`-based (`= 0`) halves
-into single theorems that hold for *any* well-formed `GBA`. -/
+into single theorems that hold for any well-formed `GBA`. -/
 
-/-- Degeneralizing a well-formed `GBA` always yields a well-formed `BA`,
-regardless of `numAcceptSets`. -/
+/-- Degeneralizing a well-formed `GBA` always yields a well-formed `BA`, regardless of `numAcceptSets`. -/
 theorem degeneralize_wellFormed_any (gba : GBA α) (hwf : gba.WellFormed) :
     (gba.degeneralize).WellFormed :=
   if h0 : gba.acceptSets.size = 0 then
@@ -657,8 +652,7 @@ theorem degeneralize_wellFormed_any (gba : GBA α) (hwf : gba.WellFormed) :
   else
     degeneralize_wellFormed gba (by simp only [GBA.numAcceptSets]; omega) hwf
 
-/-- The `BA` and the `GBA` it was degeneralized from accept the
-same ω-words, regardless of `numAcceptSets`. -/
+/-- The `BA` and the `GBA` it was degeneralized from accept the same ω-words, regardless of `numAcceptSets`. -/
 theorem degeneralize_accepts_any [LawfulBEq α] [LawfulHashable α]
     (gba : GBA α) (hwf : gba.WellFormed) (ξ : OmegaWord α) :
     (gba.degeneralize).toSpec.accepts ξ ↔ gba.toSpec.accepts ξ :=

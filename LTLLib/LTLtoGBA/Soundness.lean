@@ -1,16 +1,28 @@
 /-
-  Soundness of the LTL-to-GBA construction.
+  Soundness of the LTL-to-GBA construction: any valid accepting run through `ExpandSpec`-satisfying nodes labeled by an
+  ω-word ξ implies ξ ⊨ φ.
 
-  Core theorem: For a valid node run σ labeled by ξ,
-  if ψ ∈ old(σ n) then NNF.satisfies (ξ.drop n) ψ.
+  Defines:
+  - `old_implies_satisfied`: for a valid node run σ labeled by ξ, ψ ∈ old(σ n) → ξ.drop n ⊨ ψ
+  - `soundness`: top-level soundness for `ExpandSpec` nodes
+  - `concrete_soundness`: soundness corollary via `createGraph`
+  - `expandOASpec_soundness`: soundness of the `expandOASpec` abstract automaton
+  - `gba_abstract_soundness`: `expandOASpec_soundness` corollary via `createGraph`
 
-  Top-level: If the expand result satisfies ExpandSpec and there is
-  a valid accepting run σ through the nodes labeled by ξ, then ξ satisfies φ.
+  ### Sections
+  - Helper lemmas for temporal propagation
+  - Core soundness theorem
+  - Top-level soundness
+  - Concrete soundness via createGraph
+  - Soundness of the abstract automaton
+  - Concrete soundness via expandOASpec
 -/
 
 import LTLLib.LTLtoGBA.Invariants
-import LTLLib.LTLtoGBA.Construction
+import LTLLib.LTLtoGBA.ToGBA
+import LTLLib.LTLtoGBA.AbstractSpec.ExpansionSpec
 import LTLLib.LTL.Semantics
+import LTLLib.LTL.Subformulas
 import LTLLib.AbstractSpec.Acceptance
 import Mathlib.Order.Nat
 
@@ -22,8 +34,7 @@ variable {α : Type u}
 
 /-! ### Helper lemmas for temporal propagation -/
 
-/-- One step of until propagation: if until(μ,η) ∈ old and η ∉ old,
-    then μ ∈ old and until carries to the next state. -/
+/-- One step of until propagation: if until(μ,η) ∈ old and η ∉ old, then μ ∈ old and until carries to the next state. -/
 private theorem until_step
     {φ : NNF α} {nodes : NodeData α → Prop}
     (spec : ExpandSpec φ nodes)
@@ -39,8 +50,7 @@ private theorem until_step
   · exact absurd h h_no_eta
   · exact ⟨hμ, spec.successor_old _ (h_nodes n) _ (h_nodes (n+1)) (h_succ n) _ h_next⟩
 
-/-- One step of release propagation: if release(μ,ψ) ∈ old and μ ∉ old,
-    then ψ ∈ old and release carries to the next state. -/
+/-- One step of release propagation: if release(μ,ψ) ∈ old and μ ∉ old, then ψ ∈ old and release carries next. -/
 private theorem release_step
     {φ : NNF α} {nodes : NodeData α → Prop}
     (spec : ExpandSpec φ nodes)
@@ -58,9 +68,7 @@ private theorem release_step
 
 /-! ### Core soundness theorem -/
 
-/-- Core soundness lemma: formulas in old are satisfied.
-    For any position n, every formula in old(σ n) is satisfied
-    by the suffix ξ.drop n. -/
+/-- Every formula in old(σ n) is satisfied by the suffix ξ.drop n. -/
 theorem old_implies_satisfied
     {φ : NNF α} {nodes : NodeData α → Prop}
     (spec : ExpandSpec φ nodes)
@@ -173,11 +181,9 @@ theorem old_implies_satisfied
       have ⟨hψ, _⟩ := spec.release_propag _ (h_nodes (n + j)) _ _ h_rel_j
       simp only [exec.drop_drop]; exact ih_ψ (n + j) hψ
 
-/-! ### Top-level soundness (L4_9) -/
+/-! ### Top-level soundness -/
 
-/-- Top-level soundness: If the expand result satisfies ExpandSpec
-    and there exists a valid accepting run σ through the nodes labeled by ξ,
-    then ξ satisfies φ. -/
+/-- If there is a valid accepting run through `ExpandSpec` nodes labeled by ξ, then ξ satisfies φ. -/
 theorem soundness
     {φ : NNF α} {nodes : NodeData α → Prop}
     (spec : ExpandSpec φ nodes)
@@ -199,9 +205,7 @@ theorem soundness
 
 /-! ### Concrete soundness via createGraph -/
 
-/-- Concrete soundness: if createGraph succeeds, the expansion nodes satisfy
-    the abstract soundness hypotheses. This is a direct corollary of
-    `createGraph_spec` + `soundness`. -/
+/-- If `createGraph` succeeds and there is a valid accepting run through the resulting nodes labeled by ξ, then ξ ⊨ φ. -/
 theorem concrete_soundness
     {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
     {φ : NNF α} {st : ExpandState α S}
@@ -217,31 +221,12 @@ theorem concrete_soundness
     : NNF.satisfies ξ φ :=
   soundness (createGraph_spec φ hcg) h_nodes h_succ h_init h_label_pos h_label_neg h_accept
 
-/-! ### Abstract automaton from ExpandSpec
+/-! ### Soundness of the abstract automaton
 
-Instead of reasoning about `constructGBA` (which requires HashMap/HashSet
-correctness lemmas), we define the automaton specification abstractly from
-`NodeData` predicates. The acceptance condition indexes over until-subformulas
-of φ via `IsSubformula`. -/
+`expandOASpec` (see `LTLLib.LTLtoGBA.AbstractSpec.ExpansionSpec`) packages `ExpandSpec` nodes as an `OASpec`, an
+automaton abstraction independent of `constructGBA`'s own representation. -/
 
-/-- Abstract automaton induced by ExpandSpec nodes.
-    States are `NodeData α` values. Transitions are via the `incoming` relation.
-    Label compatibility checks positive/negative atoms in `old`.
-    Acceptance sets correspond to until-subformulas of φ: a state is accepting
-    for (μ U η) iff the until obligation is either absent or satisfied. -/
-def expandOASpec (_φ : NNF α) (nodes : NodeData α → Prop)
-    (untils : List (NNF α × NNF α)) :
-    OASpec (NodeData α) α untils.length where
-  trans q q' := nodes q ∧ nodes q' ∧ q'.incoming q.name
-  initial q := nodes q ∧ q.incoming expandInit
-  labelCompat q v :=
-    (∀ a, q.old (.prop a) → v a) ∧ (∀ a, q.old (.nprop a) → ¬v a)
-  acceptSet i q :=
-    let (μ, η) := untils[i]
-    ¬q.old (.until μ η) ∨ q.old η
-
-/-- Soundness of the abstract automaton: if the abstract automaton
-    induced by `ExpandSpec` nodes accepts ξ, then ξ satisfies φ. -/
+/-- If the abstract automaton induced by `ExpandSpec` nodes accepts ξ, then ξ satisfies φ. -/
 theorem expandOASpec_soundness
     {φ : NNF α} {nodes : NodeData α → Prop}
     (spec : ExpandSpec φ nodes)
@@ -279,81 +264,10 @@ theorem expandOASpec_soundness
     rw [this] at hj
     exact hj
 
-/-! ### untilSubformulas completeness -/
+/-! ### Concrete soundness via expandOASpec -/
 
-/-- Helper: the fold function used in `untilSubformulas`. -/
-private abbrev untilFoldFn (α : Type u) :=
-  fun (acc : List (NNF α × NNF α)) (f : NNF α) =>
-    match f with | .until a b => (a, b) :: acc | _ => acc
-
-/-- The fold preserves accumulator elements. -/
-private theorem fold_until_mono (φ : NNF α)
-    (acc : List (NNF α × NNF α)) (x : NNF α × NNF α)
-    (hx : x ∈ acc) :
-    x ∈ φ.fold (untilFoldFn α) acc := by
-  induction φ generalizing acc with
-  | tt | ff | prop _ | nprop _ => exact hx
-  | next ψ ih => exact ih _ hx
-  | and ψ₁ ψ₂ ih₁ ih₂ | or ψ₁ ψ₂ ih₁ ih₂ | «release» ψ₁ ψ₂ ih₁ ih₂ =>
-    exact ih₂ _ (ih₁ _ hx)
-  | «until» ψ₁ ψ₂ ih₁ ih₂ =>
-    exact ih₂ _ (ih₁ _ (.tail _ hx))
-
-/-- For any accumulator, if ψ is a subformula and ψ = until μ η,
-    then (μ, η) appears in the fold result. -/
-private theorem fold_until_complete (φ : NNF α) (acc : List (NNF α × NNF α))
-    (μ η : NNF α) (hsub : NNF.IsSubformula (.until μ η) φ) :
-    (μ, η) ∈ φ.fold (untilFoldFn α) acc := by
-  induction φ generalizing acc with
-  | tt | ff | prop _ | nprop _ => cases hsub
-  | next ψ ih =>
-    cases hsub with
-    | next_sub h => exact ih _ h
-  | and ψ₁ ψ₂ ih₁ ih₂ =>
-    cases hsub with
-    | and_left h => exact fold_until_mono ψ₂ _ _ (ih₁ _ h)
-    | and_right h => exact ih₂ _ h
-  | or ψ₁ ψ₂ ih₁ ih₂ =>
-    cases hsub with
-    | or_left h => exact fold_until_mono ψ₂ _ _ (ih₁ _ h)
-    | or_right h => exact ih₂ _ h
-  | «until» ψ₁ ψ₂ ih₁ ih₂ =>
-    cases hsub with
-    | refl =>
-      show (μ, η) ∈ η.fold (untilFoldFn α) (μ.fold (untilFoldFn α) ((μ, η) :: acc))
-      exact fold_until_mono η _ _ (fold_until_mono μ _ _ (.head _))
-    | until_left h =>
-      show (μ, η) ∈ ψ₂.fold (untilFoldFn α) (ψ₁.fold (untilFoldFn α) ((ψ₁, ψ₂) :: acc))
-      exact fold_until_mono ψ₂ _ _ (ih₁ _ h)
-    | until_right h =>
-      show (μ, η) ∈ ψ₂.fold (untilFoldFn α) (ψ₁.fold (untilFoldFn α) ((ψ₁, ψ₂) :: acc))
-      exact ih₂ _ h
-  | «release» ψ₁ ψ₂ ih₁ ih₂ =>
-    cases hsub with
-    | release_left h => exact fold_until_mono ψ₂ _ _ (ih₁ _ h)
-    | release_right h => exact ih₂ _ h
-
-/-- Every until-subformula (in the IsSubformula sense) appears in
-    `φ.untilSubformulas`. -/
-theorem untilSubformulas_complete (φ : NNF α) (μ η : NNF α)
-    (hsub : NNF.IsSubformula (.until μ η) φ) :
-    (μ, η) ∈ φ.untilSubformulas :=
-  fold_until_complete φ [] μ η hsub
-
-/-- `untilSubformulas_complete` as an index lookup, matching the
-    `h_untils` hypothesis of `expandOASpec_soundness`. -/
-theorem untilSubformulas_index (φ : NNF α) (μ η : NNF α)
-    (hsub : NNF.IsSubformula (.until μ η) φ) :
-    ∃ i : Fin φ.untilSubformulas.length,
-      φ.untilSubformulas[i] = (μ, η) := by
-  have hmem := untilSubformulas_complete φ μ η hsub
-  exact List.mem_iff_get.mp hmem
-
-/-! ### Concrete soundness via expandOASpec
-
-Instantiates `expandOASpec_soundness` with `createGraph_spec` and
-`φ.untilSubformulas` as the until-subformula list. -/
-
+/-- Concrete soundness of the abstract automaton via `createGraph`, using `φ.untilSubformulas` as the until-subformula
+    list. -/
 theorem gba_abstract_soundness
     {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
     {φ : NNF α} {st : ExpandState α S}

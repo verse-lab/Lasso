@@ -1,17 +1,9 @@
 /-
-  Fairness combinators for LTL formulas.
+  Fairness combinators for LTL formulas: unconditional, weak (justice), and strong (compassion) fairness, plus
+  helpers for combining and assuming multiple fairness constraints.
 
-  Provides standard fairness encodings in LTL:
-  - Unconditional fairness: □◇taken
-  - Weak fairness (justice): □(◇¬enabled ∨ ◇taken)
-    i.e., if an action is continuously enabled, it is eventually taken
-                  Equivalent to:  ◇□enabled → □◇taken
-  - Strong fairness (compassion): □◇enabled → □◇taken
-    i.e., if an action is infinitely often enabled, it is infinitely often taken
-
-  These expand into standard LTL formulas and require no special handling
-  in the GBA construction. Note that fairness-encoded LTL formulas can
-  produce larger automata.
+  These expand into standard LTL formulas and require no special handling in the GBA construction.
+  Fairness-encoded formulas can however produce larger automata.
 -/
 
 import LTLLib.LTL.Syntax
@@ -20,9 +12,8 @@ namespace LTLLib
 
 namespace Formula
 
-/-- Unconditional Fairness: □◇taken.
-Event taken will happen infinitely often.
-Equivalent to: weakFairness(⊤, taken)-/
+/-- Unconditional fairness: □◇taken. `taken` happens infinitely often, unconditionally.
+Equivalent to `weakFairness ⊤ taken`. -/
 def unconditionalFairness (taken : Formula α) : Formula α :=
   .always (.eventually taken)
 
@@ -43,19 +34,15 @@ def fairnessConjunction (constraints : List (Formula α)) : Formula α :=
   | [] => .tt
   | c :: cs => cs.foldl .and c
 
-/-- Given a list of (enabled, taken) pairs, produce the conjunction of
-weak fairness assumptions for all of them. -/
+/-- Conjunction of weak fairness assumptions for every (enabled, taken) pair. -/
 def allWeakFair (pairs : List (Formula α × Formula α)) : Formula α :=
   fairnessConjunction (pairs.map fun (e, t) => weakFairness e t)
 
-/-- Given a list of (enabled, taken) pairs, produce the conjunction of
-strong fairness assumptions for all of them. -/
+/-- Conjunction of strong fairness assumptions for every (enabled, taken) pair. -/
 def allStrongFair (pairs : List (Formula α × Formula α)) : Formula α :=
   fairnessConjunction (pairs.map fun (e, t) => strongFairness e t)
 
-/-- Check a property under fairness assumptions:
-  fairness₁ ∧ fairness₂ ∧ ... → property
-Pass the result straight to `modelCheck` (`ModelCheck.lean`). -/
+/-- `fairness₁ ∧ fairness₂ ∧ ... → property`: `property` need only hold under the given fairness assumptions. -/
 def underFairness (fairnessAssumptions : List (Formula α)) (property : Formula α)
     : Formula α :=
   .implies (fairnessConjunction fairnessAssumptions) property

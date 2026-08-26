@@ -10,43 +10,32 @@
     by the GBA construction pipeline.
 
   `Formula.toNNF` compiles the user-facing syntax to NNF.
+
+  Sections:
+  - User-facing syntax
+  - NNF (internal IR)
+  - NNF normalization
 -/
 
 namespace LTLLib
 
 /-! ## User-facing syntax -/
 
-/-- LTL formula with the standard set of operators.
-
-This is the user-facing type. Use `toNNF` to compile to the internal
-`NNF` representation before passing to the GBA pipeline. -/
+/-- LTL formula with the standard set of operators (the user-facing surface syntax). -/
 inductive Formula (α : Type u) where
-  /-- Constant true. -/
   | tt : Formula α
-  /-- Constant false. -/
   | ff : Formula α
-  /-- Atomic proposition. -/
   | atom (a : α) : Formula α
-  /-- Negation. -/
   | not (φ : Formula α) : Formula α
-  /-- Conjunction. -/
   | and (φ ψ : Formula α) : Formula α
-  /-- Disjunction. -/
   | or (φ ψ : Formula α) : Formula α
-  /-- Implication. -/
   | implies (φ ψ : Formula α) : Formula α
-  /-- Biconditional. -/
   | iff (φ ψ : Formula α) : Formula α
-  /-- Next (X). -/
-  | next (φ : Formula α) : Formula α
-  /-- Until (U). -/
-  | until (φ ψ : Formula α) : Formula α
-  /-- Release (R), dual of Until: φ R ψ ≡ ¬(¬φ U ¬ψ). -/
-  | release (φ ψ : Formula α) : Formula α
-  /-- Eventually (◇φ) = true U φ. -/
-  | eventually (φ : Formula α) : Formula α
-  /-- Always (□φ) = false R φ. -/
-  | always (φ : Formula α) : Formula α
+  | next (φ : Formula α) : Formula α  -- X
+  | until (φ ψ : Formula α) : Formula α  -- U
+  | release (φ ψ : Formula α) : Formula α  -- R, dual of Until: φ R ψ ≡ ¬(¬φ U ¬ψ)
+  | eventually (φ : Formula α) : Formula α  -- ◇φ = tt U φ
+  | always (φ : Formula α) : Formula α  -- □φ = ff R φ
 deriving Repr, Inhabited, DecidableEq, BEq, Hashable
 
 namespace Formula
@@ -73,30 +62,17 @@ end Formula
 
 /-! ## NNF (internal IR) -/
 
-/-- LTL formula in Negative Normal Form (NNF).
-Parametrized by the type of atomic propositions `α`.
-
-This is the internal representation consumed by the GBA pipeline.
-Negation only appears at the atomic level (`prop` vs `nprop`). -/
+/-- LTL formula in Negative Normal Form: negation appears only at the atomic level (`prop`/`nprop`). -/
 inductive NNF (α : Type u) where
-  /-- Constant true. -/
   | tt : NNF α
-  /-- Constant false. -/
   | ff : NNF α
-  /-- Positive atomic proposition. -/
   | prop (a : α) : NNF α
-  /-- Negated atomic proposition. -/
   | nprop (a : α) : NNF α
-  /-- Conjunction. -/
   | and (φ ψ : NNF α) : NNF α
-  /-- Disjunction. -/
   | or (φ ψ : NNF α) : NNF α
-  /-- Next (X). -/
-  | next (φ : NNF α) : NNF α
-  /-- Until (U). -/
-  | until (φ ψ : NNF α) : NNF α
-  /-- Release (R), dual of Until. -/
-  | release (φ ψ : NNF α) : NNF α
+  | next (φ : NNF α) : NNF α  -- X
+  | until (φ ψ : NNF α) : NNF α  -- U
+  | release (φ ψ : NNF α) : NNF α  -- R, dual of Until
 deriving Repr, Inhabited, DecidableEq, BEq, Hashable
 
 instance {α} [BEq α] [LawfulBEq α] : LawfulBEq (NNF α) where
@@ -113,12 +89,7 @@ instance {α} [BEq α] [Hashable α] [inst : LawfulHashable α] : LawfulHashable
 
 namespace NNF
 
-/-- Negate an LTL formula, pushing negation inward to maintain NNF.
-
-Uses De Morgan laws and temporal duality:
-  ¬(φ U ψ) = (¬φ) R (¬ψ)
-  ¬(φ R ψ) = (¬φ) U (¬ψ)
-  ¬(X φ)   = X (¬φ) -/
+/-- Negate a formula, pushing negation inward to stay in NNF (De Morgan + temporal duality). -/
 def neg {α} : NNF α → NNF α
   | .tt => .ff
   | .ff => .tt
@@ -127,8 +98,8 @@ def neg {α} : NNF α → NNF α
   | .and φ ψ => .or φ.neg ψ.neg
   | .or φ ψ => .and φ.neg ψ.neg
   | .next φ => .next φ.neg
-  | .until φ ψ => .release φ.neg ψ.neg
-  | .release φ ψ => .until φ.neg ψ.neg
+  | .until φ ψ => .release φ.neg ψ.neg  -- ¬(φ U ψ) = ¬φ R ¬ψ
+  | .release φ ψ => .until φ.neg ψ.neg  -- ¬(φ R ψ) = ¬φ U ¬ψ
 
 /-- Eventually (◇φ) = true U φ. -/
 def eventually {α} (φ : NNF α) : NNF α := .until .tt φ
@@ -159,13 +130,9 @@ end NNF
 
 namespace Formula
 
-/-- Convert a surface LTL formula to Negative Normal Form.
-
-Pushes negation inward to the atomic level using De Morgan laws and
-temporal duality. Also desugars `implies`, `iff`, `eventually`, `always`.
-
-The `pos` parameter tracks polarity: `true` = positive context,
-`false` = negative context (under an odd number of negations). -/
+/-- Convert a surface formula to NNF: pushes negations inward via De Morgan and temporal duality,
+and desugars `implies`/`iff`/`eventually`/`always`. `pos` tracks polarity (`false` under an odd
+number of negations). -/
 def toNNF {α} (pos : Bool) : Formula α → NNF α
   | .tt => if pos then .tt else .ff
   | .ff => if pos then .ff else .tt

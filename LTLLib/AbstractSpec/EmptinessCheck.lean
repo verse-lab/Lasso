@@ -1,5 +1,16 @@
 /-
   Abstract contract any concrete emptiness-check algorithm must satisfy.
+
+  Key definitions:
+  - `EmptinessResult`: Outcome of a check (empty, or a witnessing stem/loop)
+  - `AcceptingCycle`: Lasso witness of non-emptiness over a graph
+  - `Reachable`/`FiniteReach`: Canonical reachability and its finiteness hypothesis
+  - `EmptinessChecker`: Sound and complete emptiness-check contract
+
+  Sections:
+  - Accepting cycle definition
+  - Finite-reachability hypothesis
+  - Algorithm-agnostic emptiness-check contract
 -/
 import Std
 import Mathlib.Data.Set.Card
@@ -11,21 +22,19 @@ namespace LTLLib
 `initialStates` via `succs` contain a cycle through an `isAccepting`
 state? -/
 inductive EmptinessResult (State : Type u) where
-  -- No accepting cycle found: The automaton's language is empty.
+  -- No accepting cycle found: the automaton's language is empty.
   | empty (exploredStates : Nat)
-  /-- An accepting cycle was found: The automaton's language is non-empty.
-  - `stem`: path from an initial state to the accepting state (inclusive)
-  - `loop`: cycle from the accepting state back to itself (inclusive on both ends) -/
+  -- An accepting cycle was found: the automaton's language is non-empty.
+  -- `stem`: path from an initial state to the accepting state (inclusive).
+  -- `loop`: cycle from the accepting state back to itself (inclusive on both ends).
   | nonEmpty (stem : List State) (loop : List State)
 deriving Repr, Inhabited
 
 /-! ## Accepting cycle definition -/
 
-/-- An accepting cycle exists: there is a stem from an initial state to an
-    accepting state, and a cycle from that state back to itself.
-
-    This is the standard "lasso" witness for non-emptiness of a Büchi
-    automaton (cf. CVWY §2, Schwoon & Esparza §2). -/
+/-- An accepting cycle: a stem from an initial state to an accepting state, plus a cycle from that
+    state back to itself. This is the standard "lasso" witness for Büchi automaton non-emptiness
+    (cf. CVWY §2, Schwoon & Esparza §2). -/
 structure AcceptingCycle {State}
     (initialStates : List State) (succs : State → Array State)
     (isAccepting : State → Bool) where
@@ -44,9 +53,8 @@ structure AcceptingCycle {State}
     succs (cycle.getLast (List.ne_nil_of_length_pos (by omega)))
   cycle_head_accepting : isAccepting (cycle.head (List.ne_nil_of_length_pos (by omega))) = true
 
-/-- An `AcceptingCycle` over *any* graph is exactly a `ValidLasso` for any
-`OASpec` whose `trans`/`initial`/`acceptSet` agree with that graph's
-`succs`/`initialStates`/`isAccepting`. -/
+/-- An `AcceptingCycle` over any graph is exactly a `ValidLasso` for any `OASpec` whose
+`trans`/`initial`/`acceptSet` agree with that graph's `succs`/`initialStates`/`isAccepting`. -/
 def AcceptingCycle.toValidLassoOf {State : Type u} {α : Type v}
     {succs : State → Array State} {initialStates : List State}
     {isAccepting : State → Bool} {A : OASpec State α 1}
@@ -87,18 +95,18 @@ variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 /-- Contract any emptiness-check algorithm must satisfy. -/
 structure EmptinessChecker (State : Type u) [BEq State] [Hashable State]
     [LawfulBEq State] where
+  -- Runs the algorithm on a graph and reports whether an accepting cycle exists.
   check : (succs : State → Array State) → (initialStates : List State) →
     FiniteReach initialStates succs → (isAccepting : State → Bool) →
     EmptinessResult State
-  /-- Soundness of `.nonEmpty`: a returned `stem`/`loop` is a genuine
-  `AcceptingCycle` witness. -/
+  -- Soundness of `.nonEmpty`: a returned `stem`/`loop` is a genuine `AcceptingCycle` witness.
   nonEmpty_valid : ∀ {succs : State → Array State} {initialStates : List State}
       {fr : FiniteReach initialStates succs} {isAccepting : State → Bool}
       {stem loop : List State},
     check succs initialStates fr isAccepting = .nonEmpty stem loop →
     ∃ ac : AcceptingCycle initialStates succs isAccepting,
       ac.stem = stem ∧ ac.cycle = loop.tail
-  /-- Completeness of `.empty`: no `AcceptingCycle` exists. -/
+  -- Completeness of `.empty`: no `AcceptingCycle` exists.
   empty_no_cycle : ∀ {succs : State → Array State} {initialStates : List State}
       {fr : FiniteReach initialStates succs} {isAccepting : State → Bool} {n : Nat},
     check succs initialStates fr isAccepting = .empty n →

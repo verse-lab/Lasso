@@ -12,6 +12,12 @@
 
   Key theorems:
   - `degeneralize_correct`: Degeneralized BA accepts the same ω-words as the GBA
+
+  Sections:
+  - Proof-level automaton specification
+  - Abstract degeneralization
+  - Degeneralization correctness
+  - Canonical labeling
 -/
 import Lentil
 import LTLLib.LTL.Semantics
@@ -28,13 +34,13 @@ open TLA Classical
     When `k > 1`, this is a Generalized Büchi Automaton (GBA).
     When `k = 0`, every run is vacuously accepting. -/
 structure OASpec (State : Type u) (α : Type v) (k : Nat) where
-  /-- Transition relation. -/
+  -- Transition relation.
   trans : State → State → Prop
-  /-- Initial state predicate. -/
+  -- Initial state predicate.
   initial : State → Prop
-  /-- Label compatibility: state is compatible with a valuation. -/
+  -- Label compatibility: state is compatible with a valuation.
   labelCompat : State → (α → Prop) → Prop
-  /-- Acceptance set predicate, indexed by `Fin k`. -/
+  -- Acceptance set predicate, indexed by `Fin k`.
   acceptSet : Fin k → State → Prop
 
 namespace OASpec
@@ -78,14 +84,10 @@ noncomputable def OASpec.mkCounter {State : Type u} {α : Type v} {k : Nat}
   | 0 => ⟨0, hk⟩
   | n + 1 => A.counterStep hk (σ n) (A.mkCounter hk σ n)
 
-/-- Degeneralize an automaton with `k` acceptance sets into one with 1.
-
-    Requires `k > 0`. States of the output are pairs `(q, c)` where `q` is
-    the original state and `c : Fin k` is the acceptance counter.
-
-    The counter advances (mod k) when the current acceptance set is visited.
-    The single acceptance set requires counter = 0 AND the state is in
-    acceptance set 0. -/
+/-- Degeneralize an automaton with `k` acceptance sets into one with 1. States of the output
+    are pairs `(q, c)` where `q` is the original state and `c : Fin k` is a counter that advances
+    (mod k) when the current acceptance set is visited. The single acceptance set requires
+    counter = 0 and the state in acceptance set 0. -/
 noncomputable def OASpec.degeneralize {State : Type u} {α : Type v} {k : Nat}
     (A : OASpec State α k) (hk : k > 0) :
     OASpec (State × Fin k) α 1 where
@@ -147,8 +149,7 @@ private theorem counter_advances_from (σ : exec State) (n : Nat)
   simp [OASpec.mkCounter, hstay]
   exact counterStep_accept A hk (σ (n + j)) c hj_spec
 
-/-- Counter eventually reaches 0 from any value, given all acceptance sets
-    are visited infinitely often. -/
+/-- Counter eventually reaches 0 from any value, given all acceptance sets are visited infinitely often. -/
 private theorem counter_reaches_zero (σ : exec State) (n : Nat)
     (hacc : ∀ i : Fin k, ∀ n, ∃ j, A.acceptSet i (σ (n + j))) :
     ∃ m, n ≤ m ∧ (A.mkCounter hk σ m).val = 0 := by
@@ -331,22 +332,19 @@ end DegeneralizationCorrectness
 
 /-! ## Canonical labeling
 
-`labelCompat` is a *relation*. A state may be compatible with many
-valuations (it only constrains atoms actually mentioned in `pos`/`neg`).
+`labelCompat` is a relation. A state may be compatible with many valuations
+(it only constrains atoms actually mentioned in `pos`/`neg`).
 -/
 
 /-- The canonical valuation at state `q`: true exactly on `q`'s positive
-atoms (per `labeling`), `False` everywhere if `q` isn't in `labeling`'s
-domain (never arises for a `q` actually visited by an automaton run, since
-every visited state has a `labeling` entry by construction). -/
+atoms (per `labeling`), `False` everywhere if `q` isn't in `labeling`'s domain. -/
 def canonicalLabel {α : Type u} [BEq α] [Hashable α]
     (labeling : Std.HashMap Nat (Std.HashSet α × Std.HashSet α)) (q : Nat) :
     α → Prop :=
   fun a => (labeling[q]?).elim False (fun p => p.1.contains a)
 
 /-- `canonicalLabel` satisfies a state's label-compatibility constraint,
-given the state's positive/negative atom sets are disjoint (the only fact
-`labelCompat` could ever demand of a single valuation). -/
+given the state's positive/negative atom sets are disjoint. -/
 theorem canonicalLabel_compat {α : Type u} [BEq α] [Hashable α]
     {labeling : Std.HashMap Nat (Std.HashSet α × Std.HashSet α)}
     {q : Nat} {pos neg : Std.HashSet α} (hlab : labeling[q]? = some (pos, neg))

@@ -9,6 +9,13 @@
   Model Checking", Section 4.3.3).
 
   State space: |BA| = |GBA| × max(1, k) where k = number of acceptance sets.
+
+  Sections:
+  - Degeneralized state
+  - Standard Büchi Automaton
+  - Degeneralization
+  - Lasso witness
+  - Every state on the cycle stays inside a well-formed BA's state set
 -/
 
 import LTLLib.GBA
@@ -18,14 +25,12 @@ import LTLLib.AbstractSpec.Lasso
 
 namespace LTLLib
 
-/-- State in a standard Büchi Automaton after degeneralization.
-Pairs the original GBA state with an acceptance counter. -/
+/-! ## Degeneralized state -/
+
+/-- A Büchi-automaton state after degeneralization: a GBA state paired with an acceptance counter. -/
 structure BAState where
-  /-- Original GBA state identifier. -/
-  gbaState : Nat
-  /-- Acceptance counter: which acceptance set we're waiting to visit next.
-  Ranges from 0 to k-1 where k = number of GBA acceptance sets. -/
-  acceptIdx : Nat
+  gbaState : Nat  -- Original GBA state identifier.
+  acceptIdx : Nat  -- Acceptance set we're waiting to visit next, in `[0, k)`.
 deriving BEq, Hashable, Repr, Inhabited, DecidableEq
 
 private theorem BAState.beq_def (x y : BAState) :
@@ -44,45 +49,29 @@ instance : LawfulHashable BAState where
 instance : ToString BAState where
   toString s := s!"({s.gbaState}, {s.acceptIdx})"
 
-/-- A standard (non-generalized) Büchi Automaton.
+/-! ## Standard Büchi Automaton -/
 
-States are `BAState` = (GBA state, acceptance counter).
-A state is accepting iff `acceptIdx = 0` and the GBA state is in
-acceptance set 0 (see `acceptingStates`).
-
-This is produced by degeneralizing a GBA. -/
+/-- A standard (non-generalized) Büchi Automaton, produced by degeneralizing a GBA.
+States are `BAState` = (GBA state, acceptance counter). -/
 structure BA (α : Type u) [BEq α] [Hashable α] where
-  /-- All states. -/
   states : Std.HashSet BAState
-
-  /-- Initial states. -/
   initialStates : Std.HashSet BAState
-
-  /-- Transition map: state → list of successor states. -/
-  successors : Std.HashMap BAState (Array BAState)
-
-  /-- Labeling inherited from GBA: maps GBA state to (positive, negative) propositions.
-  The BAState's labeling is determined by its `gbaState` component only. -/
+  successors : Std.HashMap BAState (Array BAState)  -- state → successor states
+  -- Labeling from the GBA (positive/negative propositions), keyed by `gbaState` only.
   labeling : Std.HashMap Nat (Std.HashSet α × Std.HashSet α)
-
-  /-- Number of acceptance sets in the original GBA (for reference). -/
-  numAcceptSets : Nat
-
-  /-- Accepting states: `{(q, 0) | q ∈ F_0}` where `F_0` is the first GBA
-  acceptance set. When there are no acceptance sets, all `(q, 0)` are accepting. -/
+  numAcceptSets : Nat  -- Number of acceptance sets in the original GBA.
+  -- `{(q, 0) | q ∈ F₀}`, or all `(q, 0)` when there are no acceptance sets.
   acceptingStates : Std.HashSet BAState
 
 namespace BA
 
 variable {α} [BEq α] [Hashable α]
 
-/-- Check if a BA state is accepting.
-A state `(q, i)` is accepting iff `i = 0` and `q` is in the first GBA
-acceptance set (or there are no acceptance sets). -/
+/-- A state `(q, i)` is accepting iff `i = 0` and `q` is in the first GBA acceptance set
+(or there are none). -/
 def isAccepting (ba : BA α) (s : BAState) : Bool :=
   ba.acceptingStates.contains s
 
-/-- Get successors of a BA state. -/
 def getSuccessors (ba : BA α) (s : BAState) : Array BAState :=
   ba.successors[s]?.getD #[]
 
@@ -90,8 +79,7 @@ def getSuccessors (ba : BA α) (s : BAState) : Array BAState :=
 def getLabeling (ba : BA α) (s : BAState) : Std.HashSet α × Std.HashSet α :=
   ba.labeling[s.gbaState]?.getD (Std.HashSet.emptyWithCapacity 0, Std.HashSet.emptyWithCapacity 0)
 
-/-- Label-compatibility check: does `valuation` satisfy `s`'s propositional
-constraint? -/
+/-- Label-compatibility check: does `valuation` satisfy `s`'s propositional constraint? -/
 def compatible (ba : BA α) (s : BAState) (valuation : Std.HashSet α) : Bool :=
   let (pos, neg) := ba.getLabeling s
   pos.all valuation.contains && !neg.any valuation.contains
@@ -115,23 +103,19 @@ def toSpec [BEq α] [Hashable α] (ba : BA α) : OASpec BAState α 1 where
 
 end BA
 
+/-! ## Degeneralization -/
+
 namespace GBA
 
 variable {α} [BEq α] [Hashable α]
 
-/-- Degeneralize a GBA to a standard BA.
-
-The standard construction (Baier & Katoen, Section 4.3.3):
-- States: {(q, i) | q ∈ GBA.states, 0 ≤ i < k} where k = max(1, numAcceptSets)
-- Initial: {(q, 0) | q ∈ GBA.initialStates}
-- Transitions: (q, i) → (q', i') where q → q' in GBA, and
-    i' = (i + 1) % k   if q ∈ acceptSets[i]
-    i' = i              otherwise
-- Accepting: {(q, 0) | q ∈ states, q ∈ acceptSets[0]}
-  (when k = 0, all (q, 0) are accepting since there are no fairness obligations)
-
-When k = 0 (no Until-subformulas), we use k = 1 and all states are accepting
-(since there are no fairness obligations to track). -/
+/-- Degeneralize a GBA to a standard BA (Baier & Katoen, Section 4.3.3):
+- States: `{(q, i) | q ∈ GBA.states, 0 ≤ i < k}` where `k = max(1, numAcceptSets)`
+- Initial: `{(q, 0) | q ∈ GBA.initialStates}`
+- Transitions: `(q, i) → (q', i')` where `q → q'` in the GBA, with `i' = (i + 1) % k` if
+  `q ∈ acceptSets[i]`, else `i' = i`
+- Accepting: `{(q, 0) | q ∈ states, q ∈ acceptSets[0]}` (all `(q, 0)` when `k = 1` from no
+  acceptance sets, since there are then no fairness obligations to track) -/
 def degeneralize (gba : GBA α) : BA α :=
   let k := if gba.acceptSets.size == 0 then 1 else gba.acceptSets.size
   let totalStates := gba.states.size * k
@@ -180,14 +164,17 @@ def degeneralize (gba : GBA α) : BA α :=
 
 end GBA
 
+/-! ## Lasso witness -/
+
 /-- The `BA.toSpec` specialization of `toValidLassoOf`. -/
 def AcceptingCycle.toValidLasso {α} [BEq α] [Hashable α] {ba : BA α}
     (ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting) :
     ValidLasso ba.toSpec ac.stem ac.cycle :=
   ac.toValidLassoOf Iff.rfl (Std.HashSet.mem_toList.trans Std.HashSet.mem_iff_contains) Iff.rfl
 
-/-! ## Every state on the cycle stays inside a well-formed `BA`'s state set -/
+/-! ## Every state on the cycle stays inside a well-formed BA's state set -/
 
+/-- Every stem state of an accepting cycle lies in a well-formed BA's state set. -/
 theorem AcceptingCycle.stem_states_mem {α} [BEq α] [Hashable α] {ba : BA α}
     (hwf : ba.WellFormed)
     (ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting) :
@@ -207,6 +194,7 @@ theorem AcceptingCycle.stem_states_mem {α} [BEq α] [Hashable α] {ba : BA α}
     have hchain := ac.stem_chain i (by omega)
     exact hwf.succ_mem _ _ hprev hchain
 
+/-- Every cycle state of an accepting cycle lies in a well-formed BA's state set. -/
 theorem AcceptingCycle.cycle_states_mem {α} [BEq α] [Hashable α] {ba : BA α}
     (hwf : ba.WellFormed)
     (ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting) :
@@ -234,8 +222,7 @@ theorem AcceptingCycle.cycle_states_mem {α} [BEq α] [Hashable α] {ba : BA α}
     have hchain := ac.cycle_chain i (by omega)
     exact hwf.succ_mem _ _ hprev hchain
 
-/-- Every position of the lasso-derived run stays inside a well-formed `BA`'s
-state set. -/
+/-- Every position of the lasso-derived run stays inside a well-formed `BA`'s state set. -/
 theorem AcceptingCycle.run_states_mem {α} [BEq α] [Hashable α] {ba : BA α}
     (hwf : ba.WellFormed)
     (ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting) (n : Nat) :

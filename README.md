@@ -6,21 +6,66 @@ The core LTL-to-GBA algorithm (Gerth et al.) is ported from the verified Isabell
 
 ## Contents
 
-- [Model checking](#model-checking)
+- [LTL to BA translation](#ltl-to-ba-translation)
   - [Top-level results](#top-level-results)
-  - [Example usage](#example-usage)
-  - [Termination: `FiniteReach`](#termination-finitereach)
   - [Correctness link in the chain](#correctness-link-in-the-chain)
   - [Algorithm pipeline](#algorithm-pipeline)
+- [Model checking](#model-checking)
+  - [Top-level results](#top-level-results-1)
+  - [Example usage](#example-usage)
+  - [Termination: `FiniteReach`](#termination-finitereach)
+  - [Correctness link in the chain](#correctness-link-in-the-chain-1)
+  - [Algorithm pipeline](#algorithm-pipeline-1)
   - [Terminal states](#terminal-states)
 - [Satisfiability](#satisfiability)
-  - [Top-level results](#top-level-results-1)
+  - [Top-level results](#top-level-results-2)
   - [Example usage](#example-usage-1)
-  - [Algorithm pipeline](#algorithm-pipeline-1)
-  - [Correctness link in the chain](#correctness-link-in-the-chain-1)
+  - [Algorithm pipeline](#algorithm-pipeline-2)
+  - [Correctness link in the chain](#correctness-link-in-the-chain-2)
 - [Proof status](#proof-status)
 - [File organization](#file-organization)
   - [Module descriptions](#module-descriptions)
+
+## LTL to BA translation
+
+Compiles an LTL formula into a Standard Büchi Automaton over its atoms. This is the shared core beneath both [Model checking](#model-checking) (runs it on `¬φ`) and [Satisfiability](#satisfiability) (runs it on `φ` directly).
+
+### Top-level results
+
+```lean
+theorem constructGBA_correct {φ : NNF α} {st : ExpandState α S}
+    (hcg : createGraph φ = some st) (ξ : OmegaWord α) :
+    (constructGBA φ st).toSpec.accepts ξ ↔ NNF.satisfies ξ φ
+
+theorem degeneralize_accepts_any (gba : GBA α) (hwf : gba.WellFormed) (ξ : OmegaWord α) :
+    gba.degeneralize.toSpec.accepts ξ ↔ gba.toSpec.accepts ξ
+```
+
+### Correctness link in the chain
+
+| Correctness link | Theorem | File |
+|---|---|---|
+| `expand`/`createGraph` terminate on every input | `createGraph_term` | `LTLtoGBA/ExpandTermination.lean` |
+| Graph expansion satisfies its structural invariants | `createGraph_spec` | `LTLtoGBA/Invariants.lean` |
+| Expansion graph is exhaustive (drives completeness) | `createGraph_graphComplete` | `LTLtoGBA/Completeness.lean` |
+| Computational GBA accepts exactly the models of `φ` | `constructGBA_correct` | `LTLtoGBA/Correctness.lean` |
+| `constructGBA`'s output is well-formed | `constructGBA_wellFormed` | `LTLtoGBA/Bridge.lean` |
+| GBA degeneralization preserves language, any `numAcceptSets` | `degeneralize_accepts_any` | `DegeneralBridge.lean` |
+
+### Algorithm pipeline
+
+```
+ψ (in NNF)     (NNF α, internal IR — φ for satisfiability, ¬φ for model checking)
+    │
+    ▼  createGraph                ✓ totality proved (createGraph_term); ExpandSpec proved (createGraph_spec)
+Node graph (ExpandState)
+    │
+    ▼  constructGBA               ✓ accepts ξ ↔ ξ ⊨ ψ, unconditional (constructGBA_correct)
+Generalized Büchi Automaton (GBA)
+    │
+    ▼  GBA.degeneralize            ✓ accepts ξ ↔ GBA accepts ξ, unconditional, any k (degeneralize_accepts_any)
+Standard Büchi Automaton (BA)
+```
 
 ## Model checking
 
@@ -82,7 +127,7 @@ The full runnable file — `LawfulBEq`/`LawfulHashable`/`ToString` instances inc
 | Correctness link | Theorem | File |
 |---|---|---|
 | Negating `φ` preserves semantics | `Formula.toNNF_correct_neg` | `LTL/Semantics.lean` |
-| `¬φ`'s GBA accepts exactly `¬φ`'s models | `constructGBA_correct_weak` | `LTLtoGBA/GraphComplete.lean` |
+| `¬φ`'s GBA accepts exactly `¬φ`'s models | `constructGBA_correct` | `LTLtoGBA/Correctness.lean` |
 | Degeneralized BA preserves language | `degeneralize_accepts_any` | `DegeneralBridge.lean` |
 | Product run ↔ system run + BA-language witness | `Product.gsp_correct1` / `gsp_correct2` | `Product.lean` |
 | Product accepting cycle → concrete accepting run | `AcceptingCycle.toValidLassoProduct` | `Product.lean` |
@@ -98,7 +143,10 @@ LTL property φ  (Formula α)
     ▼  negate + toNNF                 ✓ proved correct (Formula.toNNF_correct_neg)
 ¬φ (in NNF)
     │
-    ▼  createGraph → constructGBA → GBA.degeneralize   ✓ unconditional, same stages as satisfiability
+    ▼  createGraph → constructGBA     ✓ accepts ξ ↔ ξ ⊨ ¬φ, unconditional (constructGBA_correct)
+GBA for ¬φ
+    │
+    ▼  GBA.degeneralize                ✓ accepts ξ ↔ GBA accepts ξ, unconditional, any k (degeneralize_accepts_any)
 BA for ¬φ
     │
     ▼  Product.getSuccessors / initialStates / isAccepting  ✓ product run ↔ system run (gsp_correct1/2)
@@ -110,6 +158,8 @@ EmptinessResult (SysState × BAState)
     .nonEmpty stem loop → a real run of sys violating φ, witnessed by
                            (system state, ¬φ-automaton state) pairs
 ```
+
+The first two stages are the [LTL to BA translation](#ltl-to-ba-translation) shared with satisfiability.
 
 If a different emptiness-check algorithm suits your system better than nested DFS, `modelCheck` takes an optional `checker : EmptinessChecker (SysState × BAState) := nestedDFSChecker` parameter — any instance works, with no other change to the call.
 
@@ -167,7 +217,7 @@ LTL formula φ  (Formula α, user-facing syntax)
     ▼  createGraph                ✓ totality proved (createGraph_term); ExpandSpec proved (createGraph_spec)
 Node graph (ExpandState)
     │
-    ▼  constructGBA               ✓ accepts ξ ↔ ξ ⊨ φ, unconditional (constructGBA_correct_weak)
+    ▼  constructGBA               ✓ accepts ξ ↔ ξ ⊨ φ, unconditional (constructGBA_correct)
 Generalized Büchi Automaton (GBA)
     │
     ▼  GBA.degeneralize            ✓ accepts ξ ↔ GBA accepts ξ, unconditional, any k (degeneralize_accepts_any)
@@ -184,8 +234,8 @@ EmptinessResult: empty exploredStates | nonEmpty stem loop
 | NNF compilation preserves semantics | `Formula.toNNF_correct` | `LTL/Semantics.lean` |
 | `expand`/`createGraph` terminate on every input | `createGraph_term` | `LTLtoGBA/ExpandTermination.lean` |
 | Graph expansion satisfies its structural invariants | `createGraph_spec` | `LTLtoGBA/Invariants.lean` |
-| Expansion graph is exhaustive (drives completeness) | `createGraph_weakGraphComplete` | `LTLtoGBA/GraphComplete.lean` |
-| Computational GBA accepts exactly the models of `φ` | `constructGBA_correct_weak` | `LTLtoGBA/GraphComplete.lean` |
+| Expansion graph is exhaustive (drives completeness) | `createGraph_graphComplete` | `LTLtoGBA/Completeness.lean` |
+| Computational GBA accepts exactly the models of `φ` | `constructGBA_correct` | `LTLtoGBA/Correctness.lean` |
 | `constructGBA`'s output is well-formed | `constructGBA_wellFormed` | `LTLtoGBA/Bridge.lean` |
 | GBA degeneralization preserves language, any `numAcceptSets` | `degeneralize_accepts_any` | `DegeneralBridge.lean` |
 | `innerDFS`/`outerDFSLoop`/`nestedDFS` are total, well-founded | `nestedDFSWF` | `NestedDFS/NestedDFSTermination.lean` |
@@ -226,10 +276,9 @@ LTLLib/
     Construction.lean
     Invariants.lean
     Soundness.lean
+    Bridge.lean
     Completeness.lean
     Correctness.lean
-    Bridge.lean
-    GraphComplete.lean
   NestedDFS/
     NestedDFSCorrectness.lean
     NestedDFSTermination.lean
@@ -277,13 +326,11 @@ LTLLib/
 
 **`LTLtoGBA/Soundness.lean`** — GBA accepts `ξ` ⟹ `ξ ⊨ φ`.
 
-**`LTLtoGBA/Completeness.lean`** — `ξ ⊨ φ` ⟹ GBA accepts `ξ`, given `GraphComplete`.
-
-**`LTLtoGBA/Correctness.lean`** — Combines soundness + completeness into one iff, still under `GraphComplete`.
-
 **`LTLtoGBA/Bridge.lean`** — Computational GBA ↔ abstract automaton; `constructGBA_wellFormed`.
 
-**`LTLtoGBA/GraphComplete.lean`** — Proves `GraphComplete` from `createGraph` itself, giving the unconditional `constructGBA_correct_weak`.
+**`LTLtoGBA/Completeness.lean`** — Proves `GraphComplete` unconditionally from `createGraph` itself (GPVW95); `ξ ⊨ φ` ⟹ GBA accepts `ξ`.
+
+**`LTLtoGBA/Correctness.lean`** — Combines soundness + completeness into the unconditional `constructGBA_correct`.
 
 **`NestedDFS/NestedDFSCorrectness.lean`** — Fuel-indexed nested DFS, proven sound and complete against `AcceptingCycle`.
 

@@ -28,8 +28,8 @@ def showBAState (ba : BA Prop') (s : BAState) : String :=
 def showRun (ba : BA Prop') (path : List BAState) : String :=
   String.intercalate " → " (path.map (showBAState ba))
 
-/-- Decide satisfiability of `φ`; for `.nonEmpty`, also print the witness
-lasso's atoms — `ba` here is `fullPipeline`'s own automaton, recomputed
+/-- Decide satisfiability of `φ`. For `.nonEmpty`, also print the witness
+lasso's atoms. `ba` here is `fullPipeline`'s own automaton, recomputed
 just for display (same pure inputs, same `ba`, by determinism). -/
 def report (φ : Formula Prop') : IO Unit := do
   let φNNF := φ.toNNF true
