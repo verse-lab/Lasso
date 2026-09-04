@@ -11,6 +11,7 @@ import LTLLib.LTLtoGBA.ExpansionNode
 import LTLLib.LTLtoGBA.ExpandTermination
 import LTLLib.LTLtoGBA.Expand
 import LTLLib.LTLtoGBA.ToGBA
+import LTLLib.AbstractSpec.GraphPaths
 import LTLLib.AbstractSpec.EmptinessCheck
 import LTLLib.AbstractSpec.Acceptance
 import LTLLib.LTLtoGBA.Invariants
@@ -25,3 +26,20 @@ import LTLLib.NestedDFS.NestedDFSTermination
 import LTLLib.Satisfiability
 import LTLLib.Product
 import LTLLib.ModelCheck
+
+-- TGBA Based approach
+import LTLLib.TGBA
+import LTLLib.TGBABased.AbstractSpec.Acceptance
+import LTLLib.TGBABased.LTLtoTGBA.GBAToTGBA
+import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+import LTLLib.TGBABased.AbstractSpec.SCCTheory
+import LTLLib.TGBABased.AbstractSpec.Lasso
+import LTLLib.TGBABased.AbstractSpec.Pumping
+import LTLLib.TGBABased.SCC.WitnessExtraction
+import LTLLib.TGBABased.SCC.GenericDFS
+import LTLLib.TGBABased.SCC.DijkstraSCC
+import LTLLib.TGBABased.SCC.TarjanSCC
+import LTLLib.TGBABased.SCC.GabowSCC
+import LTLLib.TGBABased.Satisfiability
+import LTLLib.TGBABased.Product
+import LTLLib.TGBABased.ModelCheck

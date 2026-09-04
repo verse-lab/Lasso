@@ -51,6 +51,12 @@ def isAccepting (gba : GBA α) (setIdx : Nat) (state : Nat) : Bool :=
   | some aset => aset.contains state
   | none => true  -- if no acceptance sets, all states accept
 
+/-- Acceptance sets `q` belongs to. -/
+def acceptMarksOf (gba : GBA α) (q : Nat) : Std.HashSet Nat :=
+  (List.range gba.acceptSets.size).foldl
+    (init := Std.HashSet.emptyWithCapacity gba.acceptSets.size)
+    fun acc i => if gba.isAccepting i q then acc.insert i else acc
+
 /-- Well-formedness: initial and successor states are in the state set. -/
 structure WellFormed (gba : GBA α) : Prop where
   initial_mem : ∀ q, gba.isInitial q → gba.states.contains q

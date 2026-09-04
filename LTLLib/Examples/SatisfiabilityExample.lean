@@ -34,7 +34,7 @@ just for display (same pure inputs, same `ba`, by determinism). -/
 def report (φ : Formula Prop') : IO Unit := do
   let φNNF := φ.toNNF true
   match buildAll (α := Prop') φNNF, fullPipeline (S := S Prop') φNNF with
-  | some (_, _, ba), .nonEmpty stem loop =>
+  | some (_, _, ba, _), .nonEmpty stem loop =>
     IO.println "satisfiable"
     IO.println s!"stem: {showRun ba stem}"
     IO.println s!"loop: {showRun ba loop.tail} ⟲ (repeats forever)"

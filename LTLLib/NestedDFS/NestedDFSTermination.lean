@@ -1598,21 +1598,8 @@ theorem exists_acceptingCycle_of_run
     (htrans : ∀ n, σ (n + 1) ∈ succs (σ n))
     (hacc : ∀ N, ∃ n ≥ N, isAccepting (σ n) = true) :
     ∃ _ac : AcceptingCycle initialStates succs isAccepting, True := by
-  have hmem : ∀ n, Reachable initialStates succs (σ n) := by
-    intro n
-    induction n with
-    | zero => exact .base hinit
-    | succ n ih => exact .step ih (htrans n)
-  obtain ⟨i, j, hij, heq⟩ :
-      ∃ i j, i < j ∧
-        σ (accIdxSeq σ isAccepting hacc i) = σ (accIdxSeq σ isAccepting hacc j) := by
-    obtain ⟨i, -, j, -, hne, heq⟩ := Set.Infinite.exists_ne_map_eq_of_mapsTo
-      (s := (Set.univ : Set Nat)) (t := {s | Reachable initialStates succs s})
-      (f := fun k => σ (accIdxSeq σ isAccepting hacc k))
-      Set.infinite_univ (fun k _ => hmem _) fr
-    rcases Nat.lt_or_gt_of_ne hne with h | h
-    · exact ⟨i, j, h, heq⟩
-    · exact ⟨j, i, h, heq.symm⟩
+  obtain ⟨i, j, hij, heq⟩ :=
+    fr.exists_lt_sample_eq (Reachable.of_run hinit htrans) (accIdxSeq σ isAccepting hacc)
   have hpq : accIdxSeq σ isAccepting hacc i < accIdxSeq σ isAccepting hacc j :=
     accIdxSeq_lt_of_lt σ isAccepting hacc hij
   let p := accIdxSeq σ isAccepting hacc i

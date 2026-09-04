@@ -7,6 +7,10 @@
   - `Reachable`/`FiniteReach`: Canonical reachability and its finiteness hypothesis
   - `EmptinessChecker`: Sound and complete emptiness-check contract
 
+  Key theorems:
+  - `Reachable.toChain`: a `Reachable` proof unrolled into its explicit witnessing chain
+  - `FiniteReach.exists_lt_sample_eq`: the pigeonhole step shared by the pumping lemmas
+
   Sections:
   - Accepting cycle definition
   - Finite-reachability hypothesis
@@ -15,6 +19,7 @@
 import Std
 import Mathlib.Data.Set.Card
 import LTLLib.AbstractSpec.Lasso
+import LTLLib.AbstractSpec.GraphPaths
 
 namespace LTLLib
 
@@ -82,11 +87,45 @@ inductive Reachable {State : Type u} (initialStates : List State)
   | step {s t : State} (hs : Reachable initialStates succs s) (ht : t ∈ succs s) :
       Reachable initialStates succs t
 
+/-- A `Reachable` proof unrolled into its explicit witnessing chain from some initial state. -/
+theorem Reachable.toChain {State : Type u} {initialStates : List State} {succs : State → Array State}
+    {s : State} (h : Reachable initialStates succs s) :
+    ∃ l : List State, ∃ hne : l ≠ [], l.head hne ∈ initialStates ∧ l.getLast hne = s ∧
+      ∀ i, (hi : i + 1 < l.length) → l[i + 1] ∈ succs (l[i]) := by
+  induction h with
+  | @base i hi => exact ⟨[i], by simp, by simpa using hi, by simp, by simp⟩
+  | @step s t _ ht ih =>
+    obtain ⟨l, hne, hhead, hlast, hchain⟩ := ih
+    refine ⟨l ++ [t], by simp, ?_, by simp, chain_append_singleton l t hchain hne (by rw [hlast]; exact ht)⟩
+    rw [head_append_singleton_eq l t hne]
+    exact hhead
+
+/-- Every state along a run from an initial state is reachable. -/
+theorem Reachable.of_run {State : Type u} {initialStates : List State} {succs : State → Array State}
+    {σ : Nat → State} (hinit : σ 0 ∈ initialStates) (htrans : ∀ n, σ (n + 1) ∈ succs (σ n)) (n : Nat) :
+    Reachable initialStates succs (σ n) := by
+  induction n with
+  | zero => exact .base hinit
+  | succ n ih => exact .step ih (htrans n)
+
 /-- Bare existence certificate: the canonically-reachable set is finite.
     No witness must be provided. -/
 def FiniteReach {State : Type u} (initialStates : List State)
     (succs : State → Array State) : Prop :=
   {s | Reachable initialStates succs s}.Finite
+
+/-- Pigeonhole on an infinite sampling of a run: only finitely many states are reachable, so two distinct
+sample points carry the same state. The step every pumping lemma opens with, `f` need not be injective. -/
+theorem FiniteReach.exists_lt_sample_eq {State : Type u} {initialStates : List State}
+    {succs : State → Array State} (fr : FiniteReach initialStates succs) {σ : Nat → State}
+    (hmem : ∀ n, Reachable initialStates succs (σ n)) (f : Nat → Nat) :
+    ∃ i j, i < j ∧ σ (f i) = σ (f j) := by
+  obtain ⟨i, -, j, -, hne, heq⟩ := Set.Infinite.exists_ne_map_eq_of_mapsTo
+    (s := (Set.univ : Set Nat)) (t := {s | Reachable initialStates succs s})
+    (f := fun k => σ (f k)) Set.infinite_univ (fun k _ => hmem _) fr
+  rcases Nat.lt_or_gt_of_ne hne with h | h
+  · exact ⟨i, j, h, heq⟩
+  · exact ⟨j, i, h, heq.symm⟩
 
 /-! ## Algorithm-agnostic emptiness-check contract -/
 

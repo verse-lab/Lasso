@@ -1,8 +1,10 @@
 /-
-  Reusable "build and print" pipeline for the examples: given a
-  surface `Formula α`, compiles it to NNF, runs it through
-  `createGraph → constructGBA → GBA.degeneralize`, and renders the tableau,
-  the GBA, and the degeneralized BA.
+  Reusable "build and print" pipeline for the examples: given a surface `Formula α`, compile it to NNF, run it
+  through `createGraph → constructGBA`, and render the tableau, the GBA, and both ways of resolving the GBA's
+  generalized acceptance, `GBA.degeneralize` into a `BA` and `GBA.toTGBA` onto transitions.
+
+  The two are worth seeing side by side: degeneralization multiplies the state space by the number of
+  acceptance sets, whereas `toTGBA` is a pure edge relabeling and leaves the states alone.
 -/
 import LTLLib
 
@@ -15,11 +17,11 @@ abbrev S (α : Type u) [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
   Std.HashSet (NNF α)
 
 def buildAll (φNNF : NNF α) :
-    Option (ExpandState α (S α) × GBA α × BA α) :=
+    Option (ExpandState α (S α) × GBA α × BA α × TGBA α) :=
   match createGraph (S := S α) φNNF with
   | some st =>
     let gba := constructGBA φNNF st
-    some (st, gba, gba.degeneralize)
+    some (st, gba, gba.degeneralize, gba.toTGBA)
   | none => none
 
 /-- Render the tableau: each finished node's name, predecessors (`incoming`),
@@ -58,11 +60,38 @@ def printBA (ba : BA α) : String :=
     ([stateLine, initLine, acceptLine, "transitions:"] ++ transLines
      ++ ["labeling (by GBA state):"] ++ labelLines)
 
-/-- Compile `φ` to NNF, build the tableau/GBA/BA, and print all of it. -/
+/-- Render one transition: its target, propositional guard, and acceptance marks. -/
+def showTransition (t : TGBA.Transition α) : String :=
+  let pos := (t.positiveProps.toList.map toString).mergeSort (· < ·)
+  let neg := (t.negativeProps.toList.map toString).mergeSort (· < ·)
+  s!"-> {t.target}  +{pos} -{neg}  marks={t.acceptMarks.toList.mergeSort (· < ·)}"
+
+/-- Render a `TGBA`. Unlike a `GBA` or `BA` there is no separate labeling or acceptance table, both live on
+the transitions, so the label and marks are printed inline with each edge. Rows out of state `0` are the
+`expandInit` sentinel's, which is why it is not in `states`, the same as `printGBA` shows. -/
+def printTGBA (tgba : TGBA α) : String :=
+  let stateLine := s!"states ({tgba.states.size}): {tgba.states.toList.mergeSort (· < ·)}"
+  let initLine := s!"initial: {tgba.initialStates.toList.mergeSort (· < ·)}"
+  let markLine := s!"acceptance marks: {tgba.numAcceptSets}"
+  let transLines := (tgba.successors.toList.flatMap fun (q, ts) =>
+    ts.toList.map fun t => s!"  {q} {showTransition t}").mergeSort (· < ·)
+  String.intercalate "\n" ([stateLine, initLine, markLine, "transitions:"] ++ transLines)
+
+/-- The `edgeMarks q q'` view the SCC-based emptiness checks actually consume: marks unioned over every
+parallel `q → q'` transition. Only the marked pairs are listed. -/
+def printEdgeMarks (tgba : TGBA α) : String :=
+  let pairs := tgba.states.toList.flatMap fun q =>
+    (tgba.succStates q).toList.map fun q' => (q, q')
+  let lines := (pairs.eraseDups.filterMap fun (q, q') =>
+    let ms := (tgba.edgeMarks q q').toList.mergeSort (· < ·)
+    if ms.isEmpty then none else some s!"  {q} -> {q'}: {ms}").mergeSort (· < ·)
+  String.intercalate "\n" (["marked edges:"] ++ (if lines.isEmpty then ["  (none)"] else lines))
+
+/-- Compile `φ` to NNF, build the tableau/GBA/BA/TGBA, and print all of it. -/
 def runExample (φ : Formula α) : IO Unit := do
   let φNNF := φ.toNNF true
   match buildAll φNNF with
-  | some (st, gba, ba) =>
+  | some (st, gba, ba, tgba) =>
     IO.println s!"φ = {φ}"
     IO.println s!"φ (NNF) = {φNNF}"
     IO.println "\n== Tableau (createGraph) =="
@@ -71,6 +100,20 @@ def runExample (φ : Formula α) : IO Unit := do
     IO.println (printGBA gba)
     IO.println "\n== BA (after degeneralization) =="
     IO.println (printBA ba)
+    IO.println "\n== TGBA (marks pushed onto transitions) =="
+    IO.println (printTGBA tgba)
+    IO.println (printEdgeMarks tgba)
+  | none => IO.println "createGraph failed (unexpected: createGraph_term guarantees success)"
+
+/-- Just the TGBA half, for examples that do not need the tableau or the degeneralized `BA`. -/
+def runTGBAExample (φ : Formula α) : IO Unit := do
+  let φNNF := φ.toNNF true
+  match buildAll φNNF with
+  | some (_, _, _, tgba) =>
+    IO.println s!"φ = {φ}"
+    IO.println s!"φ (NNF) = {φNNF}"
+    IO.println (printTGBA tgba)
+    IO.println (printEdgeMarks tgba)
   | none => IO.println "createGraph failed (unexpected: createGraph_term guarantees success)"
 
 end LTLLib.Examples
