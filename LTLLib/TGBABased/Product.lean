@@ -42,15 +42,17 @@ def getSuccessors (tgba : TGBA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) :
     (SysState × Nat) → Array (SysState × Nat) :=
   fun (s, q) =>
+    let lbl := sysLabel s
     let sysSuccs := Product.totalizeSucc sysSucc s
     (tgba.getSuccessors q).flatMap fun t =>
-      if transCompatible t (sysLabel s) then sysSuccs.map fun s' => (s', t.target) else #[]
+      if transCompatible t lbl then sysSuccs.map fun s' => (s', t.target) else #[]
 
 /-- Marks on a product edge `(s, q) → (s', q')`: the union over every `q → q'` transition compatible with `s`'s label. -/
 def edgeMarks (tgba : TGBA α) (sysLabel : SysState → Std.HashSet α) :
     (SysState × Nat) → (SysState × Nat) → Std.HashSet Nat :=
   fun (s, q) (_, q') =>
-    ((tgba.getSuccessors q).filter fun t => t.target == q' && transCompatible t (sysLabel s))
+    let lbl := sysLabel s
+    ((tgba.getSuccessors q).filter fun t => t.target == q' && transCompatible t lbl)
       |>.foldl (init := Std.HashSet.emptyWithCapacity 0) fun acc t => acc.union t.acceptMarks
 
 /-! ## Proof-level bridge -/
@@ -252,8 +254,10 @@ def edgeWitness (tgba : TGBA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) :
     TEdgeWitness (toSpec tgba sysSucc sysLabel sysInit)
       (getSuccessors tgba sysSucc sysLabel) (edgeMarks tgba sysLabel) where
-  stepEdge p p' := (p.1, p'.1, ⟨p.2, ((tgba.getSuccessors p.2).find?
-    (fun t => t.target == p'.2 && transCompatible t (sysLabel p.1))).getD (junkTransition p'.2)⟩)
+  stepEdge p p' :=
+    let lbl := sysLabel p.1
+    (p.1, p'.1, ⟨p.2, ((tgba.getSuccessors p.2).find?
+      (fun t => t.target == p'.2 && transCompatible t lbl)).getD (junkTransition p'.2)⟩)
   stepEdge_spec := by
     intro p p' hp'
     obtain ⟨t, ht, hc, hsys, htgt⟩ := (getSuccessors_mem_iff tgba sysSucc sysLabel).mp hp'
@@ -269,9 +273,11 @@ def edgeWitness (tgba : TGBA α) (sysSucc : SysState → Array SysState)
     · simpa only [toSpec, ha, Option.getD_some] using hsys
     · simp only [toSpec, ha, Option.getD_some]
     · simp only [toSpec, ha, Option.getD_some, hp.1]
-  markEdge p p' m := (p.1, p'.1, ⟨p.2, ((tgba.getSuccessors p.2).find?
-    (fun t => t.target == p'.2 && transCompatible t (sysLabel p.1) &&
-      t.acceptMarks.contains m)).getD (junkTransition p'.2)⟩)
+  markEdge p p' m :=
+    let lbl := sysLabel p.1
+    (p.1, p'.1, ⟨p.2, ((tgba.getSuccessors p.2).find?
+      (fun t => t.target == p'.2 && transCompatible t lbl &&
+        t.acceptMarks.contains m)).getD (junkTransition p'.2)⟩)
   markEdge_spec := by
     intro p p' m _ hstep hm
     have hsys : p'.1 ∈ Product.totalizeSucc sysSucc p.1 := by
