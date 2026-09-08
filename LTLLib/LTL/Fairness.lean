@@ -19,9 +19,11 @@ def unconditionalFairness (taken : Formula α) : Formula α :=
 
 /-- Weak fairness (justice): □(◇¬enabled ∨ ◇taken).
 If `enabled` is continuously true, then `taken` must eventually become true.
-Equivalent to: □◇(¬enabled ∨ taken), or equivalently, ◇□enabled → □◇taken. -/
+Equivalently `□(◇¬enabled ∨ ◇taken)`, or `◇□enabled → □◇taken`.
+  (The `□◇` form used as it holds only on Until-subformula and fairness is usually an assumption,
+  so it is positive in the negated formula). -/
 def weakFairness (enabled taken : Formula α) : Formula α :=
-  .always (.or (.eventually enabled.not) (.eventually taken))
+  .always (.eventually (.or enabled.not taken))
 
 /-- Strong fairness (compassion): □◇enabled → □◇taken.
 If `enabled` is true infinitely often, then `taken` must be true infinitely often. -/
