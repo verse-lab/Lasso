@@ -207,7 +207,7 @@ theorem soundness
 
 /-- If `createGraph` succeeds and there is a valid accepting run through the resulting nodes labeled by ξ, then ξ ⊨ φ. -/
 theorem concrete_soundness
-    {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
+    {S : Type v} [FSet (NNF α) S] [Hashable (NNF α)] [BEq (NNF α)] [LawfulBEq (NNF α)]
     {φ : NNF α} {st : ExpandState α S}
     (hcg : createGraph φ = some st)
     {σ : Nat → NodeData α} {ξ : OmegaWord α}
@@ -266,16 +266,15 @@ theorem expandOASpec_soundness
 
 /-! ### Concrete soundness via expandOASpec -/
 
-/-- Concrete soundness of the abstract automaton via `createGraph`, using `φ.untilSubformulas` as the until-subformula
-    list. -/
+/-- Concrete soundness of the abstract automaton via `createGraph`, using `φ.untilSubformulasDedup` as the until-subformula list. -/
 theorem gba_abstract_soundness
-    {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
+    {S : Type v} [FSet (NNF α) S] [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
     {φ : NNF α} {st : ExpandState α S}
     (hcg : createGraph φ = some st)
     {ξ : OmegaWord α}
-    (hacc : (expandOASpec φ st.toNodes φ.untilSubformulas).accepts ξ)
+    (hacc : (expandOASpec φ st.toNodes φ.untilSubformulasDedup).accepts ξ)
     : NNF.satisfies ξ φ :=
   expandOASpec_soundness (createGraph_spec φ hcg)
-    (fun μ η hsub => untilSubformulas_index φ μ η hsub) hacc
+    (fun μ η hsub => untilSubformulasDedup_index φ μ η hsub) hacc
 
 end LTLLib

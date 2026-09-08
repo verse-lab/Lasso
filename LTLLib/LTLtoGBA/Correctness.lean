@@ -12,7 +12,7 @@ namespace LTLLib
 
 open NNF
 
-variable {α : Type u} {S : Type v} [FSet (NNF α) S]
+variable {α : Type u} {S : Type v} [FSet (NNF α) S] [Hashable (NNF α)]
 
 /-- `constructGBA` accepts exactly the ω-words satisfying `φ`, unconditionally. -/
 theorem constructGBA_correct
@@ -23,7 +23,7 @@ theorem constructGBA_correct
     (constructGBA φ st).toSpec.accepts ξ ↔ NNF.satisfies ξ φ := by
   rw [constructGBA_iff_expandOASpec hcg]
   exact ⟨expandOASpec_soundness (createGraph_spec φ hcg)
-           (fun μ η hsub => untilSubformulas_index φ μ η hsub),
+           (fun μ η hsub => untilSubformulasDedup_index φ μ η hsub),
          expandOASpec_completeness (createGraph_spec φ hcg)
            (createGraph_graphComplete φ hcg)⟩
 

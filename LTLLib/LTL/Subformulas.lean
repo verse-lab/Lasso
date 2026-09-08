@@ -3,11 +3,13 @@
 
   - `IsSubformula` relation + transitive closure
   - Generic fold (`NNF.fold`) and derived operations (`subformulas`, `untilSubformulas`)
+  - `untilSubformulasDedup`: the Until-subformula list `constructGBA` builds acceptance sets from, one entry per distinct `.until`
 
   Sections:
   - Subformula relation
   - Subformula folding
   - untilSubformulas completeness
+  - untilSubformulasDedup completeness
 -/
 
 import Std
@@ -87,16 +89,22 @@ Used for defining acceptance conditions: one accepting set per Until-subformula.
 def untilSubformulas {α} (φ : NNF α) : List (NNF α × NNF α) :=
   φ.fold (untilFoldFn α) []
 
-/-- Deduplicated Until-subformulas. -/
-def untilSubformulasDedup {α} [BEq α] [Hashable α] (φ : NNF α) : List (NNF α × NNF α) :=
-  (φ.fold (fun state f =>
+private abbrev untilDedupState (α : Type u) [BEq α] [Hashable α] : Type u :=
+  List (NNF α × NNF α) × Std.HashSet (NNF α)
+
+private abbrev untilDedupFn (α : Type u) [BEq α] [Hashable α] :
+    untilDedupState α → NNF α → untilDedupState α :=
+  fun st f =>
     match f with
     | .until a b =>
-      let pair := (a, b)
-      if state.2.contains pair then state
-      else (pair :: state.1, state.2.insert pair)
-    | _ => state)
-    ([], Std.HashSet.emptyWithCapacity (8 : Nat))).1
+      if st.2.contains (.until a b) then st
+      else ((a, b) :: st.1, st.2.insert (.until a b))
+    | _ => st
+
+/-- Deduplicated Until-subformulas: one `(left, right)` pair per distinct `.until` subformula.
+For GBA construction, a repeated `.until` would otherwise cost a redundant acceptance set. -/
+def untilSubformulasDedup {α} [BEq α] [Hashable α] (φ : NNF α) : List (NNF α × NNF α) :=
+  (φ.fold (untilDedupFn α) ([], Std.HashSet.emptyWithCapacity 8)).1
 
 /-! ### untilSubformulas completeness -/
 
@@ -160,6 +168,100 @@ theorem untilSubformulas_index (φ : NNF α) (μ η : NNF α)
       φ.untilSubformulas[i] = (μ, η) := by
   have hmem := untilSubformulas_complete φ μ η hsub
   exact List.mem_iff_get.mp hmem
+
+/-! ### untilSubformulasDedup completeness -/
+
+variable {α : Type u} [BEq α] [Hashable α]
+
+private def UntilDedupInv (st : untilDedupState α) : Prop :=
+  ∀ a b, (a, b) ∈ st.1 ↔ st.2.contains (.until a b) = true
+
+private theorem untilDedupFn_until (st : untilDedupState α) (a b : NNF α) :
+    untilDedupFn α st (.until a b) =
+      if st.2.contains (.until a b) then st
+      else ((a, b) :: st.1, st.2.insert (.until a b)) := rfl
+
+private theorem untilDedupFn_mono (st : untilDedupState α) (a b : NNF α) (x : NNF α × NNF α)
+    (hx : x ∈ st.1) : x ∈ (untilDedupFn α st (.until a b)).1 := by
+  rw [untilDedupFn_until]; split
+  · exact hx
+  · exact List.mem_cons_of_mem _ hx
+
+private theorem untilDedupFn_inv [LawfulBEq α] [LawfulHashable α]
+    (st : untilDedupState α) (a b : NNF α) (h : UntilDedupInv st) :
+    UntilDedupInv (untilDedupFn α st (.until a b)) := by
+  rw [untilDedupFn_until]; split
+  · exact h
+  · intro x y
+    have := h x y
+    simp only [List.mem_cons, Prod.mk.injEq, Std.HashSet.contains_insert]
+    grind
+
+private theorem fold_dedup_inv [LawfulBEq α] [LawfulHashable α]
+    (φ : NNF α) (st : untilDedupState α) (h : UntilDedupInv st) :
+    UntilDedupInv (φ.fold (untilDedupFn α) st) := by
+  induction φ generalizing st with
+  | tt | ff | prop _ | nprop _ => exact h
+  | next ψ ih => exact ih _ h
+  | and ψ₁ ψ₂ ih₁ ih₂ | or ψ₁ ψ₂ ih₁ ih₂ | «release» ψ₁ ψ₂ ih₁ ih₂ => exact ih₂ _ (ih₁ _ h)
+  | «until» ψ₁ ψ₂ ih₁ ih₂ => exact ih₂ _ (ih₁ _ (untilDedupFn_inv st ψ₁ ψ₂ h))
+
+private theorem fold_dedup_mono (φ : NNF α) (st : untilDedupState α) (x : NNF α × NNF α)
+    (hx : x ∈ st.1) :
+    x ∈ (φ.fold (untilDedupFn α) st).1 := by
+  induction φ generalizing st with
+  | tt | ff | prop _ | nprop _ => exact hx
+  | next ψ ih => exact ih _ hx
+  | and ψ₁ ψ₂ ih₁ ih₂ | or ψ₁ ψ₂ ih₁ ih₂ | «release» ψ₁ ψ₂ ih₁ ih₂ => exact ih₂ _ (ih₁ _ hx)
+  | «until» ψ₁ ψ₂ ih₁ ih₂ => exact ih₂ _ (ih₁ _ (untilDedupFn_mono st ψ₁ ψ₂ x hx))
+
+private theorem untilDedupFn_root [LawfulBEq α] [LawfulHashable α]
+    (st : untilDedupState α) (a b : NNF α) (hinv : UntilDedupInv st) :
+    (a, b) ∈ (untilDedupFn α st (.until a b)).1 := by
+  rw [untilDedupFn_until]; split
+  · next hc => exact (hinv a b).mpr hc
+  · exact List.mem_cons_self ..
+
+private theorem fold_dedup_complete [LawfulBEq α] [LawfulHashable α]
+    (φ : NNF α) (st : untilDedupState α) (hinv : UntilDedupInv st)
+    (μ η : NNF α) (hsub : NNF.IsSubformula (.until μ η) φ) :
+    (μ, η) ∈ (φ.fold (untilDedupFn α) st).1 := by
+  induction φ generalizing st with
+  | tt | ff | prop _ | nprop _ => cases hsub
+  | next ψ ih =>
+    cases hsub with
+    | next_sub h => exact ih _ hinv h
+  | and ψ₁ ψ₂ ih₁ ih₂ =>
+    cases hsub with
+    | and_left h => exact fold_dedup_mono ψ₂ _ _ (ih₁ _ hinv h)
+    | and_right h => exact ih₂ _ (fold_dedup_inv ψ₁ _ hinv) h
+  | or ψ₁ ψ₂ ih₁ ih₂ =>
+    cases hsub with
+    | or_left h => exact fold_dedup_mono ψ₂ _ _ (ih₁ _ hinv h)
+    | or_right h => exact ih₂ _ (fold_dedup_inv ψ₁ _ hinv) h
+  | «release» ψ₁ ψ₂ ih₁ ih₂ =>
+    cases hsub with
+    | release_left h => exact fold_dedup_mono ψ₂ _ _ (ih₁ _ hinv h)
+    | release_right h => exact ih₂ _ (fold_dedup_inv ψ₁ _ hinv) h
+  | «until» ψ₁ ψ₂ ih₁ ih₂ =>
+    have hstep := untilDedupFn_inv st ψ₁ ψ₂ hinv
+    cases hsub with
+    | refl => exact fold_dedup_mono η _ _ (fold_dedup_mono μ _ _ (untilDedupFn_root st μ η hinv))
+    | until_left h => exact fold_dedup_mono ψ₂ _ _ (ih₁ _ hstep h)
+    | until_right h => exact ih₂ _ (fold_dedup_inv ψ₁ _ hstep) h
+
+/-- Every until-subformula appears in `φ.untilSubformulasDedup`. -/
+theorem untilSubformulasDedup_complete [LawfulBEq α] [LawfulHashable α]
+    (φ : NNF α) (μ η : NNF α) (hsub : NNF.IsSubformula (.until μ η) φ) :
+    (μ, η) ∈ φ.untilSubformulasDedup :=
+  fold_dedup_complete φ _ (by intro a b; simp) μ η hsub
+
+/-- `untilSubformulasDedup_complete` as an index lookup. -/
+theorem untilSubformulasDedup_index [LawfulBEq α] [LawfulHashable α]
+    (φ : NNF α) (μ η : NNF α) (hsub : NNF.IsSubformula (.until μ η) φ) :
+    ∃ i : Fin φ.untilSubformulasDedup.length,
+      φ.untilSubformulasDedup[i] = (μ, η) :=
+  List.mem_iff_get.mp (untilSubformulasDedup_complete φ μ η hsub)
 
 end NNF
 

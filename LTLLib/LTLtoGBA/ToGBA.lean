@@ -67,7 +67,7 @@ def buildInitialStates (nodes : Std.HashMap Nat (ExpansionNode α S)) : Std.Hash
 /-- Construct a GBA from the expanded node graph and the original LTL formula. -/
 def constructGBA [BEq α] [Hashable α] (φ : NNF α) (expandResult : ExpandState α S) : GBA α :=
   let nodes := expandResult.nodes
-  let untilSubs := φ.untilSubformulas  -- may contain duplicates, but that's OK for correctness
+  let untilSubs := φ.untilSubformulasDedup  -- one acceptance set per distinct Until-subformula
   {
     states := buildStates nodes
     initialStates := buildInitialStates nodes
