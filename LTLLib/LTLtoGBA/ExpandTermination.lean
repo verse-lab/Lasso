@@ -364,56 +364,30 @@ end ExpandTermHelpers
 
 section FindDuplicateNone
 
-variable {α : Type u} {S : Type v} [FSet (NNF α) S]
-
-theorem findStep_some_persists (node : ExpansionNode α S) (m : Nat) (l : List (Nat × ExpansionNode α S)) :
-    List.foldl (fun a b => findStep node a b) (some m) l = some m := by
-  induction l with
-  | nil => rfl
-  | cons p ps ih => simp only [List.foldl_cons, findStep]; exact ih
+variable {α : Type u} {S : Type v} [FSet (NNF α) S] [Hashable (NNF α)]
 
 /-- The negative counterpart to `findDuplicate_spec`: if no duplicate is found, no already-finished node shares
-`node`'s signature. -/
+`node`'s signature. Needs `IndexValid`, since `findDuplicate` only searches one `sigHash` bucket. -/
 theorem findDuplicate_spec_none (st : ExpandState α S) (node : ExpansionNode α S)
-    (h : findDuplicate st node = none) :
+    (hidx : IndexValid st) (h : findDuplicate st node = none) :
     ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n → n.sameSignature node = false := by
-  unfold findDuplicate at h
-  rw [Std.HashMap.fold_eq_foldl_toList] at h
-  change List.foldl (fun a b => findStep node a b) none st.nodes.toList = none at h
   intro k n hk
-  have hmem : (k, n) ∈ st.nodes.toList := Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hk
-  clear hk
-  suffices hgen : ∀ (l : List (Nat × ExpansionNode α S)),
-      List.foldl (fun a b => findStep node a b) none l = none →
-      (k, n) ∈ l → n.sameSignature node = false by
-    exact hgen st.nodes.toList h hmem
-  intro l
-  induction l with
-  | nil => intro _ hmem'; simp at hmem'
-  | cons p ps ih =>
-    intro hfold hmem'
-    rw [List.foldl_cons] at hfold
-    have hstep : findStep node none p = none := by
-      cases hs : findStep node none p with
-      | none => rfl
-      | some m => rw [hs, findStep_some_persists node m ps] at hfold; simp at hfold
-    have hcond : p.2.sameSignature node = false := by
-      unfold findStep at hstep
-      by_contra hcon
-      simp only [Bool.not_eq_false] at hcon
-      rw [hcon] at hstep
-      simp at hstep
-    rw [hstep] at hfold
-    rcases List.mem_cons.mp hmem' with hmem' | hmem'
-    · rw [← hmem'] at hcond; exact hcond
-    · exact ih hfold hmem'
+  by_contra hne
+  have hsame : n.sameSignature node = true := by simpa using hne
+  -- equal signatures hash equally, so `k` sits in the very bucket `findDuplicate` searched
+  have hbucket : k ∈ st.index[node.sigHash]?.getD [] := by
+    rw [← ExpansionNode.sigHash_eq_of_sameSignature hsame]
+    exact hidx k n hk
+  unfold findDuplicate at h
+  exact List.find?_eq_none.mp h k hbucket (by rw [hk]; exact hsame)
 
 end FindDuplicateNone
 
 section SignatureFreshness
 
-variable {α : Type u} [DecidableEq α] {S : Type v} [FSet (NNF α) S]
+variable {α : Type u} [DecidableEq α] {S : Type v} [FSet (NNF α) S] [Hashable (NNF α)]
 
+omit [Hashable (NNF α)] in
 /-- Equal signatures imply `sameSignature`. -/
 theorem sameSignature_of_nodeSignature_eq {n1 n2 : ExpansionNode α S}
     (h : nodeSignature n1 = nodeSignature n2) : n1.sameSignature n2 = true := by
@@ -437,13 +411,13 @@ theorem sameSignature_of_nodeSignature_eq {n1 n2 : ExpansionNode α S}
 
 /-- If `findDuplicate` finds nothing, `node`'s signature isn't among the already-used ones. -/
 theorem nodeSignature_fresh_of_findDuplicate_none {st : ExpandState α S} {node : ExpansionNode α S}
-    (h : findDuplicate st node = none) :
+    (hidx : IndexValid st) (h : findDuplicate st node = none) :
     nodeSignature node ∉ usedSignatures st := by
   intro hmem
   simp only [usedSignatures, List.mem_toFinset, List.mem_map] at hmem
   obtain ⟨⟨k, n⟩, hkn, heq⟩ := hmem
   have hget := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hkn
-  have hfalse := findDuplicate_spec_none st node h k n hget
+  have hfalse := findDuplicate_spec_none st node hidx h k n hget
   have htrue := sameSignature_of_nodeSignature_eq heq
   rw [htrue] at hfalse
   exact absurd hfalse (by simp)
@@ -452,7 +426,7 @@ end SignatureFreshness
 
 section ExpandTerm
 
-variable {α : Type u} [DecidableEq α] [BEq (NNF α)] [LawfulBEq (NNF α)]
+variable {α : Type u} [DecidableEq α] [Hashable (NNF α)] [BEq (NNF α)] [LawfulBEq (NNF α)]
   {S : Type v} [FSet (NNF α) S]
 
 theorem cons_head!_tail! {β : Type w} [Inhabited β] {l : List β} (h : l.isEmpty = false) :
@@ -468,6 +442,7 @@ expandMeasure2)`: finishing a node strictly decreases `expandMeasure1`, every ot
 `expandMeasure2`. Formalizes the finite-state-space termination argument of Gerth et al. 1995. -/
 theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : ExpandState α S)
     (hinv : ExpandInv topFormula node st)
+    (h_idx : IndexValid st)
     (h_not_in : st.nodes[node.name]? = none)
     (h_fresh : ∀ k, st.nodes[k]? ≠ none → k < st.nextName)
     (h_name : node.name < st.nextName) :
@@ -499,26 +474,26 @@ theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : Expa
       have hbound_node : nodeSignature node ∈ signatureUniverse topFormula :=
         nodeSignature_mem_signatureUniverse hinv.node_bounded.old_sub hinv.node_bounded.next_sub
       have hfresh_sig : nodeSignature node ∉ usedSignatures st :=
-        nodeSignature_fresh_of_findDuplicate_none h_fd
+        nodeSignature_fresh_of_findDuplicate_none h_idx h_fd
       have h_grow_sub : usedSignatures st ⊆ usedSignatures
-          ({ st with nodes := st.nodes.insert node.name node } : ExpandState α S) :=
+          (st.addNode node) :=
         usedSignatures_insert_fresh_subset st node.name node h_not_in
       have h_sig_mem : nodeSignature node ∈ usedSignatures
-          ({ st with nodes := st.nodes.insert node.name node } : ExpandState α S) := by
+          (st.addNode node) := by
         simp only [usedSignatures, List.mem_toFinset, List.mem_map]
         refine ⟨(node.name, node), Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr ?_, rfl⟩
-        simp only [Std.HashMap.getElem?_insert, BEq.refl, if_pos]
+        simp only [ExpandState.addNode, Std.HashMap.getElem?_insert, BEq.refl, if_pos]
       have h_grow : usedSignatures st ⊂ usedSignatures
-          ({ st with nodes := st.nodes.insert node.name node } : ExpandState α S) :=
+          (st.addNode node) :=
         h_grow_sub.ssubset_of_ne (fun heq => hfresh_sig (heq ▸ h_sig_mem))
       have hnb1 : NodesBounded topFormula
-          ({ st with nodes := st.nodes.insert node.name node } : ExpandState α S) :=
+          (st.addNode node) :=
         NodesBounded_insert hinv.nodes_bounded hinv.node_bounded.old_sub hinv.node_bounded.next_sub
-      have hub1 : usedSignatures ({ st with nodes := st.nodes.insert node.name node } : ExpandState α S)
+      have hub1 : usedSignatures (st.addNode node)
           ⊆ signatureUniverse topFormula :=
         usedSignatures_subset_signatureUniverse hnb1
       have hm1_lt : expandMeasure1 topFormula
-          ({ st with nodes := st.nodes.insert node.name node } : ExpandState α S)
+          (st.addNode node)
           < expandMeasure1 topFormula st :=
         expandMeasure1_lt h_grow hub1
       have h_not_in1 : (st.nodes.insert node.name node)[st.nextName]? = none :=
@@ -526,21 +501,21 @@ theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : Expa
       have h_fresh1 : ∀ k, (st.nodes.insert node.name node)[k]? ≠ none → k < st.nextName + 1 :=
         insert_freshInv st node.name node h_fresh h_name
       have h_name1 : st.nextName < st.nextName + 1 := Nat.lt_succ_self _
-      have h_succ_bounded : ∀ x, x ∈ FSet.foldl (fun acc f => f :: acc) [] node.next →
+      have h_succ_bounded : ∀ x, x ∈ nextToNew node.next →
           NNF.IsSubformula x topFormula :=
-        fun x hx => hinv.node_bounded.next_sub x (fset_fold_cons_mem node.next x hx)
+        fun x hx => hinv.node_bounded.next_sub x ((mem_nextToNew node.next x).mp hx)
       have hinv_succ : ExpandInv topFormula
           ({ name := st.nextName
              incoming := Std.HashSet.emptyWithCapacity 4 |>.insert node.name
-             new := FSet.foldl (fun acc f => f :: acc) [] node.next
+             new := nextToNew node.next
              old := FSet.empty
              next := FSet.empty } : ExpansionNode α S)
-          ({ st with nodes := st.nodes.insert node.name node, nextName := st.nextName + 1 }) := by
+          ({ (st.addNode node) with nextName := st.nextName + 1 }) := by
         refine ⟨⟨h_succ_bounded, ?_, ?_⟩, ?_⟩
         · intro x hx; exact absurd hx (by simp [FSet.contains_empty])
         · intro x hx; exact absurd hx (by simp [FSet.contains_empty])
         · exact hnb1
-      obtain ⟨r, hr1, hr2, hr3⟩ := expand_term topFormula _ _ hinv_succ h_not_in1 h_fresh1 h_name1
+      obtain ⟨r, hr1, hr2, hr3⟩ := expand_term topFormula _ _ hinv_succ (indexValid_addNode node h_idx) h_not_in1 h_fresh1 h_name1
       have heq : expand node st = some r := by
         rw [expand.eq_def, if_pos h_empty, h_fd]
         simp only [freshName]
@@ -581,7 +556,7 @@ theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : Expa
             < expandMeasure2 node := by
           show weightedSize node.new.tail! < weightedSize node.new
           rw [hweight]; omega
-        obtain ⟨r, hr1, hr2, hr3⟩ := expand_term topFormula _ st hinv' h_not_in h_fresh h_name
+        obtain ⟨r, hr1, hr2, hr3⟩ := expand_term topFormula _ st hinv' h_idx h_not_in h_fresh h_name
         have heq : expand node st = some r := by
           rw [expand.eq_def, if_neg h_empty]
           simp only
@@ -598,7 +573,7 @@ theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : Expa
             < expandMeasure2 node := by
           show weightedSize node.new.tail! < weightedSize node.new
           rw [hweight]; omega
-        obtain ⟨r, hr1, hr2, hr3⟩ := expand_term topFormula _ st hinv' h_not_in h_fresh h_name
+        obtain ⟨r, hr1, hr2, hr3⟩ := expand_term topFormula _ st hinv' h_idx h_not_in h_fresh h_name
         have heq : expand node st = some r := by
           rw [expand.eq_def, if_neg h_empty]
           simp only
@@ -649,7 +624,7 @@ theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : Expa
               simp only [weightedSize_singleton] at h2
               rw [hweight]
               omega
-            obtain ⟨r, hr1, hr2, hr3⟩ := expand_term topFormula _ st hinv' h_not_in h_fresh h_name
+            obtain ⟨r, hr1, hr2, hr3⟩ := expand_term topFormula _ st hinv' h_idx h_not_in h_fresh h_name
             have heq : expand node st = some r := by
               rw [expand.eq_def, if_neg h_empty]
               simp only
@@ -694,7 +669,7 @@ theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : Expa
               rw [hweight]
               omega
             obtain ⟨r1, hr1_1, hr1_2, hr1_3⟩ :=
-              expand_term topFormula _ st hinv1 h_not_in h_fresh h_name
+              expand_term topFormula _ st hinv1 h_idx h_not_in h_fresh h_name
             -- Second recursive call: name := r1.1, via `new2`, at state `r1.2`.
             have hinv1' : ExpandInvariants st r1.2 r1.1 :=
               expand_invariants _ st hr1_1 h_not_in h_fresh h_name
@@ -722,7 +697,8 @@ theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : Expa
               rw [hweight]
               omega
             obtain ⟨r2, hr2_1, hr2_2, hr2_3⟩ :=
-              expand_term topFormula _ r1.2 hinv2 hinv1'.nameFresh hinv1'.freshInv hinv1'.nameBound
+              expand_term topFormula _ r1.2 hinv2 (expand_indexValid hr1_1 h_idx)
+                hinv1'.nameFresh hinv1'.freshInv hinv1'.nameBound
             have heq : expand node st = some r2 := by
               rw [expand.eq_def, if_neg h_empty]
               simp only
@@ -750,7 +726,8 @@ theorem createGraph_term (φ : NNF α) :
   have hinv : ExpandInv φ
       ({ name := 1, incoming := Std.HashSet.emptyWithCapacity 4 |>.insert expandInit,
          new := [φ], old := FSet.empty, next := FSet.empty } : ExpansionNode α S)
-      ({ nextName := 2, nodes := Std.HashMap.emptyWithCapacity 16 } : ExpandState α S) := by
+      ({ nextName := 2, nodes := Std.HashMap.emptyWithCapacity 16,
+         index := Std.HashMap.emptyWithCapacity 16 } : ExpandState α S) := by
     refine ⟨⟨?_, ?_, ?_⟩, ?_⟩
     · intro x hx; simp only [List.mem_singleton] at hx; exact hx ▸ NNF.IsSubformula.refl
     · intro x hx; exact absurd hx (by simp [FSet.contains_empty])
@@ -764,8 +741,9 @@ theorem createGraph_term (φ : NNF α) :
   obtain ⟨r, hr1, _, hr3⟩ := expand_term φ
       ({ name := 1, incoming := Std.HashSet.emptyWithCapacity 4 |>.insert expandInit,
          new := [φ], old := FSet.empty, next := FSet.empty } : ExpansionNode α S)
-      ({ nextName := 2, nodes := Std.HashMap.emptyWithCapacity 16 } : ExpandState α S)
-      hinv h_not_in h_fresh h_name
+      ({ nextName := 2, nodes := Std.HashMap.emptyWithCapacity 16,
+         index := Std.HashMap.emptyWithCapacity 16 } : ExpandState α S)
+      hinv (by intro k n hk; simp at hk) h_not_in h_fresh h_name
   refine ⟨r.2, ?_, hr3⟩
   unfold createGraph
   simp only

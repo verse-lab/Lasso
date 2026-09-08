@@ -129,7 +129,7 @@ theorem gba_abstract_completeness_strong
     (h_complete : StrongGraphComplete φ st.toNodes)
     {ξ : OmegaWord α}
     (hsat : NNF.satisfies ξ φ)
-    : (expandOASpec φ st.toNodes φ.untilSubformulas).accepts ξ :=
+    : (expandOASpec φ st.toNodes φ.untilSubformulasDedup).accepts ξ :=
   expandOASpec_completeness_strong h_complete hsat
 
 end LTLLib

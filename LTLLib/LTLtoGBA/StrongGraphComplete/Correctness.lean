@@ -34,10 +34,10 @@ theorem gba_abstract_correct_strong
     (hcg : createGraph φ = some st)
     (h_complete : StrongGraphComplete φ st.toNodes)
     (ξ : OmegaWord α)
-    : (expandOASpec φ st.toNodes φ.untilSubformulas).accepts ξ ↔
+    : (expandOASpec φ st.toNodes φ.untilSubformulasDedup).accepts ξ ↔
       NNF.satisfies ξ φ :=
   expandOASpec_correct_strong (createGraph_spec φ hcg)
-    (fun μ η hsub => NNF.untilSubformulas_index φ μ η hsub)
+    (fun μ η hsub => NNF.untilSubformulasDedup_index φ μ η hsub)
     h_complete ξ
 
 end LTLLib

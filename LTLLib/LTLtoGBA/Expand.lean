@@ -10,6 +10,7 @@
   - `new1`, `new2`, `next1`: the per-connective subgoal sets used by `expand`
   - `ExpandState`: the worklist algorithm's mutable state (fresh-name counter and finished-node map)
   - `findDuplicate`, `mergeIncoming`, `addToNew`, `addAllToSet`: expansion helpers
+  - `ExpandState.addNode`, `IndexValid`: the `sigHash` index that keeps `findDuplicate` off a linear scan
   - `expand`: the recursive tableau expansion
   - `createGraph`: runs `expand` from the initial node for a formula
   - `ExpandState.toNodes`: bridges a finished `ExpandState` to the abstract `NodeData` spec
@@ -56,6 +57,8 @@ def new2 {α} : NNF α → List (NNF α)
 structure ExpandState (α : Type u) (S : Type v) where
   nextName : Nat  -- monotonically increasing counter for fresh node names
   nodes : Std.HashMap Nat (ExpansionNode α S)  -- finished (fully expanded) nodes by name
+  -- finished node names bucketed by `ExpansionNode.sigHash`, so duplicate detection is a bucket probe
+  index : Std.HashMap UInt64 (List Nat)
 deriving Inhabited
 
 variable {α} {S : Type v} [FSet (NNF α) S]
@@ -64,12 +67,41 @@ variable {α} {S : Type v} [FSet (NNF α) S]
 def freshName (st : ExpandState α S) : Nat × ExpandState α S :=
   (st.nextName, { st with nextName := st.nextName + 1 })
 
-/-- Find an existing node with the same (old, next) signature. Returns the node name if found. -/
+/-- A successor node's initial `new` list: its predecessor's `next` obligations, in reverse iteration order. -/
+def nextToNew (s : S) : List (NNF α) :=
+  FSet.foldl (fun acc f => f :: acc) [] s
+
+/-- `nextToNew` lists exactly the set's elements. -/
+theorem mem_nextToNew (s : S) (ψ : NNF α) : ψ ∈ nextToNew s ↔ FSet.contains s ψ = true := by
+  have hgen : ∀ (l : List (NNF α)) (acc : List (NNF α)),
+      ψ ∈ l.foldl (fun acc f => f :: acc) acc ↔ (ψ ∈ l ∨ ψ ∈ acc) := by
+    intro l
+    induction l with
+    | nil => simp
+    | cons x xs ih => intro acc; rw [List.foldl_cons, ih]; simp only [List.mem_cons]; grind
+  simp only [nextToNew, FSet.foldl_eq_foldl_toList, hgen, List.not_mem_nil, or_false]
+  exact FSet.mem_toList_iff ψ s
+
+variable [Hashable (NNF α)]
+
+/-- Record a finished node in the node map and its signature bucket together. -/
+def ExpandState.addNode (st : ExpandState α S) (node : ExpansionNode α S) : ExpandState α S :=
+  { st with nodes := st.nodes.insert node.name node,
+            index := st.index.insert node.sigHash (node.name :: st.index[node.sigHash]?.getD []) }
+
+/-- Every finished node is listed in its own `sigHash` bucket. Needed for `findDuplicate_spec_none`, and
+through it for termination: a missed duplicate would let the expansion keep minting nodes with a signature it
+failed to find. -/
+def IndexValid (st : ExpandState α S) : Prop :=
+  ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n → k ∈ st.index[n.sigHash]?.getD []
+
+/-- Find an existing node with the same (old, next) signature. Returns the node name if found.
+Only the `sigHash` bucket is searched, which is exact by `sigHash_eq_of_sameSignature` given `IndexValid`. -/
 def findDuplicate (st : ExpandState α S) (node : ExpansionNode α S) : Option Nat :=
-  st.nodes.fold (init := none) fun acc name n =>
-    match acc with
-    | some _ => acc
-    | none => if n.sameSignature node then some name else none
+  (st.index[node.sigHash]?.getD []).find? fun name =>
+    match st.nodes[name]? with
+    | some n => n.sameSignature node
+    | none => false
 
 /-- Merge incoming edges of `node` into an existing node with matching signature. -/
 def mergeIncoming (st : ExpandState α S) (node : ExpansionNode α S) (targetName : Nat)
@@ -115,12 +147,12 @@ def expand (node : ExpansionNode α S) (st : ExpandState α S)
     | some existingName =>
       pure (node.name, mergeIncoming st node existingName)
     | none =>
-      let st := { st with nodes := st.nodes.insert node.name node }
+      let st := st.addNode node
       let (succName, st) := freshName st
       let successor : ExpansionNode α S := {
         name := succName
         incoming := Std.HashSet.emptyWithCapacity 4 |>.insert node.name
-        new := FSet.foldl (fun acc f => f :: acc) [] node.next
+        new := nextToNew node.next
         old := FSet.empty
         next := FSet.empty
       }
@@ -173,6 +205,7 @@ def createGraph (φ : NNF α) : Option (ExpandState α S) :=
   let initState : ExpandState α S := {
     nextName := 2  -- next available name after 1
     nodes := Std.HashMap.emptyWithCapacity 16
+    index := Std.HashMap.emptyWithCapacity 16
   }
   match expand initNode initState with
   | some (_, finalState) => some finalState

@@ -5,15 +5,19 @@
   Defines:
   - `FSet`: typeclass of set operations (`empty`, `insert`, `contains`, `foldl`, `all`, `toList`) and their laws
   - `FSet.contains_insert`, `FSet.setEq`/`setEq_correct`: derived helpers, including mutual-containment set equality
+  - `FSet.setEq_perm`, `FSet.foldl_toList_eq_of_setEq`: a right-commutative fold over `toList` is a function of
+    the set, not of `toList`'s implementation-defined order
   - `instFSetHashSet`, `instFSetTreeSet`: instances for `Std.HashSet` and `Std.TreeSet`
 
   ## Sections
+  - Order-independent folds
   - `Std.HashSet` instance
   - `Std.TreeSet` instance
 -/
 
 import Std
 import Std.Data.TreeSet.Lemmas
+import Batteries.Data.List.Perm
 
 namespace LTLLib
 
@@ -37,6 +41,7 @@ class FSet (α : outParam (Type u)) (S : Type v) where
   all_eq_toList_all (s : S) (p : α → Bool) :
     all s p = (toList s).all p
   mem_toList_iff (a : α) (s : S) : a ∈ toList s ↔ contains s a = true
+  toList_nodup (s : S) : (toList s).Nodup
 
 namespace FSet
 
@@ -68,12 +73,42 @@ theorem setEq_correct (s₁ s₂ : S) :
     exact ⟨fun a ha => h1 a ((FSet.mem_toList_iff a s₁).mp ha),
            fun a ha => h2 a ((FSet.mem_toList_iff a s₂).mp ha)⟩
 
+/-! ## Order-independent folds -/
+
+/-- Two set-equal `FSet`s have permuted `toList`s. -/
+theorem setEq_perm {s₁ s₂ : S} (h : setEq s₁ s₂ = true) : (toList s₁).Perm (toList s₂) :=
+  have hmem : ∀ a, a ∈ toList s₁ ↔ a ∈ toList s₂ := fun a => by
+    rw [FSet.mem_toList_iff, FSet.mem_toList_iff]
+    exact ⟨(setEq_correct s₁ s₂).mp h |>.1 a, (setEq_correct s₁ s₂).mp h |>.2 a⟩
+  (List.subperm_of_subset (FSet.toList_nodup s₁) fun _ hx => (hmem _).mp hx).antisymm
+    (List.subperm_of_subset (FSet.toList_nodup s₂) fun _ hx => (hmem _).mpr hx)
+
+private theorem foldl_eq_of_perm {β : Type w} {f : β → α → β}
+    (hf : ∀ (b : β) (x y : α), f (f b x) y = f (f b y) x)
+    {l₁ l₂ : List α} (hp : l₁.Perm l₂) (init : β) :
+    l₁.foldl f init = l₂.foldl f init := by
+  induction hp generalizing init with
+  | nil => rfl
+  | cons x _ ih => exact ih _
+  | swap x y l => simp only [List.foldl_cons, hf]
+  | trans _ _ ih₁ ih₂ => exact (ih₁ init).trans (ih₂ init)
+
+/-- A right-commutative fold over `toList` is determined by the set, so it does not depend on `toList`'s
+implementation-defined order. This is what makes a hash over the elements usable as a set signature.
+Stated over `toList` rather than `FSet.foldl` so that it pins no universe for the class's fold. -/
+theorem foldl_toList_eq_of_setEq {β : Type w} (f : β → α → β)
+    (hf : ∀ (b : β) (x y : α), f (f b x) y = f (f b y) x)
+    (init : β) {s₁ s₂ : S} (h : setEq s₁ s₂ = true) :
+    (toList s₁).foldl f init = (toList s₂).foldl f init :=
+  foldl_eq_of_perm hf (setEq_perm h) init
+
 end FSet
 
 /-! ## `Std.HashSet` instance
 
-Individual operations are O(1) amortized. No canonical `BEq`/`Hashable` instance on the set type itself
-(internal layout depends on insertion order), so signature lookups fall back to a linear scan. -/
+Individual operations are O(1) amortized. There is no canonical `BEq`/`Hashable` instance on the set type
+itself, since the internal layout depends on insertion order, which is why a set signature has to be built
+from a commutative fold over the elements (`foldl_toList_eq_of_setEq`) rather than from the container. -/
 
 instance instFSetHashSet [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] :
     FSet α (Std.HashSet α) where
@@ -92,11 +127,14 @@ instance instFSetHashSet [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable �
   all_eq_toList_all s p := by simp [Std.HashSet.all]
   mem_toList_iff a s := by
     rw [Std.HashSet.mem_toList, Std.HashSet.contains_iff_mem]
+  toList_nodup s := by
+    have := Std.HashSet.distinct_toList (m := s)
+    simpa [List.Nodup, beq_iff_eq] using this
 
 /-! ## `Std.TreeSet` instance
 
-Individual operations are O(log n). Unlike `Std.HashSet`, `Std.TreeSet` has a canonical `BEq` instance (structural
-equality on sorted trees), enabling signature-based map lookup instead of a linear scan. -/
+Individual operations are O(log n). Unlike `Std.HashSet`, `Std.TreeSet` has a canonical `BEq` instance,
+structural equality on sorted trees, so set equality could use it directly instead of mutual containment. -/
 
 instance instFSetTreeSet [Ord α] [Std.TransOrd α] [Std.LawfulEqOrd α] :
     FSet α (Std.TreeSet α) where
@@ -131,5 +169,8 @@ instance instFSetTreeSet [Ord α] [Std.TransOrd α] [Std.LawfulEqOrd α] :
     | cons x xs ih => simp [Std.Internal.List.keys, List.all_cons, ih]
   mem_toList_iff a s := by
     rw [Std.TreeSet.mem_toList, Std.TreeSet.contains_iff_mem]
+  toList_nodup s := by
+    have := Std.TreeSet.distinct_toList (t := s)
+    simpa [List.Nodup, Std.LawfulEqOrd.compare_beq_iff_eq] using this
 
 end LTLLib

@@ -505,7 +505,7 @@ theorem buildAcceptSets_correct
 omit [LawfulBEq α] [LawfulHashable α] in
 /-- numAcceptSets of constructGBA equals untilSubformulas length. -/
 theorem constructGBA_numAcceptSets (φ : NNF α) (st : ExpandState α S) :
-    (constructGBA φ st).numAcceptSets = φ.untilSubformulas.length := by
+    (constructGBA φ st).numAcceptSets = φ.untilSubformulasDedup.length := by
   unfold constructGBA GBA.numAcceptSets buildAcceptSets
   simp
 
@@ -516,9 +516,11 @@ private theorem GBA.isAccepting_eq_contains [BEq α'] [Hashable α']
   unfold GBA.isAccepting
   rw [Array.getElem?_eq_getElem hi]
 
+variable [Hashable (NNF α)]
+
 /-! ### Name consistency from createGraph -/
 
-omit [FSet (NNF α) S] [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] in
+omit [FSet (NNF α) S] [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [Hashable (NNF α)] in
 /-- `mergeIncoming` preserves name consistency. -/
 private theorem nameConsistent_mergeIncoming
     {st : ExpandState α S} {node : ExpansionNode α S} {targetName : Nat}
@@ -545,7 +547,8 @@ theorem createGraph_nameConsistent (φ : NNF α)
     obtain rfl := Option.some.inj hcg
     show NameConsistent finalState
     have h_init : NameConsistent
-        ({ nextName := 2, nodes := Std.HashMap.emptyWithCapacity 16 } : ExpandState α S) := by
+        ({ nextName := 2, nodes := Std.HashMap.emptyWithCapacity 16,
+            index := Std.HashMap.emptyWithCapacity 16 } : ExpandState α S) := by
       intro k n hk; simp at hk
     revert h_init
     apply expand.partial_correctness
@@ -642,7 +645,7 @@ theorem constructGBA_toSpec_refines_expandOASpec
     (hcg : createGraph φ = some st)
     {ξ : OmegaWord α}
     (hacc : (constructGBA φ st).toSpec.accepts ξ) :
-    (expandOASpec φ st.toNodes φ.untilSubformulas).accepts ξ := by
+    (expandOASpec φ st.toNodes φ.untilSubformulasDedup).accepts ξ := by
   obtain ⟨σ, hrun, hcompat, haccRun⟩ := hacc
   have hname := createGraph_nameConsistent φ hcg
   -- Show each σ n corresponds to an actual node in st.nodes
@@ -709,7 +712,7 @@ theorem constructGBA_toSpec_refines_expandOASpec
     obtain ⟨j, hj⟩ := haccRun ⟨i.val, by rw [hnum]; exact i.isLt⟩ n
     refine ⟨j, ?_⟩
     obtain ⟨node, hnode⟩ := h_exists (n + j)
-    have hacc_eq := buildAcceptSets_correct hname φ.untilSubformulas i hnode
+    have hacc_eq := buildAcceptSets_correct hname φ.untilSubformulasDedup i hnode
     -- Convert hj from GBA.isAccepting to raw boolean
     simp only [GBA.toSpec] at hj
     have hi_gba : i.val < (constructGBA φ st).acceptSets.size := by
@@ -741,7 +744,7 @@ theorem expandOASpec_refines_constructGBA_toSpec
     {φ : NNF α} {st : ExpandState α S}
     (hcg : createGraph φ = some st)
     {ξ : OmegaWord α}
-    (hacc : (expandOASpec φ st.toNodes φ.untilSubformulas).accepts ξ) :
+    (hacc : (expandOASpec φ st.toNodes φ.untilSubformulasDedup).accepts ξ) :
     (constructGBA φ st).toSpec.accepts ξ := by
   obtain ⟨σ, hrun, hcompat, haccRun⟩ := hacc
   have hname := createGraph_nameConsistent φ hcg
@@ -791,17 +794,17 @@ theorem expandOASpec_refines_constructGBA_toSpec
   · -- isAcceptingRun
     intro i n
     have hnum := constructGBA_numAcceptSets φ st
-    let i' : Fin φ.untilSubformulas.length := ⟨i.val, hnum ▸ i.isLt⟩
+    let i' : Fin φ.untilSubformulasDedup.length := ⟨i.val, hnum ▸ i.isLt⟩
     obtain ⟨j, hj⟩ := haccRun i' n
     refine ⟨j, ?_⟩
     obtain ⟨node, hnode, _, hold_iff, _⟩ := h_node (n + j)
     simp only [expandOASpec] at hj
     -- First prove the boolean expression
     have hbool : (!FSet.contains node.old
-        (.until (φ.untilSubformulas[i']).1 (φ.untilSubformulas[i']).2) ||
-        FSet.contains node.old (φ.untilSubformulas[i']).2) = true := by
+        (.until (φ.untilSubformulasDedup[i']).1 (φ.untilSubformulasDedup[i']).2) ||
+        FSet.contains node.old (φ.untilSubformulasDedup[i']).2) = true := by
       cases hU : FSet.contains node.old
-          (.until (φ.untilSubformulas[i']).1 (φ.untilSubformulas[i']).2) with
+          (.until (φ.untilSubformulasDedup[i']).1 (φ.untilSubformulasDedup[i']).2) with
       | false => simp
       | true =>
         simp only [Bool.not_true, Bool.false_or]
@@ -815,7 +818,7 @@ theorem expandOASpec_refines_constructGBA_toSpec
       simp only [constructGBA, buildAcceptSets, Array.size_map]; exact i'.isLt
     rw [GBA.isAccepting_eq_contains _ hi_gba]
     simp only [constructGBA]
-    have hacc_eq := buildAcceptSets_correct hname φ.untilSubformulas i' hnode
+    have hacc_eq := buildAcceptSets_correct hname φ.untilSubformulasDedup i' hnode
     dsimp only [] at hacc_eq
     rw [hacc_eq]
     exact hbool
@@ -828,7 +831,7 @@ theorem constructGBA_iff_expandOASpec
     (hcg : createGraph φ = some st)
     (ξ : OmegaWord α) :
     (constructGBA φ st).toSpec.accepts ξ ↔
-      (expandOASpec φ st.toNodes φ.untilSubformulas).accepts ξ :=
+      (expandOASpec φ st.toNodes φ.untilSubformulasDedup).accepts ξ :=
   ⟨constructGBA_toSpec_refines_expandOASpec hcg,
    expandOASpec_refines_constructGBA_toSpec hcg⟩
 
