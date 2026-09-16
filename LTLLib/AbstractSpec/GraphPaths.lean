@@ -11,6 +11,7 @@
   - `chain_closure`: a predicate closed under `succs` and holding at a chain's head holds along the whole chain
   - `PathTo.confine`: an unblocked path re-blocked by any predicate already holding on every successor
   - `PathTo.mono_succs`: a path survives widening the successor relation to any pointwise superset
+  - `PathTo.snoc`: a path extends by one edge out of an unblocked endpoint
   - `PathTo.closed`: an unblocked path stays inside any predicate closed under `succs` and holding at the source
 
   Sections:
@@ -59,6 +60,14 @@ theorem PathTo.mono_succs {State} {succs₁ succs₂ : State → Array State} {b
   induction h with
   | direct ht => exact .direct (hsub _ _ ht)
   | through hmid hunb _ ih => exact .through (hsub _ _ hmid) hunb ih
+
+/-- A path extends by one edge out of its endpoint when that endpoint is unblocked. -/
+theorem PathTo.snoc {State} {succs : State → Array State} {blocked : State → Prop} {s t u : State}
+    (h : PathTo succs blocked s t) (ht : ¬ blocked t) (hu : u ∈ succs t) : PathTo succs blocked s u := by
+  revert ht hu
+  induction h with
+  | direct hmid => intro ht hu; exact .through hmid ht (.direct hu)
+  | through hmid hunb _ ih => intro ht hu; exact .through hmid hunb (ih ht hu)
 
 /-- An unblocked path stays inside any predicate `P` closed under `succs` and holding at the source. -/
 theorem PathTo.closed {State} {succs : State → Array State} {P : State → Prop} {s t : State}

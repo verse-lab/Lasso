@@ -77,6 +77,16 @@ inductive DFSStatus where
   | unknown -- Not yet explored by DFS
 deriving BEq, Repr, Inhabited
 
+/-- A frame on the generic DFS stack. Read bottom-to-top the stack is always a path from an initial
+state to wherever the search is. `dfsGo` reads it off directly as the `.nonEmpty` stem. -/
+structure DFSStep (State : Type u) (Position : Type w) where
+  state : State
+  pos : Position  -- what this frame's own `push` call returned
+  acc : Nat  -- the incoming tree edge's marks as a bitmask, the spec's `s.acc`, which POP is handed
+  -- `succ[idx..]` are the still-unexplored outgoing states, kept as `succs state` itself so a push allocates nothing extra
+  succ : Array State
+  idx : Nat
+
 /-- The four operations (getStatus, PUSH, UPDATE, POP) a concrete SCC-based emptiness check must provide.  -/
 structure DFSOps (State : Type u) [BEq State] [Hashable State] where
   Aux : Type v      -- Refinement's private search state
@@ -86,20 +96,41 @@ structure DFSOps (State : Type u) [BEq State] [Hashable State] where
   getStatus : Aux → State → DFSStatus
   push : Aux → State → Std.HashSet Nat → Aux × Position -- `marks` are the incoming transition's acceptance marks (`f(t)`, `∅` for a root state).
   update : Aux → Std.HashSet Nat → State → Aux × Bool -- Reports whether the back-edge found a counterexample
-  pop : Aux → Position → Aux × Bool -- reports whether backtracking closed an accepting cycle (Only Tarjan can do that)
+  -- POP is handed the graph and the whole frame, not just its `Position`, so a refinement that closes an SCC here
+  -- can test it without mirroring the driver's stack. Reports whether backtracking closed an accepting cycle.
+  pop : (State → Array State) → (State → State → Std.HashSet Nat) → Aux → DFSStep State Position → Aux × Bool
 
   sccHint : Aux → Std.HashSet State -- A known, accepting SCC, but not necessarily maximal (Alg. may return early).
   numExplored : Aux → Nat -- Exists only for reporting to the user
 
-/-- A frame on the generic DFS stack. Read bottom-to-top the stack is always a path from an initial
-state to wherever the search is. `dfsGo` reads it off directly as the `.nonEmpty` stem. -/
-structure DFSStep (State : Type u) (Position : Type w) where
-  state : State
-  pos : Position  -- what this frame's own `push` call returned
-  acc : Std.HashSet Nat  -- unused by Dijkstra/Gabow (own `dfsInfo`/`dfs[r].acc` mirror instead), Tarjan's POP needs it
-  -- `succ[idx..]` are the still-unexplored outgoing states, kept as `succs state` itself so a push allocates nothing extra
-  succ : Array State
-  idx : Nat
+/-- The bitmask representation refinements use for mark-sets, cheap since `numMarks` is always small. -/
+def marksToBitmask (marks : Std.HashSet Nat) : Nat :=
+  marks.toList.foldl (init := 0) fun mask m => mask ||| (1 <<< m)
+
+private theorem testBit_foldl_or (l : List Nat) (init : Nat) (m : Nat) :
+    (l.foldl (fun mask x => mask ||| (1 <<< x)) init).testBit m = true ↔
+      init.testBit m = true ∨ m ∈ l := by
+  induction l generalizing init with
+  | nil => simp
+  | cons a l ih =>
+    rw [List.foldl_cons, ih]
+    simp only [Nat.testBit_or, Bool.or_eq_true, Nat.shiftLeft_eq, one_mul,
+      Nat.testBit_two_pow, decide_eq_true_eq, List.mem_cons, or_assoc]
+    constructor
+    · rintro (h | h | h)
+      · exact Or.inl h
+      · exact Or.inr (Or.inl h.symm)
+      · exact Or.inr (Or.inr h)
+    · rintro (h | h | h)
+      · exact Or.inl h
+      · exact Or.inr (Or.inl h.symm)
+      · exact Or.inr (Or.inr h)
+
+/-- A mark's bit is set in the bitmask exactly when the mark is in the set. -/
+theorem testBit_marksToBitmask (marks : Std.HashSet Nat) (m : Nat) :
+    (marksToBitmask marks).testBit m = true ↔ m ∈ marks := by
+  rw [marksToBitmask, testBit_foldl_or]
+  simp [Std.HashSet.mem_toList]
 
 /-- A state list running backwards: each entry is a successor of the next, and the last is initial. -/
 def RevPathFrom {State : Type u} (initialStates : List State) (succs : State → Array State)
@@ -156,16 +187,16 @@ structure LawfulDFSOps {State : Type u} [BEq State] [Hashable State] (ops : DFSO
   wf_push : ∀ aux q marks, ops.getStatus aux q = .unknown → WellFormed aux →
     WellFormed (ops.push aux q marks).1
   wf_update : ∀ aux marks d, WellFormed aux → WellFormed (ops.update aux marks d).1
-  wf_pop : ∀ aux pos, WellFormed aux → WellFormed (ops.pop aux pos).1
+  wf_pop : ∀ succs edgeMarks aux step, WellFormed aux → WellFormed (ops.pop succs edgeMarks aux step).1
   -- `PUSH` marks its target live and touches nothing else
   push_status : ∀ aux q marks q', ops.getStatus (ops.push aux q marks).1 q' =
     if q' == q then .live else ops.getStatus aux q'
   -- `UPDATE` is pure bookkeeping
   update_status : ∀ aux marks d q, ops.getStatus (ops.update aux marks d).1 q = ops.getStatus aux q
   -- `POP` only ever promotes live states to dead
-  pop_status : ∀ aux pos q, WellFormed aux →
-    ops.getStatus (ops.pop aux pos).1 q = ops.getStatus aux q ∨
-    (ops.getStatus aux q = .live ∧ ops.getStatus (ops.pop aux pos).1 q = .dead)
+  pop_status : ∀ succs edgeMarks aux step q, WellFormed aux →
+    ops.getStatus (ops.pop succs edgeMarks aux step).1 q = ops.getStatus aux q ∨
+    (ops.getStatus aux q = .live ∧ ops.getStatus (ops.pop succs edgeMarks aux step).1 q = .dead)
 
 /-! ## Generic DFS driver -/
 
@@ -193,15 +224,15 @@ def dfsGo (ops : DFSOps State) (succs : State → Array State)
         let marks := edgeMarks step.state d
         let (aux', pos') := ops.push aux d marks
         let newStep : DFSStep State ops.Position :=
-          { state := d, pos := pos', acc := marks, succ := succs d, idx := 0 }
+          { state := d, pos := pos', acc := marksToBitmask marks, succ := succs d, idx := 0 }
         dfsGo ops succs edgeMarks aux' (newStep :: dfs')
     else
-      let (aux', found) := ops.pop aux step.pos
-      -- `rest = []` means `step` was this root's outermost frame, which has no parent to merge into and so is
-      -- always its own SCC's root, never taking POP's found-reporting branch.
-      match found, rest with
-      | true, newTop :: _ => some (some (newTop.state, (rest.map (·.state)).reverse), aux')
-      | _, _ => dfsGo ops succs edgeMarks aux' rest
+      let (aux', found) := ops.pop succs edgeMarks aux step
+      -- The anchor is the frame POP just closed, which lies in the SCC either way: merged into its parent's,
+      -- or the root of its own. Naming the parent instead would lose the report at an outermost frame.
+      match found with
+      | true => some (some (step.state, ((step :: rest).map (·.state)).reverse), aux')
+      | false => dfsGo ops succs edgeMarks aux' rest
 partial_fixpoint -- The outer `Option` is never actually `none` (`dfsGo_ne_none`), proving Termination.
 
 /-- Run the generic DFS from a single fresh root, per Algorithm 1's lines 5-6. -/
@@ -210,8 +241,7 @@ def dfsFromRoot (ops : DFSOps State) (succs : State → Array State)
     Option (State × List State) × ops.Aux :=
   let (aux', pos') := ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)
   let step : DFSStep State ops.Position :=
-    { state := q0, pos := pos', acc := Std.HashSet.emptyWithCapacity 0,
-      succ := succs q0, idx := 0 }
+    { state := q0, pos := pos', acc := 0, succ := succs q0, idx := 0 }
   -- The `getD` fallback is unreachable (`dfsGo_ne_none`), it keeps this total.
   (dfsGo ops succs edgeMarks aux' [step]).getD (none, aux')
 
@@ -264,19 +294,16 @@ private theorem stackSucc_cons {succs : State → Array State} {ops : DFSOps Sta
 /-- Whatever newly becomes non-`unknown` during a `dfsGo` run is reachable (given stack and succs are faithful). -/
 theorem dfsGo_touched_reachable [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
-    (hpush : ∀ aux q marks q', ops.getStatus (ops.push aux q marks).1 q' =
-      if q' == q then .live else ops.getStatus aux q')
-    (hupdate : ∀ aux marks d q, ops.getStatus (ops.update aux marks d).1 q = ops.getStatus aux q)
-    (hpop : ∀ aux pos q, ops.getStatus (ops.pop aux pos).1 q = ops.getStatus aux q ∨
-      (ops.getStatus aux q = .live ∧ ops.getStatus (ops.pop aux pos).1 q = .dead)) :
+    (L : LawfulDFSOps ops) :
     ∀ aux (stack : List (DFSStep State ops.Position)) (r : Option (State × List State) × ops.Aux),
-    dfsGo ops succs edgeMarks aux stack = some r →
+    dfsGo ops succs edgeMarks aux stack = some r → L.WellFormed aux →
     (∀ st ∈ stack, Reachable initialStates succs st.state) →
     (∀ st ∈ stack, ∀ x ∈ st.succ, x ∈ succs st.state) →
     ∀ s, ops.getStatus r.2 s ≠ .unknown →
       ops.getStatus aux s ≠ .unknown ∨ Reachable initialStates succs s := by
   refine dfsGo.partial_correctness ops succs edgeMarks
     (fun aux stack r =>
+      L.WellFormed aux →
       (∀ st ∈ stack, Reachable initialStates succs st.state) →
       (∀ st ∈ stack, ∀ x ∈ st.succ, x ∈ succs st.state) →
       ∀ s, ops.getStatus r.2 s ≠ .unknown →
@@ -284,12 +311,12 @@ theorem dfsGo_touched_reachable [LawfulBEq State] (ops : DFSOps State) (succs : 
   intro dfsGo ih aux stack r hr
   cases stack with
   | nil =>
-    intro _ _ s hstatus
+    intro _ _ _ s hstatus
     simp only [Option.some.injEq] at hr
     rw [← hr] at hstatus
     exact Or.inl hstatus
   | cons step rest =>
-  intro hreach hsuccInv s hstatus
+  intro hwf hreach hsuccInv s hstatus
   have hstepReach : Reachable initialStates succs step.state := hreach step (by simp)
   have hrestReach : ∀ st ∈ rest, Reachable initialStates succs st.state :=
     fun st hst => hreach st (List.mem_cons_of_mem _ hst)
@@ -299,35 +326,25 @@ theorem dfsGo_touched_reachable [LawfulBEq State] (ops : DFSOps State) (succs : 
   by_cases h : step.idx < step.succ.size
   case neg =>
     simp only [h, dite_false] at hr
-    rcases hpopeq : ops.pop aux step.pos with ⟨aux', found⟩
+    rcases hpopeq : ops.pop succs edgeMarks aux step with ⟨aux', found⟩
     simp only [hpopeq] at hr
     cases found with
     | true =>
-      cases rest with
-      | nil =>
-        simp only at hr
-        rcases ih aux' [] r hr (by simp) (by simp) s hstatus with h1 | h1
-        · rcases hpop aux step.pos s with h2 | ⟨h2, h3⟩
-          · rw [hpopeq] at h2
-            simp only at h2
-            rw [h2] at h1
-            exact Or.inl h1
-          · exact Or.inl (by rw [h2]; simp)
-        · exact Or.inr h1
-      | cons newTop tail =>
-        simp only [Option.some.injEq] at hr
-        have hr2 : r.2 = aux' := by rw [← hr]
-        have hstatus' : ops.getStatus aux' s ≠ .unknown := hr2 ▸ hstatus
-        rcases hpop aux step.pos s with h1 | ⟨h1, h2⟩
-        · rw [hpopeq] at h1
-          simp only at h1
-          rw [h1] at hstatus'
-          exact Or.inl hstatus'
-        · exact Or.inl (by rw [h1]; simp)
+      simp only [Option.some.injEq] at hr
+      have hr2 : r.2 = aux' := by rw [← hr]
+      have hstatus' : ops.getStatus aux' s ≠ .unknown := hr2 ▸ hstatus
+      rcases L.pop_status succs edgeMarks aux step s hwf with h1 | ⟨h1, h2⟩
+      · rw [hpopeq] at h1
+        simp only at h1
+        rw [h1] at hstatus'
+        exact Or.inl hstatus'
+      · exact Or.inl (by rw [h1]; simp)
     | false =>
       simp only at hr
-      rcases ih aux' rest r hr hrestReach hrestSucc s hstatus with h1 | h1
-      · rcases hpop aux step.pos s with h2 | ⟨h2, h3⟩
+      have hpop1 : (ops.pop succs edgeMarks aux step).1 = aux' := congrArg Prod.fst hpopeq
+      have hwfpop : L.WellFormed aux' := hpop1 ▸ L.wf_pop succs edgeMarks aux step hwf
+      rcases ih aux' rest r hr hwfpop hrestReach hrestSucc s hstatus with h1 | h1
+      · rcases L.pop_status succs edgeMarks aux step s hwf with h2 | ⟨h2, h3⟩
         · rw [hpopeq] at h2
           simp only at h2
           rw [h2] at h1
@@ -348,13 +365,15 @@ theorem dfsGo_touched_reachable [LawfulBEq State] (ops : DFSOps State) (succs : 
   cases hgs : ops.getStatus aux d with
   | dead =>
     simp only [hgs] at hr
-    exact ih aux _ r hr hdfs'Reach hdfs'Succ s hstatus
+    exact ih aux _ r hr hwf hdfs'Reach hdfs'Succ s hstatus
   | live =>
     simp only [hgs] at hr
     rcases hupdeq : ops.update aux (edgeMarks step.state d) d with ⟨aux', found⟩
     simp only [hupdeq] at hr
     have haux'1 : (ops.update aux (edgeMarks step.state d) d).1 = aux' := congrArg Prod.fst hupdeq
-    have hueq : ops.getStatus aux' s = ops.getStatus aux s := haux'1 ▸ hupdate aux (edgeMarks step.state d) d s
+    have hueq : ops.getStatus aux' s = ops.getStatus aux s :=
+      haux'1 ▸ L.update_status aux (edgeMarks step.state d) d s
+    have hwfupd : L.WellFormed aux' := haux'1 ▸ L.wf_update aux (edgeMarks step.state d) d hwf
     by_cases hf : found = true
     · simp only [hf, if_true, Option.some.injEq] at hr
       rw [← hr] at hstatus
@@ -362,7 +381,7 @@ theorem dfsGo_touched_reachable [LawfulBEq State] (ops : DFSOps State) (succs : 
       rw [hueq] at hstatus
       exact Or.inl hstatus
     · simp only [hf] at hr
-      rcases ih aux' _ r hr hdfs'Reach hdfs'Succ s hstatus with h1 | h1
+      rcases ih aux' _ r hr hwfupd hdfs'Reach hdfs'Succ s hstatus with h1 | h1
       · rw [hueq] at h1
         exact Or.inl h1
       · exact Or.inr h1
@@ -371,7 +390,7 @@ theorem dfsGo_touched_reachable [LawfulBEq State] (ops : DFSOps State) (succs : 
     rcases hpsheq : ops.push aux d (edgeMarks step.state d) with ⟨aux', pos'⟩
     simp only [hpsheq] at hr
     set hnewStep : DFSStep State ops.Position :=
-      { state := d, pos := pos', acc := edgeMarks step.state d, succ := succs d, idx := 0 } with hnewStep_def
+      { state := d, pos := pos', acc := marksToBitmask (edgeMarks step.state d), succ := succs d, idx := 0 } with hnewStep_def
     have hnewReach := stackReach_cons (succs := succs) (initialStates := initialStates)
       (hd := hnewStep) (tl := ({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest)
       hdReach hdfs'Reach
@@ -380,8 +399,9 @@ theorem dfsGo_touched_reachable [LawfulBEq State] (ops : DFSOps State) (succs : 
       (fun x hx => hx) hdfs'Succ
     have haux'2 : (ops.push aux d (edgeMarks step.state d)).1 = aux' := congrArg Prod.fst hpsheq
     have hpeq : ops.getStatus aux' s = if s == d then .live else ops.getStatus aux s :=
-      haux'2 ▸ hpush aux d (edgeMarks step.state d) s
-    rcases ih aux' _ r hr hnewReach hnewSucc s hstatus with h1 | h1
+      haux'2 ▸ L.push_status aux d (edgeMarks step.state d) s
+    have hwfpsh : L.WellFormed aux' := haux'2 ▸ L.wf_push aux d (edgeMarks step.state d) hgs hwf
+    rcases ih aux' _ r hr hwfpsh hnewReach hnewSucc s hstatus with h1 | h1
     · rw [hpeq] at h1
       by_cases hsd : s == d
       · right
@@ -413,27 +433,21 @@ theorem dfsGo_status_monotone (ops : DFSOps State) (succs : State → Array Stat
   by_cases h : step.idx < step.succ.size
   case neg =>
     simp only [h, dite_false] at hr
-    rcases hpopeq : ops.pop aux step.pos with ⟨aux', found⟩
+    rcases hpopeq : ops.pop succs edgeMarks aux step with ⟨aux', found⟩
     simp only [hpopeq] at hr
     have L.pop_status' : ∀ s, ops.getStatus aux s ≠ .unknown → ops.getStatus aux' s ≠ .unknown := by
       intro s hs
-      rcases L.pop_status aux step.pos s hwf with h1 | ⟨h1, h2⟩
+      rcases L.pop_status succs edgeMarks aux step s hwf with h1 | ⟨h1, h2⟩
       · rw [hpopeq] at h1; simp only at h1; rw [h1]; exact hs
       · rw [hpopeq] at h2; simp only at h2; rw [h2]; simp
-    have haux'0 : (ops.pop aux step.pos).1 = aux' := congrArg Prod.fst hpopeq
-    have hwf' : L.WellFormed aux' := haux'0 ▸ L.wf_pop aux step.pos hwf
+    have haux'0 : (ops.pop succs edgeMarks aux step).1 = aux' := congrArg Prod.fst hpopeq
+    have hwf' : L.WellFormed aux' := haux'0 ▸ L.wf_pop succs edgeMarks aux step hwf
     cases found with
     | true =>
-      cases rest with
-      | nil =>
-        simp only at hr
-        intro s hs
-        exact ih aux' [] r hr hwf' s (L.pop_status' s hs)
-      | cons newTop tail =>
-        simp only [Option.some.injEq] at hr
-        intro s hs
-        have hr2 : r.2 = aux' := by rw [← hr]
-        rw [hr2]; exact L.pop_status' s hs
+      simp only [Option.some.injEq] at hr
+      intro s hs
+      have hr2 : r.2 = aux' := by rw [← hr]
+      rw [hr2]; exact L.pop_status' s hs
     | false =>
       simp only at hr
       intro s hs
@@ -482,12 +496,8 @@ theorem dfsGo_status_monotone (ops : DFSOps State) (succs : State → Array Stat
 /-- `dfsGo_touched_reachable` specialized to `dfsFromRoot`'s own call shape. -/
 theorem dfsFromRoot_touched_reachable [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
-    (hpush : ∀ aux q marks q', ops.getStatus (ops.push aux q marks).1 q' =
-      if q' == q then .live else ops.getStatus aux q')
-    (hupdate : ∀ aux marks d q, ops.getStatus (ops.update aux marks d).1 q = ops.getStatus aux q)
-    (hpop : ∀ aux pos q, ops.getStatus (ops.pop aux pos).1 q = ops.getStatus aux q ∨
-      (ops.getStatus aux q = .live ∧ ops.getStatus (ops.pop aux pos).1 q = .dead))
-    (aux : ops.Aux) (q0 : State) (hq0 : Reachable initialStates succs q0) (s : State)
+    (L : LawfulDFSOps ops) (aux : ops.Aux) (q0 : State) (hwf : L.WellFormed aux)
+    (hq0status : ops.getStatus aux q0 = .unknown) (hq0 : Reachable initialStates succs q0) (s : State)
     (hstatus : ops.getStatus (dfsFromRoot ops succs edgeMarks aux q0).2 s ≠ .unknown) :
     ops.getStatus aux s ≠ .unknown ∨ Reachable initialStates succs s := by
   unfold dfsFromRoot at hstatus
@@ -498,10 +508,10 @@ theorem dfsFromRoot_touched_reachable [LawfulBEq State] (ops : DFSOps State) (su
   set aux' := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1 with haux'
   set step : DFSStep State ops.Position :=
     { state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-      acc := Std.HashSet.emptyWithCapacity 0, succ := succs q0, idx := 0 } with hstep
+      acc := 0, succ := succs q0, idx := 0 } with hstep
   have hpeq : ops.getStatus aux' s = if s == q0 then .live else ops.getStatus aux s := by
     rw [haux']
-    exact hpush aux q0 (Std.HashSet.emptyWithCapacity 0) s
+    exact L.push_status aux q0 (Std.HashSet.emptyWithCapacity 0) s
   have hresolve : ops.getStatus aux' s ≠ .unknown → ops.getStatus aux s ≠ .unknown ∨ Reachable initialStates succs s := by
     intro h1
     rw [hpeq] at h1
@@ -529,8 +539,9 @@ theorem dfsFromRoot_touched_reachable [LawfulBEq State] (ops : DFSOps State) (su
       simp only [List.mem_singleton] at hst
       rw [hst, hstep]
       exact fun x hx => hx
-    rcases dfsGo_touched_reachable ops succs edgeMarks initialStates hpush hupdate hpop
-      aux' [step] r hdg hstackReach hstackSucc s hstatus with h1 | h1
+    have hwf' : L.WellFormed aux' := haux' ▸ L.wf_push aux q0 _ hq0status hwf
+    rcases dfsGo_touched_reachable ops succs edgeMarks initialStates L
+      aux' [step] r hdg hwf' hstackReach hstackSucc s hstatus with h1 | h1
     · exact hresolve h1
     · exact Or.inr h1
 
@@ -605,26 +616,96 @@ theorem dfsGo_stem_path [LawfulBEq State] (ops : DFSOps State) (succs : State �
       · exact hchainBump.cons (by simp) (by simpa using hdSucc)
   case neg =>
     simp only [h, dite_false] at hr
-    rcases hpopeq : ops.pop aux step.pos with ⟨aux', found⟩
+    rcases hpopeq : ops.pop succs edgeMarks aux step with ⟨aux', found⟩
     simp only [hpopeq] at hr
     have hchainTail : DFSStackChain initialStates succs rest := hchain.tail
     have hsucceqTail : ∀ st ∈ rest, st.succ = succs st.state :=
       fun st hst => hsucceq st (List.mem_cons_of_mem _ hst)
     cases hf : found with
     | false => simp only [hf] at hr; exact ih aux' rest r hr hsucceqTail hchainTail
+    -- POP reported it: the frame it closed anchors the stem, exactly as the back-edge case does
     | true =>
-      cases hrest : rest with
-      | nil => simp only [hf, hrest] at hr; exact ih aux' [] r hr (by simp) (by simp [DFSStackChain, RevPathFrom])
-      -- POP reported it: the popped frame is gone, so the new top of the stack anchors the stem
-      | cons newTop rest' =>
-        simp only [hf, hrest, Option.some.injEq] at hr
-        intro anchor stem heq
-        rw [← hr] at heq
-        simp only [Option.some.injEq, Prod.mk.injEq] at heq
-        obtain ⟨hs, hhead, hpath, hlast⟩ :=
-          (show DFSStackChain initialStates succs (newTop :: rest') from hrest ▸ hchainTail).stem (by simp)
-        rw [← heq.2]
-        exact ⟨hs, hhead, hpath, by rw [hlast, ← heq.1]; simp⟩
+      simp only [hf, Option.some.injEq] at hr
+      intro anchor stem heq
+      rw [← hr] at heq
+      simp only [Option.some.injEq, Prod.mk.injEq] at heq
+      obtain ⟨hs, hhead, hpath, hlast⟩ := hchain.stem (by simp)
+      rw [← heq.2]
+      exact ⟨hs, hhead, hpath, by rw [hlast, ← heq.1]; simp⟩
+
+/-- The stem a run from an initial root reports is a path from an initial state to the reported anchor. -/
+theorem dfsFromRoot_stem_path [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) (aux : ops.Aux) (q0 : State)
+    (hq0 : q0 ∈ initialStates) :
+    ∀ anchor stem, (dfsFromRoot ops succs edgeMarks aux q0).1 = some (anchor, stem) →
+      ∃ hs : stem ≠ [], stem.head hs ∈ initialStates ∧
+        (∀ i, (hi : i + 1 < stem.length) → stem[i + 1] ∈ succs (stem[i])) ∧
+        stem.getLast hs = anchor := by
+  intro anchor stem h
+  have heq : dfsFromRoot ops succs edgeMarks aux q0 =
+      (dfsGo ops succs edgeMarks (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
+        [{ state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
+           acc := 0, succ := succs q0, idx := 0 }]).getD
+        (none, (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1) := rfl
+  rw [heq] at h
+  cases hdg : dfsGo ops succs edgeMarks (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
+      [{ state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
+         acc := 0, succ := succs q0, idx := 0 }] with
+  | none => rw [hdg] at h; simp at h
+  | some r =>
+    rw [hdg] at h
+    exact dfsGo_stem_path ops succs edgeMarks initialStates _ _ r hdg
+      (by intro st hst; simp only [List.mem_singleton] at hst; rw [hst])
+      ⟨by intro i hi; simp at hi, by intro _; simpa using hq0⟩ anchor stem h
+
+theorem genericDFSGo_stem_path [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) :
+    ∀ (roots : List State), (∀ q ∈ roots, q ∈ initialStates) →
+      ∀ aux r, genericDFSGo ops succs edgeMarks roots aux = some r →
+      ∀ anchor stem, r.1 = some (anchor, stem) →
+        ∃ hs : stem ≠ [], stem.head hs ∈ initialStates ∧
+          (∀ i, (hi : i + 1 < stem.length) → stem[i + 1] ∈ succs (stem[i])) ∧
+          stem.getLast hs = anchor := by
+  intro roots
+  induction roots with
+  | nil =>
+    intro _ aux r hgo anchor stem h
+    rw [genericDFSGo.eq_def] at hgo
+    simp only [Option.some.injEq] at hgo
+    rw [← hgo] at h
+    simp at h
+  | cons q rest ih =>
+    intro hroots aux r hgo anchor stem h
+    have hrest : ∀ q' ∈ rest, q' ∈ initialStates := fun q' hq' => hroots q' (by simp [hq'])
+    rw [genericDFSGo.eq_def] at hgo
+    cases hst : ops.getStatus aux q with
+    | unknown =>
+      simp only [hst] at hgo
+      cases hf : (dfsFromRoot ops succs edgeMarks aux q).1 with
+      | some x =>
+        simp only [hf, Option.some.injEq] at hgo
+        rw [← hgo] at h
+        exact dfsFromRoot_stem_path ops succs edgeMarks initialStates aux q (hroots q (by simp))
+          anchor stem (hf.trans h)
+      | none => simp only [hf] at hgo; exact ih hrest _ r hgo anchor stem h
+    | dead => simp only [hst] at hgo; exact ih hrest aux r hgo anchor stem h
+    | live => simp only [hst] at hgo; exact ih hrest aux r hgo anchor stem h
+
+/-- The stem a whole run reports is a path from an initial state to the reported anchor. -/
+theorem genericDFS_stem_path [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) (aux : ops.Aux) :
+    ∀ anchor stem, (genericDFS ops succs edgeMarks initialStates aux).1 = some (anchor, stem) →
+      ∃ hs : stem ≠ [], stem.head hs ∈ initialStates ∧
+        (∀ i, (hi : i + 1 < stem.length) → stem[i + 1] ∈ succs (stem[i])) ∧
+        stem.getLast hs = anchor := by
+  intro anchor stem h
+  unfold genericDFS at h
+  cases hgo : genericDFSGo ops succs edgeMarks initialStates aux with
+  | none => rw [hgo] at h; simp at h
+  | some r =>
+    rw [hgo] at h
+    exact genericDFSGo_stem_path ops succs edgeMarks initialStates initialStates (fun _ hq => hq) aux r hgo
+      anchor stem h
 
 /-- One-hop closure: once a `dfsGo` run completes with no cycle found, any state already non-`unknown` and no longer
 on the stack has every one of its `succs` non-`unknown` too. -/
@@ -754,7 +835,7 @@ theorem dfsGo_closed [LawfulBEq State] (ops : DFSOps State) (succs : State → A
         fun s => haux'2 ▸ L.push_status aux d (edgeMarks step.state d) s
       have hwf' : L.WellFormed aux' := haux'2 ▸ L.wf_push aux d (edgeMarks step.state d) hgs hwf
       set newStep : DFSStep State ops.Position :=
-        { state := d, pos := pos', acc := edgeMarks step.state d, succ := succs d, idx := 0 } with hnewStep_def
+        { state := d, pos := pos', acc := marksToBitmask (edgeMarks step.state d), succ := succs d, idx := 0 } with hnewStep_def
       have hSuccEq' : ∀ st ∈ newStep :: ({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest,
           st.succ = succs st.state := by
         intro st hst
@@ -813,20 +894,20 @@ theorem dfsGo_closed [LawfulBEq State] (ops : DFSOps State) (succs : State → A
       exact ih aux' _ r hr hnone hwf' hSuccEq' hPrefix' hClosed'
   case neg =>
     simp only [h, dite_false] at hr
-    rcases hpopeq : ops.pop aux step.pos with ⟨aux', found⟩
+    rcases hpopeq : ops.pop succs edgeMarks aux step with ⟨aux', found⟩
     simp only [hpopeq] at hr
     have L.pop_status' : ∀ q, ops.getStatus aux q ≠ .unknown → ops.getStatus aux' q ≠ .unknown := by
       intro q hq
-      rcases L.pop_status aux step.pos q hwf with h1 | ⟨h1, h2⟩
+      rcases L.pop_status succs edgeMarks aux step q hwf with h1 | ⟨h1, h2⟩
       · rw [hpopeq] at h1; simp only at h1; rw [h1]; exact hq
       · rw [hpopeq] at h2; simp only at h2; rw [h2]; simp
     have L.pop_status'' : ∀ q, ops.getStatus aux' q ≠ .unknown → ops.getStatus aux q ≠ .unknown := by
       intro q hq
-      rcases L.pop_status aux step.pos q hwf with h1 | ⟨h1, h2⟩
+      rcases L.pop_status succs edgeMarks aux step q hwf with h1 | ⟨h1, h2⟩
       · rw [hpopeq] at h1; simp only at h1; rw [← h1]; exact hq
       · rw [hpopeq] at h2; simp only at h2; rw [h1]; simp
-    have haux'0 : (ops.pop aux step.pos).1 = aux' := congrArg Prod.fst hpopeq
-    have hwf' : L.WellFormed aux' := haux'0 ▸ L.wf_pop aux step.pos hwf
+    have haux'0 : (ops.pop succs edgeMarks aux step).1 = aux' := congrArg Prod.fst hpopeq
+    have hwf' : L.WellFormed aux' := haux'0 ▸ L.wf_pop succs edgeMarks aux step hwf
     have hcrux : ∀ x ∈ succs step.state, ops.getStatus aux' x ≠ .unknown := by
       have hidxge : step.succ.size ≤ step.idx := Nat.le_of_not_lt h
       have hfull : step.succ.toList.take step.idx = step.succ.toList := by
@@ -840,26 +921,10 @@ theorem dfsGo_closed [LawfulBEq State] (ops : DFSOps State) (succs : State → A
       simpa using hx
     cases found with
     | true =>
-      cases rest with
-      | nil =>
-        simp only at hr
-        have hClosed' : ∀ t, ops.getStatus aux' t ≠ .unknown →
-            (∀ st ∈ ([] : List (DFSStep State ops.Position)), st.state ≠ t) →
-            ∀ x ∈ succs t, ops.getStatus aux' x ≠ .unknown := by
-          intro t ht _ x hx
-          by_cases hts : t = step.state
-          · rw [hts] at hx; exact hcrux x hx
-          · refine L.pop_status' x (hClosed t (L.pop_status'' t ht) ?_ x hx)
-            intro st hst
-            simp only [List.mem_singleton] at hst
-            rw [hst]
-            exact fun heq => hts heq.symm
-        exact ih aux' [] r hr hnone hwf' (by simp) (by simp) hClosed'
-      | cons newTop tail =>
-        exfalso
-        simp only [Option.some.injEq] at hr
-        rw [← hr] at hnone
-        simp at hnone
+      exfalso
+      simp only [Option.some.injEq] at hr
+      rw [← hr] at hnone
+      simp at hnone
     | false =>
       simp only at hr
       have hPrefix' : ∀ st ∈ rest, ∀ x ∈ (st.succ.toList.take st.idx), ops.getStatus aux' x ≠ .unknown := by
@@ -888,7 +953,7 @@ theorem dfsFromRoot_closed [LawfulBEq State] (ops : DFSOps State) (succs : State
     -- Taken as a hypothesis so this stays generic over `ops`, refinements discharge it via `dfsGo_ne_none`.
     (hReal : dfsGo ops succs edgeMarks (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
       [({ state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-          acc := Std.HashSet.emptyWithCapacity 0, succ := succs q0, idx := 0 } :
+          acc := 0, succ := succs q0, idx := 0 } :
         DFSStep State ops.Position)] ≠ none)
     (hnone : (dfsFromRoot ops succs edgeMarks aux q0).1 = none) :
     ∀ t, ops.getStatus (dfsFromRoot ops succs edgeMarks aux q0).2 t ≠ .unknown →
@@ -901,7 +966,7 @@ theorem dfsFromRoot_closed [LawfulBEq State] (ops : DFSOps State) (succs : State
   set aux' := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1 with haux'
   set step : DFSStep State ops.Position :=
     { state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-      acc := Std.HashSet.emptyWithCapacity 0, succ := succs q0, idx := 0 } with hstep
+      acc := 0, succ := succs q0, idx := 0 } with hstep
   have hwf' : L.WellFormed aux' := by
     rw [haux']; exact L.wf_push aux q0 (Std.HashSet.emptyWithCapacity 0) hq0 hwf
   have hpeq : ∀ s, ops.getStatus aux' s = if s == q0 then .live else ops.getStatus aux s := by
@@ -927,7 +992,6 @@ theorem dfsFromRoot_closed [LawfulBEq State] (ops : DFSOps State) (succs : State
     exact dfsGo_closed ops succs edgeMarks L
       aux' [step] r hdg hnone hwf' hsucceq hprefix hClosed0'
 
-/-- `L.WellFormed` is preserved by a full `dfsGo` run. -/
 theorem dfsGo_wellFormed (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (L : LawfulDFSOps ops) :
     ∀ aux (stack : List (DFSStep State ops.Position)) (r : Option (State × List State) × ops.Aux),
@@ -965,15 +1029,12 @@ theorem dfsGo_wellFormed (ops : DFSOps State) (succs : State → Array State)
       exact ih aux' _ r hr hwf'
   case neg =>
     simp only [h, dite_false] at hr
-    rcases hpopeq : ops.pop aux step.pos with ⟨aux', found⟩
+    rcases hpopeq : ops.pop succs edgeMarks aux step with ⟨aux', found⟩
     simp only [hpopeq] at hr
-    have haux'0 : (ops.pop aux step.pos).1 = aux' := congrArg Prod.fst hpopeq
-    have hwf' : L.WellFormed aux' := haux'0 ▸ L.wf_pop aux step.pos hwf
+    have haux'0 : (ops.pop succs edgeMarks aux step).1 = aux' := congrArg Prod.fst hpopeq
+    have hwf' : L.WellFormed aux' := haux'0 ▸ L.wf_pop succs edgeMarks aux step hwf
     cases found with
-    | true =>
-      cases rest with
-      | nil => simp only at hr; exact ih aux' [] r hr hwf'
-      | cons newTop tail => simp only [Option.some.injEq] at hr; rw [← hr]; exact hwf'
+    | true => simp only [Option.some.injEq] at hr; rw [← hr]; exact hwf'
     | false => simp only at hr; exact ih aux' rest r hr hwf'
 
 theorem dfsFromRoot_wellFormed [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
@@ -981,7 +1042,7 @@ theorem dfsFromRoot_wellFormed [LawfulBEq State] (ops : DFSOps State) (succs : S
     (aux : ops.Aux) (q0 : State) (hwf : L.WellFormed aux) (hq0 : ops.getStatus aux q0 = .unknown)
     (hReal : dfsGo ops succs edgeMarks (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
       [({ state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-          acc := Std.HashSet.emptyWithCapacity 0, succ := succs q0, idx := 0 } :
+          acc := 0, succ := succs q0, idx := 0 } :
         DFSStep State ops.Position)] ≠ none) :
     L.WellFormed (dfsFromRoot ops succs edgeMarks aux q0).2 := by
   unfold dfsFromRoot
@@ -992,7 +1053,7 @@ theorem dfsFromRoot_wellFormed [LawfulBEq State] (ops : DFSOps State) (succs : S
   set aux' := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1 with haux'
   set step : DFSStep State ops.Position :=
     { state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-      acc := Std.HashSet.emptyWithCapacity 0, succ := succs q0, idx := 0 } with hstep
+      acc := 0, succ := succs q0, idx := 0 } with hstep
   have hwf' : L.WellFormed aux' := by
     rw [haux']; exact L.wf_push aux q0 (Std.HashSet.emptyWithCapacity 0) hq0 hwf
   cases hdg : dfsGo ops succs edgeMarks aux' [step] with
@@ -1002,12 +1063,141 @@ theorem dfsFromRoot_wellFormed [LawfulBEq State] (ops : DFSOps State) (succs : S
     exact dfsGo_wellFormed ops succs edgeMarks L
       aux' [step] r hdg hwf'
 
+/-- Well-formedness survives one root's search whether or not that search is known to terminate: the `getD`
+fallback hands back the pushed state, which is well formed already. -/
+theorem dfsFromRoot_wellFormed_total [LawfulBEq State] (ops : DFSOps State)
+    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (L : LawfulDFSOps ops) (aux : ops.Aux) (q0 : State) (hwf : L.WellFormed aux)
+    (hq0 : ops.getStatus aux q0 = .unknown) :
+    L.WellFormed (dfsFromRoot ops succs edgeMarks aux q0).2 := by
+  have hwf' : L.WellFormed (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1 :=
+    L.wf_push aux q0 _ hq0 hwf
+  show L.WellFormed
+    ((dfsGo ops succs edgeMarks (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
+      [({ state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
+          acc := 0, succ := succs q0, idx := 0 } : DFSStep State ops.Position)]).getD
+      (none, (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1)).2
+  cases hdg : dfsGo ops succs edgeMarks (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
+      [({ state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
+          acc := 0, succ := succs q0, idx := 0 } : DFSStep State ops.Position)] with
+  | none => simpa using hwf'
+  | some r =>
+    simp only [Option.getD_some]
+    exact dfsGo_wellFormed ops succs edgeMarks L _ _ r hdg hwf'
+
+/-- Well-formedness survives the whole loop over the roots. -/
+theorem genericDFSGo_wellFormed [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat) (L : LawfulDFSOps ops) :
+    ∀ (roots : List State) (aux : ops.Aux) r, L.WellFormed aux →
+      genericDFSGo ops succs edgeMarks roots aux = some r → L.WellFormed r.2 := by
+  intro roots
+  induction roots with
+  | nil =>
+    intro aux r hwf hgo
+    rw [genericDFSGo.eq_def] at hgo
+    simp only [Option.some.injEq] at hgo
+    rw [← hgo]
+    exact hwf
+  | cons q rest ih =>
+    intro aux r hwf hgo
+    rw [genericDFSGo.eq_def] at hgo
+    cases hst : ops.getStatus aux q with
+    | unknown =>
+      simp only [hst] at hgo
+      have hwf' : L.WellFormed (dfsFromRoot ops succs edgeMarks aux q).2 :=
+        dfsFromRoot_wellFormed_total ops succs edgeMarks L aux q hwf hst
+      cases hf : (dfsFromRoot ops succs edgeMarks aux q).1 with
+      | some x =>
+        simp only [hf, Option.some.injEq] at hgo
+        rw [← hgo]
+        exact hwf'
+      | none =>
+        simp only [hf] at hgo
+        exact ih _ r hwf' hgo
+    | dead => simp only [hst] at hgo; exact ih aux r hwf hgo
+    | live => simp only [hst] at hgo; exact ih aux r hwf hgo
+
+/-- `genericDFS`'s own shape, with no termination obligation: its `getD` fallback is the state it started in. -/
+theorem genericDFS_wellFormed [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat) (L : LawfulDFSOps ops) (roots : List State)
+    (aux : ops.Aux) (hwf : L.WellFormed aux) :
+    L.WellFormed (genericDFS ops succs edgeMarks roots aux).2 := by
+  unfold genericDFS
+  cases hgo : genericDFSGo ops succs edgeMarks roots aux with
+  | none => simpa using hwf
+  | some r =>
+    simp only [Option.getD_some]
+    exact genericDFSGo_wellFormed ops succs edgeMarks L roots aux r hwf hgo
+
+/-- Lifted over the roots: a state the search over `roots` has touched was either touched already or is
+reachable. -/
+theorem genericDFSGo_touched_reachable [LawfulBEq State] (ops : DFSOps State)
+    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (initialStates : List State) (L : LawfulDFSOps ops) :
+    ∀ (roots : List State), (∀ q ∈ roots, Reachable initialStates succs q) →
+      ∀ (aux : ops.Aux) r, L.WellFormed aux → genericDFSGo ops succs edgeMarks roots aux = some r →
+        ∀ s, ops.getStatus r.2 s ≠ .unknown →
+          ops.getStatus aux s ≠ .unknown ∨ Reachable initialStates succs s := by
+  intro roots
+  induction roots with
+  | nil =>
+    intro _ aux r _ hgo s hs
+    rw [genericDFSGo.eq_def] at hgo
+    simp only [Option.some.injEq] at hgo
+    rw [← hgo] at hs
+    exact Or.inl hs
+  | cons q rest ih =>
+    intro hroots aux r hwf hgo s hs
+    have hq : Reachable initialStates succs q := hroots q (by simp)
+    have hrest : ∀ q' ∈ rest, Reachable initialStates succs q' :=
+      fun q' hq' => hroots q' (by simp [hq'])
+    rw [genericDFSGo.eq_def] at hgo
+    cases hst : ops.getStatus aux q with
+    | unknown =>
+      simp only [hst] at hgo
+      have hwf' : L.WellFormed (dfsFromRoot ops succs edgeMarks aux q).2 :=
+        dfsFromRoot_wellFormed_total ops succs edgeMarks L aux q hwf hst
+      cases hf : (dfsFromRoot ops succs edgeMarks aux q).1 with
+      | some x =>
+        simp only [hf, Option.some.injEq] at hgo
+        rw [← hgo] at hs
+        exact dfsFromRoot_touched_reachable ops succs edgeMarks initialStates L
+          aux q hwf hst hq s hs
+      | none =>
+        simp only [hf] at hgo
+        rcases ih hrest _ r hwf' hgo s hs with h | h
+        · exact dfsFromRoot_touched_reachable ops succs edgeMarks initialStates L
+            aux q hwf hst hq s h
+        · exact Or.inr h
+    | dead => simp only [hst] at hgo; exact ih hrest aux r hwf hgo s hs
+    | live => simp only [hst] at hgo; exact ih hrest aux r hwf hgo s hs
+
+/-- `genericDFS`'s own shape: everything it touched beyond what it started with is reachable. -/
+theorem genericDFS_touched_reachable [LawfulBEq State] (ops : DFSOps State)
+    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (L : LawfulDFSOps ops) (initialStates : List State) (aux : ops.Aux) (hwf : L.WellFormed aux)
+    (s : State)
+    (hstatus : ops.getStatus (genericDFS ops succs edgeMarks initialStates aux).2 s ≠ .unknown) :
+    ops.getStatus aux s ≠ .unknown ∨ Reachable initialStates succs s := by
+  unfold genericDFS at hstatus
+  cases hgo : genericDFSGo ops succs edgeMarks initialStates aux with
+  | none =>
+    rw [hgo] at hstatus
+    simp only [Option.getD_none] at hstatus
+    exact Or.inl hstatus
+  | some r =>
+    rw [hgo] at hstatus
+    simp only [Option.getD_some] at hstatus
+    exact genericDFSGo_touched_reachable ops succs edgeMarks initialStates L
+      initialStates (fun q hq => Reachable.base hq) aux r hwf hgo s hstatus
+
+/-- `L.WellFormed` is preserved by a full `dfsGo` run. -/
 theorem dfsFromRoot_status_monotone [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (L : LawfulDFSOps ops)
     (aux : ops.Aux) (q0 : State) (hwf : L.WellFormed aux) (hq0 : ops.getStatus aux q0 = .unknown)
     (hReal : dfsGo ops succs edgeMarks (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
       [({ state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-          acc := Std.HashSet.emptyWithCapacity 0, succ := succs q0, idx := 0 } :
+          acc := 0, succ := succs q0, idx := 0 } :
         DFSStep State ops.Position)] ≠ none) :
     ∀ s, ops.getStatus aux s ≠ .unknown →
       ops.getStatus (dfsFromRoot ops succs edgeMarks aux q0).2 s ≠ .unknown := by
@@ -1019,7 +1209,7 @@ theorem dfsFromRoot_status_monotone [LawfulBEq State] (ops : DFSOps State) (succ
   set aux' := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1 with haux'
   set step : DFSStep State ops.Position :=
     { state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-      acc := Std.HashSet.emptyWithCapacity 0, succ := succs q0, idx := 0 } with hstep
+      acc := 0, succ := succs q0, idx := 0 } with hstep
   have hpeq : ∀ s, ops.getStatus aux' s = if s == q0 then .live else ops.getStatus aux s := by
     rw [haux']; exact L.push_status aux q0 (Std.HashSet.emptyWithCapacity 0)
   have hwf' : L.WellFormed aux' := by
@@ -1040,7 +1230,7 @@ theorem dfsFromRoot_root_touched [LawfulBEq State] (ops : DFSOps State) (succs :
     (aux : ops.Aux) (q0 : State) (hwf : L.WellFormed aux) (hq0 : ops.getStatus aux q0 = .unknown)
     (hReal : dfsGo ops succs edgeMarks (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
       [({ state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-          acc := Std.HashSet.emptyWithCapacity 0, succ := succs q0, idx := 0 } :
+          acc := 0, succ := succs q0, idx := 0 } :
         DFSStep State ops.Position)] ≠ none) :
     ops.getStatus (dfsFromRoot ops succs edgeMarks aux q0).2 q0 ≠ .unknown := by
   unfold dfsFromRoot
@@ -1051,7 +1241,7 @@ theorem dfsFromRoot_root_touched [LawfulBEq State] (ops : DFSOps State) (succs :
   set aux' := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1 with haux'
   set step : DFSStep State ops.Position :=
     { state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-      acc := Std.HashSet.emptyWithCapacity 0, succ := succs q0, idx := 0 } with hstep
+      acc := 0, succ := succs q0, idx := 0 } with hstep
   have hpeq : ∀ s, ops.getStatus aux' s = if s == q0 then .live else ops.getStatus aux s := by
     rw [haux']; exact L.push_status aux q0 (Std.HashSet.emptyWithCapacity 0)
   have hwf' : L.WellFormed aux' := by
@@ -1070,7 +1260,7 @@ theorem genericDFSGo_closed [LawfulBEq State] (ops : DFSOps State) (succs : Stat
     (hReal : ∀ aux q, P q → L.WellFormed aux → ops.getStatus aux q = .unknown →
       dfsGo ops succs edgeMarks (ops.push aux q (Std.HashSet.emptyWithCapacity 0)).1
         [({ state := q, pos := (ops.push aux q (Std.HashSet.emptyWithCapacity 0)).2,
-            acc := Std.HashSet.emptyWithCapacity 0, succ := succs q, idx := 0 } :
+            acc := 0, succ := succs q, idx := 0 } :
           DFSStep State ops.Position)] ≠ none) :
     ∀ (roots : List State) aux (r : Option (State × List State) × ops.Aux),
     genericDFSGo ops succs edgeMarks roots aux = some r →
@@ -1128,7 +1318,7 @@ theorem genericDFSGo_status_monotone [LawfulBEq State] (ops : DFSOps State) (suc
     (hReal : ∀ aux q, P q → L.WellFormed aux → ops.getStatus aux q = .unknown →
       dfsGo ops succs edgeMarks (ops.push aux q (Std.HashSet.emptyWithCapacity 0)).1
         [({ state := q, pos := (ops.push aux q (Std.HashSet.emptyWithCapacity 0)).2,
-            acc := Std.HashSet.emptyWithCapacity 0, succ := succs q, idx := 0 } :
+            acc := 0, succ := succs q, idx := 0 } :
           DFSStep State ops.Position)] ≠ none) :
     ∀ (roots : List State) aux (r : Option (State × List State) × ops.Aux),
     genericDFSGo ops succs edgeMarks roots aux = some r →
@@ -1183,7 +1373,7 @@ theorem genericDFS_closed [LawfulBEq State] (ops : DFSOps State) (succs : State 
     (hReal : ∀ aux q, P q → L.WellFormed aux → ops.getStatus aux q = .unknown →
       dfsGo ops succs edgeMarks (ops.push aux q (Std.HashSet.emptyWithCapacity 0)).1
         [({ state := q, pos := (ops.push aux q (Std.HashSet.emptyWithCapacity 0)).2,
-            acc := Std.HashSet.emptyWithCapacity 0, succ := succs q, idx := 0 } :
+            acc := 0, succ := succs q, idx := 0 } :
           DFSStep State ops.Position)] ≠ none)
     (roots : List State) (aux : ops.Aux) (hrootsP : ∀ q ∈ roots, P q)
     (hReal2 : genericDFSGo ops succs edgeMarks roots aux ≠ none)
@@ -1206,7 +1396,7 @@ theorem genericDFS_status_monotone [LawfulBEq State] (ops : DFSOps State) (succs
     (hReal : ∀ aux q, P q → L.WellFormed aux → ops.getStatus aux q = .unknown →
       dfsGo ops succs edgeMarks (ops.push aux q (Std.HashSet.emptyWithCapacity 0)).1
         [({ state := q, pos := (ops.push aux q (Std.HashSet.emptyWithCapacity 0)).2,
-            acc := Std.HashSet.emptyWithCapacity 0, succ := succs q, idx := 0 } :
+            acc := 0, succ := succs q, idx := 0 } :
           DFSStep State ops.Position)] ≠ none)
     (roots : List State) (aux : ops.Aux) (hrootsP : ∀ q ∈ roots, P q)
     (hReal2 : genericDFSGo ops succs edgeMarks roots aux ≠ none)
@@ -1237,7 +1427,7 @@ theorem genericDFS_roots_touched [LawfulBEq State] (ops : DFSOps State) (succs :
     (hReal : ∀ aux q, P q → L.WellFormed aux → ops.getStatus aux q = .unknown →
       dfsGo ops succs edgeMarks (ops.push aux q (Std.HashSet.emptyWithCapacity 0)).1
         [({ state := q, pos := (ops.push aux q (Std.HashSet.emptyWithCapacity 0)).2,
-            acc := Std.HashSet.emptyWithCapacity 0, succ := succs q, idx := 0 } :
+            acc := 0, succ := succs q, idx := 0 } :
           DFSStep State ops.Position)] ≠ none) :
     ∀ (roots : List State) aux (r : Option (State × List State) × ops.Aux),
     genericDFSGo ops succs edgeMarks roots aux = some r →
@@ -1310,7 +1500,7 @@ theorem genericDFS_returns_none_fully_explored [LawfulBEq State] (ops : DFSOps S
     (hReal : ∀ aux q, P q → L.WellFormed aux → ops.getStatus aux q = .unknown →
       dfsGo ops succs edgeMarks (ops.push aux q (Std.HashSet.emptyWithCapacity 0)).1
         [({ state := q, pos := (ops.push aux q (Std.HashSet.emptyWithCapacity 0)).2,
-            acc := Std.HashSet.emptyWithCapacity 0, succ := succs q, idx := 0 } :
+            acc := 0, succ := succs q, idx := 0 } :
           DFSStep State ops.Position)] ≠ none)
     (initialStates : List State) (hrootsP : ∀ q ∈ initialStates, P q)
     (hReal2 : genericDFSGo ops succs edgeMarks initialStates ops.initAux ≠ none)
@@ -1443,14 +1633,16 @@ theorem unexploredSet_update (ops : DFSOps State) (succs : State → Array State
 /-- `pop` only ever moves states from live to dead, which leaves the unknown set alone. -/
 theorem unexploredSet_pop (ops : DFSOps State) (succs : State → Array State)
     (initialStates : List State) (WellFormed : ops.Aux → Prop)
-    (hpop : ∀ aux pos q, WellFormed aux → ops.getStatus (ops.pop aux pos).1 q = ops.getStatus aux q ∨
-      (ops.getStatus aux q = .live ∧ ops.getStatus (ops.pop aux pos).1 q = .dead))
-    (aux : ops.Aux) (pos : ops.Position) (hwf : WellFormed aux) :
-    unexploredSet ops succs initialStates (ops.pop aux pos).1 =
+    (hpop : ∀ sc em aux st q, WellFormed aux →
+      ops.getStatus (ops.pop sc em aux st).1 q = ops.getStatus aux q ∨
+      (ops.getStatus aux q = .live ∧ ops.getStatus (ops.pop sc em aux st).1 q = .dead))
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (aux : ops.Aux) (step : DFSStep State ops.Position) (hwf : WellFormed aux) :
+    unexploredSet ops succs initialStates (ops.pop succs edgeMarks aux step).1 =
       unexploredSet ops succs initialStates aux := by
   ext s
   simp only [unexploredSet, Set.mem_setOf_eq]
-  rcases hpop aux pos s hwf with h | ⟨h1, h2⟩
+  rcases hpop succs edgeMarks aux step s hwf with h | ⟨h1, h2⟩
   · rw [h]
   · rw [h1, h2]; simp
 
@@ -1574,15 +1766,15 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
           · exact hbumpReach st hst
     -- backtracking: the stack shrinks, and `pop` never touches the unknown set
     · rw [dif_neg h]
-      have hcard : unexploredCard ops succs initialStates fr (ops.pop aux step.pos).1 =
+      have hcard : unexploredCard ops succs initialStates fr (ops.pop succs edgeMarks aux step).1 =
           unexploredCard ops succs initialStates fr aux :=
         unexploredCard_eq_of_eq ops succs initialStates fr
-          (unexploredSet_pop ops succs initialStates L.WellFormed L.pop_status aux step.pos hwf)
-      have hrec : dfsGo ops succs edgeMarks (ops.pop aux step.pos).1 rest ≠ none :=
-        ih2 _ (by simp) _ _ rest hcard rfl rfl (L.wf_pop aux step.pos hwf)
+          (unexploredSet_pop ops succs initialStates L.WellFormed L.pop_status edgeMarks aux step hwf)
+      have hrec : dfsGo ops succs edgeMarks (ops.pop succs edgeMarks aux step).1 rest ≠ none :=
+        ih2 _ (by simp) _ _ rest hcard rfl rfl (L.wf_pop succs edgeMarks aux step hwf)
           (fun st hst => hsucc st (List.mem_cons_of_mem _ hst))
           (fun st hst => hreach st (List.mem_cons_of_mem _ hst))
-      cases hf : (ops.pop aux step.pos).2 with
+      cases hf : (ops.pop succs edgeMarks aux step).2 with
       | true =>
         cases rest with
         | nil => simpa using hrec
@@ -1591,7 +1783,8 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
 
 /-! ## Witness-check correctness -/
 
-private theorem foldl_insert_getElem?_eq [LawfulBEq State] [LawfulHashable State]
+/-- A map built by inserting `f x` at each `x` holds only values of the form `f x`. -/
+theorem foldl_insert_getElem?_eq [LawfulBEq State] [LawfulHashable State]
     (f : State → Array State) :
     ∀ (l : List State) (init : Std.HashMap State (Array State)),
       (∀ s v, init[s]? = some v → v = f s) →

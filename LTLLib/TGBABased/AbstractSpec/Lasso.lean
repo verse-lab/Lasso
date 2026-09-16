@@ -16,6 +16,7 @@
 
   Key theorems:
   - `TValidLasso.accepts_of_validLasso`: a valid lasso with compatible labeling implies the automaton accepts
+  - `TValidLasso.run_src_hits_cycle`: every cycle state is the source of arbitrarily late run positions
 
   Sections:
   - Lasso run construction
@@ -458,7 +459,8 @@ private theorem cycleClosed_getElem_succ (ac : TAcceptingCycle initialStates suc
   · have heq : i + 1 = ac.cycle.length := by omega
     simp [heq, List.head_eq_getElem]
 
-private theorem ac_cycle_succ_mem (ac : TAcceptingCycle initialStates succs edgeMarks k)
+/-- The cyclic successor step, `cycle_chain` and `cycle_back` read as one statement. -/
+theorem TAcceptingCycle.cycle_succ_mem (ac : TAcceptingCycle initialStates succs edgeMarks k)
     (hne : ac.cycle ≠ []) (i : Nat) (hi : i < ac.cycle.length) :
     ac.cycle[(i + 1) % ac.cycle.length]'(Nat.mod_lt _ (by have := ac.cycle_nonempty; omega)) ∈
       succs (ac.cycle[i]'hi) := by
@@ -479,7 +481,7 @@ theorem lapFor_src_dst (W : TEdgeWitness A succs edgeMarks)
     A.dst ((lapFor W ac.cycle hne witnessIdx hidx m)[i]'hi') =
       ac.cycle[(i + 1) % ac.cycle.length]'(Nat.mod_lt _ (by have := ac.cycle_nonempty; omega)) ∧
     A.valid ((lapFor W ac.cycle hne witnessIdx hidx m)[i]'hi') := by
-  have hstepmem := ac_cycle_succ_mem ac hne i hi
+  have hstepmem := TAcceptingCycle.cycle_succ_mem ac hne i hi
   have hbaselen : (stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne])).length = ac.cycle.length := by
     rw [stemEdges_length]; simp
   have hi'' : i < (stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne])).length := by
@@ -573,7 +575,7 @@ theorem lapFor_mark (W : TEdgeWitness A succs edgeMarks)
     ∃ (i : Nat) (hi : i < (lapFor W ac.cycle hne witnessIdx hidx m).length),
       A.acceptMark ⟨m, hm⟩ ((lapFor W ac.cycle hne witnessIdx hidx m)[i]'hi) := by
   have hlen := lapFor_len W ac.cycle hne witnessIdx hidx m
-  have hstepmem := ac_cycle_succ_mem ac hne witnessIdx hidx
+  have hstepmem := TAcceptingCycle.cycle_succ_mem ac hne witnessIdx hidx
   refine ⟨witnessIdx, by omega, ?_⟩
   unfold lapFor
   rw [List.getElem_set, if_pos rfl]
@@ -827,7 +829,7 @@ theorem cycleE_endpoints_mem (W : TEdgeWitness A succs edgeMarks)
     have h2 : (ac.cycle ++ [ac.cycle.head hne])[j + 1]'hj' =
         ac.cycle[(j + 1) % ac.cycle.length]'(Nat.mod_lt _ (by have := ac.cycle_nonempty; omega)) :=
       (cycleClosed_getElem_succ ac hne j hjlt).symm
-    have hstepmem := ac_cycle_succ_mem ac hne j hjlt
+    have hstepmem := TAcceptingCycle.cycle_succ_mem ac hne j hjlt
     refine ⟨j, hjlt, ?_, ?_⟩
     · simp only [hgetElem, h1, h2]; exact (W.stepEdge_spec hstepmem).2.1
     · simp only [hgetElem, h1, h2]; exact (W.stepEdge_spec hstepmem).2.2
@@ -845,6 +847,63 @@ theorem cycleE_endpoints_mem (W : TEdgeWitness A succs edgeMarks)
       (ac.cycle_covers_marks m hmk).choose_spec.choose m hmk
       (ac.cycle_covers_marks m hmk).choose_spec.choose_spec j hjlt hj
     exact ⟨j, hjlt, hspec.1, hspec.2.1⟩
+
+/-- Past the stem, every state the lasso run passes through is one of `ac.cycle`'s, which is what carries a
+per-cycle property such as a region restriction onto the run's tail. -/
+theorem TValidLasso.run_src_mem_cycle {A : TOASpec State Edge α k} {stemE : List Edge}
+    (W : TEdgeWitness A succs edgeMarks) (ac : TAcceptingCycle initialStates succs edgeMarks k)
+    (hv : TValidLasso A stemE (ac.cycleE W)) (n : Nat) (hn : ¬ n < stemE.length) :
+    ∃ (i : Nat) (hi : i < ac.cycle.length), A.src (hv.run n) = ac.cycle[i]'hi := by
+  rw [hv.run_eq_cycle n hn]
+  obtain ⟨i, hi, hsrc, -⟩ := cycleE_endpoints_mem W ac (List.getElem_mem _)
+  exact ⟨i, hi, hsrc⟩
+
+/-- Every state of `ac.cycle` is some `cycleE` edge's source, both branches of `cycleE` starting with one lap
+in cycle order. -/
+theorem cycleE_src_hits (W : TEdgeWitness A succs edgeMarks)
+    (ac : TAcceptingCycle initialStates succs edgeMarks k) (i : Nat) (hi : i < ac.cycle.length) :
+    ∃ (j : Nat) (hj : j < (ac.cycleE W).length), A.src ((ac.cycleE W)[j]'hj) = ac.cycle[i]'hi := by
+  have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos (by have := ac.cycle_nonempty; omega)
+  by_cases h : k = 0
+  · have heq : ac.cycleE W = stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne]) := by
+      unfold TAcceptingCycle.cycleE; rw [dif_pos h]
+    have hlen : (stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne])).length =
+        ac.cycle.length := by rw [stemEdges_length]; simp
+    have hi'' : i < (stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne])).length := by omega
+    have happ : (ac.cycle ++ [ac.cycle.head hne]).length = ac.cycle.length + 1 := by simp
+    have hgetElem :=
+      stemEdges_getElem W.stepEdge (ac.cycle ++ [ac.cycle.head hne]) i (by omega) hi''
+    have h1 : (ac.cycle ++ [ac.cycle.head hne])[i]'(by omega) = ac.cycle[i]'hi :=
+      List.getElem_append_left hi
+    have h2 : (ac.cycle ++ [ac.cycle.head hne])[i + 1]'(by omega) =
+        ac.cycle[(i + 1) % ac.cycle.length]'(Nat.mod_lt _ (by have := ac.cycle_nonempty; omega)) :=
+      (cycleClosed_getElem_succ ac hne i hi).symm
+    have hstepmem := TAcceptingCycle.cycle_succ_mem ac hne i hi
+    refine ⟨i, by rw [heq]; omega, ?_⟩
+    simp only [heq, hgetElem, h1, h2]
+    exact (W.stepEdge_spec hstepmem).2.1
+  · have hk : 0 < k := Nat.pos_of_ne_zero h
+    have hflen : ∀ m, m < k → (cycleLapAt W ac hne m).length = ac.cycle.length :=
+      fun m hm => cycleLapAt_length W ac hne m hm
+    obtain ⟨hidx, hget⟩ :=
+      flatMap_uniform_getElem (cycleLapAt W ac hne) ac.cycle.length k 0 i hflen hk hi
+    have hceq := ac.cycleE_eq_flatMap W hne h
+    refine ⟨0 * ac.cycle.length + i, by rw [hceq]; exact hidx, ?_⟩
+    simp only [hceq]
+    rw [hget]
+    simp only [cycleLapAt_eq W ac hne 0 hk]
+    exact (lapFor_src_dst W ac hne _ _ 0 hk (ac.cycle_covers_marks 0 hk).choose_spec.choose_spec i hi
+      (by rw [lapFor_len]; exact hi)).1
+
+/-- Every state of `ac.cycle` is the source of arbitrarily late run positions, which is what carries a
+"holds somewhere in the cycle" property onto the run as "holds infinitely often". -/
+theorem TValidLasso.run_src_hits_cycle {A : TOASpec State Edge α k} {stemE : List Edge}
+    (W : TEdgeWitness A succs edgeMarks) (ac : TAcceptingCycle initialStates succs edgeMarks k)
+    (hv : TValidLasso A stemE (ac.cycleE W)) (i : Nat) (hi : i < ac.cycle.length) (n : Nat) :
+    ∃ t, A.src (hv.run (n + t)) = ac.cycle[i]'hi := by
+  obtain ⟨j, hj, hsrc⟩ := cycleE_src_hits W ac i hi
+  obtain ⟨t, ht⟩ := hv.find_cycle_position_at j hj n
+  exact ⟨t, by rw [ht]; exact hsrc⟩
 
 /-- The full bridge: a `TAcceptingCycle` (over `succs`/`edgeMarks`) yields a `TValidLasso` for any `TOASpec` compatible with it. -/
 theorem TAcceptingCycle.toTValidLassoOf {A : TOASpec State Edge α k}

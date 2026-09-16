@@ -17,3 +17,23 @@ name = "LTLLib"
 
 [[lean_lib]]
 name = "ProbMC"
+
+[[lean_exe]]
+name = "tgbabench"
+root = "LTLLib.TGBABased.Benchmark.PipelineBench"
+
+[[lean_exe]]
+name = "fairbench"
+root = "LTLLib.TGBABased.Benchmark.FairnessBench"
+
+[[lean_exe]]
+name = "fairmatrix"
+root = "LTLLib.TGBABased.Benchmark.FairnessMatrix"
+
+[[lean_exe]]
+name = "simpbench"
+root = "LTLLib.TGBABased.Benchmark.SimplifyBench"
+
+[[lean_exe]]
+name = "ltl3bench"
+root = "LTLLib.TGBABased.LTLtoTGBA.Benchmark.TranslationBench"

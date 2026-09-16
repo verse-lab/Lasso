@@ -8,6 +8,8 @@
   - `run_decompose`/`run_combine`: a product run splits into a TGBA edge-run and a system run, and back
   - `gsp_correct1`/`gsp_correct2`: the two directions of the product's own correctness
   - `exists_TAcceptingCycle_of_acceptingRun`: an accepting product run yields a lasso witness
+  - `exists_run_of_TAcceptingCycle`: a lasso witness yields a system run, carrying a per-cycle predicate onto
+    the run's tail and a per-state one onto infinitely many positions
 
   Sections:
   - Product construction
@@ -80,7 +82,8 @@ private def junkTransition (q : Nat) : TGBA.Transition α :=
 
 /-! ## Product run decomposition + acceptance transfer -/
 
-private theorem getSuccessors_mem_iff (tgba : TGBA α) (sysSucc : SysState → Array SysState)
+/-- A product step is exactly a compatible automaton transition paired with a totalized system successor. -/
+theorem getSuccessors_mem_iff (tgba : TGBA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) {p p' : SysState × Nat} :
     p' ∈ getSuccessors tgba sysSucc sysLabel p ↔
       ∃ t ∈ tgba.getSuccessors p.2, transCompatible t (sysLabel p.1) = true ∧
@@ -226,7 +229,8 @@ private theorem foldl_union_contains (m : Nat) :
       · exact Or.inl (Or.inr htm)
       · exact Or.inr ⟨t, ht, htm⟩
 
-private theorem mem_edgeMarks_iff (tgba : TGBA α) (sysLabel : SysState → Std.HashSet α)
+/-- A product edge's marks are exactly those of the compatible automaton transitions realizing it. -/
+theorem mem_edgeMarks_iff (tgba : TGBA α) (sysLabel : SysState → Std.HashSet α)
     (p p' : SysState × Nat) (m : Nat) :
     (edgeMarks tgba sysLabel p p').contains m ↔
       ∃ t ∈ tgba.getSuccessors p.2, t.target = p'.2 ∧
@@ -302,6 +306,30 @@ def edgeWitness (tgba : TGBA α) (sysSucc : SysState → Array SysState)
 
 /-! ## From an accepting run to a lasso -/
 
+/-- The product-state sequence an accepting product run walks:
+it starts initial, steps along `getSuccessors`, and carries every mark infinitely often. -/
+theorem acceptingRun_states (tgba : TGBA α) (sysSucc : SysState → Array SysState)
+    (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
+    {σ : TLA.exec (Edge SysState α)}
+    (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
+    (hacc : (toSpec tgba sysSucc sysLabel sysInit).isAcceptingRun σ) :
+    ((σ 0).1, (σ 0).2.2.1) ∈ initialStates tgba sysInit ∧
+    (∀ n, ((σ (n + 1)).1, (σ (n + 1)).2.2.1) ∈
+      getSuccessors tgba sysSucc sysLabel ((σ n).1, (σ n).2.2.1)) ∧
+    ∀ m, m < tgba.numAcceptSets → ∀ N, ∃ n ≥ N, m ∈ edgeMarks tgba sysLabel
+      ((σ n).1, (σ n).2.2.1) ((σ (n + 1)).1, (σ (n + 1)).2.2.1) := by
+  obtain ⟨hinit, hstep⟩ := hrun
+  refine ⟨hinit, fun n => ?_, fun m hm N => ?_⟩
+  · obtain ⟨⟨ht, hc, hsys⟩, hlink⟩ := hstep n
+    have h1 : (σ n).2.1 = (σ (n + 1)).1 := congrArg Prod.fst hlink
+    have h2 : (σ n).2.2.2.target = (σ (n + 1)).2.2.1 := congrArg Prod.snd hlink
+    exact (getSuccessors_mem_iff tgba sysSucc sysLabel).mpr ⟨(σ n).2.2.2, ht, hc, h1 ▸ hsys, h2⟩
+  · obtain ⟨j, hj⟩ := hacc ⟨m, hm⟩ N
+    obtain ⟨⟨ht, hc, -⟩, hlink⟩ := hstep (N + j)
+    have h2 : (σ (N + j)).2.2.2.target = (σ (N + j + 1)).2.2.1 := congrArg Prod.snd hlink
+    exact ⟨N + j, by omega, Std.HashSet.mem_iff_contains.mpr
+      ((mem_edgeMarks_iff tgba sysLabel _ _ m).mpr ⟨(σ (N + j)).2.2.2, ht, h2, hc, hj⟩)⟩
+
 theorem exists_TAcceptingCycle_of_acceptingRun (tgba : TGBA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
     (fr : FiniteReach (initialStates tgba sysInit) (getSuccessors tgba sysSucc sysLabel))
@@ -309,20 +337,9 @@ theorem exists_TAcceptingCycle_of_acceptingRun (tgba : TGBA α) (sysSucc : SysSt
     (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
     (hacc : (toSpec tgba sysSucc sysLabel sysInit).isAcceptingRun σ) :
     ∃ _ac : TAcceptingCycle (initialStates tgba sysInit) (getSuccessors tgba sysSucc sysLabel)
-      (edgeMarks tgba sysLabel) tgba.numAcceptSets, True := by
-  obtain ⟨hinit, hstep⟩ := hrun
-  refine exists_TAcceptingCycle_of_run fr (σ := fun n => ((σ n).1, (σ n).2.2.1)) hinit ?_ ?_
-  · intro n
-    obtain ⟨⟨ht, hc, hsys⟩, hlink⟩ := hstep n
-    have h1 : (σ n).2.1 = (σ (n + 1)).1 := congrArg Prod.fst hlink
-    have h2 : (σ n).2.2.2.target = (σ (n + 1)).2.2.1 := congrArg Prod.snd hlink
-    exact (getSuccessors_mem_iff tgba sysSucc sysLabel).mpr ⟨(σ n).2.2.2, ht, hc, h1 ▸ hsys, h2⟩
-  · intro m hm N
-    obtain ⟨j, hj⟩ := hacc ⟨m, hm⟩ N
-    obtain ⟨⟨ht, hc, -⟩, hlink⟩ := hstep (N + j)
-    have h2 : (σ (N + j)).2.2.2.target = (σ (N + j + 1)).2.2.1 := congrArg Prod.snd hlink
-    exact ⟨N + j, by omega, Std.HashSet.mem_iff_contains.mpr
-      ((mem_edgeMarks_iff tgba sysLabel _ _ m).mpr ⟨(σ (N + j)).2.2.2, ht, h2, hc, hj⟩)⟩
+      (edgeMarks tgba sysLabel) tgba.numAcceptSets, True :=
+  have h := acceptingRun_states tgba sysSucc sysLabel sysInit hrun hacc
+  exists_TAcceptingCycle_of_run fr (σ := fun n => ((σ n).1, (σ n).2.2.1)) h.1 h.2.1 h.2.2
 
 end TGBAProduct
 
@@ -339,5 +356,38 @@ def TAcceptingCycle.toTValidLassoProduct {α : Type u} {SysState : Type v} [BEq 
       (stemEdges (TGBAProduct.edgeWitness tgba sysSucc sysLabel sysInit).stepEdge ac.stem)
       (ac.cycleE (TGBAProduct.edgeWitness tgba sysSucc sysLabel sysInit)) :=
   ac.toTValidLassoOf (TGBAProduct.edgeWitness tgba sysSucc sysLabel sysInit) (fun hs => hs)
+
+namespace TGBAProduct
+
+/-- The counterexample a product cycle describes: one system run whose own labeling the automaton accepts,
+and the two transfers a per-state predicate admits. A predicate holding at every cycle state holds at every
+position past the stem, and one holding at some cycle state holds infinitely often. -/
+theorem exists_run_of_TAcceptingCycle {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
+    [LawfulBEq α] (tgba : TGBA α) (sysSucc : SysState → Array SysState)
+    (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
+    (ac : TAcceptingCycle (initialStates tgba sysInit) (getSuccessors tgba sysSucc sysLabel)
+      (edgeMarks tgba sysLabel) tgba.numAcceptSets) :
+    ∃ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ ∧
+      tgba.toSpec.accepts (fun n a => a ∈ sysLabel (τ n)) ∧
+      (∀ P : SysState → Prop, (∀ p ∈ ac.cycle, P p.1) → ∃ N, ∀ n, N ≤ n → P (τ n)) ∧
+      (∀ P : SysState → Prop, (∃ p ∈ ac.cycle, P p.1) → ∀ n, ∃ j, P (τ (n + j))) := by
+  obtain ⟨hτrun, hlang⟩ := gsp_correct1 tgba sysSucc sysLabel sysInit
+    ⟨ac.toTValidLassoProduct.run_isRun, ac.toTValidLassoProduct.run_isAccepting⟩
+  refine ⟨fun n => (ac.toTValidLassoProduct.run n).1, hτrun, hlang, fun P hP => ?_, fun P hP n => ?_⟩
+  · refine ⟨(stemEdges (edgeWitness tgba sysSucc sysLabel sysInit).stepEdge ac.stem).length,
+      fun n hn => ?_⟩
+    obtain ⟨i, hi, hsrc⟩ := TValidLasso.run_src_mem_cycle (edgeWitness tgba sysSucc sysLabel sysInit)
+      ac ac.toTValidLassoProduct n (by omega)
+    have hPi := hP _ (List.getElem_mem hi)
+    rw [← hsrc] at hPi
+    exact hPi
+  · obtain ⟨p, hp, hPp⟩ := hP
+    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hp
+    obtain ⟨t, ht⟩ := TValidLasso.run_src_hits_cycle (edgeWitness tgba sysSucc sysLabel sysInit)
+      ac ac.toTValidLassoProduct i hi n
+    rw [← ht] at hPp
+    exact ⟨t, hPp⟩
+
+end TGBAProduct
 
 end LTLLib

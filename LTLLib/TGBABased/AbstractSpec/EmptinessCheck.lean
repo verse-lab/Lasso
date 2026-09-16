@@ -47,6 +47,18 @@ def TAcceptingCycle.congr_edgeMarks {State : Type u} {initialStates : List State
       obtain ⟨i, hi, hmem⟩ := ac.cycle_covers_marks m hm
       exact ⟨i, hi, (h _ _ m).mp hmem⟩ }
 
+/-- Weaken to the first `n` marks, each carried by `em` wherever `em'` carries it. -/
+def TAcceptingCycle.restrictMarks {State : Type u} {initialStates : List State}
+    {succs : State → Array State} {em em' : State → State → Std.HashSet Nat} {n n' : Nat}
+    (hn : n ≤ n') (h : ∀ s t m, m < n → m ∈ em' s t → m ∈ em s t)
+    (ac : TAcceptingCycle initialStates succs em' n') :
+    TAcceptingCycle initialStates succs em n :=
+  { ac with
+    cycle_covers_marks := by
+      intro m hm
+      obtain ⟨i, hi, hmem⟩ := ac.cycle_covers_marks m (by omega)
+      exact ⟨i, hi, h _ _ m hm hmem⟩ }
+
 /-! ## Checker contract -/
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]

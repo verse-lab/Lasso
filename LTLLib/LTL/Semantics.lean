@@ -12,6 +12,7 @@
   Key theorems:
   - `NNF.neg_correct`: Negation correctness for NNF
   - `toNNF_correct`: `Formula.directSatisfies` ↔ `NNF.satisfies ∘ toNNF`
+  - `NNF.satisfies_splitConj`: splitting at the top-level conjunctions preserves meaning
 
   Sections:
   - ω-words
@@ -95,6 +96,44 @@ theorem NNF.satisfies_drop_drop (ξ : OmegaWord α) (k l : Nat) (φ : NNF α) :
   φ.satisfies ((ξ.drop k).drop l) ↔ φ.satisfies (ξ.drop (k + l)) := by
   simp only [NNF.satisfies, exec.drop_drop]
 
+theorem exec_drop_zero {β : Type u} (σ : exec β) : σ.drop 0 = σ := by
+  funext n; simp [exec.drop]
+
+theorem NNF.satisfies_tt (ξ : OmegaWord α) : (NNF.tt : NNF α).satisfies ξ ↔ True := Iff.rfl
+
+theorem NNF.satisfies_ff (ξ : OmegaWord α) : (NNF.ff : NNF α).satisfies ξ ↔ False := Iff.rfl
+
+theorem NNF.satisfies_prop (ξ : OmegaWord α) (a : α) : (NNF.prop a).satisfies ξ ↔ ξ 0 a := Iff.rfl
+
+theorem NNF.satisfies_nprop (ξ : OmegaWord α) (a : α) : (NNF.nprop a).satisfies ξ ↔ ¬ ξ 0 a := Iff.rfl
+
+theorem NNF.satisfies_and (ξ : OmegaWord α) (φ ψ : NNF α) :
+    (NNF.and φ ψ).satisfies ξ ↔ φ.satisfies ξ ∧ ψ.satisfies ξ := Iff.rfl
+
+theorem NNF.satisfies_or (ξ : OmegaWord α) (φ ψ : NNF α) :
+    (NNF.or φ ψ).satisfies ξ ↔ φ.satisfies ξ ∨ ψ.satisfies ξ := Iff.rfl
+
+theorem NNF.satisfies_next (ξ : OmegaWord α) (φ : NNF α) :
+    (NNF.next φ).satisfies ξ ↔ φ.satisfies (ξ.drop 1) := Iff.rfl
+
+theorem NNF.satisfies_until (ξ : OmegaWord α) (φ ψ : NNF α) :
+    (NNF.until φ ψ).satisfies ξ ↔
+      ∃ i, ψ.satisfies (ξ.drop i) ∧ ∀ j, j < i → φ.satisfies (ξ.drop j) := Iff.rfl
+
+theorem NNF.satisfies_release (ξ : OmegaWord α) (φ ψ : NNF α) :
+    (NNF.release φ ψ).satisfies ξ ↔
+      ∀ j, ψ.satisfies (ξ.drop j) ∨ ∃ i, i < j ∧ φ.satisfies (ξ.drop i) := Iff.rfl
+
+/-- `□φ` holds at every suffix, the `⊥ R φ` encoding's left disjunct being unreachable. -/
+theorem NNF.satisfies_always (ξ : OmegaWord α) (φ : NNF α) :
+    (NNF.always φ).satisfies ξ ↔ ∀ k, φ.satisfies (ξ.drop k) := by
+  dsimp [satisfies, NNF.always, NNF.toPred, tla_release] ; tunfold_simp
+
+/-- `◇φ` holds at some suffix, the `⊤ U φ` encoding's guard being vacuous. -/
+theorem NNF.satisfies_eventually (ξ : OmegaWord α) (φ : NNF α) :
+    (NNF.eventually φ).satisfies ξ ↔ ∃ k, φ.satisfies (ξ.drop k) := by
+  dsimp [satisfies, NNF.eventually, NNF.toPred] ; tunfold_simp
+
 /-! ## Negation correctness -/
 
 /-- Negating an NNF formula flips satisfaction. -/
@@ -130,6 +169,33 @@ def Formula.directSatisfies {α} (ξ : OmegaWord α) : Formula α → Prop
 def Formula.satisfies {α} (ξ : OmegaWord α) (φ : Formula α) : Prop :=
   (φ.toNNF true).satisfies ξ
 
+/-- Splitting at the top-level conjunctions preserves meaning. -/
+theorem NNF.satisfies_splitConj {α} (ξ : OmegaWord α) (φ : NNF α) :
+    φ.satisfies ξ ↔ ∀ c ∈ φ.splitConj, c.satisfies ξ := by
+  induction φ with
+  | and φ ψ ihφ ihψ =>
+    simp only [NNF.splitConj, NNF.satisfies_and, List.mem_append, ihφ, ihψ]
+    grind
+  | _ => simp [NNF.splitConj]
+
+/-- `conj` is the conjunction of its list. -/
+theorem Formula.directSatisfies_conj {α} (ξ : OmegaWord α) (φs : List (Formula α)) :
+    (conj φs).directSatisfies ξ ↔ ∀ c ∈ φs, c.directSatisfies ξ := by
+  induction φs with
+  | nil => simp [conj, directSatisfies]
+  | cons φ φs ih =>
+    cases φs with
+    | nil => simp [conj]
+    | cons ψ ψs => simpa [conj, directSatisfies] using and_congr_right (fun _ => ih)
+
+/-- `assuming` discharges its list of assumptions. -/
+theorem Formula.directSatisfies_assuming {α} (ξ : OmegaWord α) (ψs : List (Formula α))
+    (φ : Formula α) :
+    (assuming ψs φ).directSatisfies ξ ↔ ((∀ c ∈ ψs, c.directSatisfies ξ) → φ.directSatisfies ξ) := by
+  cases ψs with
+  | nil => simp [assuming]
+  | cons ψ ψs => simp only [assuming, directSatisfies, directSatisfies_conj]
+
 /-! ## toNNF correctness -/
 
 /-- `toNNF` preserves satisfaction at positive polarity and negates it at negative polarity. -/
@@ -147,6 +213,11 @@ theorem Formula.toNNF_correct {α} (ξ : OmegaWord α) (φ : Formula α) :
 theorem Formula.toNNF_correct_neg {α} (ξ : OmegaWord α) (φ : Formula α) :
     ¬ φ.directSatisfies ξ ↔ (φ.toNNF false).satisfies ξ :=
   (toNNF_correct_aux ξ φ).2
+
+/-- The embedding back into the surface syntax preserves meaning. -/
+theorem NNF.directSatisfies_toFormula {α} (ξ : OmegaWord α) (φ : NNF α) :
+    φ.toFormula.directSatisfies ξ ↔ φ.satisfies ξ := by
+  rw [Formula.toNNF_correct, NNF.toNNF_toFormula]
 
 /-- The two satisfaction notions for Formula agree. -/
 theorem Formula.directSatisfies_eq_satisfies {α} (ξ : OmegaWord α) (φ : Formula α) :

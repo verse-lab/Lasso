@@ -19,6 +19,7 @@
 
   Key theorems:
   - `collectNew_visited_subset`/`collectNew_subset_domain`/`collectNew_size_eq`: invariants for `bfsGo`'s termination proof
+  - `bfsFindPath_stem`: over a domain holding every reachable state, the BFS finds a stem to any reachable target
   - `stitchCycleAt_valid`: the built cycle is a real, domain-confined, mark-covering `succs`-cycle
   - `stitchCycleAt_toTAcceptingCycle`: packaged together with a stem into a full `TAcceptingCycle`
 
@@ -29,6 +30,7 @@
 -/
 import Std
 import Mathlib.Data.Finset.Card
+import LTLLib.AbstractSpec.EmptinessCheck
 import LTLLib.AbstractSpec.GraphPaths
 import LTLLib.TGBABased.AbstractSpec.SCCTheory
 
@@ -606,6 +608,21 @@ theorem bfsFindPath_complete (domain : Std.HashSet State) (succs : State → Arr
     have := hVtarget t htV
     rw [httarget] at this
     exact absurd this (by simp)
+
+/-- Over a domain holding every reachable state, the BFS from the initial states finds a stem to any reachable target. -/
+theorem bfsFindPath_stem {domain : Std.HashSet State} {succs : State → Array State} {initialStates : List State}
+    {anchor : State} (hdom : ∀ s, Reachable initialStates succs s → s ∈ domain)
+    (ha : Reachable initialStates succs anchor) :
+    ∃ path, bfsFindPath domain succs initialStates (· == anchor) = some path ∧
+      ∃ hs : path ≠ [], path.head hs ∈ initialStates ∧
+        (∀ i, (hi : i + 1 < path.length) → path[i + 1] ∈ succs (path[i])) ∧ path.getLast hs = anchor := by
+  obtain ⟨s0, hs0, hp⟩ := ha.exists_pathTo
+  obtain ⟨path, hpath⟩ := bfsFindPath_complete domain succs initialStates (· == anchor)
+    ⟨s0, hs0, Std.HashSet.mem_iff_contains.mp (hdom s0 (.base hs0)), anchor,
+      Std.HashSet.mem_iff_contains.mp (hdom anchor ha), by simp,
+      hp.imp id fun h => h.weaken fun x hx hr => hx (Std.HashSet.mem_iff_contains.mp (hdom x hr))⟩
+  obtain ⟨hne, hhead, htarget, -, hchain⟩ := bfsFindPath_sound domain succs initialStates (· == anchor) path hpath
+  exact ⟨path, hpath, hne, hhead, hchain, by simpa using htarget⟩
 
 end Bfs
 

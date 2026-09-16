@@ -10,6 +10,9 @@
 
   Key theorems:
   - `exists_TAcceptingCycle_of_run`: a run hitting every mark infinitely often yields a `TAcceptingCycle`
+  - `exists_TAcceptingCycle_of_run_tail`: the same with the cycle past a given position
+  - `exists_TAcceptingCycle_of_run_marks`: the same again, the cycle also meeting each of a list of state
+    predicates the run satisfies infinitely often
 
   Sections:
   - Round boundaries
@@ -95,39 +98,41 @@ private theorem coverFrom_covers (hacc : MarksRecur edgeMarks numMarks σ) {m k 
       exact ⟨nextMark hacc m (coverFrom hacc m N),
         le_trans (coverFrom_ge hacc m N) (nextMark_ge hacc m _), Nat.le_refl _, nextMark_spec hacc hm _⟩
 
-/-- Boundary of the `k`-th round, every mark occurs on an edge strictly inside `[roundEnd k, roundEnd (k+1))`. -/
-private noncomputable def roundEnd (hacc : MarksRecur edgeMarks numMarks σ) : Nat → Nat
-  | 0 => 0
-  | k + 1 => coverFrom hacc numMarks (roundEnd hacc k) + 1
+/-- Boundary of the `k`-th round counted from `N`, every mark occurring on an edge strictly inside
+`[roundEnd N k, roundEnd N (k+1))`. -/
+private noncomputable def roundEnd (hacc : MarksRecur edgeMarks numMarks σ) (N : Nat) : Nat → Nat
+  | 0 => N
+  | k + 1 => coverFrom hacc numMarks (roundEnd hacc N k) + 1
 
-private theorem roundEnd_lt_succ (hacc : MarksRecur edgeMarks numMarks σ) (k : Nat) :
-    roundEnd hacc k < roundEnd hacc (k + 1) := by
-  show roundEnd hacc k < coverFrom hacc numMarks (roundEnd hacc k) + 1
-  have := coverFrom_ge hacc numMarks (roundEnd hacc k)
+private theorem roundEnd_lt_succ (hacc : MarksRecur edgeMarks numMarks σ) (N k : Nat) :
+    roundEnd hacc N k < roundEnd hacc N (k + 1) := by
+  show roundEnd hacc N k < coverFrom hacc numMarks (roundEnd hacc N k) + 1
+  have := coverFrom_ge hacc numMarks (roundEnd hacc N k)
   omega
 
-private theorem roundEnd_lt_of_lt (hacc : MarksRecur edgeMarks numMarks σ) {i j : Nat} (h : i < j) :
-    roundEnd hacc i < roundEnd hacc j := by
+private theorem roundEnd_lt_of_lt (hacc : MarksRecur edgeMarks numMarks σ) (N : Nat) {i j : Nat}
+    (h : i < j) : roundEnd hacc N i < roundEnd hacc N j := by
   induction j with
   | zero => omega
   | succ j ih =>
     rcases Nat.lt_or_ge i j with hlt | hge
-    · exact Nat.lt_trans (ih hlt) (roundEnd_lt_succ hacc j)
+    · exact Nat.lt_trans (ih hlt) (roundEnd_lt_succ hacc N j)
     · have : i = j := by omega
       rw [this]
-      exact roundEnd_lt_succ hacc j
+      exact roundEnd_lt_succ hacc N j
 
-private theorem roundEnd_le_of_le (hacc : MarksRecur edgeMarks numMarks σ) {i j : Nat} (h : i ≤ j) :
-    roundEnd hacc i ≤ roundEnd hacc j := by
+private theorem roundEnd_le_of_le (hacc : MarksRecur edgeMarks numMarks σ) (N : Nat) {i j : Nat}
+    (h : i ≤ j) : roundEnd hacc N i ≤ roundEnd hacc N j := by
   rcases Nat.lt_or_ge i j with hlt | hge
-  · exact le_of_lt (roundEnd_lt_of_lt hacc hlt)
+  · exact le_of_lt (roundEnd_lt_of_lt hacc N hlt)
   · rw [Nat.le_antisymm h hge]
 
 private theorem roundEnd_covers (hacc : MarksRecur edgeMarks numMarks σ) {m : Nat} (hm : m < numMarks)
-    (k : Nat) :
-    ∃ n, roundEnd hacc k ≤ n ∧ n + 1 ≤ roundEnd hacc (k + 1) ∧ m ∈ edgeMarks (σ n) (σ (n + 1)) := by
-  obtain ⟨n, h1, h2, h3⟩ := coverFrom_covers hacc hm hm (roundEnd hacc k)
-  exact ⟨n, h1, by show n + 1 ≤ coverFrom hacc numMarks (roundEnd hacc k) + 1; omega, h3⟩
+    (N k : Nat) :
+    ∃ n, roundEnd hacc N k ≤ n ∧ n + 1 ≤ roundEnd hacc N (k + 1) ∧
+      m ∈ edgeMarks (σ n) (σ (n + 1)) := by
+  obtain ⟨n, h1, h2, h3⟩ := coverFrom_covers hacc hm hm (roundEnd hacc N k)
+  exact ⟨n, h1, by show n + 1 ≤ coverFrom hacc numMarks (roundEnd hacc N k) + 1; omega, h3⟩
 
 end RoundBoundaries
 
@@ -137,19 +142,22 @@ section Pumping
 
 variable {State : Type u}
 
-/-- A run hitting every mark infinitely often yields a `TAcceptingCycle`. Round boundaries repeat by
-finiteness, and the window between two equal ones is a cycle that has already seen every mark. -/
-theorem exists_TAcceptingCycle_of_run {succs : State → Array State}
+/-- A run hitting every mark infinitely often yields a `TAcceptingCycle` whose cycle lies entirely at or past
+`N`. Round boundaries counted from `N` repeat by finiteness, and the window between two equal ones is a cycle
+that has already seen every mark. -/
+theorem exists_TAcceptingCycle_of_run_tail {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {initialStates : List State}
     (fr : FiniteReach initialStates succs) {σ : Nat → State} (hinit : σ 0 ∈ initialStates)
     (htrans : ∀ n, σ (n + 1) ∈ succs (σ n))
-    (hacc : ∀ m, m < numMarks → ∀ N, ∃ n ≥ N, m ∈ edgeMarks (σ n) (σ (n + 1))) :
-    ∃ _ac : TAcceptingCycle initialStates succs edgeMarks numMarks, True := by
+    (hacc : ∀ m, m < numMarks → ∀ N, ∃ n ≥ N, m ∈ edgeMarks (σ n) (σ (n + 1))) (N : Nat) :
+    ∃ ac : TAcceptingCycle initialStates succs edgeMarks numMarks,
+      ∀ s ∈ ac.cycle, ∃ n, N ≤ n ∧ s = σ n := by
   obtain ⟨i, j, hij, heq⟩ :=
-    fr.exists_lt_sample_eq (Reachable.of_run hinit htrans) (roundEnd hacc)
-  have hpq : roundEnd hacc i < roundEnd hacc j := roundEnd_lt_of_lt hacc hij
-  set p := roundEnd hacc i with hp
-  set q := roundEnd hacc j with hq
+    fr.exists_lt_sample_eq (Reachable.of_run hinit htrans) (roundEnd hacc N)
+  have hpq : roundEnd hacc N i < roundEnd hacc N j := roundEnd_lt_of_lt hacc N hij
+  have hNp : N ≤ roundEnd hacc N i := roundEnd_le_of_le hacc N (Nat.zero_le i)
+  set p := roundEnd hacc N i with hp
+  set q := roundEnd hacc N j with hq
   have hstem_get : ∀ i, (hi : i < p + 1) →
       ((List.range (p + 1)).map σ)[i]'(by simpa using hi) = σ i := by
     intro i hi; simp
@@ -199,15 +207,92 @@ theorem exists_TAcceptingCycle_of_run {succs : State → Array State}
       rwa [← heq] at ht
     cycle_covers_marks := by
       intro m hm
-      obtain ⟨n, hn1, hn2, hn3⟩ := roundEnd_covers hacc hm i
-      have hnq : n + 1 ≤ q := le_trans hn2 (roundEnd_le_of_le hacc (by omega))
+      obtain ⟨n, hn1, hn2, hn3⟩ := roundEnd_covers hacc hm N i
+      have hnq : n + 1 ≤ q := le_trans hn2 (roundEnd_le_of_le hacc N (by omega))
       refine ⟨n - p, by simpa using (by omega : n - p < q - p), ?_⟩
       simp only [List.getElem_map, List.getElem_range, List.length_map, List.length_range]
       rw [hwrap (n - p) (by omega)]
       have hnp : p + (n - p) = n := by omega
       rw [hnp]
       exact hn3
-  }, trivial⟩
+  }, fun s hs => ?_⟩
+  obtain ⟨k, -, rfl⟩ := List.mem_map.mp hs
+  exact ⟨p + k, by omega, rfl⟩
+
+/-- A run hitting every mark infinitely often yields a `TAcceptingCycle`. -/
+theorem exists_TAcceptingCycle_of_run {succs : State → Array State}
+    {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {initialStates : List State}
+    (fr : FiniteReach initialStates succs) {σ : Nat → State} (hinit : σ 0 ∈ initialStates)
+    (htrans : ∀ n, σ (n + 1) ∈ succs (σ n))
+    (hacc : ∀ m, m < numMarks → ∀ N, ∃ n ≥ N, m ∈ edgeMarks (σ n) (σ (n + 1))) :
+    ∃ _ac : TAcceptingCycle initialStates succs edgeMarks numMarks, True :=
+  ⟨(exists_TAcceptingCycle_of_run_tail fr hinit htrans hacc 0).choose, trivial⟩
+
+/-- Extra state predicates the run satisfies infinitely often ride along as extra marks, so the cycle visits a
+state satisfying each of them. Marks at or above `numMarks` are dropped from the original condition first, so
+the added indices cannot be confused with the graph's own. -/
+theorem exists_TAcceptingCycle_of_run_marks {succs : State → Array State}
+    {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {initialStates : List State}
+    (fr : FiniteReach initialStates succs) {σ : Nat → State} (hinit : σ 0 ∈ initialStates)
+    (htrans : ∀ n, σ (n + 1) ∈ succs (σ n))
+    (hacc : ∀ m, m < numMarks → ∀ N, ∃ n ≥ N, m ∈ edgeMarks (σ n) (σ (n + 1)))
+    (N : Nat) (ps : List (State → Bool))
+    (hps : ∀ p ∈ ps, ∀ K, ∃ n ≥ K, p (σ n) = true) :
+    ∃ ac : TAcceptingCycle initialStates succs edgeMarks numMarks,
+      (∀ s ∈ ac.cycle, ∃ n, N ≤ n ∧ s = σ n) ∧ ∀ p ∈ ps, ∃ s ∈ ac.cycle, p s = true := by
+  let em' : State → State → Std.HashSet Nat := fun s t =>
+    Std.HashSet.ofList ((edgeMarks s t).toList.filter (· < numMarks) ++
+      (List.range ps.length).filterMap fun j =>
+        if ps.getD j (fun _ => false) s then some (numMarks + j) else none)
+  have hmem : ∀ s t m, m ∈ em' s t ↔ (m ∈ edgeMarks s t ∧ m < numMarks) ∨
+      ∃ j, j < ps.length ∧ m = numMarks + j ∧ ps.getD j (fun _ => false) s = true := by
+    intro s t m
+    rw [show em' s t = _ from rfl, Std.HashSet.mem_ofList, List.contains_iff_mem, List.mem_append,
+      List.mem_filter, Std.HashSet.mem_toList, List.mem_filterMap]
+    constructor
+    · rintro (⟨h1, h2⟩ | ⟨j, hj, hje⟩)
+      · exact Or.inl ⟨h1, by simpa using h2⟩
+      · refine Or.inr ⟨j, List.mem_range.mp hj, ?_⟩
+        by_cases hp : ps.getD j (fun _ => false) s = true
+        · rw [if_pos hp] at hje
+          exact ⟨(Option.some.inj hje).symm, hp⟩
+        · rw [if_neg hp] at hje
+          exact absurd hje (by simp)
+    · rintro (⟨h1, h2⟩ | ⟨j, hj, rfl, hp⟩)
+      · exact Or.inl ⟨h1, by simpa using h2⟩
+      · exact Or.inr ⟨j, List.mem_range.mpr hj, by rw [if_pos hp]⟩
+  have hacc' : ∀ m, m < numMarks + ps.length → ∀ K, ∃ n ≥ K, m ∈ em' (σ n) (σ (n + 1)) := by
+    intro m hm K
+    rcases Nat.lt_or_ge m numMarks with hlt | hge
+    · obtain ⟨n, hn, hmn⟩ := hacc m hlt K
+      exact ⟨n, hn, (hmem _ _ m).mpr (Or.inl ⟨hmn, hlt⟩)⟩
+    · have hj : m - numMarks < ps.length := by omega
+      have hget : ps.getD (m - numMarks) (fun _ => false) = ps[m - numMarks] :=
+        (List.getElem_eq_getD _).symm
+      obtain ⟨n, hn, hpn⟩ := hps ps[m - numMarks] (List.getElem_mem hj) K
+      exact ⟨n, hn, (hmem _ _ m).mpr (Or.inr ⟨m - numMarks, hj, by omega, by rw [hget]; exact hpn⟩)⟩
+  obtain ⟨ac, htail⟩ := exists_TAcceptingCycle_of_run_tail fr hinit htrans hacc' N
+  refine ⟨{
+    stem := ac.stem
+    cycle := ac.cycle
+    stem_nonempty := ac.stem_nonempty
+    cycle_nonempty := ac.cycle_nonempty
+    stem_head_initial := ac.stem_head_initial
+    stem_chain := ac.stem_chain
+    overlap := ac.overlap
+    cycle_chain := ac.cycle_chain
+    cycle_back := ac.cycle_back
+    cycle_covers_marks := fun m hm => ?_ }, htail, fun p hp => ?_⟩
+  · obtain ⟨i, hi, hm'⟩ := ac.cycle_covers_marks m (by omega)
+    exact ⟨i, hi, (((hmem _ _ m).mp hm').resolve_right (by rintro ⟨j, -, rfl, -⟩; omega)).1⟩
+  · obtain ⟨j, hj, rfl⟩ := List.getElem_of_mem hp
+    obtain ⟨i, hi, hm'⟩ := ac.cycle_covers_marks (numMarks + j) (by omega)
+    rcases (hmem _ _ _).mp hm' with ⟨-, hlt⟩ | ⟨j', hj', heq, hpj⟩
+    · omega
+    · have hjj : j' = j := by omega
+      subst hjj
+      rw [List.getElem_eq_getD (fallback := fun _ => false)]
+      exact ⟨ac.cycle[i], List.getElem_mem hi, hpj⟩
 
 end Pumping
 

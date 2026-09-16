@@ -4,11 +4,21 @@
 
   These expand into standard LTL formulas and require no special handling in the GBA construction.
   Fairness-encoded formulas can however produce larger automata.
+
+  `BoolFormula.weakFairMark` is the alternative for a propositional weak fairness assumption, which
+  `modelCheckTGBAFair` carries as a generalized Büchi mark instead of translating.
+
+  Sections:
+  - Formula combinators
+  - Weak fairness as a mark
 -/
 
+import LTLLib.LTL.Propositional
 import LTLLib.LTL.Syntax
 
 namespace LTLLib
+
+/-! ## Formula combinators -/
 
 namespace Formula
 
@@ -50,5 +60,38 @@ def underFairness (fairnessAssumptions : List (Formula α)) (property : Formula 
   .implies (fairnessConjunction fairnessAssumptions) property
 
 end Formula
+
+/-! ## Weak fairness as a mark -/
+
+namespace BoolFormula
+
+/-- Weak fairness `◇□E → □◇T` for propositional `E` and `T`, as the single conjunct `¬E ∨ T` whose `□◇` form
+is the assumption. [SLDP09] Definition 1 for the notion, generalised from actions to predicates, with the
+collapse `◇□E → □◇T ≡ GF ¬E ∨ GF T ≡ GF(¬E ∨ T)` read off [LSFZ16] Theorem 1's distribution of `GF` over `∨`. -/
+def weakFairMark {α} (enabled taken : BoolFormula α) : BoolFormula α := .or enabled.neg taken
+
+/-- `□◇(¬E ∨ T)` is exactly weak fairness, which is why one generalized Büchi mark suffices for it. -/
+theorem satisfies_weakFairMark {α} (ξ : OmegaWord α) (e t : BoolFormula α) :
+    (alwaysEventually (weakFairMark e t)).satisfies ξ ↔
+      ((eventuallyAlways e).satisfies ξ → (alwaysEventually t).satisfies ξ) := by
+  rw [satisfies_alwaysEventually, satisfies_eventuallyAlways, satisfies_alwaysEventually]
+  simp only [weakFairMark, holds, holds_neg]
+  constructor
+  · rintro h ⟨N, hN⟩ n
+    obtain ⟨j, hj⟩ := h (n + N)
+    rcases hj with hne | ht
+    · exact absurd (by rw [show n + N + j = N + (n + j) by omega]; exact hN (n + j)) hne
+    · exact ⟨N + j, by rw [show n + (N + j) = n + N + j by omega]; exact ht⟩
+  · intro h n
+    by_cases hen : ∃ N, ∀ k, holds (ξ (N + k)) e
+    · obtain ⟨j, hj⟩ := h hen n
+      exact ⟨j, Or.inr hj⟩
+    · have hex : ∃ k, ¬ holds (ξ (n + k)) e :=
+        Classical.byContradiction fun hc =>
+          hen ⟨n, fun k => Classical.byContradiction fun hk => hc ⟨k, hk⟩⟩
+      obtain ⟨k, hk⟩ := hex
+      exact ⟨k, Or.inl hk⟩
+
+end BoolFormula
 
 end LTLLib

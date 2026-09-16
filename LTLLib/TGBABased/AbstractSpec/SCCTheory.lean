@@ -11,6 +11,7 @@
 
   Key definitions:
   - `AcceptingMarks`, `InternallyConnected`, `AcceptingSCC`
+  - `SCCEnumerationSound`: the contract an SCC enumeration owes a prune-based check
 
   Key theorems:
   - `acceptingSCC_iff_acceptingCycle`: a reachable accepting SCC exists iff a `TAcceptingCycle` does
@@ -18,6 +19,12 @@
     specific to `build_tour`, reused by `SCC/WitnessExtraction.lean`'s `stitchCycleAt` correctness proof
   - `InternallyConnected.chain_merge`: a forward-chained run of internally-connected ranges, closed by one
     back-edge from the last range to the first, merges into a single internally-connected union
+  - `AcceptingMarks.mono`, `InternallyConnected.restrict`, `AcceptingMarks.restrict`: an SCC keeps its
+    properties when the candidate it sits in changes
+  - `sccSuccs_congr`, `InternallyConnected.congr`: both depend only on the members of the set
+  - `InternallyConnected.exists_succ`: with one internal edge, every member has a successor inside the set
+  - `InternallyConnected.mono_graph`, `AcceptingMarks.mono_graph`: both survive adding edges to the graph
+  - `SCCEnumerationSound.congr_init`: an enumeration depends only on the members of the initial list
 
   Sections:
   - Accepting SCC
@@ -55,6 +62,17 @@ theorem AcceptingMarks.sccSuccs {succs : State → Array State} {edgeMarks : Sta
   obtain ⟨s, hs, t, ht, hedge, hmark⟩ := hcov m hm
   exact ⟨s, hs, t, ht, Array.mem_filter.mpr ⟨hedge, ht⟩, hmark⟩
 
+omit [LawfulBEq State] in
+/-- Marks covered on a subset's internal edges are covered on the whole set's. -/
+theorem AcceptingMarks.mono {succs : State → Array State} {edgeMarks : State → State → Std.HashSet Nat}
+    {numMarks : Nat} {scc scc' : Std.HashSet State} (hsub : ∀ s ∈ scc, s ∈ scc')
+    (h : AcceptingMarks succs edgeMarks numMarks scc) :
+    AcceptingMarks succs edgeMarks numMarks scc' := by
+  obtain ⟨⟨s, hs, t, ht, hedge⟩, hcov⟩ := h
+  refine ⟨⟨s, hsub s hs, t, hsub t ht, hedge⟩, fun m hm => ?_⟩
+  obtain ⟨s, hs, t, ht, hedge, hmark⟩ := hcov m hm
+  exact ⟨s, hsub s hs, t, hsub t ht, hedge, hmark⟩
+
 /-- Any two members of `scc` are connected by a path staying entirely inside `scc`. -/
 def InternallyConnected (succs : State → Array State) (scc : Std.HashSet State) : Prop :=
   ∀ s ∈ scc, ∀ t ∈ scc, s = t ∨ PathTo (sccSuccs succs scc) (fun _ => False) s t
@@ -70,6 +88,31 @@ theorem InternallyConnected.domainBlocked {succs : State → Array State} {scc :
     hp.confine (P := fun x => scc.contains x) fun {_ _} hab => (Array.mem_filter.mp hab).2
 
 omit [LawfulBEq State] in
+/-- A path between two members of a set whose edges only ever leave it for a sink it cannot come back from
+stays inside the set, which is the confined form `InternallyConnected` asks for. -/
+theorem pathTo_within {succs : State → Array State} {scc sink : Std.HashSet State}
+    (hout : ∀ x ∈ scc, ∀ y ∈ succs x, y ∈ scc ∨ y ∈ sink)
+    (hsink : ∀ x ∈ sink, ∀ y ∈ succs x, y ∈ sink) (hdisj : ∀ x ∈ scc, x ∉ sink) {s t : State}
+    (h : PathTo succs (fun _ => False) s t) :
+    s ∈ scc → t ∈ scc → PathTo (sccSuccs succs scc) (fun _ => False) s t := by
+  induction h with
+  | @direct a b hab =>
+    intro _ hb
+    exact .direct (by
+      simp only [sccSuccs]
+      exact Array.mem_filter.mpr ⟨hab, Std.HashSet.mem_iff_contains.mp hb⟩)
+  | @through a mid b hmid _ hpath ih =>
+    intro ha hb
+    have hmidS : mid ∈ scc := by
+      rcases hout a ha mid hmid with hm | hm
+      · exact hm
+      · exact absurd (hpath.closed hm hsink) (hdisj b hb)
+    exact .through (by
+      simp only [sccSuccs]
+      exact Array.mem_filter.mpr ⟨hmid, Std.HashSet.mem_iff_contains.mp hmidS⟩)
+      (fun hx => hx) (ih hmidS hb)
+
+omit [LawfulBEq State] in
 /-- `sccSuccs` widens monotonically with `scc` itself. -/
 theorem sccSuccs_mono {succs : State → Array State} {scc1 scc2 : Std.HashSet State}
     (hsub : ∀ x, x ∈ scc1 → x ∈ scc2) {a b : State} (hb : b ∈ sccSuccs succs scc1 a) :
@@ -77,6 +120,60 @@ theorem sccSuccs_mono {succs : State → Array State} {scc1 scc2 : Std.HashSet S
   unfold sccSuccs at hb ⊢
   obtain ⟨hbsucc, hbcontains⟩ := Array.mem_filter.mp hb
   exact Array.mem_filter.mpr ⟨hbsucc, Std.HashSet.mem_iff_contains.mp (hsub b (Std.HashSet.mem_iff_contains.mpr hbcontains))⟩
+
+omit [LawfulBEq State] in
+/-- Sets with the same members restrict `succs` identically. -/
+theorem sccSuccs_congr {succs : State → Array State} {scc1 scc2 : Std.HashSet State}
+    (h : ∀ x, x ∈ scc1 ↔ x ∈ scc2) : sccSuccs succs scc1 = sccSuccs succs scc2 := by
+  have hc : scc1.contains = scc2.contains :=
+    funext fun x => Bool.eq_iff_iff.mpr (by simpa only [Std.HashSet.mem_iff_contains] using h x)
+  unfold sccSuccs
+  rw [hc]
+
+omit [LawfulBEq State] in
+/-- `InternallyConnected` depends only on the members of the set. -/
+theorem InternallyConnected.congr {succs : State → Array State} {scc1 scc2 : Std.HashSet State}
+    (h : InternallyConnected succs scc1) (hmem : ∀ x, x ∈ scc1 ↔ x ∈ scc2) :
+    InternallyConnected succs scc2 := by
+  intro s hs t ht
+  rw [← sccSuccs_congr hmem]
+  exact h s ((hmem s).mpr hs) t ((hmem t).mpr ht)
+
+omit [LawfulBEq State] in
+/-- In an internally connected set with an internal edge, every member has a successor inside the set. -/
+theorem InternallyConnected.exists_succ {succs : State → Array State} {scc : Std.HashSet State}
+    (h : InternallyConnected succs scc) (hedge : ∃ s ∈ scc, ∃ t ∈ scc, t ∈ succs s) :
+    ∀ u ∈ scc, ∃ t ∈ scc, t ∈ succs u := by
+  obtain ⟨s, hs, t, ht, hst⟩ := hedge
+  intro u hu
+  rcases h u hu s hs with rfl | hp
+  · exact ⟨t, ht, hst⟩
+  · have hfirst : ∃ v, v ∈ sccSuccs succs scc u := by
+      cases hp with
+      | direct hv => exact ⟨_, hv⟩
+      | through hv _ _ => exact ⟨_, hv⟩
+    obtain ⟨v, hv⟩ := hfirst
+    obtain ⟨hv1, hv2⟩ := Array.mem_filter.mp hv
+    exact ⟨v, Std.HashSet.mem_iff_contains.mpr hv2, hv1⟩
+
+omit [LawfulBEq State] in
+/-- Connectivity inside a set survives adding edges to the graph. -/
+theorem InternallyConnected.mono_graph {g succs : State → Array State} {scc : Std.HashSet State}
+    (hg : ∀ a b, b ∈ g a → b ∈ succs a) (h : InternallyConnected g scc) : InternallyConnected succs scc :=
+  fun s hs t ht => (h s hs t ht).imp id fun hp => hp.mono_succs fun a b hb => by
+    obtain ⟨hb1, hb2⟩ := Array.mem_filter.mp hb
+    exact Array.mem_filter.mpr ⟨hg a b hb1, hb2⟩
+
+omit [LawfulBEq State] in
+/-- The same for the marks on a set's internal edges. -/
+theorem AcceptingMarks.mono_graph {g succs : State → Array State}
+    {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {scc : Std.HashSet State}
+    (hg : ∀ a b, b ∈ g a → b ∈ succs a) (h : AcceptingMarks g edgeMarks numMarks scc) :
+    AcceptingMarks succs edgeMarks numMarks scc := by
+  obtain ⟨⟨s, hs, t, ht, hedge⟩, hcov⟩ := h
+  refine ⟨⟨s, hs, t, ht, hg _ _ hedge⟩, fun m hm => ?_⟩
+  obtain ⟨s, hs, t, ht, hedge, hmark⟩ := hcov m hm
+  exact ⟨s, hs, t, ht, hg _ _ hedge, hmark⟩
 
 omit [LawfulBEq State] in
 private theorem chain_forward {succs : State → Array State} {rng : Nat → Std.HashSet State}
@@ -143,6 +240,39 @@ theorem InternallyConnected.chain_merge {succs : State → Array State} {rng : N
       · exact Or.inr (heq3 ▸ hp1.trans (.direct hmidedge))
       · exact Or.inr (hp1.trans (.through hmidedge (fun h => h) hp3))
 
+omit [LawfulBEq State] in
+/-- An SCC found in a graph that only admits ambient edges is internally connected in every candidate that
+contains it, restricted the same way, since only its own edges are ever looked at. -/
+theorem InternallyConnected.restrict {g succs : State → Array State} {D scc : Std.HashSet State}
+    (hg : ∀ a b, b ∈ g a → b ∈ succs a) (hD : ∀ s ∈ scc, s ∈ D)
+    (h : InternallyConnected g scc) : InternallyConnected (sccSuccs succs D) scc :=
+  fun s hs t ht => (h s hs t ht).imp id fun hp => hp.mono_succs fun a b hb => by
+    obtain ⟨hb1, hb2⟩ := Array.mem_filter.mp hb
+    exact Array.mem_filter.mpr ⟨Array.mem_filter.mpr ⟨hg a b hb1,
+      Std.HashSet.mem_iff_contains.mp (hD b (Std.HashSet.mem_iff_contains.mpr hb2))⟩, hb2⟩
+
+omit [LawfulBEq State] in
+/-- The same for the marks on those edges. -/
+theorem AcceptingMarks.restrict {g succs : State → Array State}
+    {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {D scc : Std.HashSet State}
+    (hg : ∀ a b, b ∈ g a → b ∈ succs a) (hD : ∀ s ∈ scc, s ∈ D)
+    (h : AcceptingMarks g edgeMarks numMarks scc) :
+    AcceptingMarks (LTLLib.sccSuccs succs D) edgeMarks numMarks scc := by
+  obtain ⟨⟨s, hs, t, ht, hedge⟩, hcov⟩ := h
+  have hstep : ∀ {a b : State}, b ∈ scc → b ∈ g a → b ∈ LTLLib.sccSuccs succs D a :=
+    fun hbscc hb => Array.mem_filter.mpr ⟨hg _ _ hb,
+      Std.HashSet.mem_iff_contains.mp (hD _ hbscc)⟩
+  refine ⟨⟨s, hs, t, ht, hstep ht hedge⟩, fun m hm => ?_⟩
+  obtain ⟨s, hs, t, ht, hedge, hmark⟩ := hcov m hm
+  exact ⟨s, hs, t, ht, hstep ht hedge, hmark⟩
+
+/-- A candidate's own graph never leaves the candidate, so everything it reaches is inside it. -/
+theorem mem_of_reachable_sccSuccs {succs : State → Array State} {C : Std.HashSet State} {s : State}
+    (h : Reachable C.toList (sccSuccs succs C) s) : s ∈ C := by
+  induction h with
+  | base hi => simpa using hi
+  | step _ ht _ => exact Std.HashSet.mem_iff_contains.mpr (Array.mem_filter.mp ht).2
+
 /-- A reachable, internally strongly-connected, mark-covering subset, not required to be a maximal SCC (see the file docstring). -/
 structure AcceptingSCC (initialStates : List State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat) where
@@ -198,6 +328,23 @@ theorem chain_glue {succs : State → Array State} (l p : List State)
         simpa using h
       exact ⟨by simp, by simp [List.getLast_cons],
         chain_append l (b :: rest') hlchain hrestchain hne (by simp) hedge⟩
+
+/-- What an SCC enumeration has to deliver. Every listed set is reachable and internally connected, and every
+reachable internally connected set sits inside one of them, which is maximality in the form the prune needs. -/
+def SCCEnumerationSound (initialStates : List State) (succs : State → Array State)
+    (sccs : List (Std.HashSet State)) : Prop :=
+  (∀ C ∈ sccs, ∀ s ∈ C, Reachable initialStates succs s) ∧
+  (∀ C ∈ sccs, InternallyConnected succs C) ∧
+  ∀ D : Std.HashSet State, (∃ s, s ∈ D) → InternallyConnected succs D →
+    (∀ s ∈ D, Reachable initialStates succs s) → ∃ C ∈ sccs, ∀ s ∈ D, s ∈ C
+
+omit [LawfulBEq State] in
+/-- An enumeration stays sound when the initial list is replaced by one with the same members. -/
+theorem SCCEnumerationSound.congr_init {l l' : List State} {succs : State → Array State}
+    {sccs : List (Std.HashSet State)} (hmem : ∀ x, x ∈ l ↔ x ∈ l') (h : SCCEnumerationSound l succs sccs) :
+    SCCEnumerationSound l' succs sccs :=
+  ⟨fun C hC s hs => (h.1 C hC s hs).mono_init fun x hx => (hmem x).mp hx, h.2.1,
+    fun D hD hconn hreach => h.2.2 D hD hconn fun s hs => (hreach s hs).mono_init fun x hx => (hmem x).mpr hx⟩
 
 /-! ## SCC to cycle -/
 
@@ -428,7 +575,7 @@ variable [LawfulHashable State]
 theorem TAcceptingCycle.exists_acceptingSCC {initialStates : List State} {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat}
     (ac : TAcceptingCycle initialStates succs edgeMarks numMarks) :
-    ∃ _A : AcceptingSCC initialStates succs edgeMarks numMarks, True := by
+    ∃ A : AcceptingSCC initialStates succs edgeMarks numMarks, ∀ s, s ∈ A.scc ↔ s ∈ ac.cycle := by
   have hcyclen : ac.cycle.length ≥ 1 := ac.cycle_nonempty
   have hstemlen : ac.stem.length ≥ 1 := ac.stem_nonempty
   have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos (by omega)
@@ -523,7 +670,7 @@ theorem TAcceptingCycle.exists_acceptingSCC {initialStates : List State} {succs 
         (ac.stem.getLast (List.ne_nil_of_length_pos (by omega))) (List.getLast_mem _)
     exact reachable_of_chain ac.cycle ac.cycle_chain hr0 hne rfl s hs'
   exact ⟨⟨scc, ⟨ac.cycle.head hne, (hmemscc _).mpr (List.head_mem hne)⟩, hconnected, hcovers,
-    hreachable⟩, trivial⟩
+    hreachable⟩, hmemscc⟩
 
 /-! ## Sufficiency -/
 
@@ -534,6 +681,8 @@ theorem acceptingSCC_iff_acceptingCycle {initialStates : List State} {succs : St
     ∃ _ac : TAcceptingCycle initialStates succs edgeMarks numMarks, True := by
   constructor
   · rintro ⟨A, -⟩; exact A.exists_acceptingCycle
-  · rintro ⟨ac, -⟩; exact ac.exists_acceptingSCC
+  · rintro ⟨ac, -⟩
+    obtain ⟨A, -⟩ := ac.exists_acceptingSCC
+    exact ⟨A, trivial⟩
 
 end LTLLib

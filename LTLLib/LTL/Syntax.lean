@@ -9,7 +9,9 @@
     negation only appears at the atomic level (`nprop`). This is the IR consumed
     by the GBA construction pipeline.
 
-  `Formula.toNNF` compiles the user-facing syntax to NNF.
+  `Formula.toNNF` compiles the user-facing syntax to NNF and `NNF.toFormula` embeds it back, `toNNF true`
+  being a left inverse. `NNF.splitConj` splits at the top-level conjunctions, which fairness routing runs
+  after `toNNF` so that a conjunction written under a negation splits too.
 
   Sections:
   - User-facing syntax
@@ -57,6 +59,18 @@ def toString {α} [ToString α] : Formula α → String
   | .always φ => s!"□({φ.toString})"
 
 instance {α} [ToString α] : ToString (Formula α) := ⟨Formula.toString⟩
+
+/-- Conjunction of a list, `⊤` when empty. -/
+def conj {α} : List (Formula α) → Formula α
+  | [] => .tt
+  | [φ] => φ
+  | φ :: φs => .and φ (conj φs)
+
+/-- `φ` under a list of assumptions, `φ` itself when there are none so an empty assumption costs nothing. -/
+def assuming {α} (ψs : List (Formula α)) (φ : Formula α) : Formula α :=
+  match ψs with
+  | [] => φ
+  | _ => .implies (conj ψs) φ
 
 end Formula
 
@@ -109,6 +123,24 @@ def always {α} (φ : NNF α) : NNF α := .release .ff φ
 
 /-- Implication φ → ψ = ¬φ ∨ ψ (in NNF). -/
 def implies {α} (φ ψ : NNF α) : NNF α := .or φ.neg ψ
+
+/-- Embed back into the surface syntax, so a formula recovered from NNF can re-enter the translator. -/
+def toFormula {α} : NNF α → Formula α
+  | .tt => .tt
+  | .ff => .ff
+  | .prop a => .atom a
+  | .nprop a => .not (.atom a)
+  | .and φ ψ => .and φ.toFormula ψ.toFormula
+  | .or φ ψ => .or φ.toFormula ψ.toFormula
+  | .next φ => .next φ.toFormula
+  | .until φ ψ => .until φ.toFormula ψ.toFormula
+  | .release φ ψ => .release φ.toFormula ψ.toFormula
+
+/-- Split at the top-level conjunctions. Run on the NNF rather than the surface formula, so a conjunction
+written as `¬(¬φ ∨ ¬ψ)` splits as well. -/
+def splitConj {α} : NNF α → List (NNF α)
+  | .and φ ψ => splitConj φ ++ splitConj ψ
+  | φ => [φ]
 
 /-- Pretty-print an NNF formula. -/
 def toString {α} [ToString α] : NNF α → String
@@ -165,5 +197,9 @@ def toNNF {α} (pos : Bool) : Formula α → NNF α
     else .until .tt (toNNF false φ)
 
 end Formula
+
+/-- `toNNF true` undoes the embedding, so a kept conjunct reaches the tableau exactly as it left it. -/
+theorem NNF.toNNF_toFormula {α} (φ : NNF α) : φ.toFormula.toNNF true = φ := by
+  induction φ <;> simp [NNF.toFormula, Formula.toNNF, *]
 
 end LTLLib

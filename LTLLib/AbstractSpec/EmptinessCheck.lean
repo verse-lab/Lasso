@@ -9,6 +9,8 @@
 
   Key theorems:
   - `Reachable.toChain`: a `Reachable` proof unrolled into its explicit witnessing chain
+  - `Reachable.mono_init`: reachability from a list is reachability from any list containing its members
+  - `Reachable.exists_pathTo`: a reachable state is reached by a path through reachable states only
   - `FiniteReach.exists_lt_sample_eq`: the pigeonhole step shared by the pumping lemmas
 
   Sections:
@@ -86,6 +88,25 @@ inductive Reachable {State : Type u} (initialStates : List State)
   | base {i : State} (hi : i ∈ initialStates) : Reachable initialStates succs i
   | step {s t : State} (hs : Reachable initialStates succs s) (ht : t ∈ succs s) :
       Reachable initialStates succs t
+
+/-- Reachability from a list is reachability from any list containing its members. -/
+theorem Reachable.mono_init {State : Type u} {l l' : List State} {succs : State → Array State} {s : State}
+    (hmem : ∀ x, x ∈ l → x ∈ l') (h : Reachable l succs s) : Reachable l' succs s := by
+  induction h with
+  | base hi => exact .base (hmem _ hi)
+  | step _ ht ih => exact .step ih ht
+
+/-- A reachable state is an initial state or the end of a path from one whose intermediates are all reachable. -/
+theorem Reachable.exists_pathTo {State : Type u} {l : List State} {succs : State → Array State} {s : State}
+    (h : Reachable l succs s) : ∃ s0 ∈ l, s0 = s ∨ PathTo succs (fun x => ¬ Reachable l succs x) s0 s := by
+  induction h with
+  | @base i hi => exact ⟨i, hi, Or.inl rfl⟩
+  | @step s t hs ht ih =>
+    obtain ⟨s0, hs0, h⟩ := ih
+    refine ⟨s0, hs0, Or.inr ?_⟩
+    rcases h with rfl | hp
+    · exact .direct ht
+    · exact hp.snoc (fun hn => hn hs) ht
 
 /-- A `Reachable` proof unrolled into its explicit witnessing chain from some initial state. -/
 theorem Reachable.toChain {State : Type u} {initialStates : List State} {succs : State → Array State}
