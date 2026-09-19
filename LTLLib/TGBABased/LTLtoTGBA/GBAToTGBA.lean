@@ -1,12 +1,15 @@
 /-
-  GBA → TGBA conversion: push each state's acceptance-set membership and propositional label onto its
-  outgoing transitions. A pure edge relabeling, states and initial states carry over verbatim.
+  GBA to TGBA conversion, pushing each state's acceptance-set membership and propositional label onto its outgoing
+  transitions, states and initial states unchanged. `toTGBA` refines `OASpec.toTOASpec` onto `TGBA.Edge`s, every edge
+  `⟨q, gba.tgbaTransitionOf q q'⟩` projecting to the state pair `(q, q')`.
 
-  `toTGBA` refines `OASpec.toTOASpec` (`AbstractSpec/Acceptance.lean`) onto `TGBA.Edge`s: every edge
-  `⟨q, gba.tgbaTransitionOf q q'⟩` carries the label and marks of the state pair `(q, q')` it projects to.
+  Defines:
+  - `GBA.tgbaTransitionOf`: the transition for the edge `q → q'`, carrying `q`'s label and marks
+  - `GBA.toTGBA`: the converted TGBA
 
-  Key theorems:
+  Proves:
   - `GBA.toTGBA_toSpec_accepts`: `gba.toTGBA` accepts exactly the ω-words `gba` accepts
+  - `GBA.toTGBA_wellFormed`, `GBA.toTGBA_marks_lt`: well-formedness is preserved and marks stay below `numAcceptSets`
 
   Sections:
   - Computational conversion
@@ -86,8 +89,7 @@ theorem toTGBA_wellFormed (gba : GBA α) (hwf : gba.WellFormed) : gba.toTGBA.Wel
     obtain ⟨q', hq', rfl⟩ := Array.mem_map.mp ht
     exact acceptMarksOf_lt gba q m (Std.HashSet.mem_iff_contains.mp hm)
 
-/-- `toTGBA`'s marks are bounded at every state (not only inside `states` as `WellFormed.marks_range` gives them).
-`TEmptinessChecker`'s proof fields quantify over all state pairs, so they need this unconditional form. -/
+/-- `toTGBA`'s marks are below `numAcceptSets` at every state, not only inside `states`. -/
 theorem toTGBA_marks_lt (gba : GBA α) (q : Nat) (t : TGBA.Transition α)
     (ht : t ∈ gba.toTGBA.getSuccessors q) (m : Nat) (hm : m ∈ t.acceptMarks) :
     m < gba.toTGBA.numAcceptSets := by
