@@ -1,26 +1,22 @@
 /-
-  Model checking against one fair-normal-form disjunct `FG l ∧ ⋀ⱼ GF lⱼ` with propositional `l` and `lⱼ`.
+  Model checking against one fair-normal-form disjunct `FG l ∧ ⋀ⱼ GF lⱼ` with propositional `l` and `lⱼ`. The `GF` parts
+  are marks on the product (`FairProduct.lean`) and the `FG` part is a region restriction applied by the latch
+  (`AbstractSpec/RegionLatch.lean`), so one call to an unmodified `TEmptinessChecker` decides the disjunct.
 
-  The `GF` parts are marks on the product (`FairProduct.lean`) and the `FG` part is a region restriction
-  applied by the latch (`AbstractSpec/RegionLatch.lean`), so one call to an unmodified `TEmptinessChecker`
-  decides the disjunct. This is the mechanism behind Routes 2b and 3 of `Fairness.md`, `fnf` supplies the
-  disjuncts and the answer is the disjunction over them.
-
-  A disjunct is rejected outright when the system alone admits no run satisfying it, which `disjunctFeasible`
-  decides on the system graph rather than the product, so the rejection costs `|K|` states instead of
-  `|K| × |A|`. Both halves of the disjunct are checked there, the `FG` part as the latch's region and the `GF`
-  parts as its marks, since both are propositional and so readable off the system label alone.
+  A disjunct for which the system alone admits no run is rejected by `disjunctFeasible`, the same latched check on the
+  system graph rather than on the product.
 
   Defines:
-  - `fgRegion`: the disjunct's `FG` part read as a predicate on product states
-  - `sysFairMarks`, `disjunctFeasible`: the system-level fail-fast, one latched pass carrying the `GF` parts
   - `modelCheckTGBADisjunct`: one latched checker call for one disjunct
+  - `sysFairMarks`, `disjunctFeasible`: the system-level fail-fast, one latched pass carrying the `GF` parts
   - `modelCheckTGBADisjunctFast`: the same behind the fail-fast
-  - `modelCheckTGBADisjunct_empty_unsat`:  (Soundness)    an `.empty` result rules out every run of `sys` that
-    satisfies the disjunct and violates `φ`
+
+  Proves:
+  - `modelCheckTGBADisjunct_empty_unsat`: (Soundness) an `.empty` result rules out every run of `sys` that satisfies the
+    disjunct and violates `φ`
   - `modelCheckTGBADisjunct_nonEmpty_sat`: (Completeness) a `.nonEmpty` result yields such a run
-  - `modelCheckTGBADisjunctFast_empty_unsat`, `modelCheckTGBADisjunctFast_nonEmpty_sat`: the same two for the
-    fail-fast version
+  - `modelCheckTGBADisjunctFast_empty_unsat`, `modelCheckTGBADisjunctFast_nonEmpty_sat`: the same two for the fail-fast
+    version
 
   Sections:
   - Region and checker obligations
@@ -35,24 +31,25 @@ import LTLLib.TGBABased.FairProduct
 
 namespace LTLLib
 
-variable {α : Type u} {S : Type w} [FSet (NNF α) S]
-  {SysState : Type v} [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState]
-  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
+variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
 
 /-! ## Region and checker obligations -/
 
 open TGBAProduct (fgRegion)
 
-omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState] [LawfulBEq α]
-  [LawfulHashable α] [DecidableEq α] in
+section Search
+
+variable [LawfulBEq α] [LawfulHashable α]
+
 /-- Every latched mark is below `numAcceptSets + gfs.length + 1`, the region mark being the last one. -/
 theorem modelCheckTGBADisjunct_marksBound (φ : Formula α) (sysLabel : SysState → Std.HashSet α)
-    (gfs : List (BoolFormula α)) (st : ExpandState α S) (p q : (SysState × Nat) × Bool) (m : Nat)
-    (hm : m ∈ latchMarks
-      (TGBAProduct.edgeMarksFair (constructGBA (φ.toNNF false) st).toTGBA sysLabel gfs)
-      ((constructGBA (φ.toNNF false) st).toTGBA.numAcceptSets + gfs.length) p q) :
-    m < (constructGBA (φ.toNNF false) st).toTGBA.numAcceptSets + gfs.length + 1 :=
-  latchMarks_lt (fun _ _ m hm => modelCheckTGBAFair_marksBound φ sysLabel gfs st _ _ m hm) p q m hm
+    (gfs : List (BoolFormula α)) {tgba : TGBA α} (htg : ltl3ba (φ.toNNF false) = some tgba)
+    (p q : (SysState × Nat) × Bool) (m : Nat)
+    (hm : m ∈ latchMarks (TGBAProduct.edgeMarksFair tgba sysLabel gfs) (tgba.numAcceptSets + gfs.length) p q) :
+    m < tgba.numAcceptSets + gfs.length + 1 :=
+  latchMarks_lt (fun _ _ m hm => modelCheckTGBAFair_marksBound φ sysLabel gfs htg _ _ m hm) p q m hm
+
+variable [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState]
 
 /-! ## Model checking one disjunct -/
 
@@ -63,110 +60,103 @@ def modelCheckTGBADisjunct (φ : Formula α) (fg : BoolFormula α) (gfs : List (
     (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit sysSucc)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker) :
     EmptinessResult ((SysState × Nat) × Bool) :=
-  match hcg : createGraph (S := S) (φ.toNNF false) with
-  | some st =>
-    let tgba := (constructGBA (φ.toNNF false) st).toTGBA
+  match htg : ltl3ba (φ.toNNF false) with
+  | some tgba =>
     let region := fgRegion fg sysLabel
     checker.check
       (latchSuccs (TGBAProduct.getSuccessors tgba sysSucc sysLabel) region)
       (latchInit (TGBAProduct.initialStates tgba sysInit) region fg.isTrue)
       (latch_finiteReach region fg.isTrue
-        (modelCheckTGBA_finiteReach φ sysInit sysSucc sysLabel sysFR hcg))
+        (modelCheckTGBA_finiteReach φ sysInit sysSucc sysLabel sysFR htg))
       (latchMarks (TGBAProduct.edgeMarksFair tgba sysLabel gfs) (tgba.numAcceptSets + gfs.length))
       (tgba.numAcceptSets + gfs.length + 1)
   | none => .empty 0
 
-omit [LawfulBEq α] [LawfulHashable α] [DecidableEq α] in
 theorem modelCheckTGBADisjunct_eq (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
     (sysInit : List SysState) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit sysSucc)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
-    {st : ExpandState α S} (hcg : createGraph (S := S) (φ.toNNF false) = some st) :
-    modelCheckTGBADisjunct (S := S) φ fg gfs sysInit sysSucc sysLabel sysFR checker =
+    {tgba : TGBA α} (htg : ltl3ba (φ.toNNF false) = some tgba) :
+    modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel sysFR checker =
       checker.check
-        (latchSuccs (TGBAProduct.getSuccessors (constructGBA (φ.toNNF false) st).toTGBA sysSucc sysLabel)
-          (fgRegion fg sysLabel))
-        (latchInit (TGBAProduct.initialStates (constructGBA (φ.toNNF false) st).toTGBA sysInit)
-          (fgRegion fg sysLabel) fg.isTrue)
+        (latchSuccs (TGBAProduct.getSuccessors tgba sysSucc sysLabel) (fgRegion fg sysLabel))
+        (latchInit (TGBAProduct.initialStates tgba sysInit) (fgRegion fg sysLabel) fg.isTrue)
         (latch_finiteReach (fgRegion fg sysLabel) fg.isTrue
-          (modelCheckTGBA_finiteReach φ sysInit sysSucc sysLabel sysFR hcg))
-        (latchMarks (TGBAProduct.edgeMarksFair (constructGBA (φ.toNNF false) st).toTGBA sysLabel gfs)
-          ((constructGBA (φ.toNNF false) st).toTGBA.numAcceptSets + gfs.length))
-        ((constructGBA (φ.toNNF false) st).toTGBA.numAcceptSets + gfs.length + 1) := by
+          (modelCheckTGBA_finiteReach φ sysInit sysSucc sysLabel sysFR htg))
+        (latchMarks (TGBAProduct.edgeMarksFair tgba sysLabel gfs) (tgba.numAcceptSets + gfs.length))
+        (tgba.numAcceptSets + gfs.length + 1) := by
   unfold modelCheckTGBADisjunct
   split
-  next st' hcg' =>
-    obtain rfl : st' = st := Option.some.inj (hcg'.symm.trans hcg)
+  next tgba' htg' =>
+    obtain rfl : tgba' = tgba := Option.some.inj (htg'.symm.trans htg)
     rfl
-  next hcg' => exact absurd (hcg'.symm.trans hcg) (by simp)
+  next htg' => exact absurd (htg'.symm.trans htg) (by simp)
 
 /-! ## Soundness -/
 
-/-- An `.empty` result means every run of `sys` satisfying the disjunct satisfies `φ`. The latch is what makes
-this the full statement rather than one restricted to runs that never leave the region. -/
-theorem modelCheckTGBADisjunct_empty_unsat (φ : Formula α) (fg : BoolFormula α)
+/-- An `.empty` result means every run of `sys` satisfying the disjunct satisfies `φ`. -/
+theorem modelCheckTGBADisjunct_empty_unsat [DecidableEq α] (φ : Formula α) (fg : BoolFormula α)
     (gfs : List (BoolFormula α)) (sysInit : List SysState) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit sysSucc)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool)) {n : Nat}
-    (h : modelCheckTGBADisjunct (S := S) φ fg gfs sysInit sysSucc sysLabel sysFR checker = .empty n) :
+    (h : modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel sysFR checker = .empty n) :
     ∀ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ →
       (BoolFormula.eventuallyAlways fg).satisfies (fun i a => a ∈ sysLabel (τ i)) →
       (∀ b ∈ gfs, (BoolFormula.alwaysEventually b).satisfies (fun i a => a ∈ sysLabel (τ i))) →
       Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ := by
   intro τ hτ hfg hgf
   by_contra hviolate
-  obtain ⟨st, hcg, _⟩ := createGraph_term (S := S) (φ.toNNF false)
-  rw [modelCheckTGBADisjunct_eq φ fg gfs sysInit sysSucc sysLabel sysFR checker hcg] at h
-  have hgba_acc : (constructGBA (φ.toNNF false) st).toSpec.accepts (fun i a => a ∈ sysLabel (τ i)) :=
-    (constructGBA_correct hcg _).mpr ((Formula.toNNF_correct_neg _ φ).mp hviolate)
+  obtain ⟨tgba, htg⟩ := Option.isSome_iff_exists.mp (ltl3ba_isSome (φ.toNNF false))
+  rw [modelCheckTGBADisjunct_eq φ fg gfs sysInit sysSucc sysLabel sysFR checker htg] at h
+  have hacc0 : tgba.toSpec.accepts (fun i a => a ∈ sysLabel (τ i)) :=
+    (ltl3ba_accepts _ htg _).mpr ((Formula.toNNF_correct_neg _ φ).mp hviolate)
   obtain ⟨N, hN⟩ := (TGBAProduct.eventuallyAlways_iff_indexed fg sysLabel τ).mp hfg
-  obtain ⟨σ, hproj, hrun, hacc⟩ := TGBAProduct.gsp_correct2Fair _ sysSucc sysLabel sysInit gfs hτ
-    ((GBA.toTGBA_toSpec_accepts _ _).mpr hgba_acc)
+  obtain ⟨σ, hproj, hrun, hacc⟩ := TGBAProduct.gsp_correct2Fair _ sysSucc sysLabel sysInit gfs hτ hacc0
     ((TGBAProduct.fair_iff_indexed gfs sysLabel τ).mp hgf)
   subst hproj
   exact checker.empty_no_cycle
-    (fun p q m hm => modelCheckTGBADisjunct_marksBound φ sysLabel gfs st p q m hm) h
+    (fun p q m hm => modelCheckTGBADisjunct_marksBound φ sysLabel gfs htg p q m hm) h
     (by
       cases htop : fg.isTrue
       · exact latch_complete
           (latch_finiteReach (fgRegion fg sysLabel) false
-            (modelCheckTGBA_finiteReach φ sysInit sysSucc sysLabel sysFR hcg))
+            (modelCheckTGBA_finiteReach φ sysInit sysSucc sysLabel sysFR htg))
           hrun.1 (TGBAProduct.acceptingRunFair_step _ sysSucc sysLabel sysInit gfs hrun)
           (N := N) (fun n hn => hN n hn)
           (fun m hm K => TGBAProduct.acceptingRunFair_marks _ sysSucc sysLabel sysInit gfs hrun hacc m hm K)
       · exact latch_complete_total
           (latch_finiteReach (fgRegion fg sysLabel) true
-            (modelCheckTGBA_finiteReach φ sysInit sysSucc sysLabel sysFR hcg))
+            (modelCheckTGBA_finiteReach φ sysInit sysSucc sysLabel sysFR htg))
           hrun.1 (TGBAProduct.acceptingRunFair_step _ sysSucc sysLabel sysInit gfs hrun)
           (fun p => BoolFormula.eval_of_isTrue htop _)
           (fun m hm K => TGBAProduct.acceptingRunFair_marks _ sysSucc sysLabel sysInit gfs hrun hacc m hm K))
 
 /-! ## Completeness -/
 
-/-- A `.nonEmpty` result yields one run of `sys` that satisfies the disjunct and violates `φ`. The cycle the
-checker reports lies inside the region, which is what makes the reported run satisfy `◇□fg`. -/
-theorem modelCheckTGBADisjunct_nonEmpty_sat (φ : Formula α) (fg : BoolFormula α)
+/-- A `.nonEmpty` result yields one run of `sys` that satisfies the disjunct and violates `φ`. -/
+theorem modelCheckTGBADisjunct_nonEmpty_sat [DecidableEq α] (φ : Formula α) (fg : BoolFormula α)
     (gfs : List (BoolFormula α)) (sysInit : List SysState) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit sysSucc)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
     {stem loop : List ((SysState × Nat) × Bool)}
-    (h : modelCheckTGBADisjunct (S := S) φ fg gfs sysInit sysSucc sysLabel sysFR checker
+    (h : modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel sysFR checker
       = .nonEmpty stem loop) :
     ∃ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ ∧
       (BoolFormula.eventuallyAlways fg).satisfies (fun i a => a ∈ sysLabel (τ i)) ∧
       (∀ b ∈ gfs, (BoolFormula.alwaysEventually b).satisfies (fun i a => a ∈ sysLabel (τ i))) ∧
       ¬ Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ := by
-  obtain ⟨st, hcg, _⟩ := createGraph_term (S := S) (φ.toNNF false)
-  rw [modelCheckTGBADisjunct_eq φ fg gfs sysInit sysSucc sysLabel sysFR checker hcg] at h
+  obtain ⟨tgba, htg⟩ := Option.isSome_iff_exists.mp (ltl3ba_isSome (φ.toNNF false))
+  rw [modelCheckTGBADisjunct_eq φ fg gfs sysInit sysSucc sysLabel sysFR checker htg] at h
   obtain ⟨ac, -, -⟩ := checker.nonEmpty_valid
-    (fun p q m hm => modelCheckTGBADisjunct_marksBound φ sysLabel gfs st p q m hm) h
+    (fun p q m hm => modelCheckTGBADisjunct_marksBound φ sysLabel gfs htg p q m hm) h
   obtain ⟨τ, hτrun, hlang, hfair, hregion⟩ := TGBAProduct.exists_run_of_TRegionCycle _ sysSucc
-    sysLabel sysInit gfs fg (GBA.toTGBA_marks_lt _)
-    (latch_sound (fun _ _ m hm => modelCheckTGBAFair_marksBound φ sysLabel gfs st _ _ m hm) ac)
+    sysLabel sysInit gfs fg (ltl3ba_marks_lt _ htg)
+    (latch_sound (fun _ _ m hm => modelCheckTGBAFair_marksBound φ sysLabel gfs htg _ _ m hm) ac)
   refine ⟨τ, hτrun, (TGBAProduct.eventuallyAlways_iff_indexed fg sysLabel τ).mpr hregion,
     (TGBAProduct.fair_iff_indexed gfs sysLabel τ).mpr hfair, fun hsat => ?_⟩
-  exact (Formula.toNNF_correct_neg _ φ).mpr
-    ((constructGBA_correct hcg _).mp ((GBA.toTGBA_toSpec_accepts _ _).mp hlang)) hsat
+  exact (Formula.toNNF_correct_neg _ φ).mpr ((ltl3ba_accepts _ htg _).mp hlang) hsat
+
+end Search
 
 /-! ## Feasibility fail-fast -/
 
@@ -175,16 +165,17 @@ def sysFairMarks (gfs : List (BoolFormula α)) (sysLabel : SysState → Std.Hash
     SysState → SysState → Std.HashSet Nat :=
   fun s _ => TGBAProduct.fairMarks 0 gfs (sysLabel s)
 
-omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState] [LawfulBEq α]
-  [LawfulHashable α] [DecidableEq α] in
 theorem sysFairMarks_lt (gfs : List (BoolFormula α)) (sysLabel : SysState → Std.HashSet α)
     (s t : SysState) (m : Nat) (hm : m ∈ sysFairMarks gfs sysLabel s t) : m < gfs.length := by
   obtain ⟨i, hi, rfl, -⟩ := (TGBAProduct.mem_fairMarks_iff 0 gfs (sysLabel s) m).mp hm
   omega
 
-/-- Does the system alone admit a run satisfying the disjunct? The same latch as the full check, but on the
-system graph, so a disjunct that no run of `sys` can satisfy is rejected before the automaton is multiplied in.
-The region is the latch's restriction and the `GF` parts are its marks, both read off the system label. -/
+section Feasible
+
+variable [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState]
+
+/-- Does the system alone admit a run satisfying the disjunct? The same latch as the full check on the system graph,
+the region and the `GF` parts read off the system label. -/
 def disjunctFeasible (fg : BoolFormula α) (gfs : List (BoolFormula α)) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc)
@@ -197,7 +188,8 @@ def disjunctFeasible (fg : BoolFormula α) (gfs : List (BoolFormula α)) (sysIni
   | .empty _ => false
   | .nonEmpty _ _ => true
 
-omit [LawfulHashable α] [DecidableEq α] in
+variable [LawfulBEq α]
+
 /-- An infeasible disjunct rules out every run of `sys`, whatever the property is. -/
 theorem no_run_of_disjunctFeasible_false (fg : BoolFormula α) (gfs : List (BoolFormula α))
     (sysInit : List SysState) (sysSucc : SysState → Array SysState)
@@ -236,8 +228,10 @@ theorem no_run_of_disjunctFeasible_false (fg : BoolFormula α) (gfs : List (Bool
       (fun s t m hm => latchMarks_lt (sysFairMarks_lt gfs sysLabel) s t m hm) hempty ⟨ac, trivial⟩
   · exact absurd h (by simp)
 
-/-- One disjunct behind the fail-fast, which answers `.empty` without touching the product whenever the
-region holds no cycle. -/
+variable [LawfulHashable α]
+
+/-- One disjunct behind the fail-fast, which answers `.empty` without touching the product when the disjunct is
+infeasible. -/
 def modelCheckTGBADisjunctFast (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
     (sysInit : List SysState) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit sysSucc)
@@ -245,16 +239,16 @@ def modelCheckTGBADisjunctFast (φ : Formula α) (fg : BoolFormula α) (gfs : Li
     (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
     EmptinessResult ((SysState × Nat) × Bool) :=
   if disjunctFeasible fg gfs sysInit sysSucc sysLabel sysFR sysChecker then
-    modelCheckTGBADisjunct (S := S) φ fg gfs sysInit sysSucc sysLabel sysFR checker
+    modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel sysFR checker
   else .empty 0
 
 /-- An `.empty` result means every run of `sys` satisfying the disjunct satisfies `φ`. -/
-theorem modelCheckTGBADisjunctFast_empty_unsat (φ : Formula α) (fg : BoolFormula α)
+theorem modelCheckTGBADisjunctFast_empty_unsat [DecidableEq α] (φ : Formula α) (fg : BoolFormula α)
     (gfs : List (BoolFormula α)) (sysInit : List SysState) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit sysSucc)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
     (sysChecker : TEmptinessChecker (SysState × Bool)) {n : Nat}
-    (h : modelCheckTGBADisjunctFast (S := S) φ fg gfs sysInit sysSucc sysLabel sysFR checker
+    (h : modelCheckTGBADisjunctFast φ fg gfs sysInit sysSucc sysLabel sysFR checker
       sysChecker = .empty n) :
     ∀ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ →
       (BoolFormula.eventuallyAlways fg).satisfies (fun i a => a ∈ sysLabel (τ i)) →
@@ -263,20 +257,20 @@ theorem modelCheckTGBADisjunctFast_empty_unsat (φ : Formula α) (fg : BoolFormu
   intro τ hτ hfg hgf
   rw [modelCheckTGBADisjunctFast] at h
   split at h
-  · exact modelCheckTGBADisjunct_empty_unsat (S := S) φ fg gfs sysInit sysSucc sysLabel sysFR
+  · exact modelCheckTGBADisjunct_empty_unsat φ fg gfs sysInit sysSucc sysLabel sysFR
       checker h τ hτ hfg hgf
   · next hfree =>
     exact absurd hgf (fun _ => no_run_of_disjunctFeasible_false fg gfs sysInit sysSucc sysLabel
       sysFR sysChecker (by simpa using hfree) τ hτ hfg hgf)
 
 /-- A `.nonEmpty` result yields one run of `sys` that satisfies the disjunct and violates `φ`. -/
-theorem modelCheckTGBADisjunctFast_nonEmpty_sat (φ : Formula α) (fg : BoolFormula α)
+theorem modelCheckTGBADisjunctFast_nonEmpty_sat [DecidableEq α] (φ : Formula α) (fg : BoolFormula α)
     (gfs : List (BoolFormula α)) (sysInit : List SysState) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit sysSucc)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
     (sysChecker : TEmptinessChecker (SysState × Bool))
     {stem loop : List ((SysState × Nat) × Bool)}
-    (h : modelCheckTGBADisjunctFast (S := S) φ fg gfs sysInit sysSucc sysLabel sysFR checker
+    (h : modelCheckTGBADisjunctFast φ fg gfs sysInit sysSucc sysLabel sysFR checker
       sysChecker = .nonEmpty stem loop) :
     ∃ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ ∧
       (BoolFormula.eventuallyAlways fg).satisfies (fun i a => a ∈ sysLabel (τ i)) ∧
@@ -284,8 +278,10 @@ theorem modelCheckTGBADisjunctFast_nonEmpty_sat (φ : Formula α) (fg : BoolForm
       ¬ Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ := by
   rw [modelCheckTGBADisjunctFast] at h
   split at h
-  · exact modelCheckTGBADisjunct_nonEmpty_sat (S := S) φ fg gfs sysInit sysSucc sysLabel sysFR
+  · exact modelCheckTGBADisjunct_nonEmpty_sat φ fg gfs sysInit sysSucc sysLabel sysFR
       checker h
   · exact absurd h (by simp)
+
+end Feasible
 
 end LTLLib

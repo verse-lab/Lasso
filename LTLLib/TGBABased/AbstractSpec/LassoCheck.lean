@@ -1,13 +1,7 @@
 /-
-  Deciding `TAcceptingCycle` on a concrete stem and cycle.
-
-  Every field of `TAcceptingCycle` is a decidable statement about two lists, so a reported witness can be
-  checked rather than trusted. `validLasso` runs all nine checks and `TAcceptingCycle.ofValid` turns a passing
-  check into the structure, which makes an emptiness checker's soundness independent of whether its search is
-  correct: a checker that validates before reporting is sound whatever its internals do, and a bug turns a
-  wrong witness into a spurious `.empty` rather than into a wrong answer.
-
-  The cost is one pass over the witness, which is bounded by the reported lasso rather than by the graph.
+  Deciding `TAcceptingCycle` on a concrete stem and cycle. Every field of `TAcceptingCycle` is a decidable statement
+  about two lists, so a reported witness can be checked rather than trusted, and an emptiness checker that validates
+  before reporting is sound whatever its search does.
 
   Defines:
   - `chainOK`: consecutive elements are real edges
@@ -96,8 +90,7 @@ private theorem validLasso_parts [Hashable State] [Inhabited State] {succs : Sta
   obtain ⟨⟨⟨⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩, h6⟩, h7⟩, h8⟩ := h
   exact ⟨by simpa using h1, by simpa using h2, h3, h4, h5, h6, h7, h8⟩
 
-/-- A witness that passes the check really is a `TAcceptingCycle`. A structure literal rather than a tactic
-proof, so its `stem` and `cycle` projections reduce. -/
+/-- A witness that passes the check really is a `TAcceptingCycle`. -/
 def TAcceptingCycle.ofValid [Hashable State] [Inhabited State] {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {initialStates : List State}
     {stem cycle : List State}
@@ -163,7 +156,7 @@ theorem chainOK_of_chain {succs : State → Array State} :
       exact ⟨Array.contains_iff_mem.mpr (by simpa using h 0 (by simp)),
         ih fun i hi => by simpa using h (i + 1) (by simp only [List.length_cons] at hi ⊢; omega)⟩
 
-/-- A genuine accepting cycle passes the check, so validating a correct search's witness never rejects it. -/
+/-- A genuine accepting cycle passes the check. -/
 theorem validLasso_of_TAcceptingCycle [Hashable State] [Inhabited State] {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {initialStates : List State}
     (ac : TAcceptingCycle initialStates succs edgeMarks numMarks) :

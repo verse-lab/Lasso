@@ -1,18 +1,17 @@
 /-
-  From an accepting run to a `TAcceptingCycle` lasso witness.
+  From an accepting run to a `TAcceptingCycle` lasso witness. Pigeonholing on marked positions is not enough, a cycle
+  spanning two marked positions need not carry every mark. The run is instead cut into rounds, each containing an
+  occurrence of every mark, and the pigeonhole is applied to the round boundaries, so any repeat delimits a cycle that
+  has seen every mark. This is the round-robin counting of the standard degeneralization [Cho74], applied to the run.
 
-  Pigeonholing on the run's marked positions is not enough per-transition, a cycle spanning two marked
-  positions need not carry every mark. The run is instead cut into rounds, each long enough to contain an
-  occurrence of every mark, and the pigeonhole is applied to the round boundaries, so any repeat delimits a
-  cycle that has already seen all of `F`. Round-robin counting as in the standard degeneralization (Choueka,
-  "Theories of Automata on ω-Tapes: A Simplified Approach", JCSS 8(2), 1974), applied to the run rather than
-  to the automaton.
-
-  Key theorems:
+  Proves:
   - `exists_TAcceptingCycle_of_run`: a run hitting every mark infinitely often yields a `TAcceptingCycle`
   - `exists_TAcceptingCycle_of_run_tail`: the same with the cycle past a given position
-  - `exists_TAcceptingCycle_of_run_marks`: the same again, the cycle also meeting each of a list of state
-    predicates the run satisfies infinitely often
+  - `exists_TAcceptingCycle_of_run_marks`: the same again, the cycle also meeting each of a list of state predicates the
+    run satisfies infinitely often
+
+  References:
+  - [Cho74] Choueka. Theories of Automata on ω-Tapes: A Simplified Approach. JCSS 8(2), 1974.
 
   Sections:
   - Round boundaries
@@ -24,16 +23,14 @@ namespace LTLLib
 
 /-! ## Round boundaries
 
-`coverFrom k` walks marks `0 .. k-1` one at a time from a given start, and `roundEnd` iterates a full sweep of
-all `numMarks` of them. The extra `+ 1` at each level keeps the sequence strictly increasing even when
-`numMarks = 0`, where a window would otherwise be empty and the pigeonhole would find only `i = j`.
--/
+`coverFrom k` walks marks `0 .. k-1` one at a time from a given start, and `roundEnd` iterates full sweeps of all
+`numMarks` of them. The extra `+ 1` at each level keeps the boundaries strictly increasing even when `numMarks = 0`. -/
 
 section RoundBoundaries
 
 variable {State : Type u} {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {σ : Nat → State}
 
-/-- Marks recur forever along `σ`, what every definition in this section is indexed by. -/
+/-- Marks recur forever along `σ`. -/
 private abbrev MarksRecur (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat) (σ : Nat → State) :=
   ∀ m, m < numMarks → ∀ N, ∃ n ≥ N, m ∈ edgeMarks (σ n) (σ (n + 1))
 
@@ -142,9 +139,7 @@ section Pumping
 
 variable {State : Type u}
 
-/-- A run hitting every mark infinitely often yields a `TAcceptingCycle` whose cycle lies entirely at or past
-`N`. Round boundaries counted from `N` repeat by finiteness, and the window between two equal ones is a cycle
-that has already seen every mark. -/
+/-- A run hitting every mark infinitely often yields a `TAcceptingCycle` whose cycle lies entirely at or past `N`. -/
 theorem exists_TAcceptingCycle_of_run_tail {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {initialStates : List State}
     (fr : FiniteReach initialStates succs) {σ : Nat → State} (hinit : σ 0 ∈ initialStates)
@@ -228,9 +223,8 @@ theorem exists_TAcceptingCycle_of_run {succs : State → Array State}
     ∃ _ac : TAcceptingCycle initialStates succs edgeMarks numMarks, True :=
   ⟨(exists_TAcceptingCycle_of_run_tail fr hinit htrans hacc 0).choose, trivial⟩
 
-/-- Extra state predicates the run satisfies infinitely often ride along as extra marks, so the cycle visits a
-state satisfying each of them. Marks at or above `numMarks` are dropped from the original condition first, so
-the added indices cannot be confused with the graph's own. -/
+/-- The same with extra state predicates the run satisfies infinitely often, the cycle visiting a state satisfying
+each of them. -/
 theorem exists_TAcceptingCycle_of_run_marks {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {initialStates : List State}
     (fr : FiniteReach initialStates succs) {σ : Nat → State} (hinit : σ 0 ∈ initialStates)

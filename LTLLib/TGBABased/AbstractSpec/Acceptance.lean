@@ -1,16 +1,12 @@
 /-
   Edge-indexed abstract automaton specification, and its relationship to the state-indexed `OASpec`
-  (`AbstractSpec/Acceptance.lean`).
+  (`AbstractSpec/Acceptance.lean`), whose states' marks and labels are pushed onto their outgoing edges.
 
-  `OASpec` cannot express edge-carried acceptance: collapsing an edge-indexed condition onto a state predicate
-  requires picking an incoming or outgoing edge convention. `TOASpec` gives that convention its own type, and
-  `OASpec.toTOASpec` pushes each state's marks and label onto its outgoing edges, for any `OASpec`.
-
-  Key definitions:
+  Defines:
   - `TOASpec`: proof-level automaton with `k` edge-indexed acceptance marks
-  - `OASpec.toTOASpec`: generic state-to-edge pushdown, edges are related state pairs
+  - `OASpec.toTOASpec`: the state-to-edge pushdown, edges being related state pairs
 
-  Key theorems:
+  Proves:
   - `OASpec.toTOASpec_accepts`: the pushdown accepts exactly the same ω-words as the original
 
   Sections:

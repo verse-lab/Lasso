@@ -1,27 +1,23 @@
 /-
-  Rebuilding an explicit accepting cycle from a known-valid SCC candidate, shared by every
-  `DFSOps` refinement (`GenericDFS.lean`'s `checkWithWitness`). Reading a witness cycle off a
-  refinement's own traversal-stack state is unsound in general, a state can sit in e.g. Dijkstra's
-  `live` stack without being on a real path to the closing back-edge, once the branch it was
-  explored from has already been backtracked out of (`POP` only flushes `live` to `dead` at a
-  confirmed SCC root). `buildCycleFrom` instead adaptively chains BFS's confined to a caller-supplied
-  finite `domain` (in practice, `checkWithWitness`'s own accepting-SCC candidate): each round finds
-  the nearest state with an edge covering a still-uncovered mark, follows it, and repeats until every
-  mark is covered, then closes back to the anchor. Couvreur, Duret-Lutz, Poitrenaud's accepting-run
-  construction ("On-the-Fly Emptiness Checks for Generalized Büchi Automata", SPIN 2005, §5).
-  Safe here even though our SCCs are not always maximal since any two members of an accepting subset
-  are mutually reachable in a path through that accepting subset regardless.
+  Rebuilding an explicit accepting cycle from a known-valid SCC candidate, shared by every `DFSOps` refinement. A
+  refinement's own stack is no witness, a state can sit in e.g. Dijkstra's `live` stack without lying on a path to the
+  closing back-edge once its branch has been backtracked out of. `buildCycleFrom` instead chains BFS's confined to a finite
+  `domain`: each round finds the nearest state with an edge covering a still-uncovered mark, follows it, and repeats until
+  every mark is covered, then closes back to the anchor, following [CDP05]'s accepting-run construction. The candidate
+  need not be a maximal SCC, since any two members of an accepting subset are mutually reachable inside it.
 
-  Key definitions:
-  - `bfsFindPath`: level-order BFS shortest-path search, confined to and terminating via `domain`
-  - `pickMarkedNext`/`findAnyEdge`: the next qualifying edge out of a given state
-  - `connector`/`buildCycleFrom`/`stitchCycleAt`: adaptively chain edges into one cycle anchored at a given state
+  Defines:
+  - `bfsFindPath`: level-order BFS shortest-path search, confined to `domain`
+  - `pickMarkedNext`, `findAnyEdge`: the next qualifying edge out of a given state
+  - `connector`, `buildCycleFrom`, `stitchCycleAt`: chain edges into one cycle anchored at a given state
 
-  Key theorems:
-  - `collectNew_visited_subset`/`collectNew_subset_domain`/`collectNew_size_eq`: invariants for `bfsGo`'s termination proof
+  Proves:
   - `bfsFindPath_stem`: over a domain holding every reachable state, the BFS finds a stem to any reachable target
   - `stitchCycleAt_valid`: the built cycle is a real, domain-confined, mark-covering `succs`-cycle
-  - `stitchCycleAt_toTAcceptingCycle`: packaged together with a stem into a full `TAcceptingCycle`
+  - `stitchCycleAt_toTAcceptingCycle`: the built cycle and a stem form a `TAcceptingCycle`
+
+  References:
+  - [CDP05] Couvreur, Duret-Lutz, Poitrenaud. On-the-Fly Emptiness Checks for Generalized Büchi Automata. SPIN 2005, §5.
 
   Sections:
   - BFS expansion step
@@ -258,7 +254,8 @@ private theorem ValidChain.extend {domain : Std.HashSet State} {succs : State �
     · exact hconf x hx
     · rw [List.mem_singleton] at hx; rw [hx]; exact hdom
 
-/-- One BFS level: every not-yet-visited, `domain`-confined successor of any `frontier` state, paired with the reversed path taken to reach it. -/
+/-- One BFS level: every not-yet-visited, `domain`-confined successor of any `frontier` state, paired with the reversed
+path taken to reach it. -/
 private def bfsExpandLevel (domain : Std.HashSet State) (succs : State → Array State)
     (visited : Std.HashSet State) (frontier : List (State × List State)) :
     Std.HashSet State × List (State × List State) :=
@@ -543,8 +540,8 @@ private theorem bfsGo_spec (domain : Std.HashSet State) (succs : State → Array
 termination_by visited _ _ _ => domain.size - visited.size
 decreasing_by omega
 
-/-- BFS from `starts`, following `succs`, confined to `domain`. Returns a path (inclusive of both
-ends) if some state satisfying `isTarget` is reachable from `starts` within `domain`. -/
+/-- BFS from `starts`, following `succs`, confined to `domain`. Returns a path, both ends included, to some `isTarget`
+state reachable from `starts` within `domain`. -/
 def bfsFindPath (domain : Std.HashSet State) (succs : State → Array State) (starts : List State)
     (isTarget : State → Bool) : Option (List State) :=
   let starts' := starts.filter domain.contains
@@ -583,8 +580,7 @@ theorem bfsFindPath_sound (domain : Std.HashSet State) (succs : State → Array 
         (∀ x ∈ path, domain.contains x) ∧ ∀ i, (hi : i + 1 < path.length) → path[i+1] ∈ succs path[i] :=
   (bfsGo_spec domain succs starts isTarget _ _ _ (bfsFindPath_frontier_valid domain succs starts isTarget)).1
 
-/-- If a `domain`-confined `isTarget`-satisfying state is reachable from `starts` along a `domain`-confined
-path, `bfsFindPath` finds one. Required to rule out `connector`'s `[src]` fallback at real call sites. -/
+/-- If an `isTarget` state is reachable from `starts` along a `domain`-confined path, `bfsFindPath` finds one. -/
 theorem bfsFindPath_complete (domain : Std.HashSet State) (succs : State → Array State)
     (starts : List State) (isTarget : State → Bool)
     (hex : ∃ s0 ∈ starts, domain.contains s0 ∧ ∃ t, domain.contains t ∧ isTarget t = true ∧
@@ -628,7 +624,7 @@ end Bfs
 
 /-! ## Adaptive edge search and cycle stitching -/
 
-/-- Any real edge inside `scc` (used for the vacuous `numMarks = 0` case, where any cycle is accepting). -/
+/-- Any edge inside `scc`. -/
 def findAnyEdge (succs : State → Array State) (scc : Std.HashSet State) :
     Option (State × State) :=
   scc.toList.findSome? fun a =>
@@ -659,8 +655,7 @@ theorem findAnyEdge_complete [LawfulBEq State] (succs : State → Array State) (
   obtain ⟨⟨a', b'⟩, heq⟩ := Option.isSome_iff_exists.mp hshow
   exact ⟨a', b', heq⟩
 
-/-- One of `a`'s `scc`-confined successors carrying a mark still in `remaining`, if any.
-A state qualifies as `bfsFindPath`'s target iff when this succeeds. -/
+/-- One of `a`'s `scc`-confined successors carrying a mark still in `remaining`, if any. -/
 def pickMarkedNext (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (scc : Std.HashSet State) (remaining : Std.HashSet Nat) (a : State) : Option State :=
   (succs a).toList.find? fun b => scc.contains b && (edgeMarks a b).toList.any remaining.contains
@@ -693,8 +688,7 @@ theorem pickMarkedNext_complete (succs : State → Array State)
   exact ⟨hb, m, (Std.HashSet.mem_toList (m := edgeMarks a b)).mpr
     ((Std.HashSet.mem_iff_contains).mpr hmark), hm⟩
 
-/-- A real `succs`-path from `src` to `tgt` inclusive, confined to `domain`, or `[src]` as a defensive fallback,
-never taken when both are `domain`-confined and mutually reachable. -/
+/-- A `succs`-path from `src` to `tgt` inclusive, confined to `domain`, or the fallback `[src]` if there is none. -/
 def connector [LawfulBEq State] [LawfulHashable State] (domain : Std.HashSet State)
     (succs : State → Array State) (src tgt : State) : List State :=
   (bfsFindPath domain succs [src] (· == tgt)).getD [src]
@@ -712,7 +706,7 @@ theorem connector_valid [LawfulBEq State] [LawfulHashable State] (domain : Std.H
   obtain ⟨hne, hhead, hlast, hconf, hchain⟩ := bfsFindPath_sound domain succs [src] (· == tgt) path hpath
   exact ⟨hne, hhead, beq_iff_eq.mp hlast, hconf, hchain⟩
 
-/-- `connector` never returns the empty list, whether or not its `getD [src]` fallback fires. -/
+/-- `connector` never returns the empty list. -/
 theorem connector_ne_nil [LawfulBEq State] [LawfulHashable State] (domain : Std.HashSet State)
     (succs : State → Array State) (src tgt : State) : connector domain succs src tgt ≠ [] := by
   unfold connector
@@ -761,11 +755,8 @@ decreasing_by
   have := size_filter_not_contains_lt remaining (edgeMarks a b) ⟨m, hm1, hm2⟩
   omega
 
-/-- Build an accepting cycle anchored at `anchor`, covering every mark `< numMarks`. At `numMarks = 0` any
-cycle accepts, so one is picked via `findAnyEdge` directly, there is no mark to search for. Otherwise
-`buildCycleFrom` chains BFS's from `anchor` back to itself. The outer `dropLast` removes the duplicate `anchor`.
-
-Not minimized, connectors can retrace part of the cycle, which is still correct since witness length does not affect decision-procedure complexity. -/
+/-- An accepting cycle anchored at `anchor`, covering every mark `< numMarks`, through a `findAnyEdge` edge when
+`numMarks = 0` and chained by `buildCycleFrom` otherwise. It is not minimized. -/
 def stitchCycleAt [LawfulBEq State] [LawfulHashable State] (scc : Std.HashSet State)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat)
     (anchor : State) : List State :=
@@ -1053,8 +1044,8 @@ theorem stitchCycleAt_valid [LawfulBEq State] [LawfulHashable State] (scc : Std.
       simpa using mark_pos_dropLast _ [] hrne hi (by simpa using hcov')
         (by simpa using hrne) (by simpa using hloop)
 
-/-- Package a `stitchCycleAt`-built cycle with `dfsGo`'s own stem into a `TAcceptingCycle`,
-reusing the stem/cycle `checkWithWitness` returns. -/
+/-- A `stitchCycleAt` cycle in an accepting, internally connected `scc` and a stem to its anchor form a
+`TAcceptingCycle`. -/
 theorem stitchCycleAt_toTAcceptingCycle [LawfulBEq State] [LawfulHashable State]
     {initialStates : List State} {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat}

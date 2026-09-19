@@ -1,10 +1,6 @@
 /-
-  Algorithm 1, a generic DFS skeleton parameterized by abstract PUSH/POP/GET_STATUS/UPDATE operations.
-  `TarjanSCC.lean`/`DijkstraSCC.lean`/`GabowSCC.lean` each refine this by instantiating those four operations.
-  Also defines generic witness extraction (`checkWithWitness`), shared by every refinement.
-
-  Renault, Duret-Lutz, Kordon, Poitrenaud, "Three SCC-based Emptiness Checks for Generalized
-  Büchi Automata" (LPAR-19, 2013).
+  Algorithm 1 of [RDKP13], a generic DFS skeleton parameterized by abstract PUSH, POP, GET_STATUS and UPDATE operations,
+  which each SCC-based emptiness check refines. Also defines the witness extraction `checkWithWitness` they share.
 
   Input: A TGBA A = ⟨Q, q0, δ, F, f⟩
     states Q, initial state q0, transition relation δ, acceptance-mark set F,
@@ -36,23 +32,27 @@
   - GET_STATUS: returns the status of a state (DEAD/LIVE/UNKNOWN).
   - PUSH: called for any newly visited state, marks it LIVE.
   - UPDATE: called on every back-edge (a transition to a LIVE state), detects a transition closing a cycle.
-  - POP: called on every backtrack. When the last state of an SCC is popped (its "root", which may depend on
-    visitation order), POP must mark every state in that SCC DEAD. It may also report a closed accepting cycle,
-    for algorithms whose merge is lazy enough that UPDATE alone cannot always tell. Only Tarjan's does, it merges
-    into the immediate parent frame on backtrack, whereas Dijkstra's and Gabow's merge eagerly inside UPDATE.
+  - POP: called on every backtrack. When the last state of an SCC (its root) is popped, POP must mark every state in that
+    SCC DEAD. It may also report a closed accepting cycle, for algorithms whose merge is too lazy for UPDATE to tell.
 
-  Lean encoding notes:
-  - `Transition.src` is always the owning `Step`'s own state, so `Step` carries an explicit `state` field rather
-    than storing `src` on each pending successor, and `f(t)` is then just `edgeMarks step.state d`.
-  - `dfs` is private to the generic driver here, not shared global state as in the paper, so `push` also takes the
-    incoming transition's marks and `pop` takes the popped step's own `Position`. Whatever a refinement needs
-    mirrored from `Step` it keeps in its own `Aux`, updated in lockstep with the driver's stack pushes and pops.
+  The `dfs` stack is private to the driver, so `push` also takes the incoming transition's marks and `pop` the popped step.
+  `Step` carries its own state, so `f(t)` is `edgeMarks step.state d`.
 
-  `dfsGo` and `genericDFSGo` are `partial_fixpoint` definitions, where a `none` result denotes divergence.
-  `dfsGo_ne_none`/`genericDFSGo_ne_none` rule that out, so the search terminates.
+  Defines:
+  - `DFSOps`, `LawfulDFSOps`: the four operations and the laws a refinement satisfies
+  - `dfsGo`, `genericDFSGo`: the loop over the stack and the loop over initial states
+  - `checkWithWitness`, `SccHintSound`: the search followed by rebuilding a cycle from `ops.sccHint`, and its contract
 
-  Witness extraction (`checkWithWitness`): the search returns `some (anchor, stem)` with `stem` already a real
-  path, and `ops.sccHint` supplies a known accepting subset that `WitnessExtraction.lean` rebuilds a cycle from.
+  Proves:
+  - `dfsGo_ne_none`, `genericDFSGo_ne_none`: the search terminates
+  - `genericDFS_stem_path`, `genericDFS_returns_none_fully_explored`: a reported stem is a path from an initial state to
+    the anchor, and a search reporting nothing has touched every reachable state
+  - `checkWithWitness_nonEmpty_valid`, `checkWithWitness_empty_of_none`: a `.nonEmpty` answer is a `TAcceptingCycle`,
+    and `.empty` comes only from a search that found nothing
+
+  References:
+  - [RDKP13] Renault, Duret-Lutz, Kordon, Poitrenaud. Three SCC-based Emptiness Checks for Generalized Büchi
+    Automata. LPAR-19, 2013.
 
   Sections:
   - Generic DFS operations
@@ -77,33 +77,32 @@ inductive DFSStatus where
   | unknown -- Not yet explored by DFS
 deriving BEq, Repr, Inhabited
 
-/-- A frame on the generic DFS stack. Read bottom-to-top the stack is always a path from an initial
-state to wherever the search is. `dfsGo` reads it off directly as the `.nonEmpty` stem. -/
+/-- A frame on the generic DFS stack. Read bottom-to-top the stack is always a path from an initial state to wherever
+the search is. -/
 structure DFSStep (State : Type u) (Position : Type w) where
   state : State
   pos : Position  -- what this frame's own `push` call returned
-  acc : Nat  -- the incoming tree edge's marks as a bitmask, the spec's `s.acc`, which POP is handed
-  -- `succ[idx..]` are the still-unexplored outgoing states, kept as `succs state` itself so a push allocates nothing extra
+  acc : Nat  -- the incoming tree edge's marks as a bitmask, the spec's `s.acc`
+  -- `succ[idx..]` are the still-unexplored outgoing states
   succ : Array State
   idx : Nat
 
-/-- The four operations (getStatus, PUSH, UPDATE, POP) a concrete SCC-based emptiness check must provide.  -/
+/-- The four operations (GET_STATUS, PUSH, UPDATE, POP) a concrete SCC-based emptiness check provides. -/
 structure DFSOps (State : Type u) [BEq State] [Hashable State] where
-  Aux : Type v      -- Refinement's private search state
-  Position : Type w -- What `PUSH` returns per state
+  Aux : Type v      -- the refinement's private search state
+  Position : Type w -- what `PUSH` returns per state
   initAux : Aux
 
   getStatus : Aux → State → DFSStatus
-  push : Aux → State → Std.HashSet Nat → Aux × Position -- `marks` are the incoming transition's acceptance marks (`f(t)`, `∅` for a root state).
-  update : Aux → Std.HashSet Nat → State → Aux × Bool -- Reports whether the back-edge found a counterexample
-  -- POP is handed the graph and the whole frame, not just its `Position`, so a refinement that closes an SCC here
-  -- can test it without mirroring the driver's stack. Reports whether backtracking closed an accepting cycle.
+  push : Aux → State → Std.HashSet Nat → Aux × Position -- `marks` are the incoming transition's marks, `∅` for a root
+  update : Aux → Std.HashSet Nat → State → Aux × Bool -- reports whether the back-edge found a counterexample
+  -- reports whether backtracking closed an accepting cycle, given the graph and the whole popped frame
   pop : (State → Array State) → (State → State → Std.HashSet Nat) → Aux → DFSStep State Position → Aux × Bool
 
-  sccHint : Aux → Std.HashSet State -- A known, accepting SCC, but not necessarily maximal (Alg. may return early).
-  numExplored : Aux → Nat -- Exists only for reporting to the user
+  sccHint : Aux → Std.HashSet State -- a known accepting SCC, not necessarily maximal
+  numExplored : Aux → Nat -- only for reporting to the user
 
-/-- The bitmask representation refinements use for mark-sets, cheap since `numMarks` is always small. -/
+/-- A mark set as a bitmask. -/
 def marksToBitmask (marks : Std.HashSet Nat) : Nat :=
   marks.toList.foldl (init := 0) fun mask m => mask ||| (1 <<< m)
 
@@ -138,8 +137,8 @@ def RevPathFrom {State : Type u} (initialStates : List State) (succs : State →
   (∀ i, (hi : i + 1 < l.length) → l[i] ∈ succs l[i + 1]) ∧
   ∀ (h : l ≠ []), l.getLast h ∈ initialStates
 
-/-- The driver stack read top-down, each frame's state a successor of the one below it and the outermost an
-initial state. Preserved by every `dfsGo` step. -/
+/-- The driver stack read top-down, each frame's state a successor of the one below it and the outermost an initial
+state. -/
 def DFSStackChain {State : Type u} {P : Type w} (initialStates : List State)
     (succs : State → Array State) (stack : List (DFSStep State P)) : Prop :=
   RevPathFrom initialStates succs (stack.map (·.state))
@@ -179,8 +178,7 @@ theorem RevPathFrom.stem {State : Type u} {initialStates : List State} {succs : 
 
 variable {State : Type u} [BEq State] [Hashable State]
 
-/-- What a `DFSOps` refinement must satisfy for the generic theorems to apply. Deliberately holds neither `sccHint`'s
-contract nor `pop_confirms_no_accepting_scc`, both need driver-level context no `Aux`-only `Prop` can see. -/
+/-- The laws a `DFSOps` refinement satisfies on its own `Aux`, `sccHint`'s driver-level contract being `SccHintSound`. -/
 structure LawfulDFSOps {State : Type u} [BEq State] [Hashable State] (ops : DFSOps State) where
   -- a well-formedness predicate on the refinement's own `Aux`, preserved by all three operations
   WellFormed : ops.Aux → Prop
@@ -200,10 +198,8 @@ structure LawfulDFSOps {State : Type u} [BEq State] [Hashable State] (ops : DFSO
 
 /-! ## Generic DFS driver -/
 
-/-- Inner loop: drain the DFS stack from a single root, per Algorithm 1's `while ¬dfs.isEmpty()` loop.
-
-On finding a cycle it returns `some (anchor, stem)`, the current stack root to `anchor`,
-with `anchor` the closing back-edge's source, or the state receiving the merged info when `POP` reports. -/
+/-- Algorithm 1's `while ¬dfs.isEmpty()` loop. On a cycle it returns `some (anchor, stem)`, `stem` running from the stack
+root to `anchor`, the closing back-edge's source or the frame POP closed when POP reports. -/
 def dfsGo (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) :
     ops.Aux → List (DFSStep State ops.Position) → Option (Option (State × List State) × ops.Aux)
@@ -228,12 +224,11 @@ def dfsGo (ops : DFSOps State) (succs : State → Array State)
         dfsGo ops succs edgeMarks aux' (newStep :: dfs')
     else
       let (aux', found) := ops.pop succs edgeMarks aux step
-      -- The anchor is the frame POP just closed, which lies in the SCC either way: merged into its parent's,
-      -- or the root of its own. Naming the parent instead would lose the report at an outermost frame.
+      -- the anchor is the frame POP just closed, which lies in the SCC whether merged into its parent's or its root
       match found with
       | true => some (some (step.state, ((step :: rest).map (·.state)).reverse), aux')
       | false => dfsGo ops succs edgeMarks aux' rest
-partial_fixpoint -- The outer `Option` is never actually `none` (`dfsGo_ne_none`), proving Termination.
+partial_fixpoint -- never `none`, by `dfsGo_ne_none`
 
 /-- Run the generic DFS from a single fresh root, per Algorithm 1's lines 5-6. -/
 def dfsFromRoot (ops : DFSOps State) (succs : State → Array State)
@@ -242,7 +237,7 @@ def dfsFromRoot (ops : DFSOps State) (succs : State → Array State)
   let (aux', pos') := ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)
   let step : DFSStep State ops.Position :=
     { state := q0, pos := pos', acc := 0, succ := succs q0, idx := 0 }
-  -- The `getD` fallback is unreachable (`dfsGo_ne_none`), it keeps this total.
+  -- the fallback is unreachable, by `dfsGo_ne_none`
   (dfsGo ops succs edgeMarks aux' [step]).getD (none, aux')
 
 /-- Outer loop over initial states, sharing search state across roots. -/
@@ -255,21 +250,17 @@ def genericDFSGo (ops : DFSOps State) (succs : State → Array State)
     | .unknown =>
       let (found?, aux') := dfsFromRoot ops succs edgeMarks aux q
       match found? with
-      | some _ => some (found?, aux') -- Exit immediately on first counter example
+      | some _ => some (found?, aux') -- exit on the first counterexample
       | none => genericDFSGo ops succs edgeMarks rest aux'
     | .dead | .live => genericDFSGo ops succs edgeMarks rest aux -- skipped, earlier root's search already touched it
-partial_fixpoint -- Outer option is never none (`genericDFSGo_ne_none`), proving Termination.
+partial_fixpoint -- never `none`, by `genericDFSGo_ne_none`
 
 def genericDFS (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (roots : List State) (aux : ops.Aux) :
     Option (State × List State) × ops.Aux :=
   (genericDFSGo ops succs edgeMarks roots aux).getD (none, aux)
 
-/-! ## Generic status-transition reachability
-
-Not a `LawfulDFSOps` field: whether a state ever got pushed, and why it is reachable,
-is knowledge only `dfsGo`'s own recursion has, not `DFSOps`'s `Aux`-level operations.
-Proved once here, generically. -/
+/-! ## Generic status-transition reachability -/
 
 private theorem stackReach_cons {succs : State → Array State} {initialStates : List State}
     {ops : DFSOps State} {hd : DFSStep State ops.Position} {tl : List (DFSStep State ops.Position)}
@@ -291,7 +282,7 @@ private theorem stackSucc_cons {succs : State → Array State} {ops : DFSOps Sta
   · exact hhd
   · exact htl st hst
 
-/-- Whatever newly becomes non-`unknown` during a `dfsGo` run is reachable (given stack and succs are faithful). -/
+/-- Whatever newly becomes non-`unknown` during a `dfsGo` run is reachable, given a faithful stack and `succs`. -/
 theorem dfsGo_touched_reachable [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
     (L : LawfulDFSOps ops) :
@@ -493,7 +484,7 @@ theorem dfsGo_status_monotone (ops : DFSOps State) (succs : State → Array Stat
     · simp [hsd]
     · simp only [hsd]; exact hs
 
-/-- `dfsGo_touched_reachable` specialized to `dfsFromRoot`'s own call shape. -/
+/-- `dfsGo_touched_reachable` for `dfsFromRoot`. -/
 theorem dfsFromRoot_touched_reachable [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
     (L : LawfulDFSOps ops) (aux : ops.Aux) (q0 : State) (hwf : L.WellFormed aux)
@@ -623,7 +614,7 @@ theorem dfsGo_stem_path [LawfulBEq State] (ops : DFSOps State) (succs : State �
       fun st hst => hsucceq st (List.mem_cons_of_mem _ hst)
     cases hf : found with
     | false => simp only [hf] at hr; exact ih aux' rest r hr hsucceqTail hchainTail
-    -- POP reported it: the frame it closed anchors the stem, exactly as the back-edge case does
+    -- POP reported it, the frame it closed anchors the stem
     | true =>
       simp only [hf, Option.some.injEq] at hr
       intro anchor stem heq
@@ -945,12 +936,12 @@ theorem dfsGo_closed [LawfulBEq State] (ops : DFSOps State) (succs : State → A
               exact hexcl st hst') x hx)
       exact ih aux' rest r hr hnone hwf' hrestSuccEq hPrefix' hClosed'
 
-/-- `dfsGo_closed` specialized to `dfsFromRoot`'s own call shape, with `q0` being `.unknown`. -/
+/-- `dfsGo_closed` for `dfsFromRoot` from an `.unknown` root. -/
 theorem dfsFromRoot_closed [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (L : LawfulDFSOps ops)
     (aux : ops.Aux) (q0 : State) (hwf : L.WellFormed aux) (hq0 : ops.getStatus aux q0 = .unknown)
     (hClosed0 : ∀ t, ops.getStatus aux t ≠ .unknown → ∀ x ∈ succs t, ops.getStatus aux x ≠ .unknown)
-    -- Taken as a hypothesis so this stays generic over `ops`, refinements discharge it via `dfsGo_ne_none`.
+    -- the run terminates, see `dfsGo_ne_none`
     (hReal : dfsGo ops succs edgeMarks (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
       [({ state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
           acc := 0, succ := succs q0, idx := 0 } :
@@ -1063,8 +1054,7 @@ theorem dfsFromRoot_wellFormed [LawfulBEq State] (ops : DFSOps State) (succs : S
     exact dfsGo_wellFormed ops succs edgeMarks L
       aux' [step] r hdg hwf'
 
-/-- Well-formedness survives one root's search whether or not that search is known to terminate: the `getD`
-fallback hands back the pushed state, which is well formed already. -/
+/-- Well-formedness survives one root's search, whether or not it is known to terminate. -/
 theorem dfsFromRoot_wellFormed_total [LawfulBEq State] (ops : DFSOps State)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (L : LawfulDFSOps ops) (aux : ops.Aux) (q0 : State) (hwf : L.WellFormed aux)
@@ -1117,7 +1107,7 @@ theorem genericDFSGo_wellFormed [LawfulBEq State] (ops : DFSOps State) (succs : 
     | dead => simp only [hst] at hgo; exact ih aux r hwf hgo
     | live => simp only [hst] at hgo; exact ih aux r hwf hgo
 
-/-- `genericDFS`'s own shape, with no termination obligation: its `getD` fallback is the state it started in. -/
+/-- Well-formedness survives `genericDFS`, whether or not it is known to terminate. -/
 theorem genericDFS_wellFormed [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (L : LawfulDFSOps ops) (roots : List State)
     (aux : ops.Aux) (hwf : L.WellFormed aux) :
@@ -1129,8 +1119,7 @@ theorem genericDFS_wellFormed [LawfulBEq State] (ops : DFSOps State) (succs : St
     simp only [Option.getD_some]
     exact genericDFSGo_wellFormed ops succs edgeMarks L roots aux r hwf hgo
 
-/-- Lifted over the roots: a state the search over `roots` has touched was either touched already or is
-reachable. -/
+/-- A state the search over `roots` has touched was either touched already or is reachable. -/
 theorem genericDFSGo_touched_reachable [LawfulBEq State] (ops : DFSOps State)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (L : LawfulDFSOps ops) :
@@ -1172,7 +1161,7 @@ theorem genericDFSGo_touched_reachable [LawfulBEq State] (ops : DFSOps State)
     | dead => simp only [hst] at hgo; exact ih hrest aux r hwf hgo s hs
     | live => simp only [hst] at hgo; exact ih hrest aux r hwf hgo s hs
 
-/-- `genericDFS`'s own shape: everything it touched beyond what it started with is reachable. -/
+/-- Everything `genericDFS` touched beyond what it started with is reachable. -/
 theorem genericDFS_touched_reachable [LawfulBEq State] (ops : DFSOps State)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (L : LawfulDFSOps ops) (initialStates : List State) (aux : ops.Aux) (hwf : L.WellFormed aux)
@@ -1191,7 +1180,7 @@ theorem genericDFS_touched_reachable [LawfulBEq State] (ops : DFSOps State)
     exact genericDFSGo_touched_reachable ops succs edgeMarks initialStates L
       initialStates (fun q hq => Reachable.base hq) aux r hwf hgo s hstatus
 
-/-- `L.WellFormed` is preserved by a full `dfsGo` run. -/
+/-- A touched state stays touched through one root's search. -/
 theorem dfsFromRoot_status_monotone [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (L : LawfulDFSOps ops)
     (aux : ops.Aux) (q0 : State) (hwf : L.WellFormed aux) (hq0 : ops.getStatus aux q0 = .unknown)
@@ -1253,7 +1242,7 @@ theorem dfsFromRoot_root_touched [LawfulBEq State] (ops : DFSOps State) (succs :
     simp only [Option.getD_some]
     exact dfsGo_status_monotone ops succs edgeMarks L aux' [step] r hdg hwf' q0 hs'
 
-/-- Multi-root chaining of `dfsGo_closed` over the outer loop, one root at a time. -/
+/-- `dfsGo_closed` lifted over the outer loop. -/
 theorem genericDFSGo_closed [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (L : LawfulDFSOps ops)
     (P : State → Prop)
@@ -1529,8 +1518,8 @@ theorem genericDFS_returns_none_fully_explored [LawfulBEq State] (ops : DFSOps S
 
 /-! ## Witness-check driver -/
 
-/-- Run `ops`'s search to decide emptiness, then on `.nonEmpty` rebuild the cycle by plain graph BFS restricted
-to the accepting SCC `ops.sccHint` hands back. The stem comes from the search's own stack. -/
+/-- Run `ops`'s search to decide emptiness, then on `.nonEmpty` rebuild the cycle by graph BFS restricted to the
+accepting SCC `ops.sccHint` hands back. The stem comes from the search's own stack. -/
 def checkWithWitness [LawfulBEq State] [LawfulHashable State] (ops : DFSOps State)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat)
     (initialStates : List State) : EmptinessResult State :=
@@ -1544,16 +1533,15 @@ def checkWithWitness [LawfulBEq State] [LawfulHashable State] (ops : DFSOps Stat
     let sccSuccs' : State → Array State := fun s =>
       match sccSuccsMap[s]? with
       | some a => a
-      -- None branch never actually taken (it is same as `SCCTheory.sccSuccs` for correctness)
+      -- never taken, and agrees with `sccSuccs`
       | none => (succs s).filter scc.contains
-    -- Every BFS is confined to the scc, so the scc is the finite domain `stitchCycleAt` termination proof requires
     let cycle := stitchCycleAt scc sccSuccs' edgeMarks numMarks anchor
     match cycle with
     | [] => .empty (ops.numExplored aux)
     | _ => .nonEmpty stem (anchor :: cycle)
 
-/-- Contract `checkWithWitness`'s correctness requires (kept out of `LawfulDFSOps` since this constrains driver-level results rather than `Aux` operations).
-A reported `(anchor, stem)` comes with a sccHint that really is an accepting SCC containing `anchor` with a real path `stem` into it from an initial state. -/
+/-- A reported `(anchor, stem)` comes with an `sccHint` that is an internally connected accepting set containing `anchor`,
+and `stem` is a path from an initial state to `anchor`. -/
 def SccHintSound [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat) (initialStates : List State) : Prop :=
   ∀ anchor stem,
@@ -1568,7 +1556,7 @@ def SccHintSound [LawfulBEq State] (ops : DFSOps State) (succs : State → Array
 
 /-! ## Termination -/
 
-/-- The reachable states still to be discovered, finite by `FiniteReach` (Unreachable unknown set may be infinite).-/
+/-- The reachable states still unknown, finite by `FiniteReach`. -/
 def unexploredSet (ops : DFSOps State) (succs : State → Array State) (initialStates : List State)
     (aux : ops.Aux) : Set State :=
   {s | Reachable initialStates succs s ∧ ops.getStatus aux s = .unknown}
@@ -1601,7 +1589,7 @@ theorem unexploredCard_eq_of_eq (ops : DFSOps State) (succs : State → Array St
   congr 1
   simp only [heq]
 
-/-- `push` removes exactly its own target from the unknown set, so the count strictly decreases whenever target was both reachable and still unknown. -/
+/-- PUSH of a reachable, still unknown target strictly decreases the unexplored count. -/
 theorem unexploredCard_push [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (initialStates : List State) (fr : FiniteReach initialStates succs)
     (hpush : ∀ aux q marks q', ops.getStatus (ops.push aux q marks).1 q' =
@@ -1664,7 +1652,7 @@ theorem stackPending_bump {P : Type w} (st : DFSStep State P) (rest : List (DFSS
   simp only []
   omega
 
-/-- The outer loop always returns a real answer, its recursion being structural on the root list. -/
+/-- The outer loop never returns `none`. -/
 theorem genericDFSGo_ne_none (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) :
     ∀ (roots : List State) (aux : ops.Aux), genericDFSGo ops succs edgeMarks roots aux ≠ none := by
@@ -1684,8 +1672,7 @@ theorem genericDFSGo_ne_none (ops : DFSOps State) (succs : State → Array State
       | some val => simp
       | none => simpa using ih aux'
 
-/-- `dfsGo` always returns a real answer, so the search terminates. The measure is the lexicographic triple
-`(unexploredCard, stack.length, stackPending)`, `PUSH` shrinking the first, `POP` the second, any other dispatch the third. -/
+/-- `dfsGo` never returns `none`, so the search terminates. -/
 theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
     (fr : FiniteReach initialStates succs) (L : LawfulDFSOps ops) :
@@ -1815,7 +1802,7 @@ theorem checkWithWitness_sccSuccs_eq [LawfulBEq State] [LawfulHashable State]
     exact foldl_insert_getElem?_eq (fun x => (succs x).filter scc.contains) scc.toList {}
       (by intro s' v' h'; simp at h') s v hm
 
-/-- Soundness of `.nonEmpty`: the returned `stem`/`loop.tail` are literally some `TAcceptingCycle`'s own fields. -/
+/-- Soundness: a `.nonEmpty` answer's `stem` and `loop.tail` are a `TAcceptingCycle`'s stem and cycle. -/
 theorem checkWithWitness_nonEmpty_valid [LawfulBEq State] [LawfulHashable State] (ops : DFSOps State)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat)
     (initialStates : List State)
@@ -1844,7 +1831,7 @@ theorem checkWithWitness_nonEmpty_valid [LawfulBEq State] [LawfulHashable State]
     · simp only [EmptinessResult.nonEmpty.injEq] at h
       exact ⟨ac, hstemeq.trans h.1, by rw [← h.2]; simp⟩
 
-/-- `.empty` is only ever returned when the search itself found nothing, `hsound` rules out the `cycle = []` fallback. -/
+/-- `.empty` is returned only when the search itself found nothing. -/
 theorem checkWithWitness_empty_of_none [LawfulBEq State] [LawfulHashable State] (ops : DFSOps State)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat)
     (initialStates : List State)

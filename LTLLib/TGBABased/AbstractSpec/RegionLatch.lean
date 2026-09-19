@@ -1,27 +1,20 @@
 /-
-  The region latch: checking a static `FG l` restriction with one call to an unmodified emptiness checker.
+  The region latch: checking a static `FG l` restriction with one call to an unmodified emptiness checker. `FG l`
+  constrains only the tail of a run, so the accepting cycle must lie inside the `l`-region while the stem need not, and
+  restricting `succs` globally would be incomplete. The latch doubles the graph with a Bool, `(s, false)` for the stem
+  and `(s, true)` for the part committed to the region, with edges `false → false`, `false → true` into the region and
+  `true → true` inside it. One extra mark carried only by `true → true` edges forces the accepting cycle into the
+  region, and the witness projects back by dropping the Bool.
 
-  `FG l` constrains only the tail of a run, so the accepting cycle must lie inside the `l`-region while the
-  path reaching it need not. Wrapping `succs` globally is sound but incomplete, it forbids the stem from
-  leaving the region as well. The latch instead doubles the graph with a Bool, `(s, false)` for the stem and
-  `(s, true)` for the part committed to the region, with edges `false → false`, `false → true` into the region
-  and `true → true` inside it, and none back. One extra mark carried only by `true → true` edges forces the
-  accepting cycle into the `true` copy, hence into the region, while the stem stays unrestricted.
-
-  This replaces the two-phase construction of `Fairness.md`'s first correctness trap, which needs a prior
-  reachability pass, a separate initial-state set and a stem reconstruction. Here the witness projects back by
-  dropping the Bool, so stem and cycle are the same lists.
-
-  Key definitions:
+  Defines:
   - `latchSuccs`, `latchInit`, `latchMarks`: the doubled graph
   - `TRegionCycle`: a `TAcceptingCycle` whose cycle lies entirely inside the region
 
-  Key theorems:
+  Proves:
   - `TAcceptingCycle.cycle_forall_of_step`: a step-closed property holding at one cycle position holds at all
   - `latch_sound`: a latched `TAcceptingCycle` projects to a `TRegionCycle` on the original graph
   - `latch_complete`: a run whose tail stays in the region and covers every mark yields a latched one
-  - `latch_complete_total`: the same for an everywhere-true region, starting committed so the stem copy is
-    never entered
+  - `latch_complete_total`: the same for an everywhere-true region, starting committed so the stem copy is never entered
 
   Sections:
   - Cyclic propagation
@@ -41,8 +34,7 @@ variable {State : Type u}
 
 /-! ## Cyclic propagation -/
 
-/-- A property closed under `succs`-steps and holding at one cycle position holds at every cycle position,
-the cycle being closed under the cyclic step. -/
+/-- A property closed under `succs`-steps and holding at one cycle position holds at every cycle position. -/
 theorem TAcceptingCycle.cycle_forall_of_step {initialStates : List State}
     {succs : State → Array State} {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat}
     {P : State → Prop} (ac : TAcceptingCycle initialStates succs edgeMarks numMarks)
@@ -51,7 +43,7 @@ theorem TAcceptingCycle.cycle_forall_of_step {initialStates : List State}
     ∀ j, (hj : j < ac.cycle.length) → P (ac.cycle[j]'hj) := by
   have hL : 0 < ac.cycle.length := by have := ac.cycle_nonempty; omega
   have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos hL
-  -- Transport along index equality, keeping the `getElem` proofs out of the rewriting.
+  -- Transport along index equality.
   have key : ∀ a b, (ha : a < ac.cycle.length) → (hb : b < ac.cycle.length) → a = b →
       P (ac.cycle[a]'ha) → P (ac.cycle[b]'hb) := by
     intro a b ha hb hab h; subst hab; exact h
@@ -90,8 +82,7 @@ theorem mem_latchSuccs_iff (succs : State → Array State) (region : State → B
   cases b <;> simp [latchSuccs, Array.mem_map, Array.mem_filter, Array.mem_append] <;> grind
 
 /-- Initial states of the doubled graph, in the stem copy, or already committed when the state is in the region.
-Under `total` every run starts committed instead, which is sound exactly when the region holds everywhere and
-leaves the stem copy unreachable, so the doubling then costs nothing. -/
+Under `total` every run starts committed instead, which is sound exactly when the region holds everywhere. -/
 def latchInit (initialStates : List State) (region : State → Bool) (total : Bool) :
     List (State × Bool) :=
   if total then initialStates.map (·, true)
@@ -166,8 +157,7 @@ structure TRegionCycle (initialStates : List State) (succs : State → Array Sta
 
 /-! ## Soundness -/
 
-/-- A latched accepting cycle is entirely inside the committed copy, so the extra mark really does confine it.
-No cycle can mix copies, there being no edge back to the stem copy. -/
+/-- A latched accepting cycle lies entirely inside the committed copy, and so inside the region. -/
 theorem latch_cycle_committed {initialStates : List State} {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {region : State → Bool}
     {total : Bool} (hbound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
@@ -246,7 +236,7 @@ def latch_sound {initialStates : List State} {succs : State → Array State}
 /-! ## Completeness -/
 
 /-- A run whose tail stays inside the region and which covers every mark infinitely often yields a latched
-accepting cycle. Latching at the first index past which the region holds keeps the stem unconstrained. -/
+accepting cycle. -/
 theorem latch_complete {initialStates : List State} {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {region : State → Bool}
     (flr : FiniteReach (latchInit initialStates region false) (latchSuccs succs region))
@@ -273,8 +263,7 @@ theorem latch_complete {initialStates : List State} {succs : State → Array Sta
       · simp
       · simp; omega
 
-/-- When the region holds everywhere the whole run may start committed, so the stem copy is never entered and
-the doubled graph has the same reachable size as the original. -/
+/-- The same when the region holds everywhere, with the whole run starting committed. -/
 theorem latch_complete_total {initialStates : List State} {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {region : State → Bool}
     (flr : FiniteReach (latchInit initialStates region true) (latchSuccs succs region))

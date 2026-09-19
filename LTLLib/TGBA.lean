@@ -1,14 +1,30 @@
 /-
-  Transition-based Generalized Büchi Automaton (TGBA) type definition.
+  Transition-based generalized Büchi automata (TGBA), with labels and acceptance marks attached to transitions rather
+  than states. A GBA converts to a TGBA by pushing its acceptance marks onto all outgoing transitions. `consistentPart`
+  drops the transitions no valuation takes, so that an emptiness check reading only the graph decides the language.
 
-  Unlike `GBA`, where labels and acceptance sets are attached to states,
-  a TGBA attaches labels and acceptance marks to transitions.
+  Defines:
+  - `TGBA.Transition`, `TGBA`: a labeled, marked transition and the automaton
+  - `TGBA.edgeMarks`, `TGBA.cachedEdgeMarks`: the marks on an edge, the second backed by a precomputed table
+  - `TGBA.WellFormed`, `TGBA.finiteReach`: well-formedness and the `FiniteReach` witness it gives
+  - `TGBA.toSpec`: the automaton as an abstract `TOASpec`
+  - `TGBA.edgeWitness`, `TAcceptingCycle.toTValidLasso`: the lasso bridge for `toSpec`
+  - `TGBA.consistentPart`: the automaton without the transitions no valuation takes
 
-  A TGBA generalizes a GBA, as a GBA can be converted to a TGBA by
-  simply pushing acceptence marks to all outgoing transitions.
+  Proves:
+  - `TGBA.cachedEdgeMarks_contains_iff`: `cachedEdgeMarks` agrees with `edgeMarks`
+  - `TGBA.exists_TAcceptingCycle_of_acceptingRun`: an accepting run of `toSpec` yields a `TAcceptingCycle`
+  - `TAcceptingCycle.run_states_mem`: every state of the lasso run lies in a well-formed TGBA's state set
+  - `TGBA.consistentPart_accepts`: dropping the transitions no valuation takes keeps the language
+  - `TGBA.accepts_of_consistentPart_cycle`: an accepting cycle of the consistent part is read by some word
 
-  Some recent academic work might refer to a TGBA as simply a Büchi Automata,
-  as has become the standard for LTL model checking over the years.
+  Sections:
+  - The automaton
+  - Proof-level bridge
+  - Lasso witness
+  - Lasso states of a well-formed TGBA
+  - From an accepting run to a lasso
+  - Transitions some valuation takes
 -/
 
 import Std
@@ -19,6 +35,8 @@ import LTLLib.TGBABased.AbstractSpec.Pumping
 import LTLLib.AbstractSpec.GraphPaths
 
 namespace LTLLib
+
+/-! ## The automaton -/
 
 /-- A single labeled, marked transition. -/
 structure TGBA.Transition (α : Type u) [BEq α] [Hashable α] where
@@ -61,14 +79,12 @@ def edgeMarks (tgba : TGBA α) (q q' : Nat) : Std.HashSet Nat :=
   ((tgba.getSuccessors q).filter (·.target == q')).foldl
     (init := Std.HashSet.emptyWithCapacity 0) fun acc t => acc.union t.acceptMarks
 
-/-- Precomputed `(source, target) → marks` lookup, one pass over every transition, backing
-`cachedEdgeMarks` so a DFS traversing many edges doesn't re-filter `getSuccessors q` per edge. -/
+/-- Precomputed `(source, target) → marks` lookup, one pass over every transition. -/
 def edgeMarksTable (tgba : TGBA α) : Std.HashMap (Nat × Nat) (Std.HashSet Nat) :=
   (tgba.successors.toList.flatMap fun qts => qts.2.toList.map fun t => ((qts.1, t.target), t.acceptMarks)).foldl
     (init := {}) fun m kv => m.insert kv.1 ((m.getD kv.1 (Std.HashSet.emptyWithCapacity 0)).union kv.2)
 
-/-- `edgeMarks`, backed by `edgeMarksTable` (`cachedEdgeMarks_contains_iff` below proves they agree),
-an O(1) lookup instead of `edgeMarks`'s O(out-degree) filter per call. -/
+/-- `edgeMarks` as a constant-time lookup in `edgeMarksTable`. -/
 def cachedEdgeMarks (tgba : TGBA α) (q q' : Nat) : Std.HashSet Nat :=
   tgba.edgeMarksTable.getD (q, q') (Std.HashSet.emptyWithCapacity 0)
 
@@ -80,8 +96,7 @@ structure WellFormed (tgba : TGBA α) : Prop where
   marks_range : ∀ q t, tgba.states.contains q → t ∈ tgba.getSuccessors q →
     ∀ m ∈ t.acceptMarks, m < tgba.numAcceptSets
 
-/-- A well-formed `TGBA`'s own state set bounds its reachable set, giving the `FiniteReach` witness the
-emptiness-check contract asks for. -/
+/-- The `FiniteReach` witness of a well-formed `TGBA`, its state set bounding the reachable set. -/
 def finiteReach (tgba : TGBA α) (hwf : tgba.WellFormed) :
     FiniteReach tgba.initialStates.toList tgba.succStates := by
   show {q | Reachable tgba.initialStates.toList tgba.succStates q}.Finite
@@ -128,12 +143,11 @@ end TGBA
 
 variable {α : Type u} [BEq α] [Hashable α]
 
-/-- Junk transition, only ever read off-spec (`find?` failing to find a witness it's known to exist). -/
+/-- Stand-in for the `find?` branches below that never fire. -/
 private def TGBA.junkTransition (q : Nat) : TGBA.Transition α :=
   { target := q, positiveProps := Std.HashSet.emptyWithCapacity 0,
     negativeProps := Std.HashSet.emptyWithCapacity 0, acceptMarks := Std.HashSet.emptyWithCapacity 0 }
 
-/-- Unfolds `edgeMarks`'s `filter`/`foldl union` into an existential over the witnessing transition. -/
 private theorem TGBA.mem_edgeMarks_iff (tgba : TGBA α) (q q' m : Nat) :
     (tgba.edgeMarks q q').contains m ↔
       ∃ t ∈ tgba.getSuccessors q, t.target = q' ∧ t.acceptMarks.contains m := by
@@ -160,7 +174,6 @@ private theorem TGBA.mem_edgeMarks_iff (tgba : TGBA α) (q q' m : Nat) :
   simp only [Bool.false_eq_true, false_or, ← Array.mem_def, Array.mem_filter, beq_iff_eq]
   tauto
 
-/-- `edgeMarksTable`'s construction unfolds analogously to `mem_edgeMarks_iff`. -/
 private theorem TGBA.mem_edgeMarksTable_iff (tgba : TGBA α) (q q' m : Nat) :
     (tgba.edgeMarksTable.getD (q, q') (Std.HashSet.emptyWithCapacity 0)).contains m ↔
       ∃ t ∈ tgba.getSuccessors q, t.target = q' ∧ t.acceptMarks.contains m := by
@@ -222,14 +235,13 @@ private theorem TGBA.mem_edgeMarksTable_iff (tgba : TGBA α) (q q' m : Nat) :
       ⟨(q, tgba.getSuccessors q), Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hex,
         List.mem_map.mpr ⟨t, Array.mem_def.mp ht, rfl⟩⟩, by simp [ht'], htm⟩
 
-/-- `cachedEdgeMarks` agrees with `edgeMarks` on every mark, so callers needing speed can switch
-without touching any `edgeMarks`-based spec-level proof. -/
+/-- `cachedEdgeMarks` agrees with `edgeMarks` on every mark. -/
 theorem TGBA.cachedEdgeMarks_contains_iff (tgba : TGBA α) (q q' m : Nat) :
     (tgba.cachedEdgeMarks q q').contains m ↔ (tgba.edgeMarks q q').contains m := by
   rw [TGBA.cachedEdgeMarks, TGBA.mem_edgeMarksTable_iff, TGBA.mem_edgeMarks_iff]
 
-/-- Realize any `tgba.succStates`-step or `tgba.edgeMarks`-witnessed mark as a concrete `TGBA.Edge`,
-by picking any transition of matching shape (existence following from `succStates`/`edgeMarks`'s own definitions). -/
+/-- Realize any `tgba.succStates`-step or `tgba.edgeMarks`-witnessed mark as a concrete `TGBA.Edge`, by picking any
+transition of matching shape. -/
 def TGBA.edgeWitness (tgba : TGBA α) : TEdgeWitness tgba.toSpec tgba.succStates tgba.edgeMarks where
   stepEdge s s' := ⟨s, ((tgba.getSuccessors s).find? (·.target == s')).getD (junkTransition s')⟩
   stepEdge_spec := by
@@ -274,7 +286,7 @@ theorem TGBA.canonicalTransLabel_compat (t : TGBA.Transition α)
     (∀ a, t.negativeProps.contains a → ¬ TGBA.canonicalTransLabel t a) :=
   ⟨fun _ ha => ha, fun a ha hpos => hdisjoint a hpos ha⟩
 
-/-! ## Every state on the cycle stays inside a well-formed TGBA's state set -/
+/-! ## Lasso states of a well-formed TGBA -/
 
 /-- A `succs`-successor state of a well-formed TGBA's state also lies in its state set. -/
 private theorem TGBA.WellFormed.succState_mem {tgba : TGBA α} (hwf : tgba.WellFormed) {q q' : Nat}
@@ -338,8 +350,7 @@ theorem TAcceptingCycle.run_states_mem {tgba : TGBA α} (hwf : tgba.WellFormed)
 
 /-! ## From an accepting run to a lasso -/
 
-/-- The converse of `TAcceptingCycle.toTValidLasso`: an accepting run of `tgba.toSpec`, projected onto its
-source states, is a `succStates` run carrying every mark infinitely often. -/
+/-- The converse of `TAcceptingCycle.toTValidLasso`: an accepting run of `tgba.toSpec` yields a `TAcceptingCycle`. -/
 theorem TGBA.exists_TAcceptingCycle_of_acceptingRun (tgba : TGBA α) (hwf : tgba.WellFormed)
     {σ : TLA.exec (TGBA.Edge α)} (hrun : tgba.toSpec.isRun σ) (hacc : tgba.toSpec.isAcceptingRun σ) :
     ∃ _ac : TAcceptingCycle tgba.initialStates.toList tgba.succStates tgba.edgeMarks tgba.numAcceptSets,
@@ -364,5 +375,81 @@ theorem TGBA.edgeMarks_lt (tgba : TGBA α)
     (q q' m : Nat) (hm : m ∈ tgba.edgeMarks q q') : m < tgba.numAcceptSets := by
   obtain ⟨t, ht, -, htm⟩ := (TGBA.mem_edgeMarks_iff tgba q q' m).mp (Std.HashSet.mem_iff_contains.mp hm)
   exact hbound q t ht m (Std.HashSet.mem_iff_contains.mpr htm)
+
+/-! ## Transitions some valuation takes -/
+
+namespace TGBA
+
+/-- No atom is required both true and false, so some valuation takes the transition. -/
+def Transition.isConsistent (t : Transition α) : Bool :=
+  !t.positiveProps.any t.negativeProps.contains
+
+/-- The same automaton without the transitions no valuation takes. -/
+def consistentPart (tgba : TGBA α) : TGBA α :=
+  { tgba with successors := tgba.successors.map fun _ ts => ts.filter (·.isConsistent) }
+
+theorem getSuccessors_consistentPart (tgba : TGBA α) (q : Nat) :
+    tgba.consistentPart.getSuccessors q = (tgba.getSuccessors q).filter (·.isConsistent) := by
+  unfold consistentPart getSuccessors
+  rw [Std.HashMap.getElem?_map]
+  cases tgba.successors[q]? <;> simp
+
+theorem consistentPart_wellFormed {tgba : TGBA α} (hwf : tgba.WellFormed) : tgba.consistentPart.WellFormed where
+  initial_mem := hwf.initial_mem
+  succ_mem q t hq ht := by
+    rw [getSuccessors_consistentPart] at ht
+    exact hwf.succ_mem q t hq (Array.mem_filter.mp ht).1
+  marks_range q t hq ht := by
+    rw [getSuccessors_consistentPart] at ht
+    exact hwf.marks_range q t hq (Array.mem_filter.mp ht).1
+
+variable [LawfulBEq α]
+
+theorem Transition.disjoint_of_isConsistent {t : Transition α} (h : t.isConsistent = true) :
+    ∀ a, t.positiveProps.contains a → t.negativeProps.contains a → False := by
+  intro a hp hn
+  simp only [Transition.isConsistent, Bool.not_eq_eq_eq_not, Bool.not_true,
+    Std.HashSet.any_eq_false_iff_forall_mem] at h
+  have := h a (Std.HashSet.mem_iff_contains.mpr hp)
+  simp_all
+
+theorem Transition.isConsistent_of_labelCompat {t : Transition α} {v : α → Prop}
+    (h : (∀ a, t.positiveProps.contains a → v a) ∧ (∀ a, t.negativeProps.contains a → ¬ v a)) :
+    t.isConsistent = true := by
+  simp only [Transition.isConsistent, Bool.not_eq_eq_eq_not, Bool.not_true,
+    Std.HashSet.any_eq_false_iff_forall_mem]
+  intro a ha
+  cases hn : t.negativeProps.contains a
+  · rfl
+  · exact absurd (h.1 a (Std.HashSet.mem_iff_contains.mp ha)) (h.2 a hn)
+
+/-- Dropping the transitions no valuation takes changes the accepted language not at all. -/
+theorem consistentPart_accepts (tgba : TGBA α) (ξ : OmegaWord α) :
+    tgba.consistentPart.toSpec.accepts ξ ↔ tgba.toSpec.accepts ξ := by
+  constructor
+  · rintro ⟨σ, ⟨hinit, hstep⟩, hcompat, hacc⟩
+    refine ⟨σ, ⟨hinit, fun n => ⟨?_, (hstep n).2⟩⟩, hcompat, hacc⟩
+    have hv : (σ n).2 ∈ tgba.consistentPart.getSuccessors (σ n).1 := (hstep n).1
+    rw [getSuccessors_consistentPart] at hv
+    exact (Array.mem_filter.mp hv).1
+  · rintro ⟨σ, ⟨hinit, hstep⟩, hcompat, hacc⟩
+    refine ⟨σ, ⟨hinit, fun n => ⟨?_, (hstep n).2⟩⟩, hcompat, hacc⟩
+    show (σ n).2 ∈ tgba.consistentPart.getSuccessors (σ n).1
+    rw [getSuccessors_consistentPart]
+    exact Array.mem_filter.mpr ⟨(hstep n).1, Transition.isConsistent_of_labelCompat (hcompat n)⟩
+
+/-- An accepting cycle of the consistent part is read by the word taking each run transition's positive atoms. -/
+theorem accepts_of_consistentPart_cycle (tgba : TGBA α)
+    (ac : TAcceptingCycle tgba.consistentPart.initialStates.toList tgba.consistentPart.succStates
+      tgba.consistentPart.edgeMarks tgba.consistentPart.numAcceptSets) :
+    ∃ ξ, tgba.toSpec.accepts ξ := by
+  refine ⟨fun n => canonicalTransLabel (ac.toTValidLasso.run n).2,
+    (consistentPart_accepts tgba _).mp (ac.toTValidLasso.accepts_of_validLasso fun n => ?_)⟩
+  have hv : (ac.toTValidLasso.run n).2 ∈ tgba.consistentPart.getSuccessors (ac.toTValidLasso.run n).1 :=
+    ac.toTValidLasso.run_valid n
+  rw [getSuccessors_consistentPart] at hv
+  exact canonicalTransLabel_compat _ (Transition.disjoint_of_isConsistent (Array.mem_filter.mp hv).2)
+
+end TGBA
 
 end LTLLib

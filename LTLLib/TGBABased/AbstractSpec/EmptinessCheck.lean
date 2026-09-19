@@ -1,7 +1,10 @@
 /-
-  Transition-marked analogue of `AbstractSpec/EmptinessCheck.lean`'s algorithm-agnostic emptiness contract.
-  Acceptance is a set of marks per transition (`edgeMarks`) plus their count (`numMarks`), instead of a single
-  state predicate.
+  Transition-marked analogue of `AbstractSpec/EmptinessCheck.lean`'s algorithm-agnostic emptiness contract. Acceptance
+  is a set of marks per transition (`edgeMarks`) plus their count (`numMarks`), instead of a single state predicate.
+
+  Defines:
+  - `TAcceptingCycle`: a lasso witness whose cycle carries every mark
+  - `TEmptinessChecker`: the contract a transition-based emptiness check satisfies
 
   Sections:
   - Accepting cycle witness
@@ -30,8 +33,7 @@ structure TAcceptingCycle
     cycle[i + 1] ∈ succs (cycle[i])
   cycle_back : cycle.head (List.ne_nil_of_length_pos (by omega)) ∈
     succs (cycle.getLast (List.ne_nil_of_length_pos (by omega)))
-  -- Every mark is carried by some edge, indexed cyclically so `(i + 1) % cycle.length` covers the
-  -- wraparound edge `cycle_back` without a separate case.
+  -- Every mark is carried by some cycle edge, `(i + 1) % cycle.length` covering the wraparound edge `cycle_back`.
   cycle_covers_marks : ∀ m, m < numMarks → ∃ (i : Nat) (hi : i < cycle.length),
     m ∈ edgeMarks (cycle[i]) (cycle[(i + 1) % cycle.length]'(Nat.mod_lt _ (by omega)))
 
@@ -64,8 +66,7 @@ def TAcceptingCycle.restrictMarks {State : Type u} {initialStates : List State}
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- Contract any transition-based emptiness-check algorithm must satisfy. The two proof fields assume every mark
-index stays below `numMarks`, without which "all marks covered" is not a meaningful test. `check` is not given it,
-so a returned answer is never a function of it. -/
+index stays below `numMarks`, a hypothesis `check` itself is not given. -/
 structure TEmptinessChecker (State : Type u) [BEq State] [Hashable State]
     [LawfulBEq State] where
   check : (succs : State → Array State) → (initialStates : List State) →

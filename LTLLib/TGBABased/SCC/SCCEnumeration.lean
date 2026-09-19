@@ -1,62 +1,39 @@
 /-
-  The flush-enumeration contract shared by every lowlink-based refinement of `GenericDFS.lean`: the sets POP
-  flushes as it closes frames are the maximal SCCs of the reachable subgraph, which is what
-  `SCCEnumerationSound` asks for.
+  The flush-enumeration contract shared by the lowlink-based refinements of `GenericDFS.lean`: the sets POP flushes as it
+  closes frames are the maximal SCCs of the reachable subgraph, as `SCCEnumerationSound` asks.
 
-  `TarjanSCC.lean` and `StreettPrune.lean` run the same lowlink discipline, PUSH opening a frame at the new
-  live position, UPDATE lowering the innermost lowlink to a live target's position, and POP either closing the
-  innermost frame and flushing the live stack above it or folding its lowlink into the parent. They differ only
-  in what they do with a closed set, Tarjan collecting it and Streett running its bit test on it, so the
-  enumeration is stated once here over `LowlinkView` and instantiated at both.
+  `TarjanSCC.lean` and `StreettPrune.lean` run the same lowlink discipline, PUSH opening a frame at the new live position,
+  UPDATE lowering the innermost lowlink to a live target's position, and POP either closing the innermost frame and
+  flushing the live stack above it or folding its lowlink into the parent. The enumeration is stated once over
+  `LowlinkView`. A refinement stores none of what it flushes, so the flush sequence is named by running the search again
+  through `enumOps`, a wrapper that records each closed frame beside the search state that closed it and never reports.
 
-  A refinement stores none of what it flushes, so the flush sequence is named by running the search again
-  through `enumOps`, a wrapper recording each closed frame beside the search state that closed it. The
-  recorded `Aux` is what lets a refinement attach its own per-SCC test to the set the enumeration talks about.
-  The wrapper never reports, so its run explores everything, and `enumOps_base_eq` says the two runs agree
-  exactly when the real one never reports, which is the case the empty answers are proved from.
-
-  Proof structure from [CCLMT18], whose environment maps onto ours as stack, num, black and sccs to `live`,
-  `liveIndex`, `dead` and the recorded flushes, their gray set being the states on the driver's own frame
-  stack. Their `wf_env` is the shape `EnumWF` follows. They verify the recursive presentation of [Tar72], so
-  their `dfs1` post-conditions characterising LOWLINK become invariants over the driver's frame stack here. A
-  post-condition holds once a call has returned, which on an explicit stack is only where a frame's cursor has
-  run out, so the clauses taken from them speak of `ExploredEdge` rather than of `succs` itself.
+  Proof structure from [CCLMT18], whose stack, num, black and sccs are our `live`, `liveIndex`, `dead` and the recorded
+  flushes, their gray set being the states on the driver's frame stack. `EnumWF` follows their `wf_env`, and their `dfs1`
+  post-conditions characterising LOWLINK become invariants over the frame stack, stated over `ExploredEdge`.
 
   Defines:
   - `flushedSet`: the states POP is about to flush, the live stack from a position upwards
-  - `LowlinkView`: what a refinement exposes of its search state, the live triple and the lowlink column
-  - `LowlinkLawful`: the discipline the two refinements share, as laws on that view
+  - `LowlinkView`, `LowlinkLawful`: what a refinement exposes of its search state, and the discipline it obeys on that view
   - `enumOps`, `enumRun`, `enumSCCs`: the recording wrapper, its run, and the flushed sets that run recorded
-  - `enumLawful`: the wrapper inheriting `LawfulDFSOps` from the refinement it wraps
-  - `GrayFrame`, `LowlinkView.grayOf`: an open frame as the invariant reads it, and the driver's stack as a
-    list of them
-  - `revGetD`, `LowlinkView.lowlinkAt`: the lowlink column read innermost first
-  - `ExploredEdge`: an edge the search has already taken
-  - `SearchWF`: the invariant the search itself maintains, over any run of the refinement
-  - `EnumWF`: `SearchWF` together with what the recording wrapper has stored
-  - `RecordedWF`: every recorded entry is a closing POP's own flush
+  - `enumOpsFast`, `enumSCCsFast`: the same wrapper without the per-set snapshot, run by compiled code
+  - `GrayFrame`, `ExploredEdge`: an open frame as the invariant reads it, and an edge the search has already taken
+  - `SearchWF`, `EnumWF`: the invariant the search itself maintains, and its extension by what the wrapper has stored
   - `ReportedFrom`, `SearchOutcome`: what a run of the refinement itself leaves behind, reporting or not
-  - `MonotoneAlong`, `RecordedAt`: a relation every operation moves forward along, and what each recorded flush
-    looks like from a real run that never reports
+  - `MonotoneAlong`, `RecordedAt`: a relation every operation moves forward along, and what each recorded flush looks
+    like from a real run that never reports
 
   Proves:
   - `enumSCCs_sound`: the recorded sets are an `SCCEnumerationSound` enumeration
-  - `enumWF_final`: the invariant survives the recording run, which finishes with no frame open
-  - `genericDFS_searchOutcome`: the search invariant survives a run of the refinement itself, up to the move that
-    reported if one did
+  - `enumSCCs_eq_enumSCCsFast` (`@[csimp]`): the snapshot-free run flushes the same sets
+  - `enumWF_final`, `genericDFS_searchOutcome`: the invariants survive the recording run and, up to a reporting move, a
+    run of the refinement itself
+  - `enumOps_base_eq`: a run that never reports agrees with the recording run on the refinement's own state
   - `enumRun_recordedAt`: when the real run reports nothing, every recorded flush was a non-reporting closing POP of
     the real run at which the search invariant held
-  - `enumOps_base_eq`: a run that never reports agrees with the recording run on the refinement's own state
-  - `enumOps_never_reports`: the recording run explores everything rather than stopping at a witness
-  - `enumSCCs_flushed`: each recorded set is the flush of the state recorded beside it, the hook a refinement's
-    per-SCC test is attached through
-  - `mem_flushedSet`: what POP flushes is exactly the live stack from the closing position upwards
-  - `SearchWF.close_flushed`: at a closing POP the flushed set is internally connected and closed up to `dead`
-  - `SearchWF.close_acc_complete`: at a closing POP the accumulator carries every mark inside the flushed set
-  - `SearchWF.pushRoot_step`, `SearchWF.push_step`, `SearchWF.bump_step`, `SearchWF.update_step`,
-    `SearchWF.popClose_step`, `SearchWF.popMerge_step`: the search invariant across each way the driver moves
-  - `EnumWF.popClose_step`, `EnumWF.of_dead_eq`: the recorded clauses across a closing POP and across every
-    other move
+  - `enumSCCs_flushed`: each recorded set is the flush of the state recorded beside it
+  - `SearchWF.close_flushed`, `SearchWF.close_acc_complete`: at a closing POP the flushed set is internally connected
+    and closed up to `dead`, and the accumulator carries every mark inside it
 
   References:
   - [Tar72] Tarjan. Depth-first search and linear graph algorithms. SIAM J. Comput. 1(2), 1972.
@@ -68,6 +45,7 @@
   Sections:
   - The lowlink view
   - The recording wrapper
+  - Snapshot-free recording
   - The run invariant
   - The enumeration contract
   - The reporting run
@@ -99,21 +77,17 @@ structure LowlinkView (ops : DFSOps State) where
   lowlinks : ops.Aux → Array Nat
   -- the frame stack's accumulator column, the marks seen on the frame's own component so far
   accs : ops.Aux → Array Nat
-  -- the mask a refinement ors in at every internal edge, a spare bit recording that the component has one at
-  -- all where the refinement keeps such a bit, and `0` where it does not
+  -- the mask ored in at every internal edge, a spare bit where the refinement keeps one and `0` otherwise
   extraAcc : Nat
   -- a frame's `Position` read as the live-stack index PUSH gave it
   posNat : ops.Position → Nat
 
-/-- Does this POP close its frame? Its lowlink having stayed at its own position means nothing below it was
-reached, so the frame is an SCC root and the live stack above it is complete. -/
+/-- Does this POP close its frame? Its lowlink having stayed at its own position makes the frame an SCC root. -/
 def LowlinkView.closes {ops : DFSOps State} (V : LowlinkView ops) (aux : ops.Aux)
     (step : DFSStep State ops.Position) : Bool :=
   (V.lowlinks aux).back? == some (V.posNat step.pos)
 
-/-- The discipline `TarjanSCC.lean` and `StreettPrune.lean` share, as laws on the view. Only the lowlink column
-is constrained, so a refinement stays free in what else it keeps per frame, which is where Tarjan's merged
-marks and the prune's region bit live. -/
+/-- The discipline `TarjanSCC.lean` and `StreettPrune.lean` share, as laws on the view. -/
 structure LowlinkLawful (ops : DFSOps State) (V : LowlinkView ops) : Prop where
   -- status is read off the triple alone
   status : ∀ aux q, ops.getStatus aux q = liveStatusOf (V.liveIndex aux) (V.dead aux) q
@@ -143,14 +117,12 @@ structure LowlinkLawful (ops : DFSOps State) (V : LowlinkView ops) : Prop where
       liveFlush (V.live aux) (V.liveIndex aux) (V.dead aux) (V.posNat step.pos) ∧
       V.lowlinks (ops.pop succs edgeMarks aux step).1 = (V.lowlinks aux).pop ∧
       V.accs (ops.pop succs edgeMarks aux step).1 = (V.accs aux).pop
-  -- POP at any other frame leaves the triple alone and folds the closing lowlink into the parent, the fold
-  -- guarded by a parent frame since with none the refinements only drop the closing one
+  -- POP at any other frame leaves the triple alone and folds the closing lowlink into the parent, if there is one
   pop_merge : ∀ succs edgeMarks aux step, V.closes aux step = false →
     V.live (ops.pop succs edgeMarks aux step).1 = V.live aux ∧
       V.liveIndex (ops.pop succs edgeMarks aux step).1 = V.liveIndex aux ∧
       V.dead (ops.pop succs edgeMarks aux step).1 = V.dead aux
-  -- with no parent frame the closing lowlink has nowhere to go and is simply dropped, which is the outermost
-  -- frame of a root's search
+  -- with no parent frame, at the outermost frame of a root's search, the closing lowlink is dropped
   pop_merge_lowlinks : ∀ succs edgeMarks aux step ll, V.closes aux step = false →
     (V.lowlinks aux).back? = some ll →
       V.lowlinks (ops.pop succs edgeMarks aux step).1 =
@@ -177,8 +149,7 @@ structure LowlinkLawful (ops : DFSOps State) (V : LowlinkView ops) : Prop where
 the state that flushed it. -/
 abbrev EnumAux (ops : DFSOps State) := ops.Aux × Array (Std.HashSet State × ops.Aux)
 
-/-- The refinement's operations, recording every closed frame and never reporting, so the run explores the
-whole reachable subgraph rather than stopping at the first witness. -/
+/-- The refinement's operations, recording every closed frame and never reporting. -/
 def enumOps (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
   Aux := EnumAux ops
   Position := ops.Position
@@ -195,7 +166,6 @@ def enumOps (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
   sccHint := fun aux => ops.sccHint aux.1
   numExplored := fun aux => ops.numExplored aux.1
 
--- Kept as an equation so `enumOps` stays folded, unfolding it rewrites inside `dfsFromRoot` too.
 theorem enumOps_getStatus (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (aux : (enumOps ops V).Aux) (q : State) :
     (enumOps ops V).getStatus aux q = ops.getStatus aux.1 q := rfl
@@ -211,6 +181,198 @@ def enumSCCs (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) :
     List (Std.HashSet State) :=
   (enumRun ops V succs edgeMarks initialStates).toList.map (·.1)
+
+/-! ## Snapshot-free recording -/
+
+/-- The recording wrapper without the snapshot beside each set, which compiled code runs so that POP updates the
+refinement's state in place. -/
+def enumOpsFast (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
+  Aux := ops.Aux × Array (Std.HashSet State)
+  Position := ops.Position
+  initAux := (ops.initAux, #[])
+  getStatus := fun aux q => ops.getStatus aux.1 q
+  push := fun aux q m =>
+    let (base', pos) := ops.push aux.1 q m
+    ((base', aux.2), pos)
+  update := fun aux m d => (((ops.update aux.1 m d).1, aux.2), false)
+  pop := fun succs edgeMarks aux step =>
+    let sets := if V.closes aux.1 step then aux.2.push (flushedSet (V.live aux.1) (V.posNat step.pos)) else aux.2
+    (((ops.pop succs edgeMarks aux.1 step).1, sets), false)
+  sccHint := fun aux => ops.sccHint aux.1
+  numExplored := fun aux => ops.numExplored aux.1
+
+/-- The sets the snapshot-free run flushed, in the order POP closed them. -/
+def enumSCCsFast (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) : List (Std.HashSet State) :=
+  (genericDFS (enumOpsFast ops V) succs edgeMarks initialStates (enumOpsFast ops V).initAux).2.2.toList
+
+/-- A recording state with its snapshots dropped. -/
+def forgetSnapshots {ops : DFSOps State} {V : LowlinkView ops} (aux : (enumOps ops V).Aux) :
+    (enumOpsFast ops V).Aux :=
+  (aux.1, aux.2.map (·.1))
+
+theorem enumOpsFast_getStatus (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (aux : (enumOps ops V).Aux)
+    (q : State) : (enumOpsFast ops V).getStatus (forgetSnapshots aux) q = (enumOps ops V).getStatus aux q := rfl
+
+theorem enumOpsFast_push (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (aux : (enumOps ops V).Aux) (q : State)
+    (m : Std.HashSet Nat) :
+    (enumOpsFast ops V).push (forgetSnapshots aux) q m =
+      (forgetSnapshots ((enumOps ops V).push aux q m).1, ((enumOps ops V).push aux q m).2) := rfl
+
+theorem enumOpsFast_update (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (aux : (enumOps ops V).Aux)
+    (m : Std.HashSet Nat) (d : State) :
+    (enumOpsFast ops V).update (forgetSnapshots aux) m d =
+      (forgetSnapshots ((enumOps ops V).update aux m d).1, ((enumOps ops V).update aux m d).2) := rfl
+
+theorem enumOpsFast_pop (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat) (aux : (enumOps ops V).Aux) (step : DFSStep State ops.Position) :
+    (enumOpsFast ops V).pop succs edgeMarks (forgetSnapshots aux) step =
+      (forgetSnapshots ((enumOps ops V).pop succs edgeMarks aux step).1,
+        ((enumOps ops V).pop succs edgeMarks aux step).2) := by
+  simp only [enumOpsFast, enumOps, forgetSnapshots]
+  by_cases hc : V.closes aux.1 step = true <;> simp [hc, Array.map_push]
+
+private theorem dfsGo_enumOpsFast_of_some (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
+    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) :
+    ∀ (aux : (enumOps ops V).Aux) (stack : List (DFSStep State ops.Position))
+      (r : Option (State × List State) × (enumOps ops V).Aux),
+      dfsGo (enumOps ops V) succs edgeMarks aux stack = some r →
+      dfsGo (enumOpsFast ops V) succs edgeMarks (forgetSnapshots aux) stack = some (r.1, forgetSnapshots r.2) := by
+  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks
+    (fun aux stack r => dfsGo (enumOpsFast ops V) succs edgeMarks (forgetSnapshots aux) stack =
+      some (r.1, forgetSnapshots r.2)) ?_
+  intro f ih aux stack r hr
+  rw [dfsGo.eq_def]
+  cases stack with
+  | nil =>
+    simp only [Option.some.injEq] at hr
+    rw [← hr]
+  | cons step rest =>
+    by_cases hidx : step.idx < step.succ.size
+    case neg =>
+      simp only [hidx, dite_false, enumOpsFast_pop] at hr ⊢
+      simp only [enumOps] at hr ⊢
+      rcases hpop : ops.pop succs edgeMarks aux.1 step with ⟨aux'', found⟩
+      simp only [hpop] at hr ⊢
+      exact ih _ rest r hr
+    case pos =>
+      simp only [hidx, dite_true, enumOpsFast_getStatus, enumOpsFast_update, enumOpsFast_push] at hr ⊢
+      simp only [enumOps] at hr ⊢
+      cases hgs : ops.getStatus aux.1 step.succ[step.idx] with
+      | dead =>
+        simp only [hgs] at hr ⊢
+        exact ih _ _ r hr
+      | live =>
+        simp only [hgs] at hr ⊢
+        exact ih _ _ r hr
+      | unknown =>
+        simp only [hgs] at hr ⊢
+        rcases hpsh : ops.push aux.1 step.succ[step.idx] (edgeMarks step.state step.succ[step.idx])
+          with ⟨aux'', pos'⟩
+        simp only [hpsh] at hr ⊢
+        exact ih _ _ r hr
+
+private theorem dfsGo_enumOps_of_fast_some (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
+    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) :
+    ∀ (b : (enumOpsFast ops V).Aux) (stack : List (DFSStep State ops.Position))
+      (r' : Option (State × List State) × (enumOpsFast ops V).Aux),
+      dfsGo (enumOpsFast ops V) succs edgeMarks b stack = some r' →
+      ∀ aux : (enumOps ops V).Aux, forgetSnapshots aux = b →
+        ∃ r, dfsGo (enumOps ops V) succs edgeMarks aux stack = some r := by
+  refine dfsGo.partial_correctness (enumOpsFast ops V) succs edgeMarks
+    (fun b stack _ => ∀ aux : (enumOps ops V).Aux, forgetSnapshots aux = b →
+      ∃ r, dfsGo (enumOps ops V) succs edgeMarks aux stack = some r) ?_
+  intro f ih b stack r' hr' aux hb
+  subst hb
+  rw [dfsGo.eq_def]
+  cases stack with
+  | nil => exact ⟨_, rfl⟩
+  | cons step rest =>
+    by_cases hidx : step.idx < step.succ.size
+    case neg =>
+      simp only [hidx, dite_false, enumOpsFast_pop] at hr' ⊢
+      simp only [enumOps] at hr' ⊢
+      rcases hpop : ops.pop succs edgeMarks aux.1 step with ⟨aux'', found⟩
+      simp only [hpop] at hr' ⊢
+      exact ih _ rest r' hr' _ rfl
+    case pos =>
+      simp only [hidx, dite_true, enumOpsFast_getStatus, enumOpsFast_update, enumOpsFast_push] at hr' ⊢
+      simp only [enumOps] at hr' ⊢
+      cases hgs : ops.getStatus aux.1 step.succ[step.idx] with
+      | dead =>
+        simp only [hgs] at hr' ⊢
+        exact ih _ _ r' hr' _ rfl
+      | live =>
+        simp only [hgs] at hr' ⊢
+        exact ih _ _ r' hr' _ rfl
+      | unknown =>
+        simp only [hgs] at hr' ⊢
+        rcases hpsh : ops.push aux.1 step.succ[step.idx] (edgeMarks step.state step.succ[step.idx])
+          with ⟨aux'', pos'⟩
+        simp only [hpsh] at hr' ⊢
+        exact ih _ _ r' hr' _ rfl
+
+/-- The snapshot-free run steps exactly like the recording run, up to the dropped snapshots. -/
+theorem dfsGo_enumOpsFast (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat) (aux : (enumOps ops V).Aux)
+    (stack : List (DFSStep State ops.Position)) :
+    dfsGo (enumOpsFast ops V) succs edgeMarks (forgetSnapshots aux) stack =
+      (dfsGo (enumOps ops V) succs edgeMarks aux stack).map fun r => (r.1, forgetSnapshots r.2) := by
+  rcases h : dfsGo (enumOps ops V) succs edgeMarks aux stack with _ | r
+  · rcases h' : dfsGo (enumOpsFast ops V) succs edgeMarks (forgetSnapshots aux) stack with _ | r'
+    · rfl
+    · obtain ⟨r, hr⟩ := dfsGo_enumOps_of_fast_some ops V succs edgeMarks _ stack r' h' aux rfl
+      rw [h] at hr
+      cases hr
+  · exact dfsGo_enumOpsFast_of_some ops V succs edgeMarks aux stack r h
+
+theorem dfsFromRoot_enumOpsFast (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat) (aux : (enumOps ops V).Aux) (q0 : State) :
+    dfsFromRoot (enumOpsFast ops V) succs edgeMarks (forgetSnapshots aux) q0 =
+      ((dfsFromRoot (enumOps ops V) succs edgeMarks aux q0).1,
+        forgetSnapshots (dfsFromRoot (enumOps ops V) succs edgeMarks aux q0).2) := by
+  unfold dfsFromRoot
+  rw [enumOpsFast_push]
+  rcases hpsh : (enumOps ops V).push aux q0 (Std.HashSet.emptyWithCapacity 0) with ⟨aux', pos'⟩
+  simp only
+  rw [dfsGo_enumOpsFast]
+  cases dfsGo (enumOps ops V) succs edgeMarks aux' [{ state := q0, pos := pos', acc := 0, succ := succs q0, idx := 0 }]
+  <;> rfl
+
+theorem genericDFSGo_enumOpsFast (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat) :
+    ∀ (roots : List State) (aux : (enumOps ops V).Aux),
+      genericDFSGo (enumOpsFast ops V) succs edgeMarks roots (forgetSnapshots aux) =
+        (genericDFSGo (enumOps ops V) succs edgeMarks roots aux).map fun r => (r.1, forgetSnapshots r.2) := by
+  intro roots
+  induction roots with
+  | nil => intro aux; rw [genericDFSGo.eq_def, genericDFSGo.eq_def]; rfl
+  | cons q rest ih =>
+    intro aux
+    rw [genericDFSGo.eq_def, genericDFSGo.eq_def]
+    simp only
+    rw [enumOpsFast_getStatus]
+    cases (enumOps ops V).getStatus aux q with
+    | dead => exact ih aux
+    | live => exact ih aux
+    | unknown =>
+      simp only
+      rw [dfsFromRoot_enumOpsFast]
+      rcases hr : dfsFromRoot (enumOps ops V) succs edgeMarks aux q with ⟨found, aux'⟩
+      cases found with
+      | some x => rfl
+      | none => exact ih aux'
+
+/-- Compiled code runs the snapshot-free recording, which flushes the same sets. -/
+@[csimp] theorem enumSCCs_eq_enumSCCsFast : @enumSCCs.{u,v,w} = @enumSCCsFast.{u,v,w} := by
+  funext State _ _ ops V succs edgeMarks initialStates
+  unfold enumSCCs enumRun enumSCCsFast genericDFS
+  have hinit : (enumOpsFast ops V).initAux = forgetSnapshots (enumOps ops V).initAux := by
+    simp [enumOpsFast, enumOps, forgetSnapshots]
+  rw [hinit, genericDFSGo_enumOpsFast]
+  cases genericDFSGo (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux with
+  | none => simp [forgetSnapshots, enumOps]
+  | some r => simp [forgetSnapshots, Array.toList_map]
 
 /-! ## The run invariant -/
 
@@ -257,19 +419,12 @@ theorem ExploredEdge.mem {gray : List (GrayFrame State)} {succs : State → Arra
   obtain ⟨hlt, heq⟩ := Array.getElem?_eq_some_iff.mp hj
   exact heq ▸ Array.getElem_mem hlt
 
-/-- Unblocked reachability, the form the invariant's paths are stated in. -/
+/-- Unblocked reachability. -/
 abbrev Reaches (succs : State → Array State) (s t : State) : Prop :=
   PathTo succs (fun _ => False) s t
 
-/-- The invariant the search itself maintains, the first six clauses of `wf_env` [CCLMT18, §3] together with
-the three `dfs1` post-conditions that characterise LOWLINK, adapted to an explicit frame stack. Their stack,
-num and black are `live`, `liveIndex` and `dead`, and their gray set is the states the driver's own frames sit
-on.
-
-Their `simplelist` comes free from `LiveWF`, the position map being exact. Their `+∞`, the number a popped
-vertex is reset to, is likewise implicit, a flushed state simply leaving `liveIndex`. A `dfs1` post-condition
-holds once that call has returned, which on an explicit stack is only reached once a frame's cursor has run
-out, so the clauses taken from them are stated over `ExploredEdge` rather than over `succs` itself. -/
+/-- The invariant the search itself maintains, the first six clauses of `wf_env` [CCLMT18, §3] together with the three
+`dfs1` post-conditions that characterise LOWLINK, adapted to an explicit frame stack. -/
 structure SearchWF (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) (aux : ops.Aux)
     (gray : List (GrayFrame State)) : Prop where
@@ -295,8 +450,7 @@ structure SearchWF (ops : DFSOps State) (V : LowlinkView ops) (succs : State →
   accs_length : (V.accs aux).size = gray.length
   -- each frame sits on its own live position
   frame_pos : ∀ g ∈ gray, g.pos < (V.live aux).size ∧ (V.live aux)[g.pos]! = g.state
-  -- the frames are the spanning forest's current branch [CCLMT18, §2], each opened by a tree edge from the one
-  -- below it, which is what lets a live state reach the innermost frame and so reach anything pushed next
+  -- the frames are the spanning forest's current branch [CCLMT18, §2], each opened by a tree edge from the one below it
   gray_chain : ∀ k, (hk : k + 1 < gray.length) →
     ExploredEdge gray succs gray[k + 1].state gray[k].state
   -- each frame remembers the marks on the tree edge that opened it, which POP folds into its parent
@@ -310,24 +464,21 @@ structure SearchWF (ops : DFSOps State) (V : LowlinkView ops) (succs : State →
   -- [CCLMT18] `dfs1` post-condition `n = +∞ ∨ num_of_reachable n x e'`
   lowlink_reaches : ∀ k, (hk : k < gray.length) → V.lowlinkAt aux k < (V.live aux).size ∧
     (V.lowlinkAt aux k = gray[k].pos ∨ Reaches succs gray[k].state (V.live aux)[V.lowlinkAt aux k]!)
-  -- [CCLMT18] `dfs1` post-condition on `xedge_to`, over the edges the search has taken. A frame takes a deeper
-  -- frame's lowlink only at POP, so an explored edge out of `gray[k]`'s span is bounded by the least lowlink
-  -- from the innermost frame out to `k`, and not by `gray[k]`'s own.
+  -- [CCLMT18] `dfs1` post-condition on `xedge_to`, over explored edges: an edge out of `gray[k]`'s span is bounded by
+  -- the least lowlink from the innermost frame out to `k`
   lowlink_bound : ∀ k, (hk : k < gray.length) → ∀ i, (hi : i < (V.live aux).size) → gray[k].pos ≤ i →
     ∀ t, ExploredEdge gray succs (V.live aux)[i] t → ∀ pt, (V.liveIndex aux)[t]? = some pt →
       ∃ l ≤ k, V.lowlinkAt aux l ≤ pt
-  -- [RDKP13] the accumulator is sound: every mark a frame carries sits on an edge the search has taken with
-  -- both ends inside the frame's own span, which at a closing frame is the component being flushed. The upper
-  -- bounds are what let a witness survive the flush, a frame's cursor being frozen while an inner one is open
+  -- [RDKP13] the accumulator is sound: every mark a frame carries sits on an explored edge with both ends inside the
+  -- frame's own span and below every inner frame
   acc_sound : ∀ k, (hk : k < gray.length) → ∀ b, (V.accAt aux k).testBit b = true →
     ∃ u v pu pv, ExploredEdge gray succs u v ∧
       (V.liveIndex aux)[u]? = some pu ∧ (V.liveIndex aux)[v]? = some pv ∧
       gray[k].pos ≤ pu ∧ (∃ l ≤ k, V.lowlinkAt aux l ≤ pv) ∧
       (∀ l, (hl : l < k) → pu < gray[l].pos ∧ pv < gray[l].pos) ∧
       (V.extraAcc.testBit b = true ∨ b ∈ edgeMarks u v)
-  -- [RDKP13] the accumulator is complete: every mark on an explored edge between live states is carried by the
-  -- frame owning its source, the innermost frame at or below it, unless the edge is the tree edge out of that frame,
-  -- whose marks the frame above still holds in its own `acc` until its POP
+  -- [RDKP13] the accumulator is complete: every mark on an explored edge between live states is carried by the frame
+  -- owning its source, unless the edge is the tree edge out of that frame, whose marks the frame above holds in its `acc`
   acc_complete : ∀ u v pu pv, ExploredEdge gray succs u v →
     (V.liveIndex aux)[u]? = some pu → (V.liveIndex aux)[v]? = some pv →
     ∀ b, (V.extraAcc.testBit b = true ∨ b ∈ edgeMarks u v) →
@@ -388,8 +539,6 @@ theorem mem_flushedSet (live : Array State) (pos : Nat) (s : State) :
     rw [← hv]
     exact Array.getElem_mem hj
 
--- The wrapper delegates every operation to `ops` on the first component and forces both `Bool`s to `false`, so
--- the two runs step alike until the real one reports, which is what the `r'.1 = none` premise rules out.
 omit [LawfulBEq State] [LawfulHashable State] in
 private theorem dfsGo_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) :
@@ -445,7 +594,6 @@ private theorem dfsGo_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
         simp only [hgs] at hr'
         exact ih _ _ r hr r' hr' hnone'
 
--- `dfsFromRoot`'s `match` on the pushed pair blocks rewriting under it, so it is projected out once here.
 omit [LawfulBEq State] [LawfulHashable State] in
 private theorem dfsFromRoot_eq (ops : DFSOps.{u,v,w} State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (aux : ops.Aux) (q0 : State) :
@@ -455,7 +603,7 @@ private theorem dfsFromRoot_eq (ops : DFSOps.{u,v,w} State) (succs : State → A
            acc := 0, succ := succs q0, idx := 0 }]).getD
         (none, (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1) := rfl
 
-/-- The wrapper inherits lawfulness, every operation delegating to `ops` on the refinement's own component. -/
+/-- The wrapper inherits lawfulness from `ops`. -/
 def enumLawful (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (L : LawfulDFSOps ops) :
     LawfulDFSOps (enumOps ops V) where
   WellFormed := fun aux => L.WellFormed aux.1
@@ -551,8 +699,7 @@ private theorem genericDFSGo_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkVi
       exact ih hrest aux rw' ru hwf hw hu hnone
 
 omit [LawfulHashable State] in
-/-- A run that never reports agrees with the recording run on the refinement's own state, so what the
-enumeration says about the recording run transfers to the real one. -/
+/-- A run that never reports agrees with the recording run on the refinement's own state. -/
 theorem enumOps_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (fr : FiniteReach initialStates succs) (L : LawfulDFSOps ops)
@@ -598,8 +745,7 @@ private theorem dfsGo_recorded (ops : DFSOps State) (V : LowlinkView ops)
     by_cases hidx : step.idx < step.succ.size
     case neg =>
       simp only [hidx, dite_false] at hr
-      -- POP never reports here, so the run always continues, and the recorded array grows by at most the
-      -- closing frame's own flush
+      -- POP never reports here, and the recorded array grows by at most the closing frame's flush
       refine ih _ rest r hr ?_
       by_cases hcl : V.closes aux.1 step
       · intro q hq
@@ -618,8 +764,6 @@ private theorem dfsGo_recorded (ops : DFSOps State) (V : LowlinkView ops)
         simp only [hgs] at hr
         exact ih _ _ r (by simpa [enumOps] using hr) (by simpa [enumOps] using h)
 
--- `dfsFromRoot`'s totalising fallback is the pushed state itself, whose recorded array is the one it started
--- with, so a property holding of both sides of the `getD` holds of the result.
 omit [LawfulBEq State] [LawfulHashable State] in
 private theorem enum_getD (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (P : Option (State × List State) × (enumOps ops V).Aux → Prop)
@@ -666,8 +810,7 @@ private theorem genericDFSGo_recorded (ops : DFSOps State) (V : LowlinkView ops)
     | live => simp only [hst] at hgo; exact ih aux r hgo h
 
 omit [LawfulBEq State] [LawfulHashable State] in
-/-- Each recorded set is the flush of the state recorded beside it, which is how a refinement's per-SCC test,
-run on that state, is attached to the set the enumeration talks about. -/
+/-- Each recorded set is the flush of the state recorded beside it. -/
 theorem enumSCCs_flushed (ops : DFSOps State) (V : LowlinkView ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (C : Std.HashSet State) (aux : ops.Aux)
@@ -798,7 +941,7 @@ private theorem gray_reaches_head [Inhabited State] {succs : State → Array Sta
   exact key k hk
 
 omit [BEq State] [Hashable State] [LawfulBEq State] [LawfulHashable State] in
-/-- Bumping a frame's cursor moves neither its state nor its position, which is all the frame clauses read. -/
+/-- Bumping a frame's cursor moves neither its state nor its position. -/
 private theorem bumped_getElem {f f' : GrayFrame State} {gray : List (GrayFrame State)}
     (hs : f'.state = f.state) (hp : f'.pos = f.pos) (ha : f'.acc = f.acc) (k : Nat)
     (hk : k < (f :: gray).length) :
@@ -860,8 +1003,8 @@ theorem enumWF_init [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : LowlinkV
 
 /-! ### The transitions
 
-One `SearchWF` lemma per way the driver moves, each stated over the `gray` list the invariant reads rather than
-the driver's stack. Only a closing POP changes `dead`, so it is the only move with its own `EnumWF` lemma. -/
+One `SearchWF` lemma per way the driver moves. Only a closing POP changes `dead`, so it is the only move with its own
+`EnumWF` lemma. -/
 
 /-- A dispatch onto a dead successor, which only bumps the innermost cursor. -/
 theorem SearchWF.bump_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V : LowlinkView ops}
@@ -1673,8 +1816,7 @@ theorem SearchWF.close_explored [Inhabited State] {ops : DFSOps.{u,v,w} State} {
     omega
 
 /-- At a closing POP the flushed set is internally connected and every edge out of it stays inside it or lands in
-`dead`. The frame's lowlink stayed at its own position, which over a fully scanned subtree says no edge out of it
-reaches a live state below. -/
+`dead`. -/
 theorem SearchWF.close_flushed [Inhabited State] {ops : DFSOps.{u,v,w} State} {V : LowlinkView ops}
     {succs : State → Array State} {edgeMarks : State → State → Std.HashSet Nat} {initialStates : List State}
     {aux : ops.Aux} {step : DFSStep State ops.Position} {gray : List (GrayFrame State)}
@@ -2437,7 +2579,7 @@ theorem SearchWF.popMerge_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V
           exact ⟨0, Nat.zero_le _, by rw [hnew0]; exact le_trans (min_le_left _ _) hlb⟩
         · exact ⟨l + 1, by omega, by rw [hnewS l]; exact hlb⟩
 
-/-- PUSH on a fresh root, where no frame is open and so, by clause 6, the live stack is empty too. -/
+/-- PUSH on a fresh root, where no frame is open and the live stack is empty. -/
 theorem SearchWF.pushRoot_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V : LowlinkView ops}
     (hlaw : LowlinkLawful ops V) {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {initialStates : List State}
@@ -3068,9 +3210,8 @@ theorem genericDFS_searchOutcome [Inhabited State] (ops : DFSOps.{u,v,w} State) 
 
 /-! ## Recorded flushes
 
-What each flush of the recording run looks like from the real run, provided the real run never reports. The two
-runs agree step for step until a report, so every recorded flush was a closing POP of the real run too, taken with
-the search invariant holding and without reporting. -/
+Every flush of the recording run is, for a real run that never reports, a closing POP of the real run taken with the
+search invariant holding and without reporting. -/
 
 /-- A relation every operation of the refinement moves forward along, such as a queue that only grows. -/
 structure MonotoneAlong (ops : DFSOps State) (R : ops.Aux → ops.Aux → Prop) : Prop where

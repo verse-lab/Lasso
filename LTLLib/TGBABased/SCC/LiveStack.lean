@@ -1,13 +1,8 @@
 /-
-  The live/dead bookkeeping every SCC-based emptiness check shares: a stack of live states, the position map
-  that makes membership `O(1)`, and the dead set a closed component is flushed into.
-
-  `DijkstraAux`, `StreettAux` and `TarjanAux` all carry this same triple, read status off it the same way, push
-  onto it the same way, and flush it the same way, so the invariant and the three `LawfulDFSOps` status laws are
-  proved once here and instantiated by each refinement.
+  The live/dead bookkeeping shared by the SCC-based emptiness checks: a stack of live states, its position map, and the
+  dead set a closed component is flushed into. The invariant and the three `LawfulDFSOps` status laws are proved once here.
 
   Defines:
-  - `Array.getElem!_push_lt`, `Array.getElem!_push_eq`: `getElem!` through a push
   - `liveStatusOf`: the `DFSStatus` of a state, read off `liveIndex` and `dead` alone
   - `liveFlush`: POP's flush loop, everything above a position leaving `live` and joining `dead`
   - `LiveWF`: `liveIndex` is the exact position map of `live`
@@ -17,7 +12,7 @@
   - `liveFlush_spec`: the flush preserves the invariant and only ever promotes live states to dead
   - `liveFlush_size`: the flush drains `live` down to exactly the position it was given
   - `liveFlush_dead_or_old`, `liveFlush_getElem!_lt`: what the flush leaves in `dead` and what it leaves alone
-  - `liveFlush_touched_mono`: the flush loses nothing, a touched state stays touched
+  - `liveFlush_touched_mono`: a touched state stays touched
 
   Sections:
   - The triple
@@ -43,7 +38,7 @@ theorem Array.getElem!_push_eq {α} [Inhabited α] {xs : Array α} {x : α} :
     (xs.push x)[xs.size]! = x := by
   rw [getElem!_pos (xs.push x) xs.size (by simp), Array.getElem_push_eq]
 
-/-- Status read off `liveIndex`/`dead` alone, for where no full search state is in scope. -/
+/-- The status of `q`, read off `liveIndex` and `dead` alone. -/
 def liveStatusOf (liveIndex : Std.HashMap State Nat) (dead : Std.HashSet State) (q : State) : DFSStatus :=
   if liveIndex.contains q then .live else if dead.contains q then .dead else .unknown
 
@@ -65,7 +60,7 @@ decreasing_by simp only [Array.size_pop]; omega
 structure LiveWF [Inhabited State] (live : Array State) (liveIndex : Std.HashMap State Nat) : Prop where
   -- every `live` position maps back to itself
   fwd : ∀ i, (h : i < live.size) → liveIndex[live[i]]? = some i
-  -- every `liveIndex` entry names a real `live` slot, so a back-edge target's recorded position is real
+  -- every `liveIndex` entry names a `live` slot holding that state
   bwd : ∀ q p, liveIndex[q]? = some p → p < live.size ∧ live[p]! = q
 
 /-- Distinct live positions hold distinct states. -/
@@ -82,7 +77,7 @@ theorem liveWF_init [Inhabited State] (n : Nat) :
 
 /-! ## PUSH -/
 
-/-- PUSH preserves the invariant, the target being new being exactly what it needs. -/
+/-- PUSH of a new state preserves the invariant. -/
 theorem LiveWF.push [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     {live : Array State} {liveIndex : Std.HashMap State Nat} (hwf : LiveWF live liveIndex)
     {q : State} (hq : liveIndex.contains q = false) :
@@ -135,8 +130,7 @@ theorem liveStatusOf_insert [LawfulBEq State] [LawfulHashable State]
 
 /-! ## The flush -/
 
-/-- The flush preserves the invariant, and every state's status is unchanged or promoted from live to dead,
-never demoted. -/
+/-- The flush preserves the invariant, and every state's status is unchanged or promoted from live to dead. -/
 theorem liveFlush_spec [Inhabited State] [LawfulBEq State] [LawfulHashable State] (pos : Nat) :
     ∀ (live : Array State) (liveIndex : Std.HashMap State Nat) (dead : Std.HashSet State),
     (∀ i, (h : i < live.size) → liveIndex[live[i]]? = some i) →
@@ -224,7 +218,7 @@ theorem liveFlush_spec [Inhabited State] [LawfulBEq State] [LawfulHashable State
     simp only [hle, if_false]
     exact ⟨hwf, hbwd, fun q => Or.inl trivial⟩
 
-/-- The same packaged as the invariant, which is the form a refinement's `wf_pop` needs. -/
+/-- The flush preserves `LiveWF`. -/
 theorem LiveWF.flush [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     {live : Array State} {liveIndex : Std.HashMap State Nat} {dead : Std.HashSet State} (pos : Nat)
     (hwf : LiveWF live liveIndex) :
@@ -353,7 +347,7 @@ theorem liveFlush_getElem!_lt [Inhabited State] (pos : Nat) :
     unfold liveFlush
     simp only [hle, if_false]
 
-/-- The flush loses nothing: a touched state is still live or has joined the dead. -/
+/-- A touched state is still live or has joined the dead after the flush. -/
 theorem liveFlush_touched_mono [Inhabited State] [LawfulBEq State] [LawfulHashable State] (pos : Nat) :
     ∀ (live : Array State) (liveIndex : Std.HashMap State Nat) (dead : Std.HashSet State) (s : State),
     s ∈ live ∨ s ∈ dead →

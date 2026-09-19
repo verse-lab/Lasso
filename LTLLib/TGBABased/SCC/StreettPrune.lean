@@ -1,11 +1,12 @@
 /-
-  The recursive fairness check of [SLDP09], run on the SCCs a Tarjan search closes, replacing the `2ⁿ`
-  crossing of `FairRouter.lean` with one search plus a prune. Design notes in `StreettPrune.md`.
+  The recursive fairness check of [SLDP09], run on the SCCs a Tarjan search closes, one search plus a prune instead of the
+  `2ⁿ` crossing of `FairRouter.lean`.
 
-  A hoisted conjunct is a list of options, an option being a region `FG l` and marks `GF g`, and an SCC
-  satisfies the assumption when every conjunct has an option available in it ([LSFZ16, Definition 3] per
-  conjunct). A maximal SCC that fails can still contain a passing sub-SCC, so a failing conjunct with options
-  that fail only on their regions sends `B ∩ l` back through the same search, which is [EL87]'s prune.
+  A hoisted conjunct is a list of options, an option being a region `FG l` and marks `GF g`, and an SCC satisfies the
+  assumption when every conjunct has an option available in it ([LSFZ16, Definition 3] per conjunct). A maximal SCC that
+  fails can still contain a passing sub-SCC, so a failing conjunct with options that fail only on their regions sends
+  `B ∩ l` back through the same search, which is [EL87]'s prune. Only the first failing conjunct branches, since any fair
+  subgraph satisfies it through one of its options.
 
   ```
   check(B):                                     -- B a maximal SCC of the current subgraph
@@ -17,50 +18,33 @@
     for each option (l, _) in live:  queue B ∩ l
   ```
 
-  Where the cost went:
-  - The property marks are read off Tarjan's own `acc`, which already unions every internal edge's marks,
-    with bit `numMarks` carrying "has an internal edge" so `AcceptingMarks` is one `Nat` comparison.
-  - The option scan is two `Nat` bitmasks over the flushed slice of `live`, evaluating only undecided
-    predicates and stopping once neither mask can move. Nothing is materialised unless the SCC is pruned.
-  - Only the first failing conjunct branches. Any fair subgraph satisfies it through one of its options, so it
-    lies inside one of that conjunct's live regions, and branching on the others would re-explore the same sets.
-  - The recursion is deferred through a worklist rather than nested, so one flat loop drains it.
-
   Defines:
   - `CompiledSpec`: `StreettSpec` flattened once, so the scan indexes options and marks by position
-  - `CompiledSpec.WF`: what the flattening guarantees, which is what the scan's correctness rests on
+  - `CompiledSpec.WF`: what the flattening guarantees
   - `StreettAux`, `streettPush`/`streettUpdate`/`streettPop`, `streettOps`: the refinement of `GenericDFS`
   - `scanOptions`, `firstUnsatisfied`: the per-SCC test
   - `pruneLoop`, `streettCheck`: the outer loop and the entry point
 
   Proves:
-  - `CompiledSpec.of_wf`: a flattened spec is well formed
   - `optionAvailable_iff`: the scan decides `StreettOption.availableIn` on the range it was run over
   - `firstUnsatisfied_none_accepting`, `firstUnsatisfied_some_blames`: the per-conjunct test decides
-    `StreettSpec.accepting` on the flushed SCC, and names a conjunct together with every option of it whose
-    marks are present
-  - `streettCheck_nonEmpty_valid`: a reported stem and cycle really is an accepting cycle whose states satisfy
-    every conjunct, the answer being validated against the specification rather than trusted to the search
-  - `streettRun_found`, `streett_sccHintSound`: a counterexample the search reports lies in an internally connected
-    SCC covering every property mark, reached by the reported stem, and the options recorded beside it cover every
-    conjunct on that SCC
-  - `streett_acceptingMarks_of_full`, `streett_full_of_acceptingMarks`: at a closing POP the accumulator is full
-    exactly when the flushed set covers every property mark, which is what makes the discard branch sound
-  - `streettRun_none_pass`: a search that reports nothing blames a conjunct for every maximal SCC covering the
-    property marks and queues the pruned candidate of each of its options whose marks are present
-  - `pruneLoop_none_refuted`, `refutedFrom_of_none`: a queue drained without a report holds only refuted
-    candidates, so the branch of `streettCheck` where nothing is reported refutes the whole graph
-  - `pruneLoop_found`, `streettRun_none_dead`: a witness the prune reports comes from the run on one candidate, and a
-    search that reports nothing leaves every reachable state dead, which is where the stem of such a witness is found
-  - `streettCheck_empty_refutes`: the refinement, an `.empty` answer is one of those refusals
-  - `streettCheck_empty_no_fairSCC`: an `.empty` answer rules out every `FairSCC`, on [SLDP09]'s recursion
-    proved in `AbstractSpec/StreettPruneSpec.lean`
+    `StreettSpec.accepting` on the flushed SCC, and names a conjunct with every option of it whose marks are present
+  - `streettCheck_nonEmpty_valid`: a reported stem and cycle is an accepting cycle whose states satisfy every conjunct
+  - `streettRun_found`: a reported counterexample lies in an internally connected SCC covering every property mark,
+    reached by the reported stem, and the options recorded beside it cover every conjunct
+  - `streettRun_none_pass`, `pruneLoop_none_refuted`: a search that reports nothing blames a conjunct for every maximal
+    SCC covering the property marks and queues its pruned candidates, and a queue drained without a report is refuted
+  - `streettCheck_empty_refutes`: an `.empty` answer refutes the whole graph in the sense of `RefutedFrom`
+  - `streettCheck_empty_no_fairSCC`: an `.empty` answer rules out every `FairSCC`, on [SLDP09]'s recursion proved in
+    `AbstractSpec/StreettPruneSpec.lean`
 
   References:
   - [SLDP09] Sun, Liu, Dong, Pang. PAT: Towards Flexible Verification under Fairness. CAV 2009.
   - [LSFZ16] Li, Song, Feng, Zhang. Verify LTL with Fairness Assumptions Efficiently. arXiv:1606.08116, 2016.
   - [EL87] Emerson, Lei. Efficient model checking in fragments of the propositional mu-calculus. LICS 1986.
-  - Renault, Duret-Lutz, Kordon, Poitrenaud. Three SCC-based Emptiness Checks for GBA. LPAR-19, 2013.
+  - [RDKP13] Renault, Duret-Lutz, Kordon, Poitrenaud. Three SCC-based Emptiness Checks for GBA. LPAR-19, 2013.
+  - [CCLMT18] Chen, Cohen, Lévy, Merz, Théry. Formal Proofs of Tarjan's Algorithm in Why3, Coq, and Isabelle.
+    arXiv:1810.11979, 2018.
 
   Sections:
   - The compiled spec
@@ -91,9 +75,8 @@ variable {State : Type u} {L : Type w} [BEq State] [Hashable State]
 
 /-! ## The compiled spec
 
-`StreettSpec`'s options are nested one level, which the scan would otherwise walk once per state. Flattening
-happens once per check, and gives every option a position, a mark-bit range and a precomputed mask of the bits
-it needs, so both the scan and the availability test are `Nat` bit operations. -/
+Flattening `StreettSpec` once per check gives every option a position, a mark-bit range and a mask of the bits it needs,
+so the scan and the availability test are `Nat` bit operations. -/
 
 /-- `StreettSpec` with option positions, mark-bit ranges and per-option mark masks precomputed. -/
 structure CompiledSpec (State : Type u) (L : Type w) where
@@ -106,10 +89,9 @@ structure CompiledSpec (State : Type u) (L : Type w) where
   conjunctStart : Array Nat  -- conjunct `i` owns options `conjunctStart[i] ..< conjunctStart[i+1]`
   numOptions : Nat
   numOptMarks : Nat
-  spec : StreettSpec State L  -- the specification itself, which the report-time validator checks against
+  spec : StreettSpec State L  -- the specification itself, for the report-time validator
 
-/-- Entry `i` of the result totals the first `i` entries of `ns`, so entry `i` is where item `i` begins and
-the last entry is the total. Call it as `prefixSums ns 0 #[0]`. -/
+/-- Entry `i` of `prefixSums ns 0 #[0]` totals the first `i` entries of `ns`, the last entry being the total. -/
 def prefixSums (ns : Array Nat) (i : Nat) (out : Array Nat) : Array Nat :=
   if h : i < ns.size then prefixSums ns (i + 1) (out.push (out[i]! + ns[i])) else out
 termination_by ns.size - i
@@ -169,10 +151,8 @@ def CompiledSpec.of (spec : StreettSpec State L) : CompiledSpec State L :=
 section Wellformed
 omit [BEq State] [Hashable State]
 
-/-- What `CompiledSpec.of` guarantees about the flattened arrays, which is what the scan's correctness rests
-on. Each option owns the mark bits `optMarkBase[o] ..< optMarkBase[o] + (optMarks[o]).size` and its mask
-selects exactly those, and conjunct `i` owns the options `conjunctStart[i] ..< conjunctStart[i+1]`, which are
-its own options in order. -/
+/-- What `CompiledSpec.of` guarantees: each option owns the mark bits `optMarkBase[o] ..< optMarkBase[o] + (optMarks[o]).size`
+and its mask selects exactly those, and conjunct `i` owns the options `conjunctStart[i] ..< conjunctStart[i+1]`, in order. -/
 structure CompiledSpec.WF (cs : CompiledSpec State L) : Prop where
   label_eq : cs.label = cs.spec.label
   numMarks_eq : cs.numMarks = cs.spec.numMarks
@@ -287,7 +267,7 @@ private theorem base_block_lt {cs : CompiledSpec State L} (hwf : cs.WF) {p o : N
   have h2 := hwf.base_mono o ho (p + 1) hpo
   omega
 
-/-- Every mark bit an option owns is below `numOptMarks`, which is what makes the scan's early stop sound. -/
+/-- Every mark bit an option owns is below `numOptMarks`. -/
 theorem CompiledSpec.WF.bit_lt {cs : CompiledSpec State L} (hwf : cs.WF) {p k : Nat}
     (hp : p < cs.numOptions) (hk : k < (cs.optMarks[p]!).size) :
     cs.optMarkBase[p]! + k < cs.numOptMarks := by
@@ -308,8 +288,7 @@ theorem CompiledSpec.WF.base_inj {cs : CompiledSpec State L} (hwf : cs.WF) {p o 
 
 end Wellformed
 
-/-- Every property mark plus the internal-edge bit, which is what a `dstack` accumulator reads when the SCC it
-closes is accepting for the property alone. -/
+/-- Every property mark plus the internal-edge bit. -/
 def fullAccMask (numMarks : Nat) : Nat := (1 <<< (numMarks + 1)) - 1
 
 /-! ## The search state
@@ -350,8 +329,7 @@ private def scanMarksAt (gs : Array (L → Bool)) (lab : L) (base : Nat) (j : Na
   else marksSeen
 termination_by gs.size - j
 
-/-- Every option at one state, clearing the regions that fail here and setting the marks that hold here. Each
-predicate is evaluated only while its own bit is still undecided. -/
+/-- Every option at one state, clearing the regions that fail here and setting the marks that hold here. -/
 private def scanOptionsAt (cs : CompiledSpec State L) (lab : L) (o : Nat) (regionAlive marksSeen : Nat) :
     Nat × Nat :=
   if h : o < cs.numOptions then
@@ -417,8 +395,8 @@ private def selectFrom (cs : CompiledSpec State L) (regionAlive marksSeen : Nat)
   else sel
 termination_by cs.conjunctStart.size - 1 - i
 
-/-- One available option per conjunct. Any of them witnesses its conjunct, so the first is taken, and its marks
-join the acceptance condition the reported cycle has to cover. -/
+/-- The first available option of each conjunct, whose marks join the acceptance condition the reported cycle has to
+cover. -/
 def selectedOptions (cs : CompiledSpec State L) (regionAlive marksSeen : Nat) : Array Nat :=
   selectFrom cs regionAlive marksSeen 0 #[]
 
@@ -443,11 +421,7 @@ private def regionSubset (cs : CompiledSpec State L) (live : Array State) (lo : 
   (live.extract lo live.size).foldl (init := Std.HashSet.emptyWithCapacity (live.size - lo))
     fun C s => if r (cs.label s) then C.insert s else C
 
-/-! ## What the scan decides
-
-The scan is a refinement of `StreettOption.availableIn` on the flushed range: `optionAvailable_iff` says the
-bit test on `scanOptions`' two masks holds exactly when the option's region holds at every scanned state and
-each of its marks holds at some scanned state. -/
+/-! ## What the scan decides -/
 
 section ScanCorrect
 omit [BEq State] [Hashable State]
@@ -954,8 +928,8 @@ end ScanCorrect
 
 /-! ## What the test decides on the flushed SCC
 
-The scan and the per-conjunct test are stated over `live.toList.drop lo`, which is the range POP flushes.
-These read that range as the `Std.HashSet State` the specification is written against. -/
+The scan and the per-conjunct test on `live.toList.drop lo`, the range POP flushes, read as the set the specification is
+written against. -/
 
 section FlushedSCC
 
@@ -973,7 +947,7 @@ private theorem mem_foldl_insert (l : List State) (init : Std.HashSet State) (x 
     simp only [List.foldl_cons, ih, Std.HashSet.mem_insert, List.mem_cons, beq_iff_eq]
     tauto
 
-/-- The flushed range read as a set, which is what POP folds its witness into. -/
+/-- The flushed range read as a set. -/
 theorem mem_sccSet {live : Array State} {lo n : Nat} {s : State} :
     s ∈ (live.extract lo live.size).foldl
         (init := Std.HashSet.emptyWithCapacity n) (fun h x => h.insert x) ↔
@@ -1064,8 +1038,8 @@ theorem firstUnsatisfied_none_accepting {cs : CompiledSpec State L} (hwf : cs.WF
   · rw [← optionAvailable_iff_availableIn hwf live lo hB hi hk, hidx]
     exact h3
 
-/-- The blamed conjunct, together with every option of it whose marks are present in the flushed set: each
-one is among the reported positions, so the prune queues that option's own candidate. -/
+/-- The blamed conjunct, together with every option of it whose marks are present in the flushed set, each one among
+the reported positions. -/
 theorem firstUnsatisfied_some_blames {cs : CompiledSpec State L} (hwf : cs.WF)
     (live : Array State) (lo : Nat) {B : Std.HashSet State}
     (hB : ∀ s, s ∈ B ↔ s ∈ live.toList.drop lo) {opts : Array Nat}
@@ -1100,8 +1074,7 @@ theorem firstUnsatisfied_some_blames {cs : CompiledSpec State L} (hwf : cs.WF)
 section Decrease
 variable [LawfulBEq State] [LawfulHashable State]
 
-/-- Every candidate one POP queues is a proper subset of the SCC it closed. The option's marks are present, so
-what failed is its region, and the state where it fails is flushed but not admitted. -/
+/-- Every candidate one POP queues is a proper subset of the SCC it closed. -/
 private theorem regionSubset_ssubset {cs : CompiledSpec State L} (hwf : cs.WF) (live : Array State)
     (lo : Nat) {opts : Array Nat} {o : Nat}
     (hfu : firstUnsatisfied cs (scanOptions cs live lo).1 (scanOptions cs live lo).2 = some opts)
@@ -1133,21 +1106,16 @@ end FlushedSCC
 
 /-! ## PUSH, UPDATE and POP -/
 
-/-- A fresh frame is its own lowlink with no marks and no internal edge yet.
-
-All three operations take the search state apart rather than using `{ aux with … }`. Field update leaves `aux`
-holding its own arrays across the calls that grow or shrink them, which makes each one see a shared array and
-copy it, and copying `live` on every push is quadratic. Destructuring hands the arrays over uniquely, so the
-pushes and pops run in place. -/
+/-- A fresh frame is its own lowlink with no marks and no internal edge yet. All three operations destructure the
+search state rather than using `{ aux with … }`, so the arrays are updated in place instead of copied. -/
 def streettPush (aux : StreettAux State) (q : State) (_marks : Std.HashSet Nat) :
     StreettAux State × Nat :=
   let ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
   let pos := live.size
   (⟨live.push q, liveIndex.insert q pos, dead, dstack.push (pos, 0), wit, wopts, pending⟩, pos)
 
-/-- A back-edge lowers the top frame's lowlink and folds in the edge's marks. Its target being live puts it in
-the same component, so the internal-edge bit goes on too. Never reports, since Streett acceptance is not
-monotone under merging and an SCC is only decided once complete. -/
+/-- A back-edge lowers the top frame's lowlink and folds in the edge's marks and the internal-edge bit. It never
+reports, an SCC only being decided once complete. -/
 def streettUpdate (numMarks : Nat) (aux : StreettAux State) (marks : Std.HashSet Nat) (d : State) :
     StreettAux State × Bool :=
   let ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
@@ -1157,12 +1125,8 @@ def streettUpdate (numMarks : Nat) (aux : StreettAux State) (marks : Std.HashSet
     let top := (min ll (liveIndex.getD d 0), acc ||| marksToBitmask marks ||| (1 <<< numMarks))
     (⟨live, liveIndex, dead, dstack.pop.push top, wit, wopts, pending⟩, false)
 
-/-- POP, where a closing frame either merges into its parent or completes an SCC and runs the test. A completed
-SCC is always flushed, whether it passes, is discarded, or is queued for pruning.
-
-The discard branch, which is the common one, reads `live` only to flush it, so its pops run in place. The other
-two read it once more before flushing and so copy it once, which is affordable because each runs at most once
-per reported or pruned SCC. -/
+/-- POP, where a closing frame either merges into its parent or completes an SCC and runs the test. A completed SCC
+is always flushed, whether it passes, is discarded, or is queued for pruning. -/
 def streettPop [Inhabited State] (cs : CompiledSpec State L) (aux : StreettAux State)
     (step : DFSStep State Nat) : StreettAux State × Bool :=
   let ⟨live, liveIndex, dead, dstack0, wit, wopts, pending⟩ := aux
@@ -1204,8 +1168,7 @@ def streettSccHint [LawfulBEq State] [LawfulHashable State] (aux : StreettAux St
     Std.HashSet State :=
   aux.witness.foldl (init := Std.HashSet.emptyWithCapacity aux.witness.size) fun h s => h.insert s
 
-/-- Tarjan refined with the prune's own POP. `succs` and `edgeMarks` are unused here because the property marks
-already arrive in `acc`, so the whole test reads the search state alone. -/
+/-- Tarjan refined with the prune's own POP, the property marks arriving in `acc`. -/
 def streettOps [Inhabited State] [LawfulBEq State] [LawfulHashable State] (cs : CompiledSpec State L) :
     DFSOps State where
   Aux := StreettAux State
@@ -1218,7 +1181,7 @@ def streettOps [Inhabited State] [LawfulBEq State] [LawfulHashable State] (cs : 
   update := streettUpdate cs.numMarks
   pop := fun _succs _edgeMarks aux step => streettPop cs aux step
 
-/-- UPDATE is pure `dstack` bookkeeping, it never touches the live and dead bookkeeping. -/
+/-- UPDATE only touches `dstack`. -/
 private theorem streettUpdate_fields (numMarks : Nat) (aux : StreettAux State)
     (marks : Std.HashSet Nat) (d : State) :
     (streettUpdate numMarks aux marks d).1.live = aux.live ∧
@@ -1245,8 +1208,7 @@ private theorem streettPush_fields (aux : StreettAux State) (q : State) (marks :
   obtain ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
   exact ⟨rfl, rfl, rfl, rfl⟩
 
-/-- POP either leaves the live and dead bookkeeping alone, or flushes it at the closing frame's position.
-Every branch does one or the other, whether the SCC passes, is discarded, or is queued for pruning. -/
+/-- POP either leaves the live and dead bookkeeping alone, or flushes it at the closing frame's position. -/
 private theorem streettPop_triple [Inhabited State] (cs : CompiledSpec State L)
     (aux : StreettAux State) (step : DFSStep State Nat) :
     ((streettPop cs aux step).1.live, (streettPop cs aux step).1.liveIndex,
@@ -1355,7 +1317,7 @@ private theorem streettPop_pending [Inhabited State] (cs : CompiledSpec State L)
       · exact Or.inl (by simpa only [streettPop, hb, if_neg h, hb2] using hP)
       · exact Or.inl (by simpa only [streettPop, hb, if_neg h, hb2] using hP)
 
-/-- POP loses nothing: a touched state is still live or has joined the dead. -/
+/-- A touched state is still live or has joined the dead after POP. -/
 private theorem streettPop_touched_mono [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (aux : StreettAux State) (step : DFSStep State Nat) (s : State)
     (h : s ∈ aux.live ∨ s ∈ aux.dead) :
@@ -1371,15 +1333,14 @@ private theorem streettPop_touched_mono [Inhabited State] [LawfulBEq State] [Law
     rw [h1, h3]
     exact liveFlush_touched_mono step.pos aux.live aux.liveIndex aux.dead s h
 
-/-- What the prune's search state has to satisfy: `LiveWF` on the live bookkeeping, and every queued candidate
-a proper subset of the states touched so far, which is what makes the worklist shrink. -/
+/-- The prune's search invariant: `LiveWF` on the live bookkeeping, and every queued candidate a proper subset of the
+states touched so far. -/
 structure StreettWF [Inhabited State] (aux : StreettAux State) : Prop where
   live : LiveWF aux.live aux.liveIndex
   pending : ∀ P ∈ aux.pending, (∀ s ∈ P, s ∈ aux.live ∨ s ∈ aux.dead) ∧
     ∃ x, (x ∈ aux.live ∨ x ∈ aux.dead) ∧ x ∉ P
 
-/-- `streettOps` is a lawful refinement: `StreettWF` is preserved by PUSH, UPDATE and POP, and the three
-status-transition laws hold. -/
+/-- `streettOps` is a lawful refinement: PUSH, UPDATE and POP preserve `StreettWF`, and the three status laws hold. -/
 def streettLawful [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hcs : cs.WF) : LawfulDFSOps (streettOps cs) (State := State) where
   WellFormed := StreettWF
@@ -1450,7 +1411,7 @@ def streettLawful [Inhabited State] [LawfulBEq State] [LawfulHashable State]
       rw [h2, h3]
       exact (liveFlush_spec step.pos aux.live aux.liveIndex aux.dead hwf.live.fwd hwf.live.bwd).2.2 q
 
-/-- The prune's window onto its own search state, for the shared flush-enumeration contract. -/
+/-- The prune's view of its search state for the flush-enumeration contract. -/
 def streettView [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) : LowlinkView (streettOps cs) where
   live := fun aux => aux.live
@@ -1461,8 +1422,7 @@ def streettView [Inhabited State] [LawfulBEq State] [LawfulHashable State]
   extraAcc := 1 <<< cs.numMarks
   posNat := id
 
-/-- The prune's search obeys the shared lowlink discipline, which is what lets `enumSCCs_sound` speak about the
-sets its own POP flushes. -/
+/-- The prune's search obeys the shared lowlink discipline. -/
 def streettLowlinkLawful [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) : LowlinkLawful (streettOps cs) (streettView cs) where
   status := fun _ _ => rfl
@@ -1682,9 +1642,8 @@ private theorem pruneLoop_cons_step (cs : CompiledSpec State L) (succs : State �
   rw [pruneLoop]
   simp [h]
 
-/-- The worklist drains, on the hypothesis that a search queues only candidates strictly smaller than the one
-it ran on. The bound is on the queue's largest candidate, and a candidate is replaced by ones one size lower,
-so the outer induction is on that bound and the inner one on the queue. -/
+/-- The worklist drains, on the hypothesis that a search queues only candidates strictly smaller than the one it ran
+on. -/
 theorem pruneLoop_drains (cs : CompiledSpec State L) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (hdec : ∀ C : Std.HashSet State,
@@ -1728,7 +1687,8 @@ theorem pruneLoop_drains (cs : CompiledSpec State L) (succs : State → Array St
         omega
       · exact pruneLoop_cons_found _ _ _ _ _ _ hf
 
-/-- The prune terminates: `pruneLoop` is defined on every queue. -/
+/-- `pruneLoop` is defined on every queue, given that a search queues only candidates strictly smaller than the one it
+ran on. -/
 theorem pruneLoop_ne_none (cs : CompiledSpec State L) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (hdec : ∀ C : Std.HashSet State,
@@ -1779,8 +1739,7 @@ omit [LawfulBEq State] [LawfulHashable State] in
 private theorem streettInitAux_wf : StreettWF (streettInitAux : StreettAux State) :=
   ⟨liveWF_init 0, by intro P hP; simp [streettInitAux] at hP⟩
 
-/-- The sets the prune's own POP flushes are the maximal SCCs of the reachable subgraph. Part 1 of
-`streettCheck_empty_refutes`, obtained by instantiating the shared contract at `streettView`. -/
+/-- The sets the prune's own POP flushes are the maximal SCCs of the reachable subgraph. -/
 theorem streettSCCs_sound (cs : CompiledSpec State L) (hcs : cs.WF) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
     (fr : FiniteReach initialStates succs) :
@@ -1794,9 +1753,7 @@ private theorem streettInitAux_unknown (cs : CompiledSpec State L) (q : State) :
   show streettGetStatus streettInitAux q = .unknown
   simp [streettGetStatus, liveStatusOf, streettInitAux]
 
-/-- Every candidate a search on `C` queues is strictly smaller than `C`. The queued candidate is a proper
-subset of what the search touched, and what a search on the graph restricted to `C` touches is reachable
-inside `C`. -/
+/-- Every candidate a search on `C` queues is strictly smaller than `C`. -/
 theorem streettRun_pending_size_lt (cs : CompiledSpec State L) (hcs : cs.WF)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (C P : Std.HashSet State)
@@ -1845,21 +1802,15 @@ private def witnessSet (wit : Array State) : Std.HashSet State :=
 private def witnessExtra (cs : CompiledSpec State L) (wopts : Array Nat) : Array (L → Bool) :=
   wopts.foldl (init := #[]) fun a o => a ++ cs.optMarks[o]!
 
-/-- The graph's own marks on an edge, plus mark `numMarks + j` whenever `extra[j]` holds at the edge's source, exactly
-as `sysFairMarks` reads them. -/
+/-- The graph's own marks on an edge, plus mark `numMarks + j` whenever `extra[j]` holds at the edge's source. -/
 private def witnessMarks (cs : CompiledSpec State L) (edgeMarks : State → State → Std.HashSet Nat)
     (extra : Array (L → Bool)) (s t : State) : Std.HashSet Nat :=
   let lab := cs.label s
   (Array.range extra.size).foldl (init := edgeMarks s t) fun h j =>
     if extra[j]! lab then h.insert (cs.numMarks + j) else h
 
-/-- Rebuild the cycle through `anchor` inside the accepted SCC, as `checkWithWitness` does, but against the
-selected options' marks as well as the property's.
-
-Covering the property marks alone would not do. The SCC test asks only that each selected mark hold somewhere
-in the SCC, which is sound because a cycle through the whole SCC meets it, and `stitchCycleAt` builds a cycle
-that need not. Adding those marks to the acceptance condition is what makes the cycle it does build a witness
-for the assumption too. -/
+/-- Rebuild the cycle through `anchor` inside the accepted SCC, as `checkWithWitness` does, but against the selected
+options' marks as well as the property's, since a stitched cycle need not meet every state of the SCC. -/
 private def witnessCycle (cs : CompiledSpec State L) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (wit : Array State) (wopts : Array Nat)
     (anchor : State) : List State :=
@@ -1869,13 +1820,12 @@ private def witnessCycle (cs : CompiledSpec State L) (succs : State → Array St
   let sccSuccs' : State → Array State := fun s =>
     match sccSuccsMap[s]? with
     | some a => a
-    -- unreachable at the call sites, and equal to `SCCTheory.sccSuccs` when it is taken
+    -- never taken, and agrees with `sccSuccs`
     | none => (succs s).filter scc.contains
   let extra := witnessExtra cs wopts
   stitchCycleAt scc sccSuccs' (witnessMarks cs edgeMarks extra) (cs.numMarks + extra.size) anchor
 
-/-- The reported answer, with the witness checked rather than trusted, so soundness does not rest on the
-search being right. A failed check degrades to `.empty`, which is safe, not to a wrong witness. -/
+/-- The reported answer, with the witness checked rather than trusted. A failed check degrades to `.empty`. -/
 private def buildResult (cs : CompiledSpec State L) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
     (wit : Array State) (wopts : Array Nat)
@@ -1887,11 +1837,8 @@ private def buildResult (cs : CompiledSpec State L) (succs : State → Array Sta
       .nonEmpty stem (anchor :: cycle)
     else .empty explored
 
-/-- Does the product hold a fair accepting cycle? One search over the whole graph, then the prune's own queue.
-
-A witness the first search finds carries the driver's stack as its stem. A witness a pruned search finds does
-not, since that search starts from the candidate rather than from the initial states, so the stem is recovered
-by BFS over the first search's `dead`, which by then is exactly the reachable set. -/
+/-- Does the product hold a fair accepting cycle? One search over the whole graph, then the prune's own queue. A
+witness a pruned search finds gets its stem by BFS over the first search's `dead`, the reachable set. -/
 def streettCheck (cs : CompiledSpec State L) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) :
     EmptinessResult State :=
@@ -1909,10 +1856,8 @@ def streettCheck (cs : CompiledSpec State L) (succs : State → Array State)
 
 /-! ## The contract
 
-The two obligations, stated against `FairSCC` rather than `AcceptingSCC` since the prune decides the fair
-condition as well as the generalized Büchi one. The reported direction is a validated answer and so holds
-whatever the search does. The empty direction rests on the search, through the flush enumeration, the queue, and the
-witness check never rejecting a genuine find. -/
+The two obligations, stated against `FairSCC` since the prune decides the fair condition as well as the generalized
+Büchi one. -/
 
 /-- Anything `buildResult` reports has passed both checks on the stem it was handed. -/
 private theorem buildResult_valid (cs : CompiledSpec State L) (succs : State → Array State)
@@ -1934,8 +1879,7 @@ private theorem buildResult_valid (cs : CompiledSpec State L) (succs : State →
       exact ⟨rfl, by simpa using hvalid.1, by simpa using hvalid.2⟩
     · exact absurd h (by simp)
 
-/-- Soundness: a reported stem and cycle really is a `TAcceptingCycle` whose states carry every conjunct.
-The search is not trusted for this, the witness is validated against the specification before it is returned. -/
+/-- Soundness: a reported stem and cycle form a `TAcceptingCycle` whose states carry every conjunct. -/
 theorem streettCheck_nonEmpty_valid (cs : CompiledSpec State L) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
     {stem loop : List State}
@@ -2166,8 +2110,7 @@ private theorem witnessCycle_eq (cs : CompiledSpec State L) (succs : State → A
   exact congrArg (fun g => stitchCycleAt (witnessSet wit) g (witnessMarks cs edgeMarks (witnessExtra cs wopts))
     (cs.numMarks + (witnessExtra cs wopts).size) anchor) hs
 
-/-- A genuine find never degrades to `.empty`: the stitched cycle is an accepting cycle for the extended marks, so it
-passes the lasso check, and each conjunct's recorded option has its region on the SCC and its marks on the cycle. -/
+/-- A genuine find never degrades to `.empty`. -/
 private theorem buildResult_ne_empty (cs : CompiledSpec State L) (hcs : cs.WF) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
     (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < cs.numMarks) {wit : Array State} {wopts : Array Nat}
@@ -2253,9 +2196,8 @@ private theorem buildResult_ne_empty (cs : CompiledSpec State L) (hcs : cs.WF) (
   | nil => exact hne rfl
   | cons x xs => simp [hvalid, hfair] at hres
 
-/-- A search that reports nothing blames a conjunct for every maximal SCC covering the property marks, and has
-queued the pruned candidate of every option of that conjunct whose marks are present, unless that candidate is
-empty. The blame is read off the recorded flush of each SCC, taken by the real run without reporting. -/
+/-- A search that reports nothing blames a conjunct for every maximal SCC covering the property marks, and has queued
+the pruned candidate of every option of that conjunct whose marks are present, unless that candidate is empty. -/
 theorem streettRun_none_pass (cs : CompiledSpec State L) (hcs : cs.WF) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
     (fr : FiniteReach initialStates succs) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < cs.numMarks)
@@ -2372,8 +2314,7 @@ theorem refutedFrom_of_none (cs : CompiledSpec State L) (hcs : cs.WF) (succs : S
   · exact Refuted.of_empty hempty
   · exact (hpend P (by simpa using hP)).congr hPm
 
-/-- A search that reports nothing leaves every reachable state dead, since it explored them all and no frame is left
-open to keep one live. -/
+/-- A search that reports nothing leaves every reachable state dead. -/
 theorem streettRun_none_dead (cs : CompiledSpec State L) (hcs : cs.WF) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
     (fr : FiniteReach initialStates succs) (hnone : (streettRun cs succs edgeMarks initialStates).1 = none) :
@@ -2452,9 +2393,7 @@ theorem pruneLoop_found (cs : CompiledSpec State L) (hcs : cs.WF) (succs : State
           (streettRun_pending_reachable cs hcs (sccSuccs succs C) edgeMarks C.toList D (by simpa using hD) s hs))
       · exact hQ D (by simp [hD]) s hs
 
-/-- The refinement obligation. An `.empty` answer means the search refuted the whole graph in the sense of
-`RefutedFrom`. When no search reports this is `refutedFrom_of_none`, and a search that does report never ends in
-`.empty`, since a genuine find passes the witness check. -/
+/-- An `.empty` answer means the search refuted the whole graph in the sense of `RefutedFrom`. -/
 theorem streettCheck_empty_refutes (spec : StreettSpec State L) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
     (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < spec.numMarks)

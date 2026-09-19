@@ -1,17 +1,9 @@
 /-
-  The recursive fairness check of [SLDP09] as a specification, and the Emerson-Lei argument that it misses
-  nothing.
-
-  `Refuted C` is a derivation that the check found no fair SCC inside the candidate `C`. One step enumerates
-  `C`'s maximal SCCs and, for each one that covers the property marks, names a conjunct and requires every
-  option of it whose marks are present in the SCC to be refuted on that option's pruned candidate. Reporting a
-  fair SCC is the absence of such a derivation, so a derivation is a refusal.
-
-  What makes the recursion sound is that a fair SCC survives every prune step. It lies inside one of the
-  maximal SCCs, which therefore covers the property marks, and it satisfies the named conjunct through one of
-  its own options, whose marks are then present in the enclosing SCC and whose region holds everywhere on it.
-  So it lies inside that option's pruned candidate, and the derivation's own well-foundedness closes the
-  argument, no separate measure needed.
+  The recursive fairness check of [SLDP09] as a specification, and the Emerson-Lei argument [EL87] that it misses
+  nothing. `Refuted C` is a derivation that the check found no fair SCC inside the candidate `C`. One step enumerates
+  `C`'s maximal SCCs and, for each one that covers the property marks, names a conjunct and requires every option of it
+  whose marks are present in the SCC to be refuted on that option's pruned candidate. A fair SCC survives every such
+  step, lying inside one of the maximal SCCs and inside the pruned candidate of the option it satisfies.
 
   ```
   check(B):                                     -- B a maximal SCC of the current subgraph
@@ -51,12 +43,8 @@ variable {State : Type u} {L : Type w} [BEq State] [Hashable State] [LawfulBEq S
 
 /-! ## Refutation -/
 
-/-- The check's refusal of a candidate. `pick M` is the conjunct the pass blames for `M`, which the
-implementation takes to be the first one with no available option, and the recursion is required only of the
-options whose marks are present, since an option missing a mark in `M` misses it in every subgraph too.
-
-Nothing is required of an `M` that misses a property mark, which is the discard branch, and an `M` that passes
-admits no derivation at all, which is the report. -/
+/-- The check's refusal of a candidate. `pick M` is the conjunct the pass blames for `M`. Only its options whose marks
+are present in `M` must be refuted, and nothing is required of an `M` that misses a property mark. -/
 inductive Refuted (spec : StreettSpec State L) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) : Std.HashSet State → Prop where
   | pass {C : Std.HashSet State} (sccs : List (Std.HashSet State))
@@ -88,10 +76,8 @@ theorem Refuted.of_empty {spec : StreettSpec State L} {succs : State → Array S
 
 /-! ## Correctness -/
 
-/-- One pass, with the recursion's conclusion supplied rather than derived. A fair SCC of the graph the pass
-ran on lies inside one of the enumerated SCCs, which therefore covers the property marks, and it satisfies the
-blamed conjunct through an option of its own, so it survives into that option's pruned candidate. `g` is the
-graph the pass ran on, which only has to admit ambient edges. -/
+/-- One pass, with the recursion's conclusion supplied. `g` is the graph the pass ran on, which only has to admit
+ambient edges. -/
 private theorem pass_no_fairSCC {spec : StreettSpec State L} {succs g : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {initialStates : List State}
     {sccs : List (Std.HashSet State)} {pick : Std.HashSet State → Array (StreettOption L)}
@@ -108,8 +94,7 @@ private theorem pass_no_fairSCC {spec : StreettSpec State L} {succs g : State �
   exact hrec M hM hmarks opt hopt (marksPresent_mono hAM hpresent)
     (A.restrict hg fun s hs => StreettOption.mem_prune.mpr ⟨hAM s hs, hregion s hs⟩)
 
-/-- A refuted candidate holds no fair SCC, which is [SLDP09]'s prune read through [EL87]'s argument. The
-derivation's own well-foundedness is the termination argument, so no measure on the candidate is needed. -/
+/-- A refuted candidate holds no fair SCC, [SLDP09]'s prune read through [EL87]'s argument. -/
 theorem Refuted.no_fairSCC {spec : StreettSpec State L} {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {C : Std.HashSet State}
     (h : Refuted spec succs edgeMarks C) :

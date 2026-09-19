@@ -73,12 +73,15 @@ def fold {β α} (f : β → NNF α → β) (init : β) : NNF α → β
 def subformulas {α} (φ : NNF α) : List (NNF α) :=
   φ.fold (fun acc f => f :: acc) []
 
+private abbrev dedupState (α : Type u) [BEq α] [Hashable α] : Type u :=
+  List (NNF α) × Std.HashSet (NNF α)
+
+private abbrev dedupFn (α : Type u) [BEq α] [Hashable α] : dedupState α → NNF α → dedupState α :=
+  fun st f => if st.2.contains f then st else (f :: st.1, st.2.insert f)
+
 /-- Deduplicated subformulas. -/
 def subformulasDedup {α} [BEq α] [Hashable α] (φ : NNF α) : List (NNF α) :=
-  (φ.fold (fun state f =>
-    if state.2.contains f then state
-    else (f :: state.1, state.2.insert f))
-    ([], Std.HashSet.emptyWithCapacity (16 : Nat))).1
+  (φ.fold (dedupFn α) ([], Std.HashSet.emptyWithCapacity (16 : Nat))).1
 
 private abbrev untilFoldFn (α : Type u) :=
   fun (acc : List (NNF α × NNF α)) (f : NNF α) =>
@@ -262,6 +265,162 @@ theorem untilSubformulasDedup_index [LawfulBEq α] [LawfulHashable α]
     ∃ i : Fin φ.untilSubformulasDedup.length,
       φ.untilSubformulasDedup[i] = (μ, η) :=
   List.mem_iff_get.mp (untilSubformulasDedup_complete φ μ η hsub)
+
+/-! ### subformulasDedup completeness -/
+
+private def SubDedupInv (st : dedupState α) : Prop :=
+  st.1.Nodup ∧ ∀ f, f ∈ st.1 ↔ st.2.contains f = true
+
+private theorem dedupFn_apply (st : dedupState α) (f : NNF α) :
+    dedupFn α st f = if st.2.contains f then st else (f :: st.1, st.2.insert f) := rfl
+
+private theorem dedupFn_mono (st : dedupState α) (f g : NNF α) (hx : g ∈ st.1) :
+    g ∈ (dedupFn α st f).1 := by
+  rw [dedupFn_apply]; split
+  · exact hx
+  · exact List.mem_cons_of_mem _ hx
+
+private theorem dedupFn_sound (st : dedupState α) (f g : NNF α) (hx : g ∈ (dedupFn α st f).1) :
+    g ∈ st.1 ∨ g = f := by
+  rw [dedupFn_apply] at hx; split at hx
+  · exact .inl hx
+  · rcases List.mem_cons.mp hx with h | h
+    · exact .inr h
+    · exact .inl h
+
+private theorem dedupFn_inv [LawfulBEq α] [LawfulHashable α]
+    (st : dedupState α) (f : NNF α) (h : SubDedupInv st) :
+    SubDedupInv (dedupFn α st f) := by
+  rw [dedupFn_apply]; split
+  · exact h
+  · next hc =>
+    have hnotmem : f ∉ st.1 := fun hmem => hc (h.2 f |>.mp hmem)
+    refine ⟨List.nodup_cons.mpr ⟨hnotmem, h.1⟩, fun g => ?_⟩
+    have := h.2 g
+    simp only [List.mem_cons, Std.HashSet.contains_insert]
+    grind
+
+private theorem sub_fold_inv [LawfulBEq α] [LawfulHashable α]
+    (φ : NNF α) (st : dedupState α) (h : SubDedupInv st) :
+    SubDedupInv (φ.fold (dedupFn α) st) := by
+  induction φ generalizing st with
+  | tt | ff | prop _ | nprop _ => exact dedupFn_inv st _ h
+  | next ψ ih => exact ih _ (dedupFn_inv st _ h)
+  | and ψ₁ ψ₂ ih₁ ih₂ | or ψ₁ ψ₂ ih₁ ih₂ | «until» ψ₁ ψ₂ ih₁ ih₂ | «release» ψ₁ ψ₂ ih₁ ih₂ =>
+    exact ih₂ _ (ih₁ _ (dedupFn_inv st _ h))
+
+private theorem sub_fold_mono (φ : NNF α) (st : dedupState α) (g : NNF α) (hx : g ∈ st.1) :
+    g ∈ (φ.fold (dedupFn α) st).1 := by
+  induction φ generalizing st with
+  | tt | ff | prop _ | nprop _ => exact dedupFn_mono st _ g hx
+  | next ψ ih => exact ih _ (dedupFn_mono st _ g hx)
+  | and ψ₁ ψ₂ ih₁ ih₂ | or ψ₁ ψ₂ ih₁ ih₂ | «until» ψ₁ ψ₂ ih₁ ih₂ | «release» ψ₁ ψ₂ ih₁ ih₂ =>
+    exact ih₂ _ (ih₁ _ (dedupFn_mono st _ g hx))
+
+private theorem dedupFn_root [LawfulBEq α] [LawfulHashable α]
+    (st : dedupState α) (f : NNF α) (hinv : SubDedupInv st) :
+    f ∈ (dedupFn α st f).1 := by
+  rw [dedupFn_apply]; split
+  · next hc => exact (hinv.2 f).mpr hc
+  · exact List.mem_cons_self ..
+
+private theorem fold_dedup_sound (φ : NNF α) (st : dedupState α) (g : NNF α)
+    (hx : g ∈ (φ.fold (dedupFn α) st).1) :
+    g ∈ st.1 ∨ NNF.IsSubformula g φ := by
+  induction φ generalizing st with
+  | tt | ff | prop _ | nprop _ =>
+    rcases dedupFn_sound st _ g hx with h | h
+    · exact .inl h
+    · exact .inr (h ▸ .refl)
+  | next ψ ih =>
+    rcases ih _ hx with h | h
+    · rcases dedupFn_sound st _ g h with h' | h'
+      · exact .inl h'
+      · exact .inr (h' ▸ .refl)
+    · exact .inr (.next_sub h)
+  | and ψ₁ ψ₂ ih₁ ih₂ =>
+    rcases ih₂ _ hx with h | h
+    · rcases ih₁ _ h with h' | h'
+      · rcases dedupFn_sound st _ g h' with h'' | h''
+        · exact .inl h''
+        · exact .inr (h'' ▸ .refl)
+      · exact .inr (.and_left h')
+    · exact .inr (.and_right h)
+  | or ψ₁ ψ₂ ih₁ ih₂ =>
+    rcases ih₂ _ hx with h | h
+    · rcases ih₁ _ h with h' | h'
+      · rcases dedupFn_sound st _ g h' with h'' | h''
+        · exact .inl h''
+        · exact .inr (h'' ▸ .refl)
+      · exact .inr (.or_left h')
+    · exact .inr (.or_right h)
+  | «until» ψ₁ ψ₂ ih₁ ih₂ =>
+    rcases ih₂ _ hx with h | h
+    · rcases ih₁ _ h with h' | h'
+      · rcases dedupFn_sound st _ g h' with h'' | h''
+        · exact .inl h''
+        · exact .inr (h'' ▸ .refl)
+      · exact .inr (.until_left h')
+    · exact .inr (.until_right h)
+  | «release» ψ₁ ψ₂ ih₁ ih₂ =>
+    rcases ih₂ _ hx with h | h
+    · rcases ih₁ _ h with h' | h'
+      · rcases dedupFn_sound st _ g h' with h'' | h''
+        · exact .inl h''
+        · exact .inr (h'' ▸ .refl)
+      · exact .inr (.release_left h')
+    · exact .inr (.release_right h)
+
+private theorem sub_fold_complete [LawfulBEq α] [LawfulHashable α]
+    (φ : NNF α) (st : dedupState α) (hinv : SubDedupInv st)
+    (ψ : NNF α) (hsub : NNF.IsSubformula ψ φ) :
+    ψ ∈ (φ.fold (dedupFn α) st).1 := by
+  induction φ generalizing st with
+  | tt | ff | prop _ | nprop _ =>
+    cases hsub with
+    | refl => exact dedupFn_root st _ hinv
+  | next χ ih =>
+    cases hsub with
+    | refl => exact sub_fold_mono χ _ _ (dedupFn_root st _ hinv)
+    | next_sub h => exact ih _ (dedupFn_inv st _ hinv) h
+  | and ψ₁ ψ₂ ih₁ ih₂ =>
+    cases hsub with
+    | refl => exact sub_fold_mono ψ₂ _ _ (sub_fold_mono ψ₁ _ _ (dedupFn_root st _ hinv))
+    | and_left h => exact sub_fold_mono ψ₂ _ _ (ih₁ _ (dedupFn_inv st _ hinv) h)
+    | and_right h => exact ih₂ _ (sub_fold_inv ψ₁ _ (dedupFn_inv st _ hinv)) h
+  | or ψ₁ ψ₂ ih₁ ih₂ =>
+    cases hsub with
+    | refl => exact sub_fold_mono ψ₂ _ _ (sub_fold_mono ψ₁ _ _ (dedupFn_root st _ hinv))
+    | or_left h => exact sub_fold_mono ψ₂ _ _ (ih₁ _ (dedupFn_inv st _ hinv) h)
+    | or_right h => exact ih₂ _ (sub_fold_inv ψ₁ _ (dedupFn_inv st _ hinv)) h
+  | «until» ψ₁ ψ₂ ih₁ ih₂ =>
+    cases hsub with
+    | refl => exact sub_fold_mono ψ₂ _ _ (sub_fold_mono ψ₁ _ _ (dedupFn_root st _ hinv))
+    | until_left h => exact sub_fold_mono ψ₂ _ _ (ih₁ _ (dedupFn_inv st _ hinv) h)
+    | until_right h => exact ih₂ _ (sub_fold_inv ψ₁ _ (dedupFn_inv st _ hinv)) h
+  | «release» ψ₁ ψ₂ ih₁ ih₂ =>
+    cases hsub with
+    | refl => exact sub_fold_mono ψ₂ _ _ (sub_fold_mono ψ₁ _ _ (dedupFn_root st _ hinv))
+    | release_left h => exact sub_fold_mono ψ₂ _ _ (ih₁ _ (dedupFn_inv st _ hinv) h)
+    | release_right h => exact ih₂ _ (sub_fold_inv ψ₁ _ (dedupFn_inv st _ hinv)) h
+
+/-- Every subformula of `φ` appears in `φ.subformulasDedup`. -/
+theorem subformulasDedup_complete [LawfulBEq α] [LawfulHashable α]
+    (φ : NNF α) (ψ : NNF α) (hsub : NNF.IsSubformula ψ φ) :
+    ψ ∈ φ.subformulasDedup :=
+  sub_fold_complete φ _ (by simp [SubDedupInv]) ψ hsub
+
+/-- Every element of `φ.subformulasDedup` is a subformula of `φ`. -/
+theorem subformulasDedup_sound (φ : NNF α) (ψ : NNF α) (hmem : ψ ∈ φ.subformulasDedup) :
+    NNF.IsSubformula ψ φ := by
+  rcases fold_dedup_sound φ _ ψ hmem with h | h
+  · simp at h
+  · exact h
+
+/-- `φ.subformulasDedup` has no duplicate entries, so `SubformulaTable`'s ids are unique per formula. -/
+theorem subformulasDedup_nodup [LawfulBEq α] [LawfulHashable α] (φ : NNF α) :
+    φ.subformulasDedup.Nodup :=
+  (sub_fold_inv φ _ (show SubDedupInv _ by simp [SubDedupInv])).1
 
 end NNF
 

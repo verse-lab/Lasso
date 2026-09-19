@@ -1,30 +1,29 @@
 /-
-  Accepting-SCC sufficiency for transition-based acceptance, a `TAcceptingCycle` exists iff some reachable,
-  internally strongly-connected subset covers every acceptance mark on its internal edges.
+  Accepting-SCC sufficiency for transition-based acceptance: a `TAcceptingCycle` exists iff some reachable, internally
+  strongly connected subset covers every acceptance mark on its internal edges. `AcceptingMarks` follows [RDKP13] §2, an
+  SCC is accepting iff the union of marks over its internal edges `(S×S)∩δ` equals `F`. `InternallyConnected` requires
+  the connecting paths to stay inside the set. This is stronger than mutual reachability but equal to it for maximal
+  SCCs, and the subsets here need not be maximal, since the algorithms can exit early.
 
-  `AcceptingMarks` follows the standard also used by Renault, Duret-Lutz, Kordon, Poitrenaud (LPAR-19, 2013, §2):
-  An SCC is accepting iff the union of marks over its internal edges `(S×S)∩δ` equals `F`.
-
-  `InternallyConnected` requires the connecting paths between two members of `scc` to stay inside `scc`.
-  Stronger than plain mutual reachability, but the two notions are equal for maximal SCCs. Our algorithms
-  do not require maximal SCCs though, as they can exit early (as soon as the SCC contains all acceptance marks).
-
-  Key definitions:
+  Defines:
   - `AcceptingMarks`, `InternallyConnected`, `AcceptingSCC`
   - `SCCEnumerationSound`: the contract an SCC enumeration owes a prune-based check
 
-  Key theorems:
+  Proves:
   - `acceptingSCC_iff_acceptingCycle`: a reachable accepting SCC exists iff a `TAcceptingCycle` does
-  - `chain_glue`/`chain_covers_persist`/`mark_pos_dropLast`: general chain-gluing/mark-position lemmas, not
-    specific to `build_tour`, reused by `SCC/WitnessExtraction.lean`'s `stitchCycleAt` correctness proof
-  - `InternallyConnected.chain_merge`: a forward-chained run of internally-connected ranges, closed by one
-    back-edge from the last range to the first, merges into a single internally-connected union
-  - `AcceptingMarks.mono`, `InternallyConnected.restrict`, `AcceptingMarks.restrict`: an SCC keeps its
-    properties when the candidate it sits in changes
+  - `chain_glue`, `chain_covers_persist`, `mark_pos_dropLast`: general chain-gluing and mark-position lemmas
+  - `InternallyConnected.chain_merge`: a forward-chained run of internally connected ranges, closed by one back-edge
+    from the last range to the first, merges into a single internally connected union
+  - `AcceptingMarks.mono`, `InternallyConnected.restrict`, `AcceptingMarks.restrict`: an SCC keeps its properties when
+    the candidate it sits in changes
   - `sccSuccs_congr`, `InternallyConnected.congr`: both depend only on the members of the set
   - `InternallyConnected.exists_succ`: with one internal edge, every member has a successor inside the set
   - `InternallyConnected.mono_graph`, `AcceptingMarks.mono_graph`: both survive adding edges to the graph
   - `SCCEnumerationSound.congr_init`: an enumeration depends only on the members of the initial list
+
+  References:
+  - [RDKP13] Renault, Duret-Lutz, Kordon, Poitrenaud. Three SCC-based Emptiness Checks for Generalized Büchi
+    Automata. LPAR-19, 2013.
 
   Sections:
   - Accepting SCC
@@ -45,8 +44,8 @@ variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 def sccSuccs (succs : State → Array State) (scc : Std.HashSet State) : State → Array State :=
   fun s => (succs s).filter scc.contains
 
-/-- Marks on `scc`'s internal edges (`(S×S)∩δ`, Renault et al. §2) cover every mark `< numMarks`, and `scc`
-has at least one internal edge, so a trivial self-loop-free SCC can't vacuously satisfy `numMarks = 0`. -/
+/-- Marks on `scc`'s internal edges (`(S×S)∩δ`, [RDKP13] §2) cover every mark `< numMarks`, and `scc` has at least
+one internal edge, so a trivial SCC without a self-loop cannot vacuously satisfy `numMarks = 0`. -/
 def AcceptingMarks (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (numMarks : Nat) (scc : Std.HashSet State) : Prop :=
   (∃ s ∈ scc, ∃ t ∈ scc, t ∈ succs s) ∧
@@ -78,8 +77,7 @@ def InternallyConnected (succs : State → Array State) (scc : Std.HashSet State
   ∀ s ∈ scc, ∀ t ∈ scc, s = t ∨ PathTo (sccSuccs succs scc) (fun _ => False) s t
 
 omit [LawfulBEq State] in
-/-- `InternallyConnected`'s paths are confined to `scc` by construction, so they also hold in the
-domain-blocked form `WitnessExtraction.lean`'s `connector`/`stitchCycleAt_valid` are stated against. -/
+/-- `InternallyConnected`'s paths also hold in the domain-blocked form, every state outside `scc` blocked. -/
 theorem InternallyConnected.domainBlocked {succs : State → Array State} {scc : Std.HashSet State}
     (h : InternallyConnected succs scc) :
     ∀ s, scc.contains s → ∀ t, scc.contains t →
@@ -89,7 +87,7 @@ theorem InternallyConnected.domainBlocked {succs : State → Array State} {scc :
 
 omit [LawfulBEq State] in
 /-- A path between two members of a set whose edges only ever leave it for a sink it cannot come back from
-stays inside the set, which is the confined form `InternallyConnected` asks for. -/
+stays inside the set. -/
 theorem pathTo_within {succs : State → Array State} {scc sink : Std.HashSet State}
     (hout : ∀ x ∈ scc, ∀ y ∈ succs x, y ∈ scc ∨ y ∈ sink)
     (hsink : ∀ x ∈ sink, ∀ y ∈ succs x, y ∈ sink) (hdisj : ∀ x ∈ scc, x ∉ sink) {s t : State}
@@ -242,7 +240,7 @@ theorem InternallyConnected.chain_merge {succs : State → Array State} {rng : N
 
 omit [LawfulBEq State] in
 /-- An SCC found in a graph that only admits ambient edges is internally connected in every candidate that
-contains it, restricted the same way, since only its own edges are ever looked at. -/
+contains it. -/
 theorem InternallyConnected.restrict {g succs : State → Array State} {D scc : Std.HashSet State}
     (hg : ∀ a b, b ∈ g a → b ∈ succs a) (hD : ∀ s ∈ scc, s ∈ D)
     (h : InternallyConnected g scc) : InternallyConnected (sccSuccs succs D) scc :=
@@ -273,7 +271,7 @@ theorem mem_of_reachable_sccSuccs {succs : State → Array State} {C : Std.HashS
   | base hi => simpa using hi
   | step _ ht _ => exact Std.HashSet.mem_iff_contains.mpr (Array.mem_filter.mp ht).2
 
-/-- A reachable, internally strongly-connected, mark-covering subset, not required to be a maximal SCC (see the file docstring). -/
+/-- A reachable, internally strongly connected, mark-covering subset, not required to be a maximal SCC. -/
 structure AcceptingSCC (initialStates : List State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat) where
   scc : Std.HashSet State
@@ -445,7 +443,7 @@ theorem mark_pos_dropLast {edgeMarks : State → State → Std.HashSet Nat}
     rw [hei, hei2]; exact hm
 
 omit [LawfulBEq State] in
-/-- Soundness: A reachable accepting SCC gives a `TAcceptingCycle` witness. -/
+/-- Soundness: a reachable accepting SCC gives a `TAcceptingCycle` witness. -/
 theorem AcceptingSCC.exists_acceptingCycle {initialStates : List State} {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat}
     (A : AcceptingSCC initialStates succs edgeMarks numMarks) :
@@ -571,7 +569,7 @@ private theorem chain_reaches_restricted (l : List State)
 
 variable [LawfulHashable State]
 
-/-- Completeness: The states of any `TAcceptingCycle` form a reachable accepting SCC. -/
+/-- Completeness: the states of any `TAcceptingCycle` form a reachable accepting SCC. -/
 theorem TAcceptingCycle.exists_acceptingSCC {initialStates : List State} {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat}
     (ac : TAcceptingCycle initialStates succs edgeMarks numMarks) :

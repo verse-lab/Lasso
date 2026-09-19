@@ -1,15 +1,9 @@
 /-
-  What it means for an SCC to satisfy a hoisted fairness assumption, which is Streett acceptance stated on a
-  strongly connected set rather than on a run.
-
-  A hoisted conjunct arrives as a list of options, an option being a region `FG l` and a list of marks `GF g`,
-  and the conjunct is satisfied by an SCC when one of its options is available there. That is [LSFZ16]'s
-  Definition 3 read one conjunct at a time, and crossing the conjuncts back into single disjuncts is exactly
-  what the prune avoids.
-
-  The two monotonicity facts are what make the prune terminate and stay complete. A region is downward closed,
-  so restricting an SCC can only make more regions hold, and the presence of a mark is upward closed, so an
-  option whose mark is missing is missing for every subgraph too.
+  What it means for an SCC to satisfy a hoisted fairness assumption, which is Streett acceptance stated on a strongly
+  connected set rather than on a run. A hoisted conjunct arrives as a list of options, an option being a region `FG l`
+  and a list of marks `GF g`, and an SCC satisfies the conjunct when one of its options is available there, [LSFZ16]'s
+  Definition 3 read one conjunct at a time. Regions are downward closed and the presence of a mark is upward closed,
+  which is what makes the prune terminate and stay complete.
 
   Defines:
   - `StreettOption`, `StreettSpec`: the option data the search is handed
@@ -24,7 +18,7 @@
   Proves:
   - `marksPresent_mono`: a mark present in a subset is present in the whole, so a dead option stays dead
   - `regionHolds_anti`: a region holding on a set holds on every subset
-  - `availableIn_of_subset`: an option available in a subset has its marks present in the whole set
+  - `marksPresent_of_availableIn_subset`: an option available in a subset has its marks present in the whole set
   - `exists_option_of_fairCycle`, `fairCycle_of_options`: a cycle passes the check exactly when every conjunct
     has an option available on it
   - `exists_FairSCC_of_run`: a run covering the marks and satisfying every conjunct settles into a `FairSCC`
@@ -60,9 +54,7 @@ structure StreettOption (L : Type w) where
   marks : Array (L → Bool)
 deriving Inhabited
 
-/-- A hoisted fairness assumption as the SCC test sees it, one entry per conjunct of the negated property.
-
-`label` is read once per state and handed to every predicate, rather than each predicate recomputing it. -/
+/-- A hoisted fairness assumption as the SCC test sees it, one entry per conjunct of the negated property. -/
 structure StreettSpec (State : Type u) (L : Type w) where
   numMarks : Nat  -- the property automaton's own generalized Büchi marks, which the SCC also has to cover
   label : State → L
@@ -89,9 +81,8 @@ def StreettSpec.accepting (spec : StreettSpec State L) (B : Std.HashSet State) :
 
 /-! ## Flattening
 
-The compiled form of a spec indexes options by position, so the conjuncts are concatenated once and the
-position each one begins at is recorded alongside. Both come out of the same recursion, which is what keeps
-the layout fact free of any separate prefix-sum argument. -/
+The compiled form of a spec indexes options by position, so the conjuncts are concatenated once and the position each
+one begins at is recorded alongside. -/
 
 section Flatten
 omit [BEq State] [Hashable State] [LawfulBEq State]
@@ -203,8 +194,7 @@ theorem regionHolds_anti {opt : StreettOption L} {label : State → L} {B B' : S
   fun s hs => h s (hsub s hs)
 
 omit [LawfulBEq State] in
-/-- The form the prune's discard step needs: an option available anywhere below `B` has its marks in `B`,
-so an option failing on its marks in `B` can be dropped from the recursion entirely. -/
+/-- An option available anywhere below `B` has its marks present in `B`. -/
 theorem marksPresent_of_availableIn_subset {opt : StreettOption L} {label : State → L}
     {B B' : Std.HashSet State} (hsub : ∀ s ∈ B', s ∈ B) (h : opt.availableIn label B') :
     opt.marksPresent label B :=
@@ -261,7 +251,7 @@ structure FairSCC (initialStates : List State) (succs : State → Array State)
   reachable : ∀ s ∈ scc, Reachable initialStates succs s
   fair : spec.accepting scc
 
-/-- The underlying `AcceptingSCC`, so everything already proved about those applies unchanged. -/
+/-- The underlying `AcceptingSCC`. -/
 def FairSCC.toAcceptingSCC {initialStates : List State} {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {spec : StreettSpec State L}
     (A : FairSCC initialStates succs edgeMarks spec) :
@@ -288,8 +278,7 @@ theorem StreettOption.mem_prune [LawfulBEq State] [LawfulHashable State] {opt : 
     exact ⟨h, by rw [Std.HashSet.get_eq h]; exact hf⟩
 
 /-- A fair SCC is a fair SCC of any candidate that contains it, the graph being restricted to that candidate.
-`g` is the graph it was found in, which only has to admit ambient edges, so this covers both the search on the
-whole graph and the search on a candidate. -/
+`g` is the graph it was found in, which only has to admit ambient edges. -/
 def FairSCC.restrict {initialStates : List State} {g succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {spec : StreettSpec State L}
     (A : FairSCC initialStates g edgeMarks spec) (hg : ∀ a b, b ∈ g a → b ∈ succs a)
@@ -331,9 +320,8 @@ private theorem exists_common_threshold {β : Type u₂} (f : β → Nat → Pro
     · exact hN₁ n (le_trans (le_max_left _ _) hn)
     · exact hN₂ x hx n (le_trans (le_max_right _ _) hn)
 
-/-- A run that covers the property marks and satisfies every conjunct settles into a `FairSCC`, which is
-[LSFZ16, Theorem 2] read one conjunct at a time. The run is pumped into a cycle late enough that every chosen
-region already holds there and long enough to meet every chosen mark, and the cycle's states are the SCC. -/
+/-- A run that covers the property marks and satisfies every conjunct settles into a `FairSCC`, [LSFZ16, Theorem 2]
+read one conjunct at a time. -/
 theorem exists_FairSCC_of_run {spec : StreettSpec State L} {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {initialStates : List State}
     (fr : FiniteReach initialStates succs) {σ : Nat → State} (hinit : σ 0 ∈ initialStates)

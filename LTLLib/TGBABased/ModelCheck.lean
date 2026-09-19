@@ -1,90 +1,89 @@
 /-
-  One entry point per search mode: `sys ⊨ φ`, or `sys ⊨ (fair → φ)` with the fairness assumption hoisted out of
-  the property. Every mode's real logic and both directions of proof live where the mode was developed, this
-  file only names each mode and restates its soundness and completeness against that name.
+  One entry point per search mode, `sys ⊨ φ` or `sys ⊨ (fair → φ)` with the fairness assumption hoisted out of the
+  property. Each mode names a search defined elsewhere and restates its soundness and completeness. Every mode
+  translates with `ltl3ba` (`LTLtoTGBA/Pipeline.lean`).
 
-  - `modelCheckNDFS`: Nested DFS (`LTLLib.modelCheck`, single-acceptance-set), no fairness support yet, see the
-    note below.
-  - `modelCheckDijkstra`: Dijkstra's SCC-based search on the TGBA product (`DijkstraCheck.lean`), no fairness.
-  - `modelCheckFairCrossed`: the fairness assumption hoisted and crossed into one check per disjunct
-    (`FairRouter.lean`'s `modelCheckUnderFairness`).
-  - `modelCheckFairPruned`: the same assumption decided per SCC instead of crossed
-    (`FairRouter.lean`'s `modelCheckUnderFairnessPrune`).
+  Defines:
+  - `modelCheckNDFS`: transition-based Nested DFS on the degeneralized TGBA product (`modelCheckTBA` in `NDFSCheck.lean`),
+    no fairness
+  - `modelCheckDijkstra`: Dijkstra's SCC-based search on the TGBA product (`modelCheckTGBA` in `DijkstraCheck.lean`), no
+    fairness
+  - `modelCheckFairDirect`: hoists only the conjuncts that are syntactically `□◇p`/`◇□p` over state predicates, and
+    Boolean combinations of them, and translates the rest (`modelCheckUnderFairnessFlat` in `FairRouter.lean`). This is
+    exactly what TLC's `classifyExpr`, PAT's classifier and NuSMV's `JUSTICE`/`COMPASSION` recognise, so the gap to
+    `modelCheckFairFNFPrune` measures, from inside our own pipeline, what those tools leave on the table. It exists for
+    the ablation study.
+  - `modelCheckFairFNFCross`: every fairness conjunct hoisted through its fair normal form, re-hoisted after rewriting,
+    and crossed into one Dijkstra check per disjunct (`modelCheckUnderFairnessRehoistCross` in
+    `LTLtoTGBA/FairPipeline.lean`)
+  - `modelCheckFairFNFPrune`: the same split, decided per SCC by the Streett prune instead of crossed
+    (`modelCheckUnderFairnessRehoistPrune`)
+  - `modelCheckFair`: the default and fastest, the prune with disjunctive hoisting, a kept conjunct `ψ ∨ γ` with a flattenable
+    fairness `γ` decided by one prune run per choice of side (`modelCheckUnderFairnessDisjunctiveHoist`)
 
-  `modelCheckNDFS` cannot sit on the same TGBA product as the other three today, `nestedDFSChecker` is an
-  `EmptinessChecker` (one acceptance set) and the other three need a `TEmptinessChecker` (marks per edge), so it
-  runs on the older, degeneralized product instead and carries no fairness. TODO: once a dedicated LTL-to-TGBA
-  translation replaces the current GBA-then-`toTGBA` route, degeneralize a TGBA to one acceptance set so NDFS can
-  run on the same product as the other three, fairness included. See `tmp/MODELCHECK_NOTES.md`.
+  Proves, for each mode `m`:
+  - `m_empty_unsat`: (Soundness) an `.empty` result means every run of `sys` satisfies `φ`
+  - `m_nonEmpty_sat`: (Completeness) a `.nonEmpty` result yields a run of `sys` violating `φ`
 
   Sections:
   - Nested DFS
   - Dijkstra
-  - Fairness crossed
-  - Fairness pruned
+  - Fairness, flat conjuncts only
+  - Fairness, fair normal form crossed
+  - Fairness, fair normal form pruned
+  - Fairness, default
 -/
-import LTLLib.ModelCheck
 import LTLLib.TGBABased.DijkstraCheck
 import LTLLib.TGBABased.FairRouter
+import LTLLib.TGBABased.LTLtoTGBA.FairPipeline
+import LTLLib.TGBABased.NDFSCheck
 
 namespace LTLLib
 
-/-! ## Nested DFS -/
-
-section NDFS
-
-variable {α : Type u} {S : Type w} [FSet (NNF α) S]
-  {SysState : Type v} [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [LawfulHashable SysState]
+variable {α : Type u} {SysState : Type v} [BEq SysState] [Hashable SysState] [LawfulBEq SysState]
   [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
 
-/-- Nested DFS: `sys ⊨ φ`, on the degeneralized single-acceptance-set automaton, no fairness support yet, see
-the file header. -/
+/-! ## Nested DFS -/
+
+/-- Transition-based Nested DFS on the degeneralized TGBA product: `sys ⊨ φ`, no fairness. -/
 def modelCheckNDFS (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
-    (sysFR : FiniteReach sysInit sysSucc) : EmptinessResult (SysState × BAState) :=
-  modelCheck (S := S) φ sysInit sysSucc sysLabel sysFR
+    (sysFR : FiniteReach sysInit sysSucc) : EmptinessResult (SysState × TBAState) :=
+  modelCheckTBA φ sysInit sysSucc sysLabel sysFR
 
-omit [LawfulHashable SysState] in
 /-- An `.empty` result means every real run of `sys` satisfies `φ`. -/
 theorem modelCheckNDFS_empty_unsat (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc) {n : Nat}
-    (h : modelCheckNDFS (S := S) φ sysInit sysSucc sysLabel sysFR = .empty n) :
+    (h : modelCheckNDFS φ sysInit sysSucc sysLabel sysFR = .empty n) :
     ∀ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ →
       Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
-  modelCheck_empty_unsat φ sysInit sysSucc sysLabel sysFR nestedDFSChecker h
+  modelCheckTBA_empty_unsat φ sysInit sysSucc sysLabel sysFR h
 
-omit [LawfulHashable SysState] in
 /-- A `.nonEmpty` result yields a concrete run of `sys` violating `φ`. -/
 theorem modelCheckNDFS_nonEmpty_sat (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
-    (sysFR : FiniteReach sysInit sysSucc) {stem loop : List (SysState × BAState)}
-    (h : modelCheckNDFS (S := S) φ sysInit sysSucc sysLabel sysFR = .nonEmpty stem loop) :
+    (sysFR : FiniteReach sysInit sysSucc) {stem loop : List (SysState × TBAState)}
+    (h : modelCheckNDFS φ sysInit sysSucc sysLabel sysFR = .nonEmpty stem loop) :
     ∃ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ ∧
       ¬ Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
-  modelCheck_nonEmpty_sat φ sysInit sysSucc sysLabel sysFR nestedDFSChecker h
+  modelCheckTBA_nonEmpty_sat φ sysInit sysSucc sysLabel sysFR h
 
-end NDFS
+variable [Inhabited SysState]
 
 /-! ## Dijkstra -/
-
-section Dijkstra
-
-variable {α : Type u} {S : Type w} [FSet (NNF α) S]
-  {SysState : Type v} [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState]
-  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
 
 /-- Dijkstra's SCC-based search on the TGBA product: `sys ⊨ φ`, no fairness. -/
 def modelCheckDijkstra (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc) : EmptinessResult (SysState × Nat) :=
-  modelCheckTGBA (S := S) φ sysInit sysSucc sysLabel sysFR
+  modelCheckTGBA φ sysInit sysSucc sysLabel sysFR
 
 /-- An `.empty` result means every real run of `sys` satisfies `φ`. -/
 theorem modelCheckDijkstra_empty_unsat (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc) {n : Nat}
-    (h : modelCheckDijkstra (S := S) φ sysInit sysSucc sysLabel sysFR = .empty n) :
+    (h : modelCheckDijkstra φ sysInit sysSucc sysLabel sysFR = .empty n) :
     ∀ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ →
       Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
   modelCheckTGBA_empty_unsat φ sysInit sysSucc sysLabel sysFR dijkstraTChecker h
@@ -93,81 +92,116 @@ theorem modelCheckDijkstra_empty_unsat (φ : Formula α) (sysInit : List SysStat
 theorem modelCheckDijkstra_nonEmpty_sat (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc) {stem loop : List (SysState × Nat)}
-    (h : modelCheckDijkstra (S := S) φ sysInit sysSucc sysLabel sysFR = .nonEmpty stem loop) :
+    (h : modelCheckDijkstra φ sysInit sysSucc sysLabel sysFR = .nonEmpty stem loop) :
     ∃ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ ∧
       ¬ Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
   modelCheckTGBA_nonEmpty_sat φ sysInit sysSucc sysLabel sysFR dijkstraTChecker h
 
-end Dijkstra
+/-! ## Fairness, flat conjuncts only -/
 
-/-! ## Fairness crossed -/
-
-section FairCrossed
-
-variable {α : Type u} {S : Type w} [FSet (NNF α) S]
-  {SysState : Type v} [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState]
-  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
-
-/-- The fairness assumption hoisted out of `φ` and crossed into one check per disjunct, `sys ⊨ φ`. -/
-def modelCheckFairCrossed (φ : Formula α) (sysInit : List SysState)
-    (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
-    (sysFR : FiniteReach sysInit sysSucc) : EmptinessResult ((SysState × Nat) × Bool) :=
-  modelCheckUnderFairness (S := S) φ sysInit sysSucc sysLabel sysFR
-
-/-- An `.empty` result means every real run of `sys` satisfies `φ`. -/
-theorem modelCheckFairCrossed_empty_unsat (φ : Formula α) (sysInit : List SysState)
-    (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
-    (sysFR : FiniteReach sysInit sysSucc) {n : Nat}
-    (h : modelCheckFairCrossed (S := S) φ sysInit sysSucc sysLabel sysFR = .empty n) :
-    ∀ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ →
-      Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
-  modelCheckUnderFairness_empty_unsat φ sysInit sysSucc sysLabel sysFR dijkstraTChecker
-    dijkstraTChecker h
-
-/-- A `.nonEmpty` result yields a concrete run of `sys` violating `φ`. -/
-theorem modelCheckFairCrossed_nonEmpty_sat (φ : Formula α) (sysInit : List SysState)
-    (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
-    (sysFR : FiniteReach sysInit sysSucc) {stem loop : List ((SysState × Nat) × Bool)}
-    (h : modelCheckFairCrossed (S := S) φ sysInit sysSucc sysLabel sysFR = .nonEmpty stem loop) :
-    ∃ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ ∧
-      ¬ Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
-  modelCheckUnderFairness_nonEmpty_sat φ sysInit sysSucc sysLabel sysFR dijkstraTChecker
-    dijkstraTChecker h
-
-end FairCrossed
-
-/-! ## Fairness pruned -/
-
-section FairPruned
-
-variable {α : Type u} {S : Type w} [FSet (NNF α) S]
-  {SysState : Type v} [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState]
-  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
-
-/-- The fairness assumption hoisted out of `φ` and decided per SCC instead of crossed, `sys ⊨ φ`. -/
-def modelCheckFairPruned (φ : Formula α) (sysInit : List SysState)
+/-- Only flat fairness hoisted and decided per SCC, everything else translated: `sys ⊨ φ`. -/
+def modelCheckFairDirect (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α) :
     EmptinessResult (SysState × Nat) :=
-  modelCheckUnderFairnessPrune (S := S) φ sysInit sysSucc sysLabel
+  modelCheckUnderFairnessFlat φ sysInit sysSucc sysLabel
 
 /-- An `.empty` result means every real run of `sys` satisfies `φ`. -/
-theorem modelCheckFairPruned_empty_unsat (φ : Formula α) (sysInit : List SysState)
+theorem modelCheckFairDirect_empty_unsat (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc) {n : Nat}
-    (h : modelCheckFairPruned (S := S) φ sysInit sysSucc sysLabel = .empty n) :
+    (h : modelCheckFairDirect φ sysInit sysSucc sysLabel = .empty n) :
     ∀ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ →
       Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
-  modelCheckUnderFairnessPrune_empty_unsat φ sysInit sysSucc sysLabel sysFR h
+  modelCheckUnderFairnessFlat_empty_unsat φ sysInit sysSucc sysLabel sysFR h
 
 /-- A `.nonEmpty` result yields a concrete run of `sys` violating `φ`. -/
-theorem modelCheckFairPruned_nonEmpty_sat (φ : Formula α) (sysInit : List SysState)
+theorem modelCheckFairDirect_nonEmpty_sat (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     {stem loop : List (SysState × Nat)}
-    (h : modelCheckFairPruned (S := S) φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
+    (h : modelCheckFairDirect φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ ∧
       ¬ Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
-  modelCheckUnderFairnessPrune_nonEmpty_sat φ sysInit sysSucc sysLabel h
+  modelCheckUnderFairnessFlat_nonEmpty_sat φ sysInit sysSucc sysLabel h
 
-end FairPruned
+/-! ## Fairness, fair normal form crossed -/
+
+/-- Every fairness conjunct hoisted through its fair normal form and crossed, one Dijkstra check per disjunct:
+`sys ⊨ φ`. -/
+def modelCheckFairFNFCross (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
+    (sysFR : FiniteReach sysInit sysSucc) : EmptinessResult ((SysState × Nat) × Bool) :=
+  modelCheckUnderFairnessRehoistCross φ sysInit sysSucc sysLabel sysFR
+
+/-- An `.empty` result means every real run of `sys` satisfies `φ`. -/
+theorem modelCheckFairFNFCross_empty_unsat (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
+    (sysFR : FiniteReach sysInit sysSucc) {n : Nat}
+    (h : modelCheckFairFNFCross φ sysInit sysSucc sysLabel sysFR = .empty n) :
+    ∀ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ →
+      Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
+  modelCheckUnderFairnessRehoistCross_empty_unsat φ sysInit sysSucc sysLabel sysFR dijkstraTChecker dijkstraTChecker h
+
+/-- A `.nonEmpty` result yields a concrete run of `sys` violating `φ`. -/
+theorem modelCheckFairFNFCross_nonEmpty_sat (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
+    (sysFR : FiniteReach sysInit sysSucc) {stem loop : List ((SysState × Nat) × Bool)}
+    (h : modelCheckFairFNFCross φ sysInit sysSucc sysLabel sysFR = .nonEmpty stem loop) :
+    ∃ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ ∧
+      ¬ Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
+  modelCheckUnderFairnessRehoistCross_nonEmpty_sat φ sysInit sysSucc sysLabel sysFR dijkstraTChecker
+    dijkstraTChecker h
+
+/-! ## Fairness, fair normal form pruned -/
+
+/-- Every fairness conjunct hoisted through its fair normal form and decided per SCC: `sys ⊨ φ`. -/
+def modelCheckFairFNFPrune (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α) :
+    EmptinessResult (SysState × Nat) :=
+  modelCheckUnderFairnessRehoistPrune φ sysInit sysSucc sysLabel
+
+/-- An `.empty` result means every real run of `sys` satisfies `φ`. -/
+theorem modelCheckFairFNFPrune_empty_unsat (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
+    (sysFR : FiniteReach sysInit sysSucc) {n : Nat}
+    (h : modelCheckFairFNFPrune φ sysInit sysSucc sysLabel = .empty n) :
+    ∀ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ →
+      Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
+  modelCheckUnderFairnessRehoistPrune_empty_unsat φ sysInit sysSucc sysLabel sysFR h
+
+/-- A `.nonEmpty` result yields a concrete run of `sys` violating `φ`. -/
+theorem modelCheckFairFNFPrune_nonEmpty_sat (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
+    {stem loop : List (SysState × Nat)}
+    (h : modelCheckFairFNFPrune φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
+    ∃ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ ∧
+      ¬ Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
+  modelCheckUnderFairnessRehoistPrune_nonEmpty_sat φ sysInit sysSucc sysLabel h
+
+/-! ## Fairness, default -/
+
+/-- The default: every fairness conjunct hoisted and decided per SCC, and every kept conjunct with a hoistable
+fairness side crossed on its sides: `sys ⊨ φ`. -/
+def modelCheckFair (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α) :
+    EmptinessResult (SysState × Nat) :=
+  modelCheckUnderFairnessDisjunctiveHoist φ sysInit sysSucc sysLabel
+
+/-- An `.empty` result means every real run of `sys` satisfies `φ`. -/
+theorem modelCheckFair_empty_unsat (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
+    (sysFR : FiniteReach sysInit sysSucc) {n : Nat}
+    (h : modelCheckFair φ sysInit sysSucc sysLabel = .empty n) :
+    ∀ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ →
+      Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
+  modelCheckUnderFairnessDisjunctiveHoist_empty_unsat φ sysInit sysSucc sysLabel sysFR h
+
+/-- A `.nonEmpty` result yields a concrete run of `sys` violating `φ`. -/
+theorem modelCheckFair_nonEmpty_sat (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
+    {stem loop : List (SysState × Nat)}
+    (h : modelCheckFair φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
+    ∃ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ ∧
+      ¬ Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ :=
+  modelCheckUnderFairnessDisjunctiveHoist_nonEmpty_sat φ sysInit sysSucc sysLabel h
 
 end LTLLib

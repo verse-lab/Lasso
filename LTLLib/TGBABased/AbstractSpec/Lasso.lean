@@ -1,21 +1,18 @@
 /-
-  Transition-based lasso theory. A valid lasso is a stem of edges into a cycle of edges covering every
-  acceptance mark, witnessing non-emptiness of a TGBA.
+  Transition-based lasso theory. A valid lasso is a stem of edges into a cycle of edges covering every acceptance mark,
+  witnessing non-emptiness of a TGBA. Unlike the state-based `ValidLasso.stem`, `TValidLasso.stemE` can be empty, when
+  the initial state is the cycle's own head. `TAcceptingCycle.toTValidLassoOf` bridges a state-level `TAcceptingCycle`
+  into an edge-level `TValidLasso`, given a `TEdgeWitness` realizing every step and mark as a concrete edge.
 
-  Unlike for the state-based variant where the `ValidLasso.stem : List State` is never empty (always
-  contains the initial and accepting state, so ≥1), `TValidLasso.stemE : List Edge` can be empty when the
-  stem from `TAcceptingCycle` is a single state (initial state coincides with the cycle's own head).
+  Defines:
+  - `tlassoRun`, `TValidLasso`: the run of a lasso and its validity conditions
+  - `TEdgeWitness`: a concrete edge for every `succs`-step and every `edgeMarks`-witnessed mark
+  - `stemEdges`, `lapFor`, `TAcceptingCycle.cycleE`: the stem and the cycle lifted to edges, one lap per mark
 
-  `TAcceptingCycle.toTValidLassoOf` bridges a state-level `TAcceptingCycle` into an edge-level `TValidLasso`,
-  via `TEdgeWitness`: For any `succs`-step or `edgeMarks`-witnessed mark, a concrete edge realizing it.
-
-  Key definitions:
-  - `TValidLasso`, `tlassoRun`
-  - `TEdgeWitness`
-  - `stemEdges`, `lapFor`, `TAcceptingCycle.toTValidLassoOf`, `cycleE_endpoints_mem`
-
-  Key theorems:
+  Proves:
   - `TValidLasso.accepts_of_validLasso`: a valid lasso with compatible labeling implies the automaton accepts
+  - `TAcceptingCycle.toTValidLassoOf`: a `TAcceptingCycle` yields a `TValidLasso` for any `TOASpec` with an edge witness
+  - `cycleE_endpoints_mem`: every edge of `cycleE` realizes some cyclic step of the cycle
   - `TValidLasso.run_src_hits_cycle`: every cycle state is the source of arbitrarily late run positions
 
   Sections:
@@ -221,8 +218,7 @@ structure TEdgeWitness {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
   stepEdge_spec : ∀ {s s' : State}, s' ∈ succs s →
     A.valid (stepEdge s s') ∧ A.src (stepEdge s s') = s ∧ A.dst (stepEdge s s') = s'
   markEdge : State → State → Nat → Edge
-  -- `s' ∈ succs s` is needed as well as the mark: for a product automaton the marks constrain only the
-  -- automaton component, so they alone do not witness that the edge exists.
+  -- `s' ∈ succs s` is needed too, since in a product the marks alone do not witness that the edge exists.
   markEdge_spec : ∀ {s s' : State} {m : Nat} (hm : m < k), s' ∈ succs s → m ∈ edgeMarks s s' →
     A.valid (markEdge s s' m) ∧ A.src (markEdge s s' m) = s ∧ A.dst (markEdge s s' m) = s' ∧
     A.acceptMark ⟨m, hm⟩ (markEdge s s' m)
@@ -424,8 +420,8 @@ private theorem list_set_chain_preserved (l : List Edge) (idx : Nat) (newVal : E
         rw [e1, e2]
         exact hchain i hi'
 
-/-- One full traversal of `cycle`'s states (cyclically, via `cycle ++ [cycle.head]` closing the loop),
-substituting `markEdge` at `witnessIdx`, `stepEdge` everywhere else. -/
+/-- One full traversal of `cycle`'s states closed by `cycle.head`, `markEdge` at `witnessIdx` and `stepEdge` everywhere
+else. -/
 def lapFor (W : TEdgeWitness A succs edgeMarks) (cycle : List State) (hne : cycle ≠ [])
     (witnessIdx : Nat) (hidx : witnessIdx < cycle.length) (m : Nat) : List Edge :=
   (stemEdges W.stepEdge (cycle ++ [cycle.head hne])).set witnessIdx
@@ -468,8 +464,7 @@ theorem TAcceptingCycle.cycle_succ_mem (ac : TAcceptingCycle initialStates succs
   have h := cycleClosed_chain ac i (by simp; omega)
   simpa [List.getElem_append_left hi] using h
 
-/-- Whichever edge occupies a lap position, its `src`/`dst` match `cycle`'s own states there and at the next position,
-both witness functions agree on those. -/
+/-- Every lap edge is valid and goes from `cycle`'s state at its position to the cyclically next one. -/
 theorem lapFor_src_dst (W : TEdgeWitness A succs edgeMarks)
     (ac : TAcceptingCycle initialStates succs edgeMarks k) (hne : ac.cycle ≠ [])
     (witnessIdx : Nat) (hidx : witnessIdx < ac.cycle.length) (m : Nat) (hm : m < k)
@@ -727,7 +722,8 @@ theorem cycleLapAt_length (W : TEdgeWitness A succs edgeMarks)
     (cycleLapAt W ac hne m).length = ac.cycle.length := by
   rw [cycleLapAt_eq W ac hne m hm]; exact lapFor_len W ac.cycle hne _ _ m
 
-/-- The cycle side of the bridge: `k` laps around `ac.cycle`, lap `m` covering mark `m`, or a single `stepEdge`-only pass when `k = 0`. -/
+/-- The cycle side of the bridge: `k` laps around `ac.cycle`, lap `m` covering mark `m`, or a single `stepEdge`-only
+pass when `k = 0`. -/
 noncomputable def TAcceptingCycle.cycleE (W : TEdgeWitness A succs edgeMarks)
     (ac : TAcceptingCycle initialStates succs edgeMarks k) : List Edge :=
   have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos (by have := ac.cycle_nonempty; omega)
@@ -848,8 +844,7 @@ theorem cycleE_endpoints_mem (W : TEdgeWitness A succs edgeMarks)
       (ac.cycle_covers_marks m hmk).choose_spec.choose_spec j hjlt hj
     exact ⟨j, hjlt, hspec.1, hspec.2.1⟩
 
-/-- Past the stem, every state the lasso run passes through is one of `ac.cycle`'s, which is what carries a
-per-cycle property such as a region restriction onto the run's tail. -/
+/-- Past the stem, every state the lasso run passes through is one of `ac.cycle`'s. -/
 theorem TValidLasso.run_src_mem_cycle {A : TOASpec State Edge α k} {stemE : List Edge}
     (W : TEdgeWitness A succs edgeMarks) (ac : TAcceptingCycle initialStates succs edgeMarks k)
     (hv : TValidLasso A stemE (ac.cycleE W)) (n : Nat) (hn : ¬ n < stemE.length) :
@@ -858,8 +853,7 @@ theorem TValidLasso.run_src_mem_cycle {A : TOASpec State Edge α k} {stemE : Lis
   obtain ⟨i, hi, hsrc, -⟩ := cycleE_endpoints_mem W ac (List.getElem_mem _)
   exact ⟨i, hi, hsrc⟩
 
-/-- Every state of `ac.cycle` is some `cycleE` edge's source, both branches of `cycleE` starting with one lap
-in cycle order. -/
+/-- Every state of `ac.cycle` is some `cycleE` edge's source. -/
 theorem cycleE_src_hits (W : TEdgeWitness A succs edgeMarks)
     (ac : TAcceptingCycle initialStates succs edgeMarks k) (i : Nat) (hi : i < ac.cycle.length) :
     ∃ (j : Nat) (hj : j < (ac.cycleE W).length), A.src ((ac.cycleE W)[j]'hj) = ac.cycle[i]'hi := by
@@ -895,8 +889,7 @@ theorem cycleE_src_hits (W : TEdgeWitness A succs edgeMarks)
     exact (lapFor_src_dst W ac hne _ _ 0 hk (ac.cycle_covers_marks 0 hk).choose_spec.choose_spec i hi
       (by rw [lapFor_len]; exact hi)).1
 
-/-- Every state of `ac.cycle` is the source of arbitrarily late run positions, which is what carries a
-"holds somewhere in the cycle" property onto the run as "holds infinitely often". -/
+/-- Every state of `ac.cycle` is the source of arbitrarily late run positions. -/
 theorem TValidLasso.run_src_hits_cycle {A : TOASpec State Edge α k} {stemE : List Edge}
     (W : TEdgeWitness A succs edgeMarks) (ac : TAcceptingCycle initialStates succs edgeMarks k)
     (hv : TValidLasso A stemE (ac.cycleE W)) (i : Nat) (hi : i < ac.cycle.length) (n : Nat) :

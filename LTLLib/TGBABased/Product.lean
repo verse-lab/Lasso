@@ -1,15 +1,18 @@
 /-
-  On-the-fly product construction between an external system and a `TGBA`.
+  On-the-fly product of an external system and a `TGBA`. A `TGBA.Transition` carries its own label, so the compatibility
+  gate is checked per transition rather than once per source state.
 
-  A `TGBA.Transition` carries its own label, so the compatibility gate is checked per transition rather than
-  once per source state, correct even for heterogeneously-labeled outgoing transitions.
+  Defines:
+  - `initialStates`, `getSuccessors`, `edgeMarks`: the product graph and its marks
+  - `toSpec`: the product as an abstract `TOASpec`
+  - `edgeWitness`: a concrete product edge for every product step and every mark on it
 
-  Key theorems:
-  - `run_decompose`/`run_combine`: a product run splits into a TGBA edge-run and a system run, and back
-  - `gsp_correct1`/`gsp_correct2`: the two directions of the product's own correctness
+  Proves:
+  - `run_decompose`, `run_combine`: a product run splits into a TGBA edge-run and a system run, and back
+  - `gsp_correct1`, `gsp_correct2`: the two directions of the product's own correctness
   - `exists_TAcceptingCycle_of_acceptingRun`: an accepting product run yields a lasso witness
-  - `exists_run_of_TAcceptingCycle`: a lasso witness yields a system run, carrying a per-cycle predicate onto
-    the run's tail and a per-state one onto infinitely many positions
+  - `exists_run_of_TAcceptingCycle`: a lasso witness yields a system run, carrying a per-cycle predicate onto the run's
+    tail and a per-state one onto infinitely many positions
 
   Sections:
   - Product construction
@@ -20,8 +23,8 @@
   - Lasso witness
 -/
 import LTLLib.Product
+import LTLLib.TGBA
 import LTLLib.TGBABased.AbstractSpec.Pumping
-import LTLLib.TGBABased.LTLtoTGBA.GBAToTGBA
 
 namespace LTLLib
 
@@ -253,7 +256,7 @@ theorem edgeMarks_lt (tgba : TGBA α) (sysLabel : SysState → Std.HashSet α)
   exact hbound _ _ ht m (Std.HashSet.mem_iff_contains.mpr htm)
 
 /-- Realize any product step or `edgeMarks`-witnessed mark as a concrete product `Edge`, by picking any
-transition of matching shape (existence off `getSuccessors_mem_iff`/`mem_edgeMarks_iff`). -/
+transition of matching shape. -/
 def edgeWitness (tgba : TGBA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) :
     TEdgeWitness (toSpec tgba sysSucc sysLabel sysInit)
@@ -306,8 +309,8 @@ def edgeWitness (tgba : TGBA α) (sysSucc : SysState → Array SysState)
 
 /-! ## From an accepting run to a lasso -/
 
-/-- The product-state sequence an accepting product run walks:
-it starts initial, steps along `getSuccessors`, and carries every mark infinitely often. -/
+/-- The product-state sequence an accepting product run walks starts initial, steps along `getSuccessors`, and
+carries every mark infinitely often. -/
 theorem acceptingRun_states (tgba : TGBA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
     {σ : TLA.exec (Edge SysState α)}
@@ -359,9 +362,8 @@ def TAcceptingCycle.toTValidLassoProduct {α : Type u} {SysState : Type v} [BEq 
 
 namespace TGBAProduct
 
-/-- The counterexample a product cycle describes: one system run whose own labeling the automaton accepts,
-and the two transfers a per-state predicate admits. A predicate holding at every cycle state holds at every
-position past the stem, and one holding at some cycle state holds infinitely often. -/
+/-- The counterexample a product cycle describes: one system run whose own labeling the automaton accepts. A
+predicate holding at every cycle state holds past the stem, and one holding at some cycle state infinitely often. -/
 theorem exists_run_of_TAcceptingCycle {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
     [LawfulBEq α] (tgba : TGBA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)

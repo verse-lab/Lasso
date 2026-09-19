@@ -1,13 +1,6 @@
 /-
-  Algorithm 3, Dijkstra's path-based SCC emptiness check: refines `GenericDFS.lean`'s abstract operations with
+  Dijkstra's SCC-based emptiness check (Algorithm 3 of [RDKP13]), refining `GenericDFS.lean`'s abstract operations with
   two stacks, the live states and the open SCC candidates among them.
-
-  Also proves `push`/`update` never require well-formedness for their status-transition behavior, and that `pop`
-  does (`DijkstraWellFormed`, `dijkstraWellFormed_init`/`_push`/`_update`/`_pop`).
-
-  Renault, Duret-Lutz, Kordon, Poitrenaud, "Three SCC-based Emptiness Checks for Generalized Büchi Automata"
-  (LPAR-19, 2013).
-
 
   live : hstack of ⟨Q⟩
   dead : store of ⟨Q⟩
@@ -46,17 +39,28 @@
         q ← live.pop()
         dead.add(q)
 
-  Verified against the `TEmptinessChecker` contract as `dijkstraTChecker`: `dijkstraCheck_nonEmpty_valid` (a
-  reported stem/loop really is a `TAcceptingCycle`) and `dijkstraCheck_empty_no_cycle` (an `.empty` answer proves none exists).
+  `roots` names each candidate's root by its `live` position rather than by its dfs-depth, and carries that root's own
+  entry-edge marks beside the merged ones, so `dfs[r].pos` is `root`, `dfs[r].acc` is `entry`, and the driver's stack is
+  never read. `push_trivial` and `push_non_trivial` are plain pushes, without roots-stack compression. Mark sets are `Nat`
+  bitmasks, so `a = F` is an equality against the all-ones mask `(1 <<< numMarks) - 1`.
 
-  Lean encoding notes:
-  - `roots` names each candidate's root by its `live` position rather than by its dfs-depth, and carries that root's
-    own entry-edge marks beside the merged ones. Every `dfs[r]` the paper reads is then a field of the roots entry
-    already in hand, `dfs[r].pos` being `root` and `dfs[r].acc` being `entry`, so the driver's stack is never read and
-    no copy of it is kept. `dfs.size() = roots.top_root()` becomes `s.pos = roots.top().root`, the two agreeing
-    because position and depth both increase strictly along the search path.
-  - `push_non_trivial` and `push_trivial` implemented just as a standard `push` for now, no roots-stack compression applied.
-  - Mark sets are `Nat` bitmasks rather than `Std.HashSet Nat`, so `a = F` is an O(1) equality against the all-ones mask `(1 <<< numMarks) - 1`.
+  Defines:
+  - `RootEntry`, `DijkstraAux`, `dijkstraOps`: an open SCC candidate, the search state, and the refinement
+  - `DijkstraRootsWF`, `DijkstraRangeInv`: the ranges of `roots` tile `live`, are internally connected and tree-adjacent,
+    and carry sound bitmasks
+  - `DijkstraStackRoots`, `DijkstraNoInternalEdge`, `NoBackDispatch`: the stack-side invariants carried with them
+  - `dijkstraCheck`, `dijkstraTChecker`: the emptiness check and its `TEmptinessChecker` instance
+
+  Proves:
+  - `dijkstra_dead_not_accepting`: a state flushed to `dead` is in no reachable `AcceptingSCC`
+  - `dijkstra_genericDFS_found_acceptingSCC`, `dijkstra_no_acceptingSCC_of_none`: a reported hint is an accepting SCC
+    holding the anchor, and a search reporting nothing proves there is no reachable `AcceptingSCC`
+  - `dijkstraCheck_nonEmpty_valid`, `dijkstraCheck_empty_no_cycle`: a reported stem and loop form a `TAcceptingCycle`,
+    and an `.empty` answer proves none exists
+
+  References:
+  - [RDKP13] Renault, Duret-Lutz, Kordon, Poitrenaud. Three SCC-based Emptiness Checks for Generalized Büchi
+    Automata. LPAR-19, 2013.
 
   Sections:
   - Dijkstra's search state
@@ -85,24 +89,16 @@ variable {State : Type u} [BEq State] [Hashable State]
 
 /-! ## Dijkstra's search state -/
 
-/-- One open SCC candidate. A flat structure rather than a tuple, which is one heap object per entry instead of
-two and matters, the merge loop reads these per back-edge. -/
+/-- One open SCC candidate. -/
 structure RootEntry where
   root : Nat  -- where this candidate's root sits in `live`, which is also where its range begins
   acc : Nat  -- the marks already known to lie on edges internal to the candidate, as a bitmask
   entry : Nat  -- the marks on the tree edge that pushed the root, folded in when the candidate merges downward
 deriving Inhabited
 
-/-- Dijkstra's private search state, two stacks, the live states and the open SCC candidates among them.
-
-"In practice, Algorithm 3 (without the green dotted boxes) actually manages three stacks: live, the set of LIVE
-states; dfs, the subset of live that are on the DFS search path, represented … by a stack of positions in live;
-and roots, the stack of SCC roots, stored as positions in the dfs stack. When given two consecutive roots,
-roots[i] and roots[i+1], the set of states belonging to the SCC rooted in roots[i], are the states at positions
-dfs[roots[i]].pos, …, dfs[roots[i+1]].pos − 1 in live." (Renault/Duret-Lutz/Kordon/Poitrenaud, §3.2)
-
-Naming a root by its own `live` position rather than by its dfs-depth turns that into `roots[i].root`, …,
-`roots[i+1].root` − 1, and removes the `dfs` stack entirely. -/
+/-- Dijkstra's private search state, the live states and the open SCC candidates among them. The candidate rooted at
+`roots[i]` owns the `live` positions `roots[i].root`, …, `roots[i+1].root - 1`, [RDKP13] §3.2 with roots named by `live`
+position rather than by dfs-depth. -/
 structure DijkstraAux (State : Type u) [BEq State] [Hashable State] where
   live : Array State
   liveIndex : Std.HashMap State Nat -- position of each live state, for O(1) membership
@@ -120,8 +116,8 @@ def dijkstraGetStatus (aux : DijkstraAux State) (q : State) : DFSStatus :=
 
 /-! ## PUSH and UPDATE -/
 
-/-- `PUSH`, line 24 (`roots.push_trivial(dfs.size())`): a newly visited state starts as a trivial SCC candidate,
-non-trivial ones are only created by merging on a back-edge (Renault/Duret-Lutz/Kordon/Poitrenaud, §3.2). -/
+/-- `PUSH`, line 24: a newly visited state starts as a trivial SCC candidate, non-trivial ones only arise by merging on a
+back-edge. -/
 def dijkstraPush (aux : DijkstraAux State) (q : State) (marks : Std.HashSet Nat) :
     DijkstraAux State × Nat :=
   let pos := aux.live.size
@@ -131,8 +127,8 @@ def dijkstraPush (aux : DijkstraAux State) (q : State) (marks : Std.HashSet Nat)
       roots := aux.roots.push ⟨pos, 0, marksToBitmask marks⟩ },
    pos)
 
-/-- The merge loop of `UPDATE`, lines 20-23. `r` and its entry marks `e` arrive pre-popped, so line 22 folds the
-abandoned entry's own marks, never the adopted one's, and the settled root's entry marks stay out of `a`. -/
+/-- The merge loop of `UPDATE`, lines 20-23, with `r` and its entry marks `e` already popped. It folds in each abandoned
+entry's marks, and the settled root's entry marks stay out of `a`. -/
 private def dijkstraMergeRoots (dpos : Nat) (roots : Array RootEntry) (r a e : Nat) :
     Array RootEntry × Nat × Nat × Nat :=
   if dpos < r then
@@ -153,18 +149,16 @@ def dijkstraUpdate (numMarks : Nat) (aux : DijkstraAux State)
   | none => (aux, false)
   | some ⟨r0, a0, e0⟩ =>
     let dpos := aux.liveIndex.getD d 0
-    -- Line 19 (`a ← a ∪ acc`). No entry-marks seed, the loop folds those in if it moves past the top.
+    -- line 19 (`a ← a ∪ acc`), the loop folds in entry marks if it moves past the top
     let a0' := a0 ||| marksToBitmask marks
     let (roots, r, a, e) := dijkstraMergeRoots dpos aux.roots.pop r0 a0' e0
-    -- `a = F`, O(1) against the all-ones mask
+    -- `a = F`, against the all-ones mask
     let found := a == (1 <<< numMarks) - 1
     ({ aux with roots := roots.push ⟨r, a, e⟩ }, found)
 
 /-! ## POP -/
 
-/-- `POP`, lines 27-32.
-Dijkstra's merge is eager, so a popped state's SCC membership is already decided and
-`POP` only ever confirms a root and flushes, never reporting a counterexample itself. -/
+/-- `POP`, lines 27-32. The merge is eager, so POP only confirms a root and flushes, and never reports. -/
 def dijkstraPop (aux : DijkstraAux State) (pos : Nat) : DijkstraAux State × Bool :=
   match aux.roots.back? with
   | none => (aux, false)
@@ -181,10 +175,9 @@ def dijkstraPop (aux : DijkstraAux State) (pos : Nat) : DijkstraAux State × Boo
 
 /-! ## Well-formedness and the basic status axioms
 
-`LawfulDFSOps` status laws cannot hold for an arbitrary (e.g. unreachable) `aux : DijkstraAux State`.
-`DijkstraWellFormed` are the relevant invariants preserved to ensure it. -/
+The `LawfulDFSOps` status laws fail for an arbitrary `aux`, and hold under `DijkstraWellFormed`. -/
 
-/-- `live` and `liveIndex` agree in both directions, which is `LiveWF` on Dijkstra's own two fields. -/
+/-- `live` and `liveIndex` agree in both directions. -/
 abbrev DijkstraWellFormed [Inhabited State] (aux : DijkstraAux State) : Prop :=
   LiveWF aux.live aux.liveIndex
 
@@ -200,14 +193,13 @@ theorem dijkstraWellFormed_push [Inhabited State] [LawfulBEq State] [LawfulHasha
   rw [dijkstraGetStatus, liveStatusOf, if_pos hc] at hq
   exact absurd hq (by simp)
 
-/-- `push` marks its target live regardless of prior status and leaves every other state's untouched,
-the target being new is only needed for well-formedness. -/
+/-- PUSH marks its target live and leaves every other state's status untouched. -/
 theorem dijkstraPush_status [LawfulBEq State] [LawfulHashable State] (aux : DijkstraAux State) (q : State)
     (marks : Std.HashSet Nat) (q' : State) :
     dijkstraGetStatus (dijkstraPush aux q marks).1 q' = if q' == q then .live else dijkstraGetStatus aux q' :=
   liveStatusOf_insert aux.liveIndex aux.dead q aux.live.size q'
 
-/-- `dijkstraUpdate` is pure `roots`-bookkeeping, it never touches `live`/`liveIndex`/`dead` at all. -/
+/-- UPDATE only touches `roots`. -/
 theorem dijkstraUpdate_fields (numMarks : Nat) (aux : DijkstraAux State) (marks : Std.HashSet Nat) (d : State) :
     (dijkstraUpdate numMarks aux marks d).1.live = aux.live ∧
     (dijkstraUpdate numMarks aux marks d).1.liveIndex = aux.liveIndex ∧
@@ -229,14 +221,14 @@ theorem dijkstraWellFormed_update [Inhabited State] (numMarks : Nat) (aux : Dijk
     simp only [hlive]
     exact hwf.bwd q p h
 
-/-- `update` is pure bookkeeping, it never changes any state's status. -/
+/-- UPDATE never changes any state's status. -/
 theorem dijkstraUpdate_status (numMarks : Nat) (aux : DijkstraAux State) (marks : Std.HashSet Nat) (d q : State) :
     dijkstraGetStatus (dijkstraUpdate numMarks aux marks d).1 q = dijkstraGetStatus aux q := by
   obtain ⟨_, hli, hdead⟩ := dijkstraUpdate_fields numMarks aux marks d
   unfold dijkstraGetStatus
   simp only [hli, hdead]
 
-/-- `dijkstraPop` preserves well-formedness, the non-flush branches leaving `live`/`liveIndex` untouched. -/
+/-- POP preserves well-formedness. -/
 theorem dijkstraWellFormed_pop [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (aux : DijkstraAux State) (pos : Nat) (hwf : DijkstraWellFormed aux) :
     DijkstraWellFormed (dijkstraPop aux pos).1 := by
@@ -249,9 +241,7 @@ theorem dijkstraWellFormed_pop [Inhabited State] [LawfulBEq State] [LawfulHashab
     · simp only [dijkstraPop, hb, if_neg h]
       exact hwf
 
-/-- `pop` only ever promotes states from live to dead, never touching an unknown or dead one.
-
-False without well-formedness: A `live` entry `liveIndex` does not know about would be flushed straight from `.unknown`. -/
+/-- On a well-formed state, POP only ever promotes states from live to dead. -/
 theorem dijkstraPop_status [Inhabited State] [LawfulBEq State] [LawfulHashable State] (aux : DijkstraAux State)
     (pos : Nat) (hwf : DijkstraWellFormed aux) (q : State) :
     dijkstraGetStatus (dijkstraPop aux pos).1 q = dijkstraGetStatus aux q ∨
@@ -272,10 +262,9 @@ theorem dijkstraGetStatus_initAux [LawfulBEq State] [LawfulHashable State] (q : 
 
 /-! ## Range bookkeeping and `DijkstraRootsWF`
 
-Each `roots[i]` owns a contiguous slice of `live` (Renault et al. §4.1, quoted on `DijkstraAux`). Positions and
-the merge's bitmask arithmetic only, no `succs`, connectivity is `DijkstraRangeInv` in the next section. -/
+Each `roots[i]` owns a contiguous slice of `live`. Positions and the merge's bitmask arithmetic only, no `succs`. -/
 
-/-- Position in `live` where the range rooted at `roots[i]` begins, which is what `roots[i]` names. -/
+/-- Position in `live` where the range rooted at `roots[i]` begins. -/
 def DijkstraAux.rangeStart (aux : DijkstraAux State) (i : Nat) : Nat := (aux.roots[i]!).root
 
 /-- One past the range's last `live` position, the next range's start, or `live.size` at the top. -/
@@ -312,7 +301,7 @@ theorem DijkstraAux.mem_range_iff [LawfulBEq State] [Inhabited State] (aux : Dij
     simp only [show aux.rangeStart i + (p - aux.rangeStart i) = p from by omega]
     rw [← hp3, getElem!_pos aux.live p (by omega)]
 
-/-- Positional bookkeeping on `roots` alone, what lets `range` tile `live` without gaps or overlaps. -/
+/-- Positional invariant on `roots` alone, the ranges tiling `live` without gaps or overlaps. -/
 structure DijkstraRootsWF (aux : DijkstraAux State) : Prop where
   -- root positions increase strictly, so consecutive ranges abut and never overlap
   rootsMono : ∀ i j, i < j → j < aux.roots.size → (aux.roots[i]!).root < (aux.roots[j]!).root
@@ -377,7 +366,7 @@ theorem dijkstraRootsWF_push (aux : DijkstraAux State) (q : State) (marks : Std.
       exact hlempty hz
   · simp only [Array.size_push]; omega
 
-/-- `DijkstraRootsWF`'s `roots`-only facts, relativized to an arbitrary `bound` so the merge loop can carry them. -/
+/-- `DijkstraRootsWF`'s `roots`-only facts, relative to an arbitrary `bound`. -/
 private def RootsChain (roots : Array RootEntry) (bound : Nat) : Prop :=
   (∀ i, i < roots.size → (roots[i]!).root < bound) ∧
   (∀ i j, i < j → j < roots.size → (roots[i]!).root < (roots[j]!).root) ∧
@@ -594,8 +583,7 @@ private theorem dijkstraMergeRoots_entry_absorbs (dpos : Nat) :
       dsimp only
       simp only [hpop]
       exact hres
-    -- `j` is the entry being stripped right now, so its own root only picks the marks up one step later,
-    -- which `hj1'` guarantees actually happens.
+    -- `j` is the entry being stripped right now, so its root picks the marks up one step later
     · have hjeq : j = ys.size := by simp at hj2; omega
       have heq : (ys.push ⟨r1, la, e1⟩)[j]! = ⟨r1, la, e1⟩ := by rw [hjeq]; exact Array.getElem!_push_eq
       simp only [heq] at hm
@@ -949,7 +937,7 @@ theorem dijkstraRootsWF_update (numMarks : Nat) (aux : DijkstraAux State) (marks
       · subst heq
         rw [Array.getElem!_push_eq]
         exact lt_of_le_of_lt hs2 hr0
-    · -- new top-level `rootsBase`: either the merge survived (its own `roots0`) or fully collapsed (its `rZero`).
+    · -- new top-level `rootsBase`: either the merge survived (its own `roots0`) or fully collapsed (its `rZero`)
       by_cases hc : 0 < res.1.size
       · rw [Array.getElem!_push_lt hc]; exact hs3c hc
       · have hz : res.1.size = 0 := by omega
@@ -1080,7 +1068,7 @@ private theorem dijkstraUpdate_merge_bitmask [Inhabited State] [LawfulBEq State]
           rw [hke]; exact hm
         exact dijkstraMergeRoots_entry_absorbs (aux.liveIndex.getD d 0) ys r0
           (a0 ||| marksToBitmask marks) e0 k hk1 hklt m hm'
-      -- `k` is the pre-merge top itself, whose entry marks are folded as soon as the loop moves off it.
+      -- `k` is the pre-merge top itself, whose entry marks are folded as soon as the loop moves off it
       · have hkeq : k = ys.size := by omega
         have hm' : e0.testBit m = true := by
           rwa [hkeq, hys, Array.getElem!_push_eq] at hm
@@ -1245,7 +1233,7 @@ structure DijkstraRangeInv [Inhabited State] (succs : State → Array State)
   rootsWF : DijkstraRootsWF aux
   -- every open range is internally strongly connected
   connected : ∀ i, i < aux.roots.size → InternallyConnected succs (aux.range i)
-  -- consecutive open ranges are tree-adjacent: range (i+1) was pushed as some range-i member's successor.
+  -- consecutive open ranges are tree-adjacent, range (i+1) was pushed as some range-i member's successor
   chained : ∀ i, (h : i + 1 < aux.roots.size) → ∃ s ∈ aux.range i, ∃ t ∈ aux.range (i + 1), t ∈ succs s
   -- every bit of an open range's bitmask names a real edge with both endpoints inside that range
   bitSound : ∀ i, i < aux.roots.size → ∀ m, (aux.roots[i]!).acc.testBit m = true →
@@ -1260,16 +1248,16 @@ def DijkstraPosChain [Inhabited State] : List (DFSStep State Nat) → Prop
   | [_] => True
   | s :: t :: rest => t.pos < s.pos ∧ DijkstraPosChain (t :: rest)
 
-/-- Driver stack and `roots` in lockstep: each frame owns its own `live` slot, and every open candidate is rooted
-at a frame still on the stack, which is what pins a frame's `roots`-range down. -/
+/-- Driver stack and `roots` in lockstep: each frame owns its own `live` slot, and every open candidate is rooted at a
+frame still on the stack. -/
 def DijkstraStackRoots [Inhabited State] (aux : DijkstraAux State) (stack : List (DFSStep State Nat)) : Prop :=
   (∀ st ∈ stack, st.pos < aux.live.size ∧ aux.live[st.pos]! = st.state) ∧
   DijkstraPosChain stack ∧
   (∀ j, j < aux.roots.size → (aux.roots[j]!).root ∈ stack.map (·.pos)) ∧
   (stack = [] ↔ aux.roots.size = 0)
 
-/-- No edge with both endpoints inside range `i` discovered yet, retired members and dispatched prefixes alike.
-Rules out an accepting SCC at `numMarks = 0`, where the bitmask says nothing. -/
+/-- No edge with both endpoints inside range `i` discovered yet, retired members and dispatched prefixes alike, the
+`numMarks = 0` counterpart of the bitmask. -/
 def DijkstraNoInternalEdge [Inhabited State] (succs : State → Array State) (aux : DijkstraAux State)
     (stack : List (DFSStep State Nat)) (i : Nat) : Prop :=
   (∀ t ∈ aux.range i, (∀ st ∈ stack, st.state ≠ t) → ∀ x ∈ succs t, x ∉ aux.range i) ∧
@@ -1374,7 +1362,7 @@ private theorem dijkstraStackRoots_live_eq_push [Inhabited State] (aux : Dijkstr
   rw [Array.getElem!_push_lt (hsr.1 st hst).1]
   exact (hsr.1 st hst).2
 
-/-- Re-seating the top frame at the same state and position keeps the lockstep, which is what an `idx` bump does. -/
+/-- An `idx` bump of the top frame keeps the lockstep. -/
 private theorem DijkstraStackRoots.bump [Inhabited State] {aux : DijkstraAux State}
     {step : DFSStep State Nat} {rest : List (DFSStep State Nat)}
     (h : DijkstraStackRoots aux (step :: rest)) (step' : DFSStep State Nat)
@@ -1533,7 +1521,7 @@ private theorem DijkstraStackRoots.pop [Inhabited State] [LawfulBEq State] [Lawf
         exact hfl hsteq
       · intro hz; omega
 
-/-- The top frame always lies in the top open range, which is what lets a back-edge merge start there. -/
+/-- The top frame always lies in the top open range. -/
 private theorem dijkstraStackRoots_head_mem_top [Inhabited State] [LawfulBEq State]
     {aux : DijkstraAux State} {step : DFSStep State Nat} {rest : List (DFSStep State Nat)}
     (hsr : DijkstraStackRoots aux (step :: rest)) :
@@ -1912,13 +1900,11 @@ private theorem dijkstraPush_new_range_mem_iff [Inhabited State] [LawfulBEq Stat
 
 /-! ## Witness extraction and the `DFSOps` instance -/
 
-/-- `sccHint`: the just-merged root's live-range is a valid (not necessarily maximal) accepting SCC.
-The fallthrough is unreachable, `roots` is never empty where this is called. -/
+/-- `sccHint`: the top open range, which after a report is an accepting, not necessarily maximal, SCC. -/
 def dijkstraSccHint (aux : DijkstraAux State) : Std.HashSet State :=
   match aux.roots.back? with
   | none => Std.HashSet.emptyWithCapacity 0
   | some ⟨startPos, _, _⟩ =>
-    -- `extract` is O(live.size - startPos), unlike `toList.drop`'s O(live.size).
     (aux.live.extract startPos aux.live.size).foldl
       (init := Std.HashSet.emptyWithCapacity 0) fun acc s => acc.insert s
 
@@ -1945,18 +1931,16 @@ def dijkstraOps (numMarks : Nat) : DFSOps State where
   Position := Nat
   initAux := dijkstraInitAux
   sccHint := dijkstraSccHint
-  -- `dead`/`live` are disjoint (a state only ever enters `dead` once flushed out of `live`, never
-  -- re-pushed, per `dijkstraGetStatus`), so their sizes sum to every state ever pushed.
+  -- `dead` and `live` are disjoint, so this counts every state ever pushed
   numExplored := fun aux => aux.live.size + aux.dead.size
   getStatus := dijkstraGetStatus
   push := dijkstraPush
   update := dijkstraUpdate numMarks
-  -- Dijkstra's POP needs neither the graph nor the frame's marks, only the popped frame's own `live` position,
-  -- which is what tells it whether that frame is the top candidate's root.
+  -- POP only needs the popped frame's `live` position
   pop := fun _succs _edgeMarks aux step => dijkstraPop aux step.pos
 
-/-- `dijkstraOps` is a lawful refinement: `DijkstraWellFormed` is preserved by `push`/`update`/`pop`, and the
-three status-transition laws hold. -/
+/-- `dijkstraOps` is a lawful refinement: PUSH, UPDATE and POP preserve `DijkstraWellFormed`, and the three status laws
+hold. -/
 def dijkstraLawful [Inhabited State] [LawfulBEq State] [LawfulHashable State] (numMarks : Nat) :
     LawfulDFSOps (dijkstraOps numMarks) (State := State) where
   WellFormed := DijkstraWellFormed
@@ -1967,7 +1951,7 @@ def dijkstraLawful [Inhabited State] [LawfulBEq State] [LawfulHashable State] (n
   update_status := dijkstraUpdate_status numMarks
   pop_status := fun _succs _edgeMarks aux step q hwf => dijkstraPop_status aux step.pos hwf q
 
-/-- `dfsGo_ne_none` instantiated against `dijkstraOps`, leaving a `FiniteReach` certificate as the caller's only obligation. -/
+/-- `dfsGo_ne_none` for `dijkstraOps`. -/
 theorem dijkstraOps_ne_none [Inhabited State] [LawfulBEq State] [LawfulHashable State] (numMarks : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (fr : FiniteReach initialStates succs)
@@ -1978,7 +1962,7 @@ theorem dijkstraOps_ne_none [Inhabited State] [LawfulBEq State] [LawfulHashable 
   dfsGo_ne_none (dijkstraOps numMarks) succs edgeMarks initialStates fr (dijkstraLawful numMarks)
     aux stack hwf hsucc hreach
 
-/-- `dfsFromRoot`'s own call shape, one fresh root pushed onto an arbitrary well-formed state. -/
+/-- `dijkstraOps_ne_none` for one fresh root pushed onto a well-formed state. -/
 theorem dijkstraOps_root_ne_none [Inhabited State] [LawfulBEq State] [LawfulHashable State] (numMarks : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (fr : FiniteReach initialStates succs) :
@@ -1995,7 +1979,7 @@ theorem dijkstraOps_root_ne_none [Inhabited State] [LawfulBEq State] [LawfulHash
   · intro st hst; simp only [List.mem_singleton] at hst; rw [hst]
   · intro st hst; simp only [List.mem_singleton] at hst; rw [hst]; exact hqreach
 
-/-- `genericDFS_closed` instantiated against `dijkstraOps`. -/
+/-- `genericDFS_closed` for `dijkstraOps`. -/
 theorem dijkstraOps_closed [Inhabited State] [LawfulBEq State] [LawfulHashable State] (numMarks : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (fr : FiniteReach initialStates succs)
@@ -2015,7 +1999,7 @@ theorem dijkstraOps_closed [Inhabited State] [LawfulBEq State] [LawfulHashable S
     roots aux hrootsReach (genericDFSGo_ne_none (dijkstraOps numMarks) succs edgeMarks roots aux)
     hnone hwf hClosed
 
-/-- `genericDFS_returns_none_fully_explored` instantiated against `dijkstraOps`. -/
+/-- `genericDFS_returns_none_fully_explored` for `dijkstraOps`. -/
 theorem dijkstraOps_returns_none_fully_explored [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (numMarks : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
@@ -2201,8 +2185,8 @@ private theorem dijkstraGetStatus_live_of_pos [Inhabited State] [LawfulBEq State
   simp [Std.HashMap.contains_eq_isSome_getElem?, hfwd]
 
 set_option maxHeartbeats 4000000 in
-/-- The crux completeness theorem: once a state is flushed to `dead`, it is in no reachable `AcceptingSCC`.
-A run that drains its stack without a witness also hands the idle-state bundle back. -/
+/-- Through a `dfsGo` run, `dead` stays disjoint from every `AcceptingSCC`, a run without a witness ends idle, and a
+reported hint is an accepting SCC. -/
 theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
@@ -2242,7 +2226,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
     NoBackDispatch stack →
     (∀ i : Nat, (aux.roots[i]!).acc < 2 ^ numMarks) →
     (∀ i : Nat, (aux.roots[i]!).entry < 2 ^ numMarks) →
-    -- a range whose bitmask already reads all-ones has no internal edge yet, this is what covers `numMarks = 0`
+    -- a range whose bitmask already reads all-ones has no internal edge yet
     (∀ i, i < aux.roots.size → (aux.roots[i]!).acc ≠ (1 <<< numMarks) - 1 ∨
       DijkstraNoInternalEdge succs aux stack i) →
     -- the conclusion carried through the induction
@@ -2322,7 +2306,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
   have hstepMem : step.state ∈ aux.range (aux.roots.size - 1) :=
     dijkstraStackRoots_head_mem_top hstackdfs
   have hrestPosLt : ∀ st ∈ rest, Nat.lt st.pos step.pos := hstackdfs.2.1.lt_head
-  -- The current head always sits at the largest `live` position among the currently open frames.
+  -- the head sits at the largest `live` position among the open frames
   have hHeadMax : ∀ st' ∈ (step :: rest), Nat.le st'.pos step.pos := by
     intro st' hst'
     rcases List.mem_cons.mp hst' with rfl | hst'
@@ -2336,14 +2320,13 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
     · rcases hmerged step (by simp) x hx hlive with hgood | ⟨st', hst', heq, hlt⟩
       · exact hgood
       · exact absurd (Nat.lt_of_lt_of_le hlt (hHeadMax st' hst')) (Nat.lt_irrefl _)
-  -- Genuine dispatched-and-live back-edges always resolve, the "still open above" escape only fires for
-  -- targets currently on the stack, which case-neg's own callers (below) always rule out separately.
+  -- `hmerged` restricted to the frames below the head
   have hrestMerged : ∀ st ∈ rest, ∀ x ∈ (st.succ.toList.take st.idx),
       dijkstraGetStatus aux x = .live →
       (∃ i, i < aux.roots.size ∧ st.state ∈ aux.range i ∧ x ∈ aux.range i) ∨
       (∃ st' ∈ step :: rest, st'.state = x ∧ Nat.lt st.pos st'.pos) :=
     fun st hst x hx hlive => hmerged st (List.mem_cons_of_mem _ hst) x hx hlive
-  -- Every open frame still occupies its own `live` slot, so its state reads back as `.live`.
+  -- every open frame still occupies its own `live` slot, so its state reads back as `.live`
   have hStackLive : ∀ st ∈ (step :: rest), dijkstraGetStatus aux st.state = .live := fun st hst =>
     dijkstraGetStatus_live_of_pos hwf (hstackdfs.1 st hst).1 (hstackdfs.1 st hst).2
   have hstepReach : Reachable initialStates succs step.state := hreach step (by simp)
@@ -2372,8 +2355,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
     have hstackdfs' : DijkstraStackRoots aux
         (({ step with idx := step.idx + 1 } : DFSStep State Nat) :: rest) :=
       DijkstraStackRoots.bump hstackdfs _ rfl rfl
-    -- The bumped head keeps `step`'s own state and position, and nothing dispatches into the head from
-    -- below (it already sits at the largest open position), so `hTreeMarks` transports across the bump.
+    -- the bumped head keeps `step`'s state and position, and nothing dispatches into it from below
     have hTreeMarksBump : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State Nat) :: rest,
         ∀ st' ∈ ({ step with idx := step.idx + 1 } : DFSStep State Nat) :: rest,
         st'.state ∈ (st.succ.toList.take st.idx) → Nat.lt st.pos st'.pos →
@@ -2504,8 +2486,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
       have hrangeinv' : DijkstraRangeInv succs edgeMarks aux' :=
         haux'1 ▸ dijkstraRangeInv_update hwf hrangeinv hroots_pos hd_contains hstepMem hdSucc
       by_cases hf : found = true
-      -- The reported range is the merged top one: connected by `hrangeinv'`, and its bitmask being
-      -- all-ones turns `bitSound` into `AcceptingMarks` one mark at a time.
+      -- the reported range is the merged top one, connected, and its all-ones bitmask gives `AcceptingMarks`
       · simp only [hf, if_true, Option.some.injEq] at hr
         have hhint : dijkstraSccHint aux' = aux'.range lo := by
           rw [dijkstraSccHint_eq_top_range aux' (by omega),
@@ -2590,8 +2571,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
           · subst hieq
             obtain ⟨k, hlok, hkn, htk⟩ := (hunion t).mp ht
             exact hdispatched k hkn t htk (hexcl_iff t hexcl) x hx
-        -- Every bitmask the merge absorbs (the old top's own, this edge's marks, and every range in between)
-        -- persists into the new top range's bitmask.
+        -- every bitmask the merge absorbs persists into the new top range's bitmask
         obtain ⟨lo1, hlo1eq, hlo1top, hlo1abs, hlo1dfs⟩ :=
           dijkstraUpdate_merge_bitmask numMarks aux (edgeMarks step.state d) d hroots_pos
         rw [haux'1] at hlo1eq hlo1top hlo1abs hlo1dfs
@@ -2605,13 +2585,11 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
           · have hkeq : k = aux.roots.size - 1 := by omega
             subst hkeq
             exact hlo1top m (by simp [hm])
-        -- Only ranges strictly above `lo`, the tree edge entering the merged range's own root starts below
-        -- it, so `dijkstraUpdate` deliberately leaves its marks out.
+        -- only ranges strictly above `lo`, the entry edge of the merged range's root starts below it
         have hbitDfsAbsorb : ∀ k, lo < k → k < aux.roots.size → ∀ m,
             (aux.roots[k]!).entry.testBit m = true → (aux'.roots[lo]!).acc.testBit m = true :=
           hlo1dfs
-        -- Any old pair sharing a range still shares one afterwards, ranges below `lo` are untouched and
-        -- everything from `lo` up is absorbed into the single new top range.
+        -- a pair sharing a range still shares one, ranges below `lo` are untouched and the rest merge into the top
         have hpairLift : ∀ j, j < aux.roots.size → ∀ y z, y ∈ aux.range j → z ∈ aux.range j →
             ∃ i, i < aux'.roots.size ∧ y ∈ aux'.range i ∧ z ∈ aux'.range i := by
           intro j hj y z hy hz
@@ -2630,14 +2608,12 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
           · subst hieq
             obtain ⟨k, hlok, hkn, htk⟩ := (hunion t).mp ht
             obtain ⟨k', _, _, hxk'⟩ := (hunion x).mp hxr
-            -- `t` is retired, so its successor `x` either stayed inside `t`'s own old range or went dead,
-            -- and dead states sit in no range at all.
+            -- `t` is retired, so its successor `x` stayed in `t`'s old range or went dead, and dead states are in no range
             rcases hrangeclosed k hkn t htk (hexcl_iff t hexcl) x hx
               (hdispatched k hkn t htk (hexcl_iff t hexcl) x hx) with hxrk | hxd
             · exact hbitAbsorb k hlok hkn m (hmarksClosed k hkn t htk (hexcl_iff t hexcl) x hx hxrk m hm)
             · exact absurd hxk' (dijkstraGetStatus_dead_not_mem_range hwf hxd k')
-        -- The merge folds in every absorbed range's own bitmask and its root's entry marks, so a tree
-        -- edge's marks land in the merged range's bitmask whichever of the two held them before.
+        -- the merge folds in every absorbed range's bitmask and its root's entry marks
         have hTreeMarks' : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State Nat) :: rest,
             ∀ st' ∈ ({ step with idx := step.idx + 1 } : DFSStep State Nat) :: rest,
             st'.state ∈ (st.succ.toList.take st.idx) → Nat.lt st.pos st'.pos →
@@ -2704,8 +2680,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
               · have hjjeq : jj = k'' :=
                   DijkstraAux.range_mem_unique hrangeinv.rootsWF hwf hjj hkn'' hsjj hsk''
                 exact hbitAbsorb jj (by omega) hjj m (hrestMarksOpen st hst x hx jj hjj hxjj hsjj m hm)
-              · -- `x` is a still-open frame, so this is `st`'s own tree edge into it. `st.state` sits at the
-                -- lower `live` position, so its own old range index never exceeds `x`'s.
+              · -- `x` is a still-open frame, so this is `st`'s tree edge into it, and `st`'s range index is at most `x`'s
                 have hstpos := (hstackdfs.1 st (List.mem_cons_of_mem _ hst)).2
                 have hxpos := (hstackdfs.1 st' hst').2
                 have hxk'' : st'.state ∈ aux.range k' := by rw [heq]; exact hxk'
@@ -2742,7 +2717,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
               exact Or.inl (hpairLift j hj step.state x hsj hxj)
             · simp only [List.mem_singleton] at hx
               subst hx
-              -- The merge is exactly what puts `step.state` and its live target `d` in one range.
+              -- the merge puts `step.state` and its live target `d` in one range
               exact Or.inl ⟨lo, by omega, (hunion step.state).mpr ⟨aux.roots.size - 1, by omega, by omega, hstepMem⟩,
                 (hunion d).mpr ⟨lo, Nat.le_refl _, hlo_lt, hd_range⟩⟩
           · intro x hx hlive
@@ -2817,7 +2792,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         haux'2 ▸ dijkstraWellFormed_push aux d (edgeMarks step.state d) hwf hgs
       have hpeq : ∀ q, dijkstraGetStatus aux' q = if q == d then .live else dijkstraGetStatus aux q :=
         fun q => haux'2 ▸ dijkstraPush_status aux d (edgeMarks step.state d) q
-      -- `push` only ever extends `live`/`roots`, `dead` is untouched by construction.
+      -- PUSH leaves `dead` untouched
       have hdeq : aux'.dead = aux.dead := by rw [← haux'2]; rfl
       have hpos'_eq : pos' = aux.live.size := by
         have h2 : (dijkstraPush aux d (edgeMarks step.state d)).2 = pos' := congrArg Prod.snd hpsheq
@@ -2857,7 +2832,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
             by_cases hxd : x == d
             · simp [hxd]
             · simp only [hxd]; exact hrestPrefix st hst x hx
-      -- The new singleton range `{d}` chains to the old top and starts with an empty bitmask.
+      -- the new singleton range `{d}` chains to the old top and starts with an empty bitmask
       have hwfOld := hrangeinv.rootsWF
       have hne : 0 < aux.roots.size := hne0
       have hsize' : aux'.roots.size = aux.roots.size + 1 := by
@@ -2907,7 +2882,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         · rw [Array.getElem!_push_lt hilt] at hm
           rw [hrangeEq i hilt]
           exact hrangeinv.bitSound i hilt m hm
-        -- the fresh singleton range starts with an empty bitmask, so it claims no marks at all
+        -- the fresh singleton range starts with an empty bitmask
         · exact absurd (hieq ▸ hm) (by rw [Array.getElem!_push_eq]; simp)
       have hentrySound' : ∀ i, i < aux'.roots.size → ∀ m, (aux'.roots[i]!).entry.testBit m = true →
           0 < i ∧ ∃ t ∈ aux'.range (i - 1), ∃ u ∈ aux'.range i, u ∈ succs t ∧ m ∈ edgeMarks t u := by
@@ -2918,7 +2893,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         · rw [Array.getElem!_push_lt hilt] at hm
           obtain ⟨hipos, t, ht, u, hu, htu, hmk⟩ := hrangeinv.entrySound i hilt m hm
           exact ⟨hipos, t, (hrangeEq (i - 1) (by omega)) ▸ ht, u, (hrangeEq i hilt) ▸ hu, htu, hmk⟩
-        -- the fresh singleton range: its entry marks are exactly this tree edge's, running in from its parent
+        -- the fresh singleton range, its entry marks are this tree edge's, running in from its parent
         · subst hieq
           rw [Array.getElem!_push_eq] at hm
           exact ⟨hne, step.state, hstepTop, d, (hnewRangeIff d).mpr rfl, hdSucc, marksToBitmask_mem hm⟩
@@ -2929,9 +2904,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         have hpush := DijkstraStackRoots.push (marks := edgeMarks step.state d) hstackdfs' newStep
           (by rw [hnewStep_def]) (by rw [hnewStep_def]; exact hpos'_eq)
         rwa [haux'2] at hpush
-      -- The extra excluded state (`newStep.state = d`) never sat in any old range (`d` was `.unknown`),
-      -- so old-range obligations transport unchanged via `hdispatched`/`hrangeclosed`, and the new range's own
-      -- obligation is vacuous, `d` sits on the stack so its exclusion hypothesis never holds.
+      -- `d` was `.unknown`, so it sat in no old range, and the new range's obligation is vacuous since `d` is on the stack
       have hexcl_iff : ∀ t, (∀ st ∈ newStep :: ({ step with idx := step.idx + 1 } : DFSStep State Nat) :: rest,
           st.state ≠ t) → (∀ st ∈ step :: rest, st.state ≠ t) := by
         intro t hexcl st hst
@@ -3121,8 +3094,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
             rcases List.mem_cons.mp hst with heq | hst
             · rw [heq] at hsr; exact absurd hsr (hdnot i)
             · exact h2 st hst hsr x hx
-        -- the fresh singleton range `{d}`: its only member is the frame that just opened it, so nothing
-        -- has been dispatched out of it and the "no internal edge" disjunct holds outright
+        -- the fresh singleton range `{d}`, nothing has been dispatched out of it yet
         · have hieq : i = aux.roots.size := by rw [hsize'] at hi; omega
           subst hieq
           refine Or.inr ⟨fun t ht hexcl x hx => ?_, fun st hst hsr x hx => ?_⟩
@@ -3146,7 +3118,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         rcases List.mem_cons.mp hst with rfl | hst
         · simp [hnewStep_def] at hdisp
         · rcases List.mem_cons.mp hst' with rfl | hst'
-          · -- `push` is what records this tree edge's own marks, in the new candidate's entry field
+          · -- PUSH records this tree edge's marks in the new candidate's entry field
             rcases List.mem_cons.mp hst with rfl | hstr
             · have hjrd : d ∈ aux'.range j := by rw [hnewStep_def] at hjr; exact hjr
               have hjeq : j = aux.roots.size := by
@@ -3273,7 +3245,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         · rw [Array.getElem!_pop_lt hi]; exact hentryBound i
         · rw [getElem!_neg _ i hi]; exact getElem!_default_entry_lt numMarks
     by_cases hflush : step.pos = r0
-    · -- flush: the top range `D := aux.range (aux.roots.size - 1)` is confirmed and flushed to `dead`.
+    · -- flush: the top range `D := aux.range (aux.roots.size - 1)` is confirmed and flushed to `dead`
       have haux'defF : aux' = { aux with
           roots := aux.roots.pop
           live := (liveFlush aux.live aux.liveIndex aux.dead step.pos).1
@@ -3297,7 +3269,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
       have hposle : Nat.le step.pos aux.live.size := by
         rw [hflush, show r0 = (aux.roots[aux.roots.size - 1]!).root from by rw [hrtop]]
         exact (hrangeinv.rootsWF.rootsLt (aux.roots.size - 1) (by omega)).le
-      -- `t ∈ D`, `t ≠ step.state`, is already off the current stack.
+      -- `t ∈ D`, `t ≠ step.state`, is already off the current stack
       have hDposNe : ∀ t ∈ aux.range (aux.roots.size - 1), t ≠ step.state → ∀ st ∈ step :: rest, st.state ≠ t := by
         intro t ht htne st hst hcontra
         rcases List.mem_cons.mp hst with rfl | hst
@@ -3364,8 +3336,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
           have hDbound : (aux.roots[aux.roots.size - 1]!).acc < 2 ^ numMarks := hrootsBound (aux.roots.size - 1)
           have hDeq : (aux.roots[aux.roots.size - 1]!).acc = (1 <<< numMarks) - 1 :=
             eq_allOnesMask_of_testBit_cover hDbound hDbitmaskCover
-          -- Either the bitmask route contradicts, or (when `numMarks = 0` makes it uninformative) the
-          -- range is known to hold no discovered internal edge, which `A.covers`' own edge violates.
+          -- the bitmask contradicts, or the range holds no discovered internal edge, which `A.covers` violates
           rcases hrootsNotFull (aux.roots.size - 1) (by omega) with hne | ⟨hretired, hopen⟩
           · exact absurd hDeq hne
           · obtain ⟨⟨s0, hs0, t0, ht0, hedge0⟩, -⟩ := A.covers
@@ -3548,8 +3519,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
           · rw [hrangeEqF i hi] at hsr ⊢
             exact hno.2 st (List.mem_cons_of_mem _ hst) hsr x hx
 
-      -- The flushed range's own root is the popped frame, so every surviving range's root, and its
-      -- entry, sits strictly below the popped one.
+      -- every surviving range's root, and its entry, sits strictly below the popped frame
       have hTreeMarks' : ∀ st ∈ rest, ∀ st' ∈ rest,
           st'.state ∈ (st.succ.toList.take st.idx) → Nat.lt st.pos st'.pos →
           ∀ j, j < aux'.roots.size → st'.state ∈ aux'.range j → ∀ m ∈ edgeMarks st.state st'.state,
@@ -3566,7 +3536,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
       exact ih aux' rest r hr hwf' hSuccEq' hPrefix' hReach' hrangeinv' hstackdfs' hrangeclosed' hdispatched'
         hmarksClosed' hMarksOpen' hmerged' hTreeMarks' hNoBack.tail hrootsBound' hentryBound' hrootsNotFull'
         hdead'
-    · -- non-flush: `POP` confirms nothing, so the whole search state is untouched.
+    · -- non-flush: POP confirms nothing, so the whole search state is untouched
       have haux'defNF : aux' = aux := by
         rw [← haux'eq]
         unfold dijkstraPop
@@ -3665,9 +3635,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
           rcases rest with _ | ⟨t, rest'⟩
           · exact absurd hst (by simp)
           · rcases List.mem_cons.mp hst with heq | hst'
-            · -- `st = t`, the immediate parent that just retired `step`: not flushing means the top
-              -- candidate's root is some frame other than `step`, so it lies at or below `t`, and `t`
-              -- therefore sits in the same top range as `step` did.
+            · -- `st = t`, the parent that just retired `step`: the top candidate's root is not `step`, so `t` is in its range
               rw [heq]
               have htpos : Nat.lt t.pos aux.live.size :=
                 (hliveCorr t (List.mem_cons_of_mem step List.mem_cons_self)).1
@@ -3695,8 +3663,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
               refine ⟨aux.roots.size - 1, by rw [haux'rootsNF]; omega, ?_, ?_⟩
               · rw [hrangeEqNF (aux.roots.size - 1) (by omega)]; exact htmem
               · rw [hrangeEqNF (aux.roots.size - 1) (by omega)]; exact hstepMem
-            · -- `st ∈ rest'`, strictly below the immediate parent: `step` could never have been a
-              -- live target of an already-dispatched edge that far back, `hNoBack` rules it out directly.
+            · -- `st ∈ rest'`, strictly below the parent, `hNoBack` rules out `step` as a dispatched target
               exact absurd hx (hNoBack.1 st hst')
         · rcases hrestMerged st hst x hx hlive2 with hgood | ⟨st', hst', heq, hlt⟩
           · obtain ⟨i, hi, hsr, hxr⟩ := hgood
@@ -3739,9 +3706,8 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
 
 /-! ## Lifting completeness to the whole search
 
-The outer loop carries one bundle between roots: `DijkstraWellFormed`, `DijkstraRangeInv`, `roots` empty, and
-`dead` meeting no `AcceptingSCC`. `dijkstraInitAux` satisfies it and every completed root search restores it, so
-each root starts from an idle state, no open range and an empty stack. -/
+The outer loop carries one invariant between roots: `DijkstraWellFormed`, `DijkstraRangeInv`, `roots` empty, and `dead`
+meeting no `AcceptingSCC`. -/
 
 /-- The initial search state satisfies the range invariant vacuously, `roots` being empty. -/
 theorem dijkstraRangeInv_init [Inhabited State] [LawfulBEq State] {succs : State → Array State}
@@ -3752,7 +3718,7 @@ theorem dijkstraRangeInv_init [Inhabited State] [LawfulBEq State] {succs : State
     by intro i hi; simp [dijkstraInitAux] at hi,
     by intro k hk; simp [dijkstraInitAux] at hk⟩
 
-/-- An idle state has nothing live left, `roots` empty forces `live` empty. -/
+/-- An idle state has nothing live left. -/
 theorem dijkstraGetStatus_ne_live_of_idle [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     {aux : DijkstraAux State} (hwf : DijkstraWellFormed aux) (hrwf : DijkstraRootsWF aux)
     (hidle : aux.roots.size = 0) (q : State) : dijkstraGetStatus aux q ≠ .live := by
@@ -3768,8 +3734,8 @@ theorem dijkstraGetStatus_ne_live_of_idle [Inhabited State] [LawfulBEq State] [L
   exact absurd (hwf.bwd q p hp).1 (by omega)
 
 set_option maxHeartbeats 1000000 in
-/-- `dijkstra_dead_not_accepting` across one root's own search: starts from an idle state and restores an idle state if there's no witness.
-Pushing a fresh root onto an idle state makes every range- and stack-indexed hypothesis trivial. -/
+/-- `dijkstra_dead_not_accepting` across one root's search, from an idle state back to an idle state if there is no
+witness. -/
 theorem dijkstraFromRoot_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
@@ -3805,7 +3771,7 @@ theorem dijkstraFromRoot_dead_not_accepting [LawfulBEq State] [LawfulHashable St
     show (dfsGo (dijkstraOps numMarks) succs edgeMarks aux' [step]).getD (none, aux') = r
     rw [hrr]; rfl
   rw [hfr]
-  -- `push` on an idle state opens exactly one range, the singleton `{q0}`, at `live` index `0`.
+  -- PUSH on an idle state opens exactly one range, the singleton `{q0}`, at `live` index `0`
   have hrootsPush : aux'.roots =
     aux.roots.push ⟨aux.live.size, 0, marksToBitmask (Std.HashSet.emptyWithCapacity 0)⟩ := rfl
   have hlivePush : aux'.live = aux.live.push q0 := rfl
@@ -3830,7 +3796,7 @@ theorem dijkstraFromRoot_dead_not_accepting [LawfulBEq State] [LawfulHashable St
     · rw [hi, hroots0]; exact Nat.two_pow_pos numMarks
     · rw [getElem!_neg aux'.roots i (by rw [hrootsSize]; omega)]
       exact getElem!_default_acc_lt numMarks
-  -- The one-frame starting stack is already a `succs`-path from `q0`, so `dfsGo` hands back a real stem.
+  -- the one-frame starting stack is a `succs`-path from `q0`, so `dfsGo` hands back a real stem
   have hstem : ∀ anchor stem, r.1 = some (anchor, stem) →
       ∃ hs : stem ≠ [], stem.head hs ∈ initialStates ∧
         (∀ i, (hi : i + 1 < stem.length) → stem[i + 1] ∈ succs (stem[i])) ∧
@@ -3897,8 +3863,7 @@ theorem dijkstraFromRoot_dead_not_accepting [LawfulBEq State] [LawfulHashable St
       exact marksToBitmask_lt (by simp)
     · rw [getElem!_neg aux'.roots i (by rw [hrootsSize]; omega)]
       exact getElem!_default_entry_lt numMarks
-  -- the single fresh range holds only `q0`, which is the frame that just opened it, so nothing has
-  -- been dispatched out of it yet
+  -- the single fresh range holds only `q0`, which has dispatched nothing yet
   · intro i hi
     rw [hidx0 i hi]
     refine Or.inr ⟨fun t ht hexcl x hx => ?_, fun st hst hsr x hx => ?_⟩
@@ -3917,8 +3882,7 @@ private theorem dijkstraGetStatus_dead_mem [LawfulBEq State] [LawfulHashable Sta
     · exact Std.HashSet.mem_iff_contains.mpr hd
     · rw [if_neg hd] at h; cases h
 
-/-- `dijkstra_dead_not_accepting` across the outer loop: an already-touched root changes nothing, a fresh one
-runs its own search and restores an idle state for the next. -/
+/-- `dijkstra_dead_not_accepting` across the outer loop over the roots. -/
 theorem dijkstraGo_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
@@ -3988,8 +3952,8 @@ theorem dijkstraGo_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [
       obtain ⟨hwf', hrangeinv', hidle'⟩ := hbundle (by rw [hdfr]; exact hf)
       exact ih rest aux' r hr hrestMem hwf' hrangeinv' hidle' hdead'
 
-/-- The whole search from `dijkstraInitAux`: an idle start makes every hypothesis above trivial, so an empty
-result means every state ever flushed to `dead` is in no `AcceptingSCC`, and the final state is idle again. -/
+/-- After an empty search from `dijkstraInitAux`, no state in `dead` is in an `AcceptingSCC`, and the final state is
+idle. -/
 theorem dijkstra_genericDFS_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
@@ -4012,8 +3976,8 @@ theorem dijkstra_genericDFS_dead_not_accepting [LawfulBEq State] [LawfulHashable
     dijkstraWellFormed_init dijkstraRangeInv_init
     (by simp [dijkstraInitAux]) (by intro s hs; simp [dijkstraInitAux] at hs)).1 hnone
 
-/-- Soundness: whenever the search reports a counterexample, the hint it reports is a real accepting,
-internally connected set containing the anchor. -/
+/-- Soundness: whenever the search reports a counterexample, its hint is an accepting, internally connected set
+containing the anchor. -/
 theorem dijkstra_genericDFS_found_acceptingSCC [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
@@ -4032,8 +3996,7 @@ theorem dijkstra_genericDFS_found_acceptingSCC [LawfulBEq State] [LawfulHashable
     dijkstraWellFormed_init dijkstraRangeInv_init
     (by simp [dijkstraInitAux]) (by intro s hs; simp [dijkstraInitAux] at hs)).2
 
-/-- Completeness: a search that reports no counterexample proves there is no reachable `AcceptingSCC` at all.
-Every reachable state is explored and an idle final state leaves nothing `.live`, so all of them ended in `dead`. -/
+/-- Completeness: a search that reports no counterexample proves there is no reachable `AcceptingSCC`. -/
 theorem dijkstra_no_acceptingSCC_of_none [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
@@ -4055,8 +4018,7 @@ theorem dijkstra_no_acceptingSCC_of_none [LawfulBEq State] [LawfulHashable State
     | unknown => exact absurd hst hexplored
   exact hdead s (dijkstraGetStatus_dead_mem hsdead) A hs
 
-/-- Dijkstra's SCC-based emptiness check: `dijkstraOps` decides emptiness, and `checkWithWitness` rebuilds the
-`.nonEmpty` witness by plain graph BFS. -/
+/-- Dijkstra's SCC-based emptiness check. -/
 def dijkstraCheck [LawfulBEq State] [LawfulHashable State] (succs : State → Array State)
     (initialStates : List State) (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat) :
     EmptinessResult State :=
@@ -4065,8 +4027,7 @@ def dijkstraCheck [LawfulBEq State] [LawfulHashable State] (succs : State → Ar
 
 /-! ## The `TEmptinessChecker` contract -/
 
-/-- Soundness (`TEmptinessChecker.nonEmpty_valid`):
-A reported `stem`/`loop` really is a `TAcceptingCycle`'s own stem and cycle. -/
+/-- Soundness: a reported `stem` and `loop` are a `TAcceptingCycle`'s stem and cycle. -/
 theorem dijkstraCheck_nonEmpty_valid [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
@@ -4078,8 +4039,7 @@ theorem dijkstraCheck_nonEmpty_valid [LawfulBEq State] [LawfulHashable State] [I
     (dijkstra_genericDFS_found_acceptingSCC numMarks succs edgeMarks initialStates hmarksBound
       fr) h
 
-/-- Completeness (`TEmptinessChecker.empty_no_cycle`): An `.empty` answer proves no `TAcceptingCycle` exists.
-`dijkstra_genericDFS_found_acceptingSCC` rules out `checkWithWitness`'s `cycle = []` fallback. -/
+/-- Completeness: an `.empty` answer proves no `TAcceptingCycle` exists. -/
 theorem dijkstraCheck_empty_no_cycle [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
@@ -4094,8 +4054,7 @@ theorem dijkstraCheck_empty_no_cycle [LawfulBEq State] [LawfulHashable State] [I
   exact dijkstra_no_acceptingSCC_of_none numMarks succs edgeMarks initialStates hmarksBound
     fr hnone A
 
-/-- `dijkstraCheck` packaged as a `TEmptinessChecker` instance. `check` ignores the contract's `FiniteReach` certificate,
-the two proof fields take their own and use it for termination (`dijkstraOps_ne_none`). -/
+/-- `dijkstraCheck` as a `TEmptinessChecker`. -/
 def dijkstraTChecker [LawfulBEq State] [LawfulHashable State] [Inhabited State] :
     TEmptinessChecker State where
   check := fun succs initialStates _fr edgeMarks numMarks =>

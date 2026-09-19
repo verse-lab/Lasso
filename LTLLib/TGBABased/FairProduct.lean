@@ -1,23 +1,20 @@
 /-
-  The product of `Product.lean`, extended with one generalized Büchi mark per propositional fairness conjunct.
+  The product of `Product.lean`, extended with one generalized Büchi mark per propositional fairness conjunct. A conjunct
+  `ψ` is carried as a mark on every edge whose source system state satisfies `ψ`, indexed from `tgba.numAcceptSets`, so
+  an accepting cycle witnesses one run that both violates the property and satisfies every `□◇ψ`. The emptiness checker
+  is left untouched.
 
-  A conjunct `ψ` is carried as a mark set on every edge whose source system state satisfies `ψ`, indexed from
-  `tgba.numAcceptSets`. `TAcceptingCycle` then demands the mark on some cycle edge, which on a lasso whose
-  cycle recurs is exactly `□◇ψ`. Composition is automatic, the witness is one run that both violates the
-  property and satisfies every conjunct, rather than two independent facts.
-
-  This is Route 1 of `Fairness.md`, the whole of weak fairness, and it leaves `TEmptinessChecker`,
-  `dijkstraCheck` and `SCC/DijkstraSCC.lean` untouched.
-
-  Key definitions:
+  Defines:
   - `fairMarks`: the mark set contributed by the conjuncts at one source label
   - `edgeMarksFair`: `edgeMarks` extended with those marks
   - `toSpecFair`: the abstract product spec with the extended acceptance condition
+  - `fgRegion`: the region a propositional `FG` part carves out of the product
 
-  Key theorems:
-  - `gsp_correct1Fair`/`gsp_correct2Fair`: the two directions of the extended product's correctness, where
-    acceptance now also means every conjunct holds infinitely often
+  Proves:
+  - `gsp_correct1Fair`, `gsp_correct2Fair`: the two directions of the extended product's correctness, acceptance also
+    meaning every conjunct holds infinitely often
   - `exists_TAcceptingCycle_of_acceptingRunFair`: an accepting run of the extended product yields a lasso
+  - `exists_run_of_TRegionCycle`: a region cycle yields a counterexample run whose tail stays inside the region
 
   Sections:
   - Fairness marks
@@ -26,6 +23,7 @@
   - Edge witness
   - From an accepting run to a lasso
   - Lasso witness
+  - Region cycles
 -/
 import LTLLib.LTL.Propositional
 import LTLLib.TGBABased.AbstractSpec.RegionLatch
@@ -206,9 +204,8 @@ theorem gsp_correct2Fair [LawfulBEq α] (tgba : TGBA α) (sysSucc : SysState →
 
 /-! ## Edge witness -/
 
-/-- The extended spec's edge witness. Steps are realized exactly as in `edgeWitness`. A fairness mark
-constrains only the source system state, which every edge out of that state already carries, so any step
-edge witnesses it. -/
+/-- The extended spec's edge witness. A fairness mark constrains only the source system state, so any step edge
+witnesses it. -/
 def edgeWitnessFair (tgba : TGBA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
     (extra : List (BoolFormula α))
@@ -304,8 +301,7 @@ def fgRegion (fg : BoolFormula α) (sysLabel : SysState → Std.HashSet α) :
     (SysState × Nat) → Bool := fun p => fg.eval (sysLabel p.1)
 
 /-- The counterexample a region cycle describes: one system run that the automaton accepts, that satisfies
-every conjunct infinitely often, and whose tail stays inside the region. Past the stem the lasso run only
-visits cycle states, which is what carries the region onto the run. -/
+every conjunct infinitely often, and whose tail stays inside the region. -/
 theorem exists_run_of_TRegionCycle [LawfulBEq α] (tgba : TGBA α)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysInit : List SysState) (extra : List (BoolFormula α)) (fg : BoolFormula α)
