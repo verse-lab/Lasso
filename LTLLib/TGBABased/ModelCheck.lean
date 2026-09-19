@@ -9,13 +9,13 @@
   - `modelCheckDijkstra`: Dijkstra's SCC-based search on the TGBA product (`modelCheckTGBA` in `DijkstraCheck.lean`), no
     fairness
   - `modelCheckFairDirect`: hoists only the conjuncts that are syntactically `□◇p`/`◇□p` over state predicates, and
-    Boolean combinations of them, and translates the rest (`modelCheckUnderFairnessFlat` in `FairRouter.lean`). This is
+    Boolean combinations of them, and translates the rest (`modelCheckUnderFairnessFlat` in `Fairness/FairRouter.lean`). This is
     exactly what TLC's `classifyExpr`, PAT's classifier and NuSMV's `JUSTICE`/`COMPASSION` recognise, so the gap to
     `modelCheckFairFNFPrune` measures, from inside our own pipeline, what those tools leave on the table. It exists for
     the ablation study.
   - `modelCheckFairFNFCross`: every fairness conjunct hoisted through its fair normal form, re-hoisted after rewriting,
     and crossed into one Dijkstra check per disjunct (`modelCheckUnderFairnessRehoistCross` in
-    `LTLtoTGBA/FairPipeline.lean`)
+    `Fairness/FairPipeline.lean`)
   - `modelCheckFairFNFPrune`: the same split, decided per SCC by the Streett prune instead of crossed
     (`modelCheckUnderFairnessRehoistPrune`)
   - `modelCheckFair`: the default and fastest, the prune with disjunctive hoisting, a kept conjunct `ψ ∨ γ` with a flattenable
@@ -34,8 +34,8 @@
   - Fairness, default
 -/
 import LTLLib.TGBABased.DijkstraCheck
-import LTLLib.TGBABased.FairRouter
-import LTLLib.TGBABased.LTLtoTGBA.FairPipeline
+import LTLLib.TGBABased.Fairness.FairPipeline
+import LTLLib.TGBABased.Fairness.FairRouter
 import LTLLib.TGBABased.NDFSCheck
 
 namespace LTLLib

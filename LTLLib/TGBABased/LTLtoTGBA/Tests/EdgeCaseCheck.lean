@@ -1,15 +1,13 @@
 /-
   One-off edge-case sweep against `Lasso.evalNNF`, end to end through `ltl3ba` and separately through `simplify`:
-  heavier random trials, `tt`/`ff`-heavy formulas the generator rarely produces, and deeply nested fairness for `rehoist`.
-  Not part of the aggregated suite.
+  heavier random trials, and `tt`/`ff`-heavy formulas the generator rarely produces. Not part of the aggregated suite.
 
   Sections:
   - Heavier random sweep through the whole pipeline
   - Constant-heavy formulas
-  - Deeply nested fairness
 -/
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
-import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Rehoist
+import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Simplify
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
 import LTLLib.TGBABased.LTLtoTGBA.Tests.TGBAOnLasso
@@ -72,22 +70,6 @@ where go : Nat → StdGen → List (NNF String × Lasso String)
     let (l, g2) := genLasso props 6 5 g1
     (φ, l) :: go n g2
 
-/-! ## Deeply nested fairness -/
-
-private def a : NNF String := .prop "a"
-private def b : NNF String := .prop "b"
-private def p : NNF String := .prop "p"
-private def q : NNF String := .prop "q"
-private def gf (x : NNF String) : NNF String := .release .ff (.until .tt x)
-
--- G(GF a ∧ G(GF b ∧ p) ∧ q): a bare fairness conjunct, one nested inside another G, and a plain conjunct alongside both
-private def deepNested : NNF String :=
-  .release .ff (.and (gf a) (.and (.release .ff (.and (gf b) p)) q))
-
-private def deepRehoistCases : List Bool :=
-  let (hoisted, kept) := rehoist [deepNested]
-  [hoisted.length == 2, kept.length == 1]
-
 def report : IO Unit :=
   verdict "Edge case sweep" do
     let a ← check "ltl3ba agrees with the evaluator on 3000 heavier random cases"
@@ -98,8 +80,7 @@ def report : IO Unit :=
       (constHeavyCases.all fun (φ, l) => membershipAgrees φ l)
     let d ← check "simplify preserves the evaluator on tt/ff-heavy formulas"
       (constHeavyCases.all fun (φ, l) => simplifyPreservesAll φ l)
-    let e ← check "rehoist recovers both fairness conjuncts nested two G-levels deep" deepRehoistCases.and
-    return [a, b, c, d, e]
+    return [a, b, c, d]
 
 #eval report
 

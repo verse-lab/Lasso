@@ -1,7 +1,7 @@
 /-
   The fairness routes built on `FairRouter.lean`'s split-level searches (`modelCheckCrossSplit`, `modelCheckPruneSplit`)
-  with this folder's preprocessing. The negated property is split and hoisted as `FairRouter.lean` does, `rehoist`
-  (`Preprocess/Rehoist.lean`) runs on what is left, and the final kept property goes to `ltl3ba`.
+  with re-hoisting and disjunctive hoisting. The negated property is split and hoisted as `FairRouter.lean` does, `rehoist`
+  (`Rehoist.lean`) runs on what is left, and the final kept property goes to `ltl3ba`.
 
   Defines:
   - `firstNonEmpty`: decide a list of runs, stopping at the first counterexample
@@ -26,11 +26,11 @@ import LTLLib.LTL.Propositional
 import LTLLib.LTL.Semantics
 import LTLLib.Product
 import LTLLib.TGBABased.AbstractSpec.StreettSCC
-import LTLLib.TGBABased.FairProduct
-import LTLLib.TGBABased.FairRouter
+import LTLLib.TGBABased.Fairness.DisjunctiveHoist
+import LTLLib.TGBABased.Fairness.FairProduct
+import LTLLib.TGBABased.Fairness.FairRouter
+import LTLLib.TGBABased.Fairness.Rehoist
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
-import LTLLib.TGBABased.LTLtoTGBA.Preprocess.DisjunctiveHoist
-import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Rehoist
 import LTLLib.TGBABased.Product
 import LTLLib.TGBABased.SCC.StreettPrune
 

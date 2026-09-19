@@ -1,6 +1,6 @@
 /-
   The recursive fairness check of [SLDP09], run on the SCCs a Tarjan search closes, one search plus a prune instead of the
-  `2ⁿ` crossing of `FairRouter.lean`.
+  `2ⁿ` crossing of `Fairness/FairRouter.lean`.
 
   A hoisted conjunct is a list of options, an option being a region `FG l` and marks `GF g`, and an SCC satisfies the
   assumption when every conjunct has an option available in it ([LSFZ16, Definition 3] per conjunct). A maximal SCC that

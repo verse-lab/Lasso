@@ -12,7 +12,7 @@
 -/
 import LTLLib.LTL.FairNormalForm
 import LTLLib.LTL.Syntax
-import LTLLib.TGBABased.FairRouter
+import LTLLib.TGBABased.Fairness.FairRouter
 import LTLLib.TGBABased.Tests.TestUtil
 import Mathlib.Tactic.DeriveFintype
 

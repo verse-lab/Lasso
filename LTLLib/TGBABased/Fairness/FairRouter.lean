@@ -46,7 +46,7 @@ import LTLLib.LTL.Syntax
 import LTLLib.Product
 import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
 import LTLLib.TGBABased.DijkstraCheck
-import LTLLib.TGBABased.FairCheck
+import LTLLib.TGBABased.Fairness.FairCheck
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 import LTLLib.TGBABased.SCC.DijkstraSCC
 import LTLLib.TGBABased.SCC.StreettPrune

@@ -9,6 +9,7 @@ import LTLLib.TGBABased.Tests.EntryEdgeMarks
 import LTLLib.TGBABased.Tests.FairClass
 import LTLLib.TGBABased.Tests.FairNormalForm
 import LTLLib.TGBABased.Tests.FairOptions
+import LTLLib.TGBABased.Tests.FairPreprocess
 import LTLLib.TGBABased.Tests.FairRouter
 import LTLLib.TGBABased.Tests.ModelCheckCounterExample
 import LTLLib.TGBABased.Tests.PipelineTheorems

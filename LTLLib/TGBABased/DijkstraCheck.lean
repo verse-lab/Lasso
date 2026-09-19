@@ -25,7 +25,7 @@ import LTLLib.LTL.Propositional
 import LTLLib.LTL.Semantics
 import LTLLib.Product
 import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.FairProduct
+import LTLLib.TGBABased.Fairness.FairProduct
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 import LTLLib.TGBABased.Product
 import LTLLib.TGBABased.SCC.DijkstraSCC

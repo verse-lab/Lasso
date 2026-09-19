@@ -9,7 +9,7 @@
   Checks: the confined cycle is found through an unconfined stem, a region with no cycle is rejected, a `GF` conjunct
   satisfied on the cycle still passes, and one satisfied nowhere still fails.
 -/
-import LTLLib.TGBABased.FairCheck
+import LTLLib.TGBABased.Fairness.FairCheck
 import LTLLib.TGBABased.Tests.TestUtil
 import Mathlib.Tactic.DeriveFintype
 

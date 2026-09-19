@@ -13,7 +13,7 @@
   - Correctness
 -/
 import LTLLib.LTL.Semantics
-import LTLLib.TGBABased.FairRouter
+import LTLLib.TGBABased.Fairness.FairRouter
 import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Simplify
 
 namespace LTLLib

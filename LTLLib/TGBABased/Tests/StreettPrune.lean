@@ -15,7 +15,7 @@
   - Hand-built cases
   - Explored counts
 -/
-import LTLLib.TGBABased.FairRouter
+import LTLLib.TGBABased.Fairness.FairRouter
 import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.StreettPruneTest

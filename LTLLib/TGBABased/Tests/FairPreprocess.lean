@@ -1,20 +1,23 @@
 /-
-  Differential tests of disjunctive hoisting (`Preprocess/DisjunctiveHoist.lean`, `FairPipeline.lean`'s
-  `modelCheckUnderFairnessDisjunctiveHoist`) and of the left-operand rewrites of `Preprocess/Simplify.lean`, against
-  `Lasso.evalNNF`. A lasso read as a one-run system makes the route's verdict comparable with the evaluator's.
+  Differential tests of the fairness preprocessing against `Lasso.evalNNF`: `rehoist` exposing nested fairness conjuncts,
+  the combinations of sides `branches` enumerates, and `modelCheckUnderFairnessDisjunctiveHoist` on random negated
+  properties with mixed conjuncts. A lasso read as a one-run system makes the route's verdict comparable with the
+  evaluator's.
 
   Sections:
   - Formulas
-  - Left-operand rewrites
+  - Re-hoisting
   - Combinations
   - The route on lassos
 -/
-import LTLLib.TGBABased.LTLtoTGBA.FairPipeline
+import LTLLib.TGBABased.Fairness.DisjunctiveHoist
+import LTLLib.TGBABased.Fairness.FairPipeline
+import LTLLib.TGBABased.Fairness.Rehoist
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
 import LTLLib.TGBABased.Tests.TestUtil
 
-namespace LTLLib.LTLtoTGBA.Tests.DisjunctiveHoistTests
+namespace LTLLib.Tests.FairPreprocess
 
 open LTLLib LTLLib.Tests LTLLib.LTLtoTGBA.Tests
 
@@ -22,6 +25,8 @@ open LTLLib LTLLib.Tests LTLLib.LTLtoTGBA.Tests
 
 private def a : NNF String := .prop "a"
 private def b : NNF String := .prop "b"
+private def p : NNF String := .prop "p"
+private def q : NNF String := .prop "q"
 private def notP : NNF String := .nprop "p"
 private def F (x : NNF String) : NNF String := .until .tt x
 private def G (x : NNF String) : NNF String := .release .ff x
@@ -29,28 +34,23 @@ private def X (x : NNF String) : NNF String := .next x
 private def GF (x : NNF String) : NNF String := G (F x)
 private def FG (x : NNF String) : NNF String := F (G x)
 
-/-! ## Left-operand rewrites -/
+/-! ## Re-hoisting -/
 
-/-- Each rewrite, the input and the normal form `simplify` must reach. -/
-private def rewriteCases : List (NNF String × NNF String) :=
-  [(.until (GF a) b, .and (F b) (.or b (GF a))),
-   (.release (FG a) b, .and b (.or (G b) (FG a)))]
+-- G(GF a ∧ p), a fairness conjunct only once G distributes over ∧
+private def nested : NNF String := G (.and (GF a) p)
 
-private def rewriteSemanticCases : List (NNF String × Lasso String × Nat) :=
-  go (rewriteCases.flatMap fun (φ, _) => List.replicate 20 φ) (mkStdGen 97531)
-where go : List (NNF String) → StdGen → List (NNF String × Lasso String × Nat)
-  | [], _ => []
-  | φ :: rest, g =>
-    let (l, g1) := genLasso props 6 5 g
-    let (i, g2) := randNat g1 0 (l.size - 1)
-    (φ, l, i) :: go rest g2
+-- G(GF a ∧ G(GF b ∧ p) ∧ q), a bare fairness conjunct, one nested inside another G, and a plain conjunct alongside both
+private def deepNested : NNF String := G (.and (GF a) (.and (G (.and (GF b) p)) q))
 
-private def simplifyPreserves (φ : NNF String) (l : Lasso String) (i : Nat) : Bool :=
-  (l.evalNNF φ).getD i false == (l.evalNNF (simplify φ)).getD i false
+private def rehoistExposesNested : Bool :=
+  !nested.isFairness && (rehoist [nested]).1.length == 1 && (rehoist [nested]).2.length == 1
+
+private def rehoistExposesDeep : Bool :=
+  (rehoist [deepNested]).1.length == 2 && (rehoist [deepNested]).2.length == 1
 
 /-! ## Combinations -/
 
-/-- A kept conjunct and its number of combinations: two for each shape disjunctive hoisting splits, one for the shapes it leaves whole. -/
+/-- A kept conjunct and its number of combinations, two for each shape disjunctive hoisting splits, one otherwise. -/
 private def branchCases : List (NNF String × Nat) :=
   [(.or notP (GF a), 2),  -- p → GF a
    (.or (F notP) (GF a), 2),  -- G p → GF a
@@ -98,11 +98,9 @@ private def routesAgree (θ : NNF String) (l : Lasso String) : Bool :=
     isEmptyResult (modelCheckUnderFairnessRehoistPrune φ [0] (fun i => #[l.next i]) l.wordAt)
 
 def report : IO Unit :=
-  verdict "disjunctive hoisting and the left-operand rewrites against Lasso.evalNNF" do
-    let c1 ← check "every left-operand rewrite reaches its normal form"
-      (rewriteCases.all fun (φ, ψ) => simplify φ == ψ)
-    let c2 ← check "the left-operand rewrites preserve the evaluator's verdict"
-      (rewriteSemanticCases.all fun (φ, l, i) => simplifyPreserves φ l i)
+  verdict "fairness preprocessing against Lasso.evalNNF" do
+    let c1 ← check "rehoist exposes a fairness conjunct nested under a rewritable G(_ ∧ _)" rehoistExposesNested
+    let c2 ← check "rehoist recovers both fairness conjuncts nested two G-levels deep" rehoistExposesDeep
     let c3 ← check "each example conjunct has its expected number of combinations"
       (branchCases.all fun (c, n) => (branches [c]).length == n)
     let c4 ← check "three mixed conjuncts give eight combinations, the all-hoisted one first"
@@ -115,4 +113,4 @@ def report : IO Unit :=
 
 #eval report
 
-end LTLLib.LTLtoTGBA.Tests.DisjunctiveHoistTests
+end LTLLib.Tests.FairPreprocess

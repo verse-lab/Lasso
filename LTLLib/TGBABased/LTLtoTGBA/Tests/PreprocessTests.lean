@@ -1,16 +1,16 @@
 /-
-  Differential tests of the preprocessing pass against `Lasso.evalNNF`: `synImpl`'s soundness, `simplify`'s semantic
-  preservation including the X/F/G shape rules, and a hand-built example of `rehoist` exposing a fairness conjunct
-  nested inside a rewritable shape.
+  Differential tests of the preprocessing pass against `Lasso.evalNNF`: `synImpl`'s soundness, and `simplify`'s semantic
+  preservation including the X/F/G shape rules and the left-operand rewrites.
 
   Sections:
   - Cases
   - synImpl soundness
   - simplify preserves semantics
-  - rehoist exposes a nested fairness conjunct
   - X/F/G shape rules
+  - Left-operand rewrites
 -/
-import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Rehoist
+import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Implication
+import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Simplify
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
 import LTLLib.TGBABased.Tests.TestUtil
@@ -74,20 +74,9 @@ private def synImplSound (a b : NNF String) (l : Lasso String) (i : Nat) : Bool 
 private def simplifyPreserves (φ : NNF String) (l : Lasso String) (i : Nat) : Bool :=
   (l.evalNNF φ).getD i false == (l.evalNNF (simplify φ)).getD i false
 
-/-! ## rehoist exposes a nested fairness conjunct -/
-
-private def a : NNF String := .prop "a"
-private def p : NNF String := .prop "p"
-private def gfa : NNF String := .release .ff (.until .tt a)  -- G F a, a justice/fairness formula
-private def nested : NNF String := .release .ff (.and gfa p)  -- G(GF a ∧ p), fairness only once G distributes
-
-private def rehoistExposesNested : Bool :=
-  !nested.isFairness &&  -- not directly hoistable before rewriting
-  (rehoist [nested]).1.length == 1 &&  -- one conjunct gets hoisted after simplify exposes it
-  (rehoist [nested]).2.length == 1  -- the G p remainder stays kept
-
 /-! ## X/F/G shape rules -/
 
+private def a : NNF String := .prop "a"
 private def b : NNF String := .prop "b"
 private def c : NNF String := .prop "c"
 private def F (x : NNF String) : NNF String := .until .tt x
@@ -116,19 +105,37 @@ where go : List (NNF String) → StdGen → List (NNF String × Lasso String × 
     let (i, g2) := randNat g1 0 (l.size - 1)
     (φ, l, i) :: go rest g2
 
+/-! ## Left-operand rewrites -/
+
+/-- Each rewrite of an alternating left operand, the input and the normal form `simplify` must reach. -/
+private def rewriteCases : List (NNF String × NNF String) :=
+  [(.until (G (F a)) b, .and (F b) (.or b (G (F a)))),
+   (.release (F (G a)) b, .and b (.or (G b) (F (G a))))]
+
+private def rewriteSemanticCases : List (NNF String × Lasso String × Nat) :=
+  go (rewriteCases.flatMap fun (φ, _) => List.replicate 20 φ) (mkStdGen 97531)
+where go : List (NNF String) → StdGen → List (NNF String × Lasso String × Nat)
+  | [], _ => []
+  | φ :: rest, g =>
+    let (l, g1) := genLasso props 6 5 g
+    let (i, g2) := randNat g1 0 (l.size - 1)
+    (φ, l, i) :: go rest g2
+
 def report : IO Unit :=
   verdict "Preprocess against Lasso.evalNNF" do
     let a ← check "synImpl is sound on structured and random pairs"
       (implicationCases.all fun (a, b, l, i) => synImplSound a b l i)
     let b ← check "simplify preserves the evaluator's verdict at every position"
       (simplifyCases.all fun (φ, l, i) => simplifyPreserves φ l i)
-    let c ← check "rehoist exposes a fairness conjunct nested under a rewritable G(_ ∧ _)"
-      rehoistExposesNested
     let d ← check "every X/F/G shape rule reaches its normal form"
       (shapeCases.all fun (φ, ψ) => simplify φ == ψ)
     let e ← check "the X/F/G shape rewrites preserve the evaluator's verdict"
       (shapeSemanticCases.all fun (φ, l, i) => simplifyPreserves φ l i)
-    return [a, b, c, d, e]
+    let f ← check "every left-operand rewrite reaches its normal form"
+      (rewriteCases.all fun (φ, ψ) => simplify φ == ψ)
+    let g ← check "the left-operand rewrites preserve the evaluator's verdict"
+      (rewriteSemanticCases.all fun (φ, l, i) => simplifyPreserves φ l i)
+    return [a, b, d, e, f, g]
 
 #eval report
 

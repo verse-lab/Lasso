@@ -26,7 +26,7 @@
   - Mixed conjuncts
   - Combinations
 -/
-import LTLLib.TGBABased.FairRouter
+import LTLLib.TGBABased.Fairness.FairRouter
 import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Rules
 
 namespace LTLLib

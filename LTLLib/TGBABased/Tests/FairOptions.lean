@@ -12,7 +12,7 @@
   - What each kind contributes
 -/
 import LTLLib.LTL.FairNormalForm
-import LTLLib.TGBABased.FairRouter
+import LTLLib.TGBABased.Fairness.FairRouter
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 import LTLLib.TGBABased.Tests.TestUtil
 

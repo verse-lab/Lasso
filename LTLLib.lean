@@ -48,8 +48,8 @@ import LTLLib.TGBABased.SCC.TarjanSCC
 import LTLLib.TGBABased.SCC.GabowSCC
 import LTLLib.TGBABased.Satisfiability
 import LTLLib.TGBABased.Product
-import LTLLib.TGBABased.FairProduct
+import LTLLib.TGBABased.Fairness.FairProduct
 import LTLLib.TGBABased.DijkstraCheck
 import LTLLib.TGBABased.ModelCheck
-import LTLLib.TGBABased.FairCheck
-import LTLLib.TGBABased.FairRouter
+import LTLLib.TGBABased.Fairness.FairCheck
+import LTLLib.TGBABased.Fairness.FairRouter

@@ -4,7 +4,6 @@
   Each test prints one line per property plus a final `PASS`/`FAIL`.
 -/
 import LTLLib.TGBABased.LTLtoTGBA.Tests.ConcreteVWAATests
-import LTLLib.TGBABased.LTLtoTGBA.Tests.DisjunctiveHoistTests
 import LTLLib.TGBABased.LTLtoTGBA.Tests.EvalTests
 import LTLLib.TGBABased.LTLtoTGBA.Tests.GenTests
 import LTLLib.TGBABased.LTLtoTGBA.Tests.LabelTests

@@ -27,7 +27,7 @@
 -/
 import LTLLib.TGBABased.AbstractSpec.RegionLatch
 import LTLLib.TGBABased.DijkstraCheck
-import LTLLib.TGBABased.FairProduct
+import LTLLib.TGBABased.Fairness.FairProduct
 
 namespace LTLLib
 
