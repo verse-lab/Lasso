@@ -22,7 +22,11 @@ open LTLLib LTLLib.Tests
 def tbaOf (φ : Formula String) : Option (TBA String) := (ltl3ba (φ.toNNF false)).map TGBA.degeneralize
 
 def bareEmpty (tba : TBA String) : Bool :=
-  isEmptyResult (dijkstraCheck tba.succStates tba.initialStates.toList tba.edgeMarks tba.numAcceptSets)
+  -- `dijkstraCheck` takes the fused expansion as well as the pointwise `edgeMarks` (`EdgeLabels.md` §9);
+  -- for a materialized `TBA` the two are the same pair of lookups.
+  isEmptyResult (dijkstraCheck tba.succStates tba.initialStates.toList tba.edgeMarks
+    -- no options on this route, so the §13.17 option-bit payload is empty
+    (fun s => let out := tba.succStates s; (out, out.map (tba.edgeMarks s), #[])) tba.numAcceptSets)
 
 def ndfsResult (tba : TBA String) : Option (EmptinessResult TBAState) :=
   nestedDFST_fuel tba.initialStates.toList tba.succStates tba.cachedEdgeMarks 100000

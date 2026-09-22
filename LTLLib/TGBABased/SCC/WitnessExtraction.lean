@@ -14,7 +14,8 @@
   Proves:
   - `bfsFindPath_stem`: over a domain holding every reachable state, the BFS finds a stem to any reachable target
   - `stitchCycleAt_valid`: the built cycle is a real, domain-confined, mark-covering `succs`-cycle
-  - `stitchCycleAt_toTAcceptingCycle`: the built cycle and a stem form a `TAcceptingCycle`
+  - `stitchCycleAt_toTAcceptingCycle`, `stitchCycleAt_toTAcceptingCycle'`: the built cycle and a stem form
+    a `TAcceptingCycle`, the primed form allowing the cycle to live in a subgraph of the stem's
 
   References:
   - [CDP05] Couvreur, Duret-Lutz, Poitrenaud. On-the-Fly Emptiness Checks for Generalized Büchi Automata. SPIN 2005, §5.
@@ -1074,6 +1075,42 @@ theorem stitchCycleAt_toTAcceptingCycle [LawfulBEq State] [LawfulHashable State]
     overlap := hstemlast.trans hheadeq.symm
     cycle_chain := fun i hi => (Array.mem_filter.mp (hchain i hi)).1
     cycle_back := (Array.mem_filter.mp hback).1
+    cycle_covers_marks := hcov
+  }, rfl, rfl⟩
+
+/-- The same, with the cycle stitched inside a *subgraph* of the one the stem walks. The prune needs this:
+a witness found in a pruned candidate has to have its cycle rebuilt inside that candidate's restricted
+graph — an edge the region excludes is not one the reported options admit — while its stem comes from a BFS
+over the ambient reachable set. -/
+theorem stitchCycleAt_toTAcceptingCycle' [LawfulBEq State] [LawfulHashable State]
+    {initialStates : List State} {succs g : State → Array State}
+    {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat}
+    {scc : Std.HashSet State} {anchor : State} {stem : List State}
+    (hg : ∀ a b, b ∈ g a → b ∈ succs a)
+    (hconnected : InternallyConnected g scc) (hcovers : AcceptingMarks g edgeMarks numMarks scc)
+    (hanchor : anchor ∈ scc) (hstemne : stem ≠ []) (hstemhead : stem.head hstemne ∈ initialStates)
+    (hstemchain : ∀ i, (hi : i + 1 < stem.length) → stem[i + 1] ∈ succs stem[i])
+    (hstemlast : stem.getLast hstemne = anchor) :
+    ∃ ac : TAcceptingCycle initialStates succs edgeMarks numMarks, ac.stem = stem ∧
+      ac.cycle = stitchCycleAt scc (sccSuccs g scc) edgeMarks numMarks anchor := by
+  set g' := sccSuccs g scc with hg'def
+  have hcovers' : AcceptingMarks g' edgeMarks numMarks scc := hcovers.sccSuccs
+  have hconn' : ∀ s, scc.contains s → ∀ t, scc.contains t →
+      s = t ∨ PathTo g' (fun x => ¬ scc.contains x) s t := hconnected.domainBlocked
+  have hanchor' : scc.contains anchor := (Std.HashSet.mem_iff_contains).mp hanchor
+  obtain ⟨hne, hheadeq, -, hchain, hback, hcov⟩ :=
+    stitchCycleAt_valid scc g' edgeMarks numMarks anchor hcovers' hconn' hanchor'
+      (stitchCycleAt scc g' edgeMarks numMarks anchor) rfl
+  refine ⟨{
+    stem := stem
+    cycle := stitchCycleAt scc g' edgeMarks numMarks anchor
+    stem_nonempty := List.length_pos_iff.mpr hstemne
+    cycle_nonempty := List.length_pos_iff.mpr hne
+    stem_head_initial := hstemhead
+    stem_chain := hstemchain
+    overlap := hstemlast.trans hheadeq.symm
+    cycle_chain := fun i hi => hg _ _ (Array.mem_filter.mp (hchain i hi)).1
+    cycle_back := hg _ _ (Array.mem_filter.mp hback).1
     cycle_covers_marks := hcov
   }, rfl, rfl⟩
 

@@ -95,9 +95,13 @@ private def flattenAux (cs : Array (Array (StreettOption L))) (i : Nat)
   else (out, starts)
 termination_by cs.size - i
 
+/-- Conjuncts concatenated in walk order, with the position each one begins at. -/
+def flattenOpts (cs : Array (Array (StreettOption L))) : Array (StreettOption L) × Array Nat :=
+  flattenAux cs 0 #[] #[0]
+
 /-- The spec's options in walk order, paired with the position each conjunct begins at. -/
 def StreettSpec.flatten (spec : StreettSpec State L) : Array (StreettOption L) × Array Nat :=
-  flattenAux spec.conjuncts 0 #[] #[0]
+  flattenOpts spec.conjuncts
 
 private theorem flattenAux_spec (cs : Array (Array (StreettOption L))) :
     ∀ i out starts, i ≤ cs.size → starts.size = i + 1 → starts[i]! = out.size →
@@ -159,6 +163,23 @@ private theorem flattenAux_spec (cs : Array (Array (StreettOption L))) :
     refine ⟨hsize, ?_, ?_, hstart.symm, fun p hip hp => absurd hp (by omega)⟩ <;>
       intros <;> trivial
 
+/-- The conjuncts sit contiguously in `flattenOpts _ |>.1`, conjunct `i` occupying
+`flattenOpts.2[i] ..< flattenOpts.2[i+1]`. -/
+theorem flattenOpts_spec (cs : Array (Array (StreettOption L))) :
+    (flattenOpts cs).2.size = cs.size + 1 ∧
+    (flattenOpts cs).2[0]! = 0 ∧
+    (flattenOpts cs).1.size = (flattenOpts cs).2[cs.size]! ∧
+    ∀ i < cs.size,
+      (flattenOpts cs).2[i + 1]! = (flattenOpts cs).2[i]! + (cs[i]!).size ∧
+      ∀ k < (cs[i]!).size,
+        (flattenOpts cs).1[(flattenOpts cs).2[i]! + k]! = (cs[i]!)[k]! := by
+  obtain ⟨q1, q2, q3, q4, q5⟩ :=
+    flattenAux_spec cs 0 #[] #[0] (Nat.zero_le _) (by simp) (by simp)
+  have hz : (flattenOpts cs).2[0]! = 0 := by
+    show (flattenAux cs 0 #[] #[0]).2[0]! = 0
+    rw [q2 0 (by omega)]; simp
+  exact ⟨q1, hz, q4, fun i hi => q5 i (Nat.zero_le _) hi⟩
+
 /-- The conjuncts sit contiguously in `flatten.1`, conjunct `i` occupying `flatten.2[i] ..< flatten.2[i+1]`. -/
 theorem StreettSpec.flatten_spec (spec : StreettSpec State L) :
     spec.flatten.2.size = spec.conjuncts.size + 1 ∧
@@ -167,13 +188,8 @@ theorem StreettSpec.flatten_spec (spec : StreettSpec State L) :
     ∀ i < spec.conjuncts.size,
       spec.flatten.2[i + 1]! = spec.flatten.2[i]! + (spec.conjuncts[i]!).size ∧
       ∀ k < (spec.conjuncts[i]!).size,
-        spec.flatten.1[spec.flatten.2[i]! + k]! = (spec.conjuncts[i]!)[k]! := by
-  obtain ⟨q1, q2, q3, q4, q5⟩ :=
-    flattenAux_spec spec.conjuncts 0 #[] #[0] (Nat.zero_le _) (by simp) (by simp)
-  have hz : spec.flatten.2[0]! = 0 := by
-    show (flattenAux spec.conjuncts 0 #[] #[0]).2[0]! = 0
-    rw [q2 0 (by omega)]; simp
-  exact ⟨q1, hz, q4, fun i hi => q5 i (Nat.zero_le _) hi⟩
+        spec.flatten.1[spec.flatten.2[i]! + k]! = (spec.conjuncts[i]!)[k]! :=
+  flattenOpts_spec spec.conjuncts
 
 end Flatten
 

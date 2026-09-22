@@ -44,12 +44,15 @@ import LTLLib.TGBABased.SCC.GenericDFS
 import LTLLib.TGBABased.SCC.SCCEnumeration
 import LTLLib.TGBABased.SCC.DijkstraSCC
 import LTLLib.TGBABased.SCC.StreettPrune
+import LTLLib.TGBABased.SCC.StreettPruneFast
 import LTLLib.TGBABased.SCC.TarjanSCC
 import LTLLib.TGBABased.SCC.GabowSCC
 import LTLLib.TGBABased.Satisfiability
+import LTLLib.TGBABased.LabelledSys
 import LTLLib.TGBABased.Product
 import LTLLib.TGBABased.Fairness.FairProduct
 import LTLLib.TGBABased.DijkstraCheck
 import LTLLib.TGBABased.ModelCheck
 import LTLLib.TGBABased.Fairness.FairCheck
+import LTLLib.TGBABased.Fairness.StreettOptsProduct
 import LTLLib.TGBABased.Fairness.FairRouter

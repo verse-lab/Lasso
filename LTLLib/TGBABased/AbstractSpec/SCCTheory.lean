@@ -174,6 +174,17 @@ theorem AcceptingMarks.mono_graph {g succs : State → Array State}
   exact ⟨s, hs, t, ht, hg _ _ hedge, hmark⟩
 
 omit [LawfulBEq State] in
+/-- Marks covered under one mark function are covered under any larger one. Needed where a region-restricted
+mark function is relaxed to the ambient one without touching the graph. -/
+theorem AcceptingMarks.mono_marks {g : State → Array State}
+    {em em' : State → State → Std.HashSet Nat} {numMarks : Nat} {scc : Std.HashSet State}
+    (hm : ∀ s t m, m ∈ em s t → m ∈ em' s t) (h : AcceptingMarks g em numMarks scc) :
+    AcceptingMarks g em' numMarks scc := by
+  refine ⟨h.1, fun m hmm => ?_⟩
+  obtain ⟨s, hs, t, ht, he, hmk⟩ := h.2 m hmm
+  exact ⟨s, hs, t, ht, he, hm s t m hmk⟩
+
+omit [LawfulBEq State] in
 private theorem chain_forward {succs : State → Array State} {rng : Nat → Std.HashSet State}
     {big : Std.HashSet State} {lo hi : Nat}
     (hmem : ∀ i, lo ≤ i → i ≤ hi → ∀ x ∈ rng i, x ∈ big)

@@ -172,15 +172,17 @@ theorem enumOps_getStatus (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
 
 /-- The recording run over the whole graph. -/
 def enumRun (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) :
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State) :
     Array (Std.HashSet State × ops.Aux) :=
-  (genericDFS (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux).2.2
+  (genericDFS (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux).2.2
 
 /-- The sets that run flushed, in the order POP closed them. -/
 def enumSCCs (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) :
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State) :
     List (Std.HashSet State) :=
-  (enumRun ops V succs edgeMarks initialStates).toList.map (·.1)
+  (enumRun ops V succs edgeMarks expand initialStates).toList.map (·.1)
 
 /-! ## Snapshot-free recording -/
 
@@ -203,8 +205,9 @@ def enumOpsFast (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
 
 /-- The sets the snapshot-free run flushed, in the order POP closed them. -/
 def enumSCCsFast (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) : List (Std.HashSet State) :=
-  (genericDFS (enumOpsFast ops V) succs edgeMarks initialStates (enumOpsFast ops V).initAux).2.2.toList
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State) : List (Std.HashSet State) :=
+  (genericDFS (enumOpsFast ops V) succs edgeMarks expand initialStates (enumOpsFast ops V).initAux).2.2.toList
 
 /-- A recording state with its snapshots dropped. -/
 def forgetSnapshots {ops : DFSOps State} {V : LowlinkView ops} (aux : (enumOps ops V).Aux) :
@@ -233,13 +236,14 @@ theorem enumOpsFast_pop (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (succ
   by_cases hc : V.closes aux.1 step = true <;> simp [hc, Array.map_push]
 
 private theorem dfsGo_enumOpsFast_of_some (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
-    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) :
+    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     ∀ (aux : (enumOps ops V).Aux) (stack : List (DFSStep State ops.Position))
       (r : Option (State × List State) × (enumOps ops V).Aux),
-      dfsGo (enumOps ops V) succs edgeMarks aux stack = some r →
-      dfsGo (enumOpsFast ops V) succs edgeMarks (forgetSnapshots aux) stack = some (r.1, forgetSnapshots r.2) := by
-  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks
-    (fun aux stack r => dfsGo (enumOpsFast ops V) succs edgeMarks (forgetSnapshots aux) stack =
+      dfsGo (enumOps ops V) succs edgeMarks expand aux stack = some r →
+      dfsGo (enumOpsFast ops V) succs edgeMarks expand (forgetSnapshots aux) stack = some (r.1, forgetSnapshots r.2) := by
+  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks expand
+    (fun aux stack r => dfsGo (enumOpsFast ops V) succs edgeMarks expand (forgetSnapshots aux) stack =
       some (r.1, forgetSnapshots r.2)) ?_
   intro f ih aux stack r hr
   rw [dfsGo.eq_def]
@@ -267,21 +271,22 @@ private theorem dfsGo_enumOpsFast_of_some (ops : DFSOps.{u,v,w} State) (V : Lowl
         exact ih _ _ r hr
       | unknown =>
         simp only [hgs] at hr ⊢
-        rcases hpsh : ops.push aux.1 step.succ[step.idx] (edgeMarks step.state step.succ[step.idx])
+        rcases hpsh : ops.push aux.1 step.succ[step.idx] (step.succMarks[step.idx]!)
           with ⟨aux'', pos'⟩
         simp only [hpsh] at hr ⊢
         exact ih _ _ r hr
 
 private theorem dfsGo_enumOps_of_fast_some (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
-    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) :
+    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     ∀ (b : (enumOpsFast ops V).Aux) (stack : List (DFSStep State ops.Position))
       (r' : Option (State × List State) × (enumOpsFast ops V).Aux),
-      dfsGo (enumOpsFast ops V) succs edgeMarks b stack = some r' →
+      dfsGo (enumOpsFast ops V) succs edgeMarks expand b stack = some r' →
       ∀ aux : (enumOps ops V).Aux, forgetSnapshots aux = b →
-        ∃ r, dfsGo (enumOps ops V) succs edgeMarks aux stack = some r := by
-  refine dfsGo.partial_correctness (enumOpsFast ops V) succs edgeMarks
+        ∃ r, dfsGo (enumOps ops V) succs edgeMarks expand aux stack = some r := by
+  refine dfsGo.partial_correctness (enumOpsFast ops V) succs edgeMarks expand
     (fun b stack _ => ∀ aux : (enumOps ops V).Aux, forgetSnapshots aux = b →
-      ∃ r, dfsGo (enumOps ops V) succs edgeMarks aux stack = some r) ?_
+      ∃ r, dfsGo (enumOps ops V) succs edgeMarks expand aux stack = some r) ?_
   intro f ih b stack r' hr' aux hb
   subst hb
   rw [dfsGo.eq_def]
@@ -307,43 +312,46 @@ private theorem dfsGo_enumOps_of_fast_some (ops : DFSOps.{u,v,w} State) (V : Low
         exact ih _ _ r' hr' _ rfl
       | unknown =>
         simp only [hgs] at hr' ⊢
-        rcases hpsh : ops.push aux.1 step.succ[step.idx] (edgeMarks step.state step.succ[step.idx])
+        rcases hpsh : ops.push aux.1 step.succ[step.idx] (step.succMarks[step.idx]!)
           with ⟨aux'', pos'⟩
         simp only [hpsh] at hr' ⊢
         exact ih _ _ r' hr' _ rfl
 
 /-- The snapshot-free run steps exactly like the recording run, up to the dropped snapshots. -/
 theorem dfsGo_enumOpsFast (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat) (aux : (enumOps ops V).Aux)
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (aux : (enumOps ops V).Aux)
     (stack : List (DFSStep State ops.Position)) :
-    dfsGo (enumOpsFast ops V) succs edgeMarks (forgetSnapshots aux) stack =
-      (dfsGo (enumOps ops V) succs edgeMarks aux stack).map fun r => (r.1, forgetSnapshots r.2) := by
-  rcases h : dfsGo (enumOps ops V) succs edgeMarks aux stack with _ | r
-  · rcases h' : dfsGo (enumOpsFast ops V) succs edgeMarks (forgetSnapshots aux) stack with _ | r'
+    dfsGo (enumOpsFast ops V) succs edgeMarks expand (forgetSnapshots aux) stack =
+      (dfsGo (enumOps ops V) succs edgeMarks expand aux stack).map fun r => (r.1, forgetSnapshots r.2) := by
+  rcases h : dfsGo (enumOps ops V) succs edgeMarks expand aux stack with _ | r
+  · rcases h' : dfsGo (enumOpsFast ops V) succs edgeMarks expand (forgetSnapshots aux) stack with _ | r'
     · rfl
-    · obtain ⟨r, hr⟩ := dfsGo_enumOps_of_fast_some ops V succs edgeMarks _ stack r' h' aux rfl
+    · obtain ⟨r, hr⟩ := dfsGo_enumOps_of_fast_some ops V succs edgeMarks expand _ stack r' h' aux rfl
       rw [h] at hr
       cases hr
-  · exact dfsGo_enumOpsFast_of_some ops V succs edgeMarks aux stack r h
+  · exact dfsGo_enumOpsFast_of_some ops V succs edgeMarks expand aux stack r h
 
 theorem dfsFromRoot_enumOpsFast (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat) (aux : (enumOps ops V).Aux) (q0 : State) :
-    dfsFromRoot (enumOpsFast ops V) succs edgeMarks (forgetSnapshots aux) q0 =
-      ((dfsFromRoot (enumOps ops V) succs edgeMarks aux q0).1,
-        forgetSnapshots (dfsFromRoot (enumOps ops V) succs edgeMarks aux q0).2) := by
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (aux : (enumOps ops V).Aux) (q0 : State) :
+    dfsFromRoot (enumOpsFast ops V) succs edgeMarks expand (forgetSnapshots aux) q0 =
+      ((dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q0).1,
+        forgetSnapshots (dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q0).2) := by
   unfold dfsFromRoot
   rw [enumOpsFast_push]
   rcases hpsh : (enumOps ops V).push aux q0 (Std.HashSet.emptyWithCapacity 0) with ⟨aux', pos'⟩
   simp only
   rw [dfsGo_enumOpsFast]
-  cases dfsGo (enumOps ops V) succs edgeMarks aux' [{ state := q0, pos := pos', acc := 0, succ := succs q0, idx := 0 }]
+  cases dfsGo (enumOps ops V) succs edgeMarks expand aux' [{ state := q0, pos := pos', acc := 0, succ := (expand q0).1, succMarks := (expand q0).2.1, succOpts := (expand q0).2.2, idx := 0 }]
   <;> rfl
 
 theorem genericDFSGo_enumOpsFast (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat) :
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     ∀ (roots : List State) (aux : (enumOps ops V).Aux),
-      genericDFSGo (enumOpsFast ops V) succs edgeMarks roots (forgetSnapshots aux) =
-        (genericDFSGo (enumOps ops V) succs edgeMarks roots aux).map fun r => (r.1, forgetSnapshots r.2) := by
+      genericDFSGo (enumOpsFast ops V) succs edgeMarks expand roots (forgetSnapshots aux) =
+        (genericDFSGo (enumOps ops V) succs edgeMarks expand roots aux).map fun r => (r.1, forgetSnapshots r.2) := by
   intro roots
   induction roots with
   | nil => intro aux; rw [genericDFSGo.eq_def, genericDFSGo.eq_def]; rfl
@@ -358,19 +366,19 @@ theorem genericDFSGo_enumOpsFast (ops : DFSOps.{u,v,w} State) (V : LowlinkView o
     | unknown =>
       simp only
       rw [dfsFromRoot_enumOpsFast]
-      rcases hr : dfsFromRoot (enumOps ops V) succs edgeMarks aux q with ⟨found, aux'⟩
+      rcases hr : dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q with ⟨found, aux'⟩
       cases found with
       | some x => rfl
       | none => exact ih aux'
 
 /-- Compiled code runs the snapshot-free recording, which flushes the same sets. -/
 @[csimp] theorem enumSCCs_eq_enumSCCsFast : @enumSCCs.{u,v,w} = @enumSCCsFast.{u,v,w} := by
-  funext State _ _ ops V succs edgeMarks initialStates
+  funext State _ _ ops V succs edgeMarks expand initialStates
   unfold enumSCCs enumRun enumSCCsFast genericDFS
   have hinit : (enumOpsFast ops V).initAux = forgetSnapshots (enumOps ops V).initAux := by
     simp [enumOpsFast, enumOps, forgetSnapshots]
   rw [hinit, genericDFSGo_enumOpsFast]
-  cases genericDFSGo (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux with
+  cases genericDFSGo (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux with
   | none => simp [forgetSnapshots, enumOps]
   | some r => simp [forgetSnapshots, Array.toList_map]
 
@@ -541,14 +549,15 @@ theorem mem_flushedSet (live : Array State) (pos : Nat) (s : State) :
 
 omit [LawfulBEq State] [LawfulHashable State] in
 private theorem dfsGo_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
-    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) :
+    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     ∀ (aux : (enumOps ops V).Aux) (stack : List (DFSStep State ops.Position))
       (r : Option (State × List State) × (enumOps ops V).Aux),
-      dfsGo (enumOps ops V) succs edgeMarks aux stack = some r →
-      ∀ r', dfsGo ops succs edgeMarks aux.1 stack = some r' → r'.1 = none →
+      dfsGo (enumOps ops V) succs edgeMarks expand aux stack = some r →
+      ∀ r', dfsGo ops succs edgeMarks expand aux.1 stack = some r' → r'.1 = none →
         r.1 = none ∧ r.2.1 = r'.2 := by
-  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks
-    (fun aux stack r => ∀ r', dfsGo ops succs edgeMarks aux.1 stack = some r' → r'.1 = none →
+  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks expand
+    (fun aux stack r => ∀ r', dfsGo ops succs edgeMarks expand aux.1 stack = some r' → r'.1 = none →
       r.1 = none ∧ r.2.1 = r'.2) ?_
   intro f ih aux stack r hr
   cases stack with
@@ -581,7 +590,7 @@ private theorem dfsGo_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
       | live =>
         simp only [enumOps, hgs] at hr
         simp only [hgs] at hr'
-        rcases hupd : ops.update aux.1 (edgeMarks step.state step.succ[step.idx])
+        rcases hupd : ops.update aux.1 (step.succMarks[step.idx]!)
             step.succ[step.idx] with ⟨aux'', found⟩
         simp only [hupd] at hr hr'
         cases found with
@@ -596,11 +605,12 @@ private theorem dfsGo_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
 
 omit [LawfulBEq State] [LawfulHashable State] in
 private theorem dfsFromRoot_eq (ops : DFSOps.{u,v,w} State) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat) (aux : ops.Aux) (q0 : State) :
-    dfsFromRoot ops succs edgeMarks aux q0 =
-      (dfsGo ops succs edgeMarks (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (aux : ops.Aux) (q0 : State) :
+    dfsFromRoot ops succs edgeMarks expand aux q0 =
+      (dfsGo ops succs edgeMarks expand (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
         [{ state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-           acc := 0, succ := succs q0, idx := 0 }]).getD
+           acc := 0, succ := (expand q0).1, succMarks := (expand q0).2.1, succOpts := (expand q0).2.2, idx := 0 }]).getD
         (none, (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1) := rfl
 
 /-- The wrapper inherits lawfulness from `ops`. -/
@@ -617,45 +627,49 @@ def enumLawful (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (L : LawfulDFS
 omit [LawfulHashable State] in
 private theorem dfsFromRoot_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs) (L : LawfulDFSOps ops)
     (aux : (enumOps ops V).Aux) (q0 : State) (hwf : L.WellFormed aux.1)
     (hq0status : ops.getStatus aux.1 q0 = .unknown) (hq0 : Reachable initialStates succs q0)
-    (hnone : (dfsFromRoot ops succs edgeMarks aux.1 q0).1 = none) :
-    (dfsFromRoot (enumOps ops V) succs edgeMarks aux q0).1 = none ∧
-      (dfsFromRoot (enumOps ops V) succs edgeMarks aux q0).2.1 =
-        (dfsFromRoot ops succs edgeMarks aux.1 q0).2 := by
-  rw [dfsFromRoot_eq ops succs edgeMarks aux.1 q0] at hnone ⊢
-  rw [dfsFromRoot_eq (enumOps ops V) succs edgeMarks aux q0]
+    (hnone : (dfsFromRoot ops succs edgeMarks expand aux.1 q0).1 = none) :
+    (dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q0).1 = none ∧
+      (dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q0).2.1 =
+        (dfsFromRoot ops succs edgeMarks expand aux.1 q0).2 := by
+  rw [dfsFromRoot_eq ops succs edgeMarks expand aux.1 q0] at hnone ⊢
+  rw [dfsFromRoot_eq (enumOps ops V) succs edgeMarks expand aux q0]
   -- neither run diverges, so the two `getD` fallbacks never fire and the cross cases do not arise
-  have hwne := dfsGo_ne_none (enumOps ops V) succs edgeMarks initialStates fr (enumLawful ops V L)
+  have hwne := dfsGo_ne_none (enumOps ops V) succs edgeMarks expand hexp initialStates fr (enumLawful ops V L)
     ((enumOps ops V).push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
     [{ state := q0, pos := ((enumOps ops V).push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-       acc := 0, succ := succs q0, idx := 0 }]
+       acc := 0, succ := (expand q0).1, succMarks := (expand q0).2.1, succOpts := (expand q0).2.2, idx := 0 }]
     ((enumLawful ops V L).wf_push aux q0 _ hq0status hwf)
-    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rfl)
+    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hexp.fst q0)
     (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hq0)
-  have hune := dfsGo_ne_none ops succs edgeMarks initialStates fr L
+  have hune := dfsGo_ne_none ops succs edgeMarks expand hexp initialStates fr L
     (ops.push aux.1 q0 (Std.HashSet.emptyWithCapacity 0)).1
     [{ state := q0, pos := (ops.push aux.1 q0 (Std.HashSet.emptyWithCapacity 0)).2,
-       acc := 0, succ := succs q0, idx := 0 }]
+       acc := 0, succ := (expand q0).1, succMarks := (expand q0).2.1, succOpts := (expand q0).2.2, idx := 0 }]
     (L.wf_push aux.1 q0 _ hq0status hwf)
-    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rfl)
+    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hexp.fst q0)
     (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hq0)
   obtain ⟨ru, hdg⟩ := Option.ne_none_iff_exists'.mp hune
   obtain ⟨rw', hdg'⟩ := Option.ne_none_iff_exists'.mp hwne
   rw [hdg] at hnone ⊢
   rw [hdg']
   simp only [Option.getD_some] at hnone ⊢
-  exact dfsGo_base_eq ops V succs edgeMarks _ _ rw' hdg' ru hdg hnone
+  exact dfsGo_base_eq ops V succs edgeMarks expand _ _ rw' hdg' ru hdg hnone
 
 omit [LawfulHashable State] in
 private theorem genericDFSGo_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs) (L : LawfulDFSOps ops) :
     ∀ (roots : List State), (∀ q ∈ roots, Reachable initialStates succs q) →
       ∀ (aux : (enumOps ops V).Aux) rw' ru, L.WellFormed aux.1 →
-        genericDFSGo (enumOps ops V) succs edgeMarks roots aux = some rw' →
-        genericDFSGo ops succs edgeMarks roots aux.1 = some ru →
+        genericDFSGo (enumOps ops V) succs edgeMarks expand roots aux = some rw' →
+        genericDFSGo ops succs edgeMarks expand roots aux.1 = some ru →
         ru.1 = none → rw'.1 = none ∧ rw'.2.1 = ru.2 := by
   intro roots
   induction roots with
@@ -675,20 +689,20 @@ private theorem genericDFSGo_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkVi
     | unknown =>
       simp only [enumOps_getStatus, hst] at hw
       simp only [hst] at hu
-      cases hf : (dfsFromRoot ops succs edgeMarks aux.1 q).1 with
+      cases hf : (dfsFromRoot ops succs edgeMarks expand aux.1 q).1 with
       | some x =>
         exfalso
         simp only [hf, Option.some.injEq] at hu
         rw [← hu] at hnone
         simp at hnone
       | none =>
-        obtain ⟨hfw, hbase⟩ := dfsFromRoot_base_eq ops V succs edgeMarks initialStates fr L
+        obtain ⟨hfw, hbase⟩ := dfsFromRoot_base_eq ops V succs edgeMarks expand hexp initialStates fr L
           aux q hwf hst hq hf
         simp only [hf] at hu
         simp only [hfw] at hw
         refine ih hrest _ rw' ru ?_ hw (by rw [← hbase] at hu; exact hu) hnone
         rw [hbase]
-        exact dfsFromRoot_wellFormed_total ops succs edgeMarks L aux.1 q hwf hst
+        exact dfsFromRoot_wellFormed_total ops succs edgeMarks expand L aux.1 q hwf hst
     | dead =>
       simp only [enumOps_getStatus, hst] at hw
       simp only [hst] at hu
@@ -702,20 +716,22 @@ omit [LawfulHashable State] in
 /-- A run that never reports agrees with the recording run on the refinement's own state. -/
 theorem enumOps_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs) (L : LawfulDFSOps ops)
     (hwf : L.WellFormed ops.initAux)
-    (hnone : (genericDFS ops succs edgeMarks initialStates ops.initAux).1 = none) :
-    (genericDFS (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux).2.1 =
-      (genericDFS ops succs edgeMarks initialStates ops.initAux).2 := by
+    (hnone : (genericDFS ops succs edgeMarks expand initialStates ops.initAux).1 = none) :
+    (genericDFS (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux).2.1 =
+      (genericDFS ops succs edgeMarks expand initialStates ops.initAux).2 := by
   unfold genericDFS at hnone ⊢
   obtain ⟨ru, hu⟩ := Option.ne_none_iff_exists'.mp
-    (genericDFSGo_ne_none ops succs edgeMarks initialStates ops.initAux)
+    (genericDFSGo_ne_none ops succs edgeMarks expand initialStates ops.initAux)
   obtain ⟨rw', hw⟩ := Option.ne_none_iff_exists'.mp
-    (genericDFSGo_ne_none (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux)
+    (genericDFSGo_ne_none (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux)
   rw [hu] at hnone ⊢
   rw [hw]
   simp only [Option.getD_some] at hnone ⊢
-  exact (genericDFSGo_base_eq ops V succs edgeMarks initialStates fr L initialStates
+  exact (genericDFSGo_base_eq ops V succs edgeMarks expand hexp initialStates fr L initialStates
     (fun q hq => Reachable.base hq) (enumOps ops V).initAux rw' ru hwf hw hu hnone).2
 
 /-- Every recorded entry is a closing POP's own flush, as an invariant on the recorded array alone. -/
@@ -726,12 +742,13 @@ def RecordedWF (ops : DFSOps State) (V : LowlinkView ops)
 
 omit [LawfulBEq State] [LawfulHashable State] in
 private theorem dfsGo_recorded (ops : DFSOps State) (V : LowlinkView ops)
-    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) :
+    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     ∀ (aux : (enumOps ops V).Aux) (stack : List (DFSStep State (enumOps ops V).Position))
       (r : Option (State × List State) × (enumOps ops V).Aux),
-      dfsGo (enumOps ops V) succs edgeMarks aux stack = some r →
+      dfsGo (enumOps ops V) succs edgeMarks expand aux stack = some r →
       RecordedWF ops V aux.2 → RecordedWF ops V r.2.2 := by
-  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks
+  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks expand
     (fun aux stack r => RecordedWF ops V aux.2 → RecordedWF ops V r.2.2) ?_
   intro dfsGo ih aux stack r hr
   cases stack with
@@ -776,17 +793,19 @@ private theorem enum_getD (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
 omit [LawfulBEq State] [LawfulHashable State] in
 private theorem dfsFromRoot_recorded (ops : DFSOps State) (V : LowlinkView ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (aux : (enumOps ops V).Aux) (q0 : State) (h : RecordedWF ops V aux.2) :
-    RecordedWF ops V (dfsFromRoot (enumOps ops V) succs edgeMarks aux q0).2.2 := by
+    RecordedWF ops V (dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q0).2.2 := by
   unfold dfsFromRoot
   exact enum_getD ops V (fun r => RecordedWF ops V r.2.2) _ _ h
-    (fun r hr => dfsGo_recorded ops V succs edgeMarks _ _ r hr h)
+    (fun r hr => dfsGo_recorded ops V succs edgeMarks expand _ _ r hr h)
 
 omit [LawfulBEq State] [LawfulHashable State] in
 private theorem genericDFSGo_recorded (ops : DFSOps State) (V : LowlinkView ops)
-    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) :
+    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     ∀ (roots : List State) (aux : (enumOps ops V).Aux) r,
-      genericDFSGo (enumOps ops V) succs edgeMarks roots aux = some r →
+      genericDFSGo (enumOps ops V) succs edgeMarks expand roots aux = some r →
       RecordedWF ops V aux.2 → RecordedWF ops V r.2.2 := by
   intro roots
   induction roots with
@@ -802,8 +821,8 @@ private theorem genericDFSGo_recorded (ops : DFSOps State) (V : LowlinkView ops)
     cases hst : (enumOps ops V).getStatus aux q with
     | unknown =>
       simp only [hst] at hgo
-      have hrec := dfsFromRoot_recorded ops V succs edgeMarks aux q h
-      cases hf : (dfsFromRoot (enumOps ops V) succs edgeMarks aux q).1 with
+      have hrec := dfsFromRoot_recorded ops V succs edgeMarks expand aux q h
+      cases hf : (dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q).1 with
       | some x => simp only [hf, Option.some.injEq] at hgo; rw [← hgo]; exact hrec
       | none => simp only [hf] at hgo; exact ih _ r hgo hrec
     | dead => simp only [hst] at hgo; exact ih aux r hgo h
@@ -813,27 +832,29 @@ omit [LawfulBEq State] [LawfulHashable State] in
 /-- Each recorded set is the flush of the state recorded beside it. -/
 theorem enumSCCs_flushed (ops : DFSOps State) (V : LowlinkView ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (initialStates : List State) (C : Std.HashSet State) (aux : ops.Aux)
-    (h : (C, aux) ∈ enumRun ops V succs edgeMarks initialStates) :
+    (h : (C, aux) ∈ enumRun ops V succs edgeMarks expand initialStates) :
     ∃ step : DFSStep State ops.Position, V.closes aux step = true ∧
       C = flushedSet (V.live aux) (V.posNat step.pos) := by
   have hinit : RecordedWF ops V (enumOps ops V).initAux.2 := by
     intro p hp; simp [enumOps] at hp
   unfold enumRun genericDFS at h
-  cases hgo : genericDFSGo (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux with
+  cases hgo : genericDFSGo (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux with
   | none => rw [hgo] at h; simp only [Option.getD_none] at h; exact absurd h (by simp [enumOps])
   | some r =>
     rw [hgo] at h
     simp only [Option.getD_some] at h
-    exact genericDFSGo_recorded ops V succs edgeMarks initialStates _ r hgo hinit (C, aux) h
+    exact genericDFSGo_recorded ops V succs edgeMarks expand initialStates _ r hgo hinit (C, aux) h
 
 omit [LawfulBEq State] [LawfulHashable State] in
 private theorem dfsGo_enum_none (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
-    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) :
+    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     ∀ (aux : (enumOps ops V).Aux) (stack : List (DFSStep State ops.Position))
       (r : Option (State × List State) × (enumOps ops V).Aux),
-      dfsGo (enumOps ops V) succs edgeMarks aux stack = some r → r.1 = none := by
-  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks (fun _ _ r => r.1 = none) ?_
+      dfsGo (enumOps ops V) succs edgeMarks expand aux stack = some r → r.1 = none := by
+  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks expand (fun _ _ r => r.1 = none) ?_
   intro f ih aux stack r hr
   cases stack with
   | nil => simp only [Option.some.injEq] at hr; rw [← hr]
@@ -850,17 +871,19 @@ private theorem dfsGo_enum_none (ops : DFSOps.{u,v,w} State) (V : LowlinkView op
 omit [LawfulBEq State] [LawfulHashable State] in
 private theorem dfsFromRoot_enum_none (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (aux : (enumOps ops V).Aux) (q0 : State) :
-    (dfsFromRoot (enumOps ops V) succs edgeMarks aux q0).1 = none := by
+    (dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q0).1 = none := by
   unfold dfsFromRoot
   exact enum_getD ops V (fun r => r.1 = none) _ _ rfl
-    (fun r hr => dfsGo_enum_none ops V succs edgeMarks _ _ r hr)
+    (fun r hr => dfsGo_enum_none ops V succs edgeMarks expand _ _ r hr)
 
 omit [LawfulBEq State] [LawfulHashable State] in
 private theorem genericDFSGo_enum_none (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
-    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) :
+    (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     ∀ (roots : List State) (aux : (enumOps ops V).Aux) r,
-      genericDFSGo (enumOps ops V) succs edgeMarks roots aux = some r → r.1 = none := by
+      genericDFSGo (enumOps ops V) succs edgeMarks expand roots aux = some r → r.1 = none := by
   intro roots
   induction roots with
   | nil =>
@@ -874,7 +897,7 @@ private theorem genericDFSGo_enum_none (ops : DFSOps.{u,v,w} State) (V : Lowlink
     cases hst : ops.getStatus aux.1 q with
     | unknown =>
       simp only [enumOps_getStatus, hst] at hgo
-      rw [dfsFromRoot_enum_none ops V succs edgeMarks aux q] at hgo
+      rw [dfsFromRoot_enum_none ops V succs edgeMarks expand aux q] at hgo
       exact ih _ r hgo
     | dead => simp only [enumOps_getStatus, hst] at hgo; exact ih aux r hgo
     | live => simp only [enumOps_getStatus, hst] at hgo; exact ih aux r hgo
@@ -883,13 +906,14 @@ omit [LawfulBEq State] [LawfulHashable State] in
 /-- The wrapper forces both reported `Bool`s to `false`, so the recording run explores everything. -/
 theorem enumOps_never_reports (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (initialStates : List State) :
-    (genericDFS (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux).1 = none := by
+    (genericDFS (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux).1 = none := by
   unfold genericDFS
   obtain ⟨r, hgo⟩ := Option.ne_none_iff_exists'.mp
-    (genericDFSGo_ne_none (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux)
+    (genericDFSGo_ne_none (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux)
   rw [hgo]
-  exact genericDFSGo_enum_none ops V succs edgeMarks initialStates _ r hgo
+  exact genericDFSGo_enum_none ops V succs edgeMarks expand initialStates _ r hgo
 
 omit [LawfulBEq State] [LawfulHashable State] in
 /-- The lowlink column read innermost-first, peeling the frame `back?` names. -/
@@ -2789,34 +2813,45 @@ theorem EnumWF.popClose_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V :
 
 private theorem dfsGo_enumWF [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (hlaw : LowlinkLawful ops V) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) :
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand) (initialStates : List State) :
     ∀ (aux : (enumOps ops V).Aux) (stack : List (DFSStep State ops.Position))
       (r : Option (State × List State) × (enumOps ops V).Aux),
-      dfsGo (enumOps ops V) succs edgeMarks aux stack = some r →
+      dfsGo (enumOps ops V) succs edgeMarks expand aux stack = some r →
       (∀ st ∈ stack, st.succ = succs st.state) →
+      (∀ st ∈ stack, st.succMarks = st.succ.map (edgeMarks st.state)) →
       (∀ st ∈ stack, Reachable initialStates succs st.state) →
       EnumWF ops V succs edgeMarks initialStates aux.1 aux.2 (V.grayOf stack) →
       EnumWF ops V succs edgeMarks initialStates r.2.1 r.2.2 [] := by
-  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks
+  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks expand
     (fun aux stack r => (∀ st ∈ stack, st.succ = succs st.state) →
+      (∀ st ∈ stack, st.succMarks = st.succ.map (edgeMarks st.state)) →
       (∀ st ∈ stack, Reachable initialStates succs st.state) →
       EnumWF ops V succs edgeMarks initialStates aux.1 aux.2 (V.grayOf stack) →
       EnumWF ops V succs edgeMarks initialStates r.2.1 r.2.2 []) ?_
   intro f ih aux stack r hr
   cases stack with
   | nil =>
-    intro _ _ hwf
+    intro _ _ _ hwf
     simp only [Option.some.injEq] at hr
     rw [← hr]
     exact hwf
   | cons step rest =>
-    intro hsucc hreach hwf
+    intro hsucc hmk hreach hwf
     have hsucc' : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest,
         st.succ = succs st.state := by
       intro st hst
       rcases List.mem_cons.mp hst with rfl | hst'
       · exact hsucc step (by simp)
       · exact hsucc st (List.mem_cons_of_mem _ hst')
+    -- the cached marks survive `{ step with idx := … }`, exactly as the cached successors do
+    have hmk' : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest,
+        st.succMarks = st.succ.map (edgeMarks st.state) := by
+      intro st hst
+      rcases List.mem_cons.mp hst with rfl | hst'
+      · exact hmk step (by simp)
+      · exact hmk st (List.mem_cons_of_mem _ hst')
     have hreach' : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest,
         Reachable initialStates succs st.state := by
       intro st hst
@@ -2829,10 +2864,12 @@ private theorem dfsGo_enumWF [Inhabited State] (ops : DFSOps.{u,v,w} State) (V :
       by_cases hcl : V.closes aux.1 step
       · simp only [enumOps, hcl, if_true] at hr
         exact ih _ rest r hr (fun st hst => hsucc st (List.mem_cons_of_mem _ hst))
+          (fun st hst => hmk st (List.mem_cons_of_mem _ hst))
           (fun st hst => hreach st (List.mem_cons_of_mem _ hst))
           (EnumWF.popClose_step hlaw (hsucc step (by simp)) hidx hcl hwf)
       · simp only [enumOps, hcl] at hr
         exact ih _ rest r hr (fun st hst => hsucc st (List.mem_cons_of_mem _ hst))
+          (fun st hst => hmk st (List.mem_cons_of_mem _ hst))
           (fun st hst => hreach st (List.mem_cons_of_mem _ hst))
           (hwf.of_dead_eq
             (SearchWF.popMerge_step hlaw (hsucc step (by simp)) hidx (by simpa using hcl) hwf.toSearchWF)
@@ -2846,58 +2883,69 @@ private theorem dfsGo_enumWF [Inhabited State] (ops : DFSOps.{u,v,w} State) (V :
       cases hgs : ops.getStatus aux.1 step.succ[step.idx] with
       | dead =>
         simp only [enumOps_getStatus, hgs] at hr
-        exact ih aux _ r hr hsucc' hreach'
+        exact ih aux _ r hr hsucc' hmk' hreach'
           (hwf.of_dead_eq (SearchWF.bump_step hlaw hgs hedge hwf.toSearchWF) rfl)
       | live =>
         simp only [enumOps, hgs] at hr
-        exact ih _ _ r hr hsucc' hreach'
-          (hwf.of_dead_eq (SearchWF.update_step hlaw hgs hedge rfl hwf.toSearchWF) (hlaw.update_dead _ _ _))
+        exact ih _ _ r hr hsucc' hmk' hreach'
+          (hwf.of_dead_eq (SearchWF.update_step hlaw hgs hedge (DFSStep.succMarks_get (hmk step (by simp)) hidx) hwf.toSearchWF) (hlaw.update_dead _ _ _))
       | unknown =>
         simp only [enumOps, hgs] at hr
-        refine ih _ _ r hr ?_ ?_ ?_
+        refine ih _ _ r hr ?_ ?_ ?_ ?_
         · intro st hst
           rcases List.mem_cons.mp hst with rfl | hst'
-          · rfl
+          · exact hexp.fst _
           · exact hsucc' st hst'
+        · intro st hst
+          rcases List.mem_cons.mp hst with rfl | hst'
+          · show (expand step.succ[step.idx]).2.1
+                = (expand step.succ[step.idx]).1.map (edgeMarks step.succ[step.idx])
+            rw [hexp.snd _, hexp.fst _]
+          · exact hmk' st hst'
         · intro st hst
           rcases List.mem_cons.mp hst with rfl | hst'
           · exact Reachable.step (hreach step (by simp)) hd
           · exact hreach' st hst'
-        · exact hwf.of_dead_eq (SearchWF.push_step hlaw hgs hedge rfl
+        · exact hwf.of_dead_eq (SearchWF.push_step hlaw hgs hedge (DFSStep.succMarks_get (hmk step (by simp)) hidx)
             (Reachable.step (hreach step (by simp)) hd) hwf.toSearchWF) (hlaw.push_dead _ _ _)
 
 private theorem dfsFromRoot_enumWF [Inhabited State] (ops : DFSOps.{u,v,w} State)
     (V : LowlinkView ops) (hlaw : LowlinkLawful ops V) (L : LawfulDFSOps ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs)
     (aux : (enumOps ops V).Aux) (q0 : State) (hwfL : L.WellFormed aux.1)
     (hq0status : ops.getStatus aux.1 q0 = .unknown) (hq0 : Reachable initialStates succs q0)
     (hwf : EnumWF ops V succs edgeMarks initialStates aux.1 aux.2 []) :
-    EnumWF ops V succs edgeMarks initialStates (dfsFromRoot (enumOps ops V) succs edgeMarks aux q0).2.1
-      (dfsFromRoot (enumOps ops V) succs edgeMarks aux q0).2.2 [] := by
-  rw [dfsFromRoot_eq (enumOps ops V) succs edgeMarks aux q0]
+    EnumWF ops V succs edgeMarks initialStates (dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q0).2.1
+      (dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q0).2.2 [] := by
+  rw [dfsFromRoot_eq (enumOps ops V) succs edgeMarks expand aux q0]
   obtain ⟨r, hdg⟩ := Option.ne_none_iff_exists'.mp
-    (dfsGo_ne_none (enumOps ops V) succs edgeMarks initialStates fr (enumLawful ops V L)
+    (dfsGo_ne_none (enumOps ops V) succs edgeMarks expand hexp initialStates fr (enumLawful ops V L)
       ((enumOps ops V).push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
       [{ state := q0, pos := ((enumOps ops V).push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-         acc := 0, succ := succs q0, idx := 0 }]
+         acc := 0, succ := (expand q0).1, succMarks := (expand q0).2.1, succOpts := (expand q0).2.2, idx := 0 }]
       ((enumLawful ops V L).wf_push aux q0 _ hq0status hwfL)
-      (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rfl)
+      (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hexp.fst q0)
       (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hq0))
   rw [hdg]
   simp only [Option.getD_some]
-  refine dfsGo_enumWF ops V hlaw succs edgeMarks initialStates _ _ r hdg
-    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rfl)
+  refine dfsGo_enumWF ops V hlaw succs edgeMarks expand hexp initialStates _ _ r hdg
+    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hexp.fst q0)
+    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rw [hexp.snd q0, hexp.fst q0])
     (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hq0) ?_
   exact hwf.of_dead_eq (SearchWF.pushRoot_step hlaw hq0status hq0 hwf.toSearchWF) (hlaw.push_dead _ _ _)
 
 private theorem genericDFSGo_enumWF [Inhabited State] (ops : DFSOps.{u,v,w} State)
     (V : LowlinkView ops) (hlaw : LowlinkLawful ops V) (L : LawfulDFSOps ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs) :
     ∀ (roots : List State), (∀ q ∈ roots, Reachable initialStates succs q) →
       ∀ (aux : (enumOps ops V).Aux) r, L.WellFormed aux.1 →
-        genericDFSGo (enumOps ops V) succs edgeMarks roots aux = some r →
+        genericDFSGo (enumOps ops V) succs edgeMarks expand roots aux = some r →
         EnumWF ops V succs edgeMarks initialStates aux.1 aux.2 [] →
         EnumWF ops V succs edgeMarks initialStates r.2.1 r.2.2 [] := by
   intro roots
@@ -2917,12 +2965,12 @@ private theorem genericDFSGo_enumWF [Inhabited State] (ops : DFSOps.{u,v,w} Stat
     cases hst : ops.getStatus aux.1 q with
     | unknown =>
       simp only [enumOps_getStatus, hst] at hgo
-      have hstep := dfsFromRoot_enumWF ops V hlaw L succs edgeMarks initialStates fr aux q
+      have hstep := dfsFromRoot_enumWF ops V hlaw L succs edgeMarks expand hexp initialStates fr aux q
         hwfL hst hq hwf
-      have hwfL' : L.WellFormed (dfsFromRoot (enumOps ops V) succs edgeMarks aux q).2.1 :=
-        dfsFromRoot_wellFormed_total (enumOps ops V) succs edgeMarks (enumLawful ops V L) aux q
+      have hwfL' : L.WellFormed (dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q).2.1 :=
+        dfsFromRoot_wellFormed_total (enumOps ops V) succs edgeMarks expand (enumLawful ops V L) aux q
           hwfL hst
-      cases hf : (dfsFromRoot (enumOps ops V) succs edgeMarks aux q).1 with
+      cases hf : (dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q).1 with
       | some x => simp only [hf, Option.some.injEq] at hgo; rw [← hgo]; exact hstep
       | none => simp only [hf] at hgo; exact ih hrest _ r hwfL' hgo hstep
     | dead => simp only [enumOps_getStatus, hst] at hgo; exact ih hrest aux r hwfL hgo hwf
@@ -2932,16 +2980,18 @@ private theorem genericDFSGo_enumWF [Inhabited State] (ops : DFSOps.{u,v,w} Stat
 theorem enumWF_final [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (hlaw : LowlinkLawful ops V) (L : LawfulDFSOps ops) (hwf0 : L.WellFormed ops.initAux)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs) :
     EnumWF ops V succs edgeMarks initialStates
-      (genericDFS (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux).2.1
-      (genericDFS (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux).2.2 [] := by
+      (genericDFS (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux).2.1
+      (genericDFS (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux).2.2 [] := by
   unfold genericDFS
   obtain ⟨r, hgo⟩ := Option.ne_none_iff_exists'.mp
-    (genericDFSGo_ne_none (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux)
+    (genericDFSGo_ne_none (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux)
   rw [hgo]
   simp only [Option.getD_some]
-  exact genericDFSGo_enumWF ops V hlaw L succs edgeMarks initialStates fr initialStates
+  exact genericDFSGo_enumWF ops V hlaw L succs edgeMarks expand hexp initialStates fr initialStates
     (fun q hq => Reachable.base hq) (enumOps ops V).initAux r hwf0 hgo
     (enumWF_init ops V hlaw succs edgeMarks initialStates)
 
@@ -2949,10 +2999,12 @@ theorem enumWF_final [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : Lowlink
 theorem enumSCCs_sound [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (hlaw : LowlinkLawful ops V) (L : LawfulDFSOps ops) (hwf0 : L.WellFormed ops.initAux)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs) :
-    SCCEnumerationSound initialStates succs (enumSCCs ops V succs edgeMarks initialStates) := by
-  have hwf := enumWF_final ops V hlaw L hwf0 succs edgeMarks initialStates fr
-  set fin := (genericDFS (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux).2
+    SCCEnumerationSound initialStates succs (enumSCCs ops V succs edgeMarks expand initialStates) := by
+  have hwf := enumWF_final ops V hlaw L hwf0 succs edgeMarks expand hexp initialStates fr
+  set fin := (genericDFS (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux).2
     with hfin
   -- with no frame open there is no gray state left, so clause 6 forces the live stack empty
   have hlive : (V.live fin.1).size = 0 := by
@@ -2975,7 +3027,7 @@ theorem enumSCCs_sound [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : Lowli
     by_cases hd : (V.dead fin.1).contains s = true
     · exact Std.HashSet.mem_iff_contains.mpr hd
     · simp [hd] at hs
-  have hmem : ∀ C, C ∈ enumSCCs ops V succs edgeMarks initialStates → ∃ a, (C, a) ∈ fin.2 := by
+  have hmem : ∀ C, C ∈ enumSCCs ops V succs edgeMarks expand initialStates → ∃ a, (C, a) ∈ fin.2 := by
     intro C hC
     simp only [enumSCCs, enumRun, List.mem_map] at hC
     obtain ⟨q, hq, rfl⟩ := hC
@@ -2988,16 +3040,16 @@ theorem enumSCCs_sound [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : Lowli
     obtain ⟨a, ha⟩ := hmem C hC
     exact (hwf.recorded_sound (C, a) ha).2
   · intro D hDne hDconn hDreach
-    have hexpl := genericDFS_returns_none_fully_explored (enumOps ops V) succs edgeMarks
+    have hexpl := genericDFS_returns_none_fully_explored (enumOps ops V) succs edgeMarks expand hexp
       (enumLawful ops V L) (Reachable initialStates succs)
-      (fun aux q hq hw hu => dfsGo_ne_none (enumOps ops V) succs edgeMarks initialStates fr
+      (fun aux q hq hw hu => dfsGo_ne_none (enumOps ops V) succs edgeMarks expand hexp initialStates fr
         (enumLawful ops V L) _ _ ((enumLawful ops V L).wf_push aux q _ hu hw)
-        (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rfl)
+        (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hexp.fst q)
         (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hq))
       initialStates (fun q hq => Reachable.base hq)
-      (genericDFSGo_ne_none (enumOps ops V) succs edgeMarks initialStates _)
+      (genericDFSGo_ne_none (enumOps ops V) succs edgeMarks expand initialStates _)
       hwf0 (fun q => hlaw.init_status q)
-      (enumOps_never_reports ops V succs edgeMarks initialStates)
+      (enumOps_never_reports ops V succs edgeMarks expand initialStates)
     obtain ⟨q, hq, hsub⟩ := hwf.recorded_complete D hDne hDconn
       (fun s hs => htouched s (hexpl s (hDreach s hs)))
     refine ⟨q.1, ?_, hsub⟩
@@ -3022,7 +3074,7 @@ def ReportedFrom [Inhabited State] (ops : DFSOps State) (V : LowlinkView ops) (s
     ((¬ step.idx < step.succ.size ∧ ops.pop succs edgeMarks aux step = (aux', true)) ∨
     -- or UPDATE reported on the frame's next edge, whose target is live
       ∃ d, (succs step.state)[step.idx]? = some d ∧ ops.getStatus aux d = .live ∧
-        ops.update aux (edgeMarks step.state d) d = (aux', true))
+        ops.update aux (step.succMarks[step.idx]!) d = (aux', true))
 
 /-- What a run of the refinement leaves behind, the invariant with no frame open when nothing is reported. -/
 def SearchOutcome [Inhabited State] (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
@@ -3033,28 +3085,32 @@ def SearchOutcome [Inhabited State] (ops : DFSOps State) (V : LowlinkView ops) (
 
 private theorem dfsGo_searchOutcome [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (hlaw : LowlinkLawful ops V) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) :
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand) (initialStates : List State) :
     ∀ (aux : ops.Aux) (stack : List (DFSStep State ops.Position))
       (r : Option (State × List State) × ops.Aux),
-      dfsGo ops succs edgeMarks aux stack = some r →
+      dfsGo ops succs edgeMarks expand aux stack = some r →
       (∀ st ∈ stack, st.succ = succs st.state) →
+      (∀ st ∈ stack, st.succMarks = st.succ.map (edgeMarks st.state)) →
       (∀ st ∈ stack, Reachable initialStates succs st.state) →
       SearchWF ops V succs edgeMarks initialStates aux (V.grayOf stack) →
       SearchOutcome ops V succs edgeMarks initialStates r := by
-  refine dfsGo.partial_correctness ops succs edgeMarks
+  refine dfsGo.partial_correctness ops succs edgeMarks expand
     (fun aux stack r => (∀ st ∈ stack, st.succ = succs st.state) →
+      (∀ st ∈ stack, st.succMarks = st.succ.map (edgeMarks st.state)) →
       (∀ st ∈ stack, Reachable initialStates succs st.state) →
       SearchWF ops V succs edgeMarks initialStates aux (V.grayOf stack) →
       SearchOutcome ops V succs edgeMarks initialStates r) ?_
   intro f ih aux stack r hr
   cases stack with
   | nil =>
-    intro _ _ hwf
+    intro _ _ _ hwf
     simp only [Option.some.injEq] at hr
     rw [← hr]
     exact ⟨fun _ => hwf, fun _ _ h => by simp at h⟩
   | cons step rest =>
-    intro hsucc hreach hwf
+    intro hsucc hmk hreach hwf
     have hstepsucc : step.succ = succs step.state := hsucc step (by simp)
     have hsucc' : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest,
         st.succ = succs st.state := by
@@ -3062,6 +3118,13 @@ private theorem dfsGo_searchOutcome [Inhabited State] (ops : DFSOps.{u,v,w} Stat
       rcases List.mem_cons.mp hst with rfl | hst'
       · exact hstepsucc
       · exact hsucc st (List.mem_cons_of_mem _ hst')
+    -- the cached marks survive `{ step with idx := … }`, exactly as the cached successors do
+    have hmk' : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest,
+        st.succMarks = st.succ.map (edgeMarks st.state) := by
+      intro st hst
+      rcases List.mem_cons.mp hst with rfl | hst'
+      · exact hmk step (by simp)
+      · exact hmk st (List.mem_cons_of_mem _ hst')
     have hreach' : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest,
         Reachable initialStates succs st.state := by
       intro st hst
@@ -3075,6 +3138,7 @@ private theorem dfsGo_searchOutcome [Inhabited State] (ops : DFSOps.{u,v,w} Stat
       · simp only [hpop] at hr
         have hp1 : (ops.pop succs edgeMarks aux step).1 = aux' := by rw [hpop]
         refine ih aux' rest r hr (fun st hst => hsucc st (List.mem_cons_of_mem _ hst))
+          (fun st hst => hmk st (List.mem_cons_of_mem _ hst))
           (fun st hst => hreach st (List.mem_cons_of_mem _ hst)) ?_
         rw [← hp1]
         by_cases hcl : V.closes aux step
@@ -3094,32 +3158,39 @@ private theorem dfsGo_searchOutcome [Inhabited State] (ops : DFSOps.{u,v,w} Stat
       cases hgs : ops.getStatus aux step.succ[step.idx] with
       | dead =>
         simp only [hgs] at hr
-        exact ih aux _ r hr hsucc' hreach' (SearchWF.bump_step hlaw hgs hedge hwf)
+        exact ih aux _ r hr hsucc' hmk' hreach' (SearchWF.bump_step hlaw hgs hedge hwf)
       | live =>
-        rcases hupd : ops.update aux (edgeMarks step.state step.succ[step.idx]) step.succ[step.idx]
+        rcases hupd : ops.update aux (step.succMarks[step.idx]!) step.succ[step.idx]
           with ⟨aux', _ | _⟩
         · simp only [hgs, hupd, Bool.false_eq_true, ↓reduceIte] at hr
-          have hu1 : (ops.update aux (edgeMarks step.state step.succ[step.idx]) step.succ[step.idx]).1
+          have hu1 : (ops.update aux (step.succMarks[step.idx]!) step.succ[step.idx]).1
               = aux' := by rw [hupd]
-          refine ih aux' _ r hr hsucc' hreach' ?_
+          refine ih aux' _ r hr hsucc' hmk' hreach' ?_
           rw [← hu1]
-          exact SearchWF.update_step hlaw hgs hedge rfl hwf
+          exact SearchWF.update_step hlaw hgs hedge (DFSStep.succMarks_get (hmk step (by simp)) hidx) hwf
         · simp only [hgs, hupd, ↓reduceIte, Option.some.injEq] at hr
           rw [← hr]
           refine ⟨fun h => by simp at h, fun anchor stem heq => ?_⟩
           simp only [Option.some.injEq, Prod.mk.injEq] at heq
           exact ⟨aux, step, V.grayOf rest, hwf, hstepsucc, heq.1, Or.inr ⟨_, hedge, hgs, hupd⟩⟩
       | unknown =>
-        rcases hpush : ops.push aux step.succ[step.idx] (edgeMarks step.state step.succ[step.idx])
+        rcases hpush : ops.push aux step.succ[step.idx] (step.succMarks[step.idx]!)
           with ⟨aux', pos'⟩
         simp only [hgs, hpush] at hr
-        have hstep := SearchWF.push_step hlaw hgs hedge rfl (Reachable.step (hreach step (by simp)) hd) hwf
+        have hstep := SearchWF.push_step hlaw hgs hedge (DFSStep.succMarks_get (hmk step (by simp)) hidx)
+          (Reachable.step (hreach step (by simp)) hd) hwf
         rw [hpush] at hstep
-        refine ih _ _ r hr ?_ ?_ hstep
+        refine ih _ _ r hr ?_ ?_ ?_ hstep
         · intro st hst
           rcases List.mem_cons.mp hst with rfl | hst'
-          · rfl
+          · exact hexp.fst _
           · exact hsucc' st hst'
+        · intro st hst
+          rcases List.mem_cons.mp hst with rfl | hst'
+          · show (expand step.succ[step.idx]).2.1
+                = (expand step.succ[step.idx]).1.map (edgeMarks step.succ[step.idx])
+            rw [hexp.snd _, hexp.fst _]
+          · exact hmk' st hst'
         · intro st hst
           rcases List.mem_cons.mp hst with rfl | hst'
           · exact Reachable.step (hreach step (by simp)) hd
@@ -3128,34 +3199,39 @@ private theorem dfsGo_searchOutcome [Inhabited State] (ops : DFSOps.{u,v,w} Stat
 private theorem dfsFromRoot_searchOutcome [Inhabited State] (ops : DFSOps.{u,v,w} State)
     (V : LowlinkView ops) (hlaw : LowlinkLawful ops V) (L : LawfulDFSOps ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs)
     (aux : ops.Aux) (q0 : State) (hwfL : L.WellFormed aux)
     (hq0status : ops.getStatus aux q0 = .unknown) (hq0 : Reachable initialStates succs q0)
     (hwf : SearchWF ops V succs edgeMarks initialStates aux []) :
-    SearchOutcome ops V succs edgeMarks initialStates (dfsFromRoot ops succs edgeMarks aux q0) := by
-  rw [dfsFromRoot_eq ops succs edgeMarks aux q0]
+    SearchOutcome ops V succs edgeMarks initialStates (dfsFromRoot ops succs edgeMarks expand aux q0) := by
+  rw [dfsFromRoot_eq ops succs edgeMarks expand aux q0]
   obtain ⟨r, hdg⟩ := Option.ne_none_iff_exists'.mp
-    (dfsGo_ne_none ops succs edgeMarks initialStates fr L
+    (dfsGo_ne_none ops succs edgeMarks expand hexp initialStates fr L
       (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
       [{ state := q0, pos := (ops.push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-         acc := 0, succ := succs q0, idx := 0 }]
+         acc := 0, succ := (expand q0).1, succMarks := (expand q0).2.1, succOpts := (expand q0).2.2, idx := 0 }]
       (L.wf_push aux q0 _ hq0status hwfL)
-      (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rfl)
+      (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hexp.fst q0)
       (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hq0))
   rw [hdg]
   simp only [Option.getD_some]
-  exact dfsGo_searchOutcome ops V hlaw succs edgeMarks initialStates _ _ r hdg
-    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rfl)
+  exact dfsGo_searchOutcome ops V hlaw succs edgeMarks expand hexp initialStates _ _ r hdg
+    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hexp.fst q0)
+    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rw [hexp.snd q0, hexp.fst q0])
     (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hq0)
     (SearchWF.pushRoot_step hlaw hq0status hq0 hwf)
 
 private theorem genericDFSGo_searchOutcome [Inhabited State] (ops : DFSOps.{u,v,w} State)
     (V : LowlinkView ops) (hlaw : LowlinkLawful ops V) (L : LawfulDFSOps ops)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs) :
     ∀ (roots : List State), (∀ q ∈ roots, Reachable initialStates succs q) →
       ∀ (aux : ops.Aux) r, L.WellFormed aux →
-        genericDFSGo ops succs edgeMarks roots aux = some r →
+        genericDFSGo ops succs edgeMarks expand roots aux = some r →
         SearchWF ops V succs edgeMarks initialStates aux [] →
         SearchOutcome ops V succs edgeMarks initialStates r := by
   intro roots
@@ -3175,15 +3251,15 @@ private theorem genericDFSGo_searchOutcome [Inhabited State] (ops : DFSOps.{u,v,
     cases hst : ops.getStatus aux q with
     | unknown =>
       simp only [hst] at hgo
-      have hstep := dfsFromRoot_searchOutcome ops V hlaw L succs edgeMarks initialStates fr aux q
+      have hstep := dfsFromRoot_searchOutcome ops V hlaw L succs edgeMarks expand hexp initialStates fr aux q
         hwfL hst hq hwf
-      have hwfL' : L.WellFormed (dfsFromRoot ops succs edgeMarks aux q).2 :=
-        dfsFromRoot_wellFormed_total ops succs edgeMarks L aux q hwfL hst
-      cases hf : (dfsFromRoot ops succs edgeMarks aux q).1 with
+      have hwfL' : L.WellFormed (dfsFromRoot ops succs edgeMarks expand aux q).2 :=
+        dfsFromRoot_wellFormed_total ops succs edgeMarks expand L aux q hwfL hst
+      cases hf : (dfsFromRoot ops succs edgeMarks expand aux q).1 with
       | some x =>
         simp only [hf, Option.some.injEq] at hgo
         rw [← hgo]
-        have hpair : dfsFromRoot ops succs edgeMarks aux q = (some x, (dfsFromRoot ops succs edgeMarks aux q).2) :=
+        have hpair : dfsFromRoot ops succs edgeMarks expand aux q = (some x, (dfsFromRoot ops succs edgeMarks expand aux q).2) :=
           Prod.ext hf rfl
         rw [hpair] at hstep
         exact hstep
@@ -3196,15 +3272,17 @@ holding just before the reporting move otherwise. -/
 theorem genericDFS_searchOutcome [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (hlaw : LowlinkLawful ops V) (L : LawfulDFSOps ops) (hwf0 : L.WellFormed ops.initAux)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs) :
     SearchOutcome ops V succs edgeMarks initialStates
-      (genericDFS ops succs edgeMarks initialStates ops.initAux) := by
+      (genericDFS ops succs edgeMarks expand initialStates ops.initAux) := by
   unfold genericDFS
   obtain ⟨r, hgo⟩ := Option.ne_none_iff_exists'.mp
-    (genericDFSGo_ne_none ops succs edgeMarks initialStates ops.initAux)
+    (genericDFSGo_ne_none ops succs edgeMarks expand initialStates ops.initAux)
   rw [hgo]
   simp only [Option.getD_some]
-  exact genericDFSGo_searchOutcome ops V hlaw L succs edgeMarks initialStates fr initialStates
+  exact genericDFSGo_searchOutcome ops V hlaw L succs edgeMarks expand hexp initialStates fr initialStates
     (fun q hq => Reachable.base hq) ops.initAux r hwf0 hgo
     (searchWF_init ops V hlaw succs edgeMarks initialStates)
 
@@ -3246,19 +3324,23 @@ private theorem RecordedAt.mono [Inhabited State] {ops : DFSOps State} {V : Lowl
 private theorem dfsGo_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (hlaw : LowlinkLawful ops V) {R : ops.Aux → ops.Aux → Prop} (hR : MonotoneAlong ops R)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) :
     ∀ (aux : (enumOps ops V).Aux) (stack : List (DFSStep State ops.Position))
       (r : Option (State × List State) × (enumOps ops V).Aux),
-      dfsGo (enumOps ops V) succs edgeMarks aux stack = some r →
-      (∀ r', dfsGo ops succs edgeMarks aux.1 stack = some r' → r'.1 = none) →
+      dfsGo (enumOps ops V) succs edgeMarks expand aux stack = some r →
+      (∀ r', dfsGo ops succs edgeMarks expand aux.1 stack = some r' → r'.1 = none) →
       (∀ st ∈ stack, st.succ = succs st.state) →
+      (∀ st ∈ stack, st.succMarks = st.succ.map (edgeMarks st.state)) →
       (∀ st ∈ stack, Reachable initialStates succs st.state) →
       SearchWF ops V succs edgeMarks initialStates aux.1 (V.grayOf stack) →
       RecordedAt ops V succs edgeMarks initialStates R aux.2 aux.1 →
       RecordedAt ops V succs edgeMarks initialStates R r.2.2 r.2.1 := by
-  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks
-    (fun aux stack r => (∀ r', dfsGo ops succs edgeMarks aux.1 stack = some r' → r'.1 = none) →
+  refine dfsGo.partial_correctness (enumOps ops V) succs edgeMarks expand
+    (fun aux stack r => (∀ r', dfsGo ops succs edgeMarks expand aux.1 stack = some r' → r'.1 = none) →
       (∀ st ∈ stack, st.succ = succs st.state) →
+      (∀ st ∈ stack, st.succMarks = st.succ.map (edgeMarks st.state)) →
       (∀ st ∈ stack, Reachable initialStates succs st.state) →
       SearchWF ops V succs edgeMarks initialStates aux.1 (V.grayOf stack) →
       RecordedAt ops V succs edgeMarks initialStates R aux.2 aux.1 →
@@ -3266,12 +3348,12 @@ private theorem dfsGo_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} State) 
   intro f ih aux stack r hr
   cases stack with
   | nil =>
-    intro _ _ _ _ hrec
+    intro _ _ _ _ _ hrec
     simp only [Option.some.injEq] at hr
     rw [← hr]
     exact hrec
   | cons step rest =>
-    intro hreal hsucc hreach hwf hrec
+    intro hreal hsucc hmk hreach hwf hrec
     have hstepsucc : step.succ = succs step.state := hsucc step (by simp)
     have hsucc' : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest,
         st.succ = succs st.state := by
@@ -3279,6 +3361,13 @@ private theorem dfsGo_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} State) 
       rcases List.mem_cons.mp hst with rfl | hst'
       · exact hstepsucc
       · exact hsucc st (List.mem_cons_of_mem _ hst')
+    -- the cached marks survive `{ step with idx := … }`, exactly as the cached successors do
+    have hmk' : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest,
+        st.succMarks = st.succ.map (edgeMarks st.state) := by
+      intro st hst
+      rcases List.mem_cons.mp hst with rfl | hst'
+      · exact hmk step (by simp)
+      · exact hmk st (List.mem_cons_of_mem _ hst')
     have hreach' : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest,
         Reachable initialStates succs st.state := by
       intro st hst
@@ -3291,7 +3380,7 @@ private theorem dfsGo_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} State) 
       rcases hpop : ops.pop succs edgeMarks aux.1 step with ⟨aux'', _ | _⟩
       · have hp1 : (ops.pop succs edgeMarks aux.1 step).1 = aux'' := by rw [hpop]
         -- the real run takes the same POP and carries on from the same state
-        have hreal' : ∀ r', dfsGo ops succs edgeMarks (ops.pop succs edgeMarks aux.1 step).1 rest = some r' →
+        have hreal' : ∀ r', dfsGo ops succs edgeMarks expand (ops.pop succs edgeMarks aux.1 step).1 rest = some r' →
             r'.1 = none := by
           intro r' h
           refine hreal r' ?_
@@ -3301,6 +3390,7 @@ private theorem dfsGo_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} State) 
         by_cases hcl : V.closes aux.1 step
         · simp only [enumOps, hcl, if_true] at hr
           refine ih _ rest r hr hreal' (fun st hst => hsucc st (List.mem_cons_of_mem _ hst))
+            (fun st hst => hmk st (List.mem_cons_of_mem _ hst))
             (fun st hst => hreach st (List.mem_cons_of_mem _ hst))
             (SearchWF.popClose_step hlaw hstepsucc hidx hcl hwf) ?_
           intro p hp
@@ -3310,11 +3400,12 @@ private theorem dfsGo_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} State) 
               by show (ops.pop succs edgeMarks aux.1 step).2 = false; rw [hpop], hR.refl _⟩
         · simp only [enumOps, hcl] at hr
           exact ih _ rest r hr hreal' (fun st hst => hsucc st (List.mem_cons_of_mem _ hst))
+            (fun st hst => hmk st (List.mem_cons_of_mem _ hst))
             (fun st hst => hreach st (List.mem_cons_of_mem _ hst))
             (SearchWF.popMerge_step hlaw hstepsucc hidx (by simpa using hcl) hwf)
             (hrec.mono hR (hR.pop succs edgeMarks aux.1 step))
       -- a reporting POP would have made the real run report
-      · have hx : dfsGo ops succs edgeMarks aux.1 (step :: rest) =
+      · have hx : dfsGo ops succs edgeMarks expand aux.1 (step :: rest) =
             some (some (step.state, ((step :: rest).map (·.state)).reverse), aux'') := by
           rw [dfsGo.eq_def]
           simp only [hidx, dite_false, hpop]
@@ -3329,23 +3420,23 @@ private theorem dfsGo_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} State) 
       cases hgs : ops.getStatus aux.1 step.succ[step.idx] with
       | dead =>
         simp only [enumOps_getStatus, hgs] at hr
-        refine ih aux _ r hr (fun r' h => hreal r' ?_) hsucc' hreach' (SearchWF.bump_step hlaw hgs hedge hwf) hrec
+        refine ih aux _ r hr (fun r' h => hreal r' ?_) hsucc' hmk' hreach' (SearchWF.bump_step hlaw hgs hedge hwf) hrec
         rw [dfsGo.eq_def]
         simp only [hidx, dite_true, hgs]
         exact h
       | live =>
         simp only [enumOps, hgs] at hr
-        rcases hupd : ops.update aux.1 (edgeMarks step.state step.succ[step.idx]) step.succ[step.idx]
+        rcases hupd : ops.update aux.1 (step.succMarks[step.idx]!) step.succ[step.idx]
           with ⟨aux'', _ | _⟩
-        · have hu1 : (ops.update aux.1 (edgeMarks step.state step.succ[step.idx]) step.succ[step.idx]).1
+        · have hu1 : (ops.update aux.1 (step.succMarks[step.idx]!) step.succ[step.idx]).1
               = aux'' := by rw [hupd]
-          refine ih _ _ r hr (fun r' h => hreal r' ?_) hsucc' hreach'
-            (SearchWF.update_step hlaw hgs hedge rfl hwf) (hrec.mono hR (hR.update _ _ _))
+          refine ih _ _ r hr (fun r' h => hreal r' ?_) hsucc' hmk' hreach'
+            (SearchWF.update_step hlaw hgs hedge (DFSStep.succMarks_get (hmk step (by simp)) hidx) hwf) (hrec.mono hR (hR.update _ _ _))
           rw [dfsGo.eq_def]
           simp only [hidx, dite_true, hgs, hupd, Bool.false_eq_true, ↓reduceIte]
           rwa [hu1] at h
         -- a reporting UPDATE would have made the real run report
-        · have hx : dfsGo ops succs edgeMarks aux.1 (step :: rest) =
+        · have hx : dfsGo ops succs edgeMarks expand aux.1 (step :: rest) =
               some (some (step.state,
                 ((({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest).map (·.state)).reverse),
                 aux'') := by
@@ -3353,21 +3444,28 @@ private theorem dfsGo_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} State) 
             simp only [hidx, dite_true, hgs, hupd, ↓reduceIte]
           exact absurd (hreal _ hx) (by simp)
       | unknown =>
-        rcases hpush : ops.push aux.1 step.succ[step.idx] (edgeMarks step.state step.succ[step.idx])
+        rcases hpush : ops.push aux.1 step.succ[step.idx] (step.succMarks[step.idx]!)
           with ⟨aux'', pos'⟩
         simp only [enumOps, hgs, hpush] at hr
-        have hstep := SearchWF.push_step hlaw hgs hedge rfl (Reachable.step (hreach step (by simp)) hd) hwf
+        have hstep := SearchWF.push_step hlaw hgs hedge (DFSStep.succMarks_get (hmk step (by simp)) hidx)
+          (Reachable.step (hreach step (by simp)) hd) hwf
         rw [hpush] at hstep
-        have hmono := hR.push aux.1 step.succ[step.idx] (edgeMarks step.state step.succ[step.idx])
+        have hmono := hR.push aux.1 step.succ[step.idx] (step.succMarks[step.idx]!)
         rw [hpush] at hmono
-        refine ih _ _ r hr (fun r' h => hreal r' ?_) ?_ ?_ hstep (hrec.mono hR hmono)
+        refine ih _ _ r hr (fun r' h => hreal r' ?_) ?_ ?_ ?_ hstep (hrec.mono hR hmono)
         · rw [dfsGo.eq_def]
           simp only [hidx, dite_true, hgs, hpush]
           exact h
         · intro st hst
           rcases List.mem_cons.mp hst with rfl | hst'
-          · rfl
+          · exact hexp.fst _
           · exact hsucc' st hst'
+        · intro st hst
+          rcases List.mem_cons.mp hst with rfl | hst'
+          · show (expand step.succ[step.idx]).2.1
+                = (expand step.succ[step.idx]).1.map (edgeMarks step.succ[step.idx])
+            rw [hexp.snd _, hexp.fst _]
+          · exact hmk' st hst'
         · intro st hst
           rcases List.mem_cons.mp hst with rfl | hst'
           · exact Reachable.step (hreach step (by simp)) hd
@@ -3376,33 +3474,36 @@ private theorem dfsGo_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} State) 
 private theorem dfsFromRoot_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (hlaw : LowlinkLawful ops V) {R : ops.Aux → ops.Aux → Prop} (hR : MonotoneAlong ops R)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (aux : (enumOps ops V).Aux) (q0 : State)
     (hq0status : ops.getStatus aux.1 q0 = .unknown) (hq0 : Reachable initialStates succs q0)
-    (hnone : (dfsFromRoot ops succs edgeMarks aux.1 q0).1 = none)
+    (hnone : (dfsFromRoot ops succs edgeMarks expand aux.1 q0).1 = none)
     (hwf : SearchWF ops V succs edgeMarks initialStates aux.1 [])
     (hrec : RecordedAt ops V succs edgeMarks initialStates R aux.2 aux.1) :
-    RecordedAt ops V succs edgeMarks initialStates R (dfsFromRoot (enumOps ops V) succs edgeMarks aux q0).2.2
-      (dfsFromRoot (enumOps ops V) succs edgeMarks aux q0).2.1 := by
-  rw [dfsFromRoot_eq ops succs edgeMarks aux.1 q0] at hnone
-  rw [dfsFromRoot_eq (enumOps ops V) succs edgeMarks aux q0]
+    RecordedAt ops V succs edgeMarks initialStates R (dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q0).2.2
+      (dfsFromRoot (enumOps ops V) succs edgeMarks expand aux q0).2.1 := by
+  rw [dfsFromRoot_eq ops succs edgeMarks expand aux.1 q0] at hnone
+  rw [dfsFromRoot_eq (enumOps ops V) succs edgeMarks expand aux q0]
   have hmono := hR.push aux.1 q0 (Std.HashSet.emptyWithCapacity 0)
-  cases hdg : dfsGo (enumOps ops V) succs edgeMarks
+  cases hdg : dfsGo (enumOps ops V) succs edgeMarks expand
       ((enumOps ops V).push aux q0 (Std.HashSet.emptyWithCapacity 0)).1
       [{ state := q0, pos := ((enumOps ops V).push aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-         acc := 0, succ := succs q0, idx := 0 }] with
+         acc := 0, succ := (expand q0).1, succMarks := (expand q0).2.1, succOpts := (expand q0).2.2, idx := 0 }] with
   | none =>
     simp only [Option.getD_none]
     exact hrec.mono hR hmono
   | some r =>
     simp only [Option.getD_some]
-    refine dfsGo_recordedAt ops V hlaw hR succs edgeMarks initialStates _ _ r hdg ?_
-      (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rfl)
+    refine dfsGo_recordedAt ops V hlaw hR succs edgeMarks expand hexp initialStates _ _ r hdg ?_
+      (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hexp.fst q0)
+      (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rw [hexp.snd q0, hexp.fst q0])
       (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hq0)
       (SearchWF.pushRoot_step hlaw hq0status hq0 hwf) (hrec.mono hR hmono)
     intro r' h
-    have h' : dfsGo ops succs edgeMarks (ops.push aux.1 q0 (Std.HashSet.emptyWithCapacity 0)).1
+    have h' : dfsGo ops succs edgeMarks expand (ops.push aux.1 q0 (Std.HashSet.emptyWithCapacity 0)).1
         [{ state := q0, pos := (ops.push aux.1 q0 (Std.HashSet.emptyWithCapacity 0)).2,
-           acc := 0, succ := succs q0, idx := 0 }] = some r' := h
+           acc := 0, succ := (expand q0).1, succMarks := (expand q0).2.1, succOpts := (expand q0).2.2, idx := 0 }] = some r' := h
     rw [h'] at hnone
     exact hnone
 
@@ -3410,11 +3511,13 @@ private theorem genericDFSGo_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} 
     (V : LowlinkView ops) (hlaw : LowlinkLawful ops V) (L : LawfulDFSOps ops)
     {R : ops.Aux → ops.Aux → Prop} (hR : MonotoneAlong ops R)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs) :
     ∀ (roots : List State), (∀ q ∈ roots, Reachable initialStates succs q) →
       ∀ (aux : (enumOps ops V).Aux) rw' ru, L.WellFormed aux.1 →
-        genericDFSGo (enumOps ops V) succs edgeMarks roots aux = some rw' →
-        genericDFSGo ops succs edgeMarks roots aux.1 = some ru → ru.1 = none →
+        genericDFSGo (enumOps ops V) succs edgeMarks expand roots aux = some rw' →
+        genericDFSGo ops succs edgeMarks expand roots aux.1 = some ru → ru.1 = none →
         EnumWF ops V succs edgeMarks initialStates aux.1 aux.2 [] →
         RecordedAt ops V succs edgeMarks initialStates R aux.2 aux.1 →
         RecordedAt ops V succs edgeMarks initialStates R rw'.2.2 rw'.2.1 := by
@@ -3436,23 +3539,23 @@ private theorem genericDFSGo_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} 
     | unknown =>
       simp only [enumOps_getStatus, hst] at hw
       simp only [hst] at hu
-      cases hf : (dfsFromRoot ops succs edgeMarks aux.1 q).1 with
+      cases hf : (dfsFromRoot ops succs edgeMarks expand aux.1 q).1 with
       | some x =>
         exfalso
         simp only [hf, Option.some.injEq] at hu
         rw [← hu] at hnone
         simp at hnone
       | none =>
-        obtain ⟨hfw, hbase⟩ := dfsFromRoot_base_eq ops V succs edgeMarks initialStates fr L
+        obtain ⟨hfw, hbase⟩ := dfsFromRoot_base_eq ops V succs edgeMarks expand hexp initialStates fr L
           aux q hwfL hst hq hf
-        have hrec' := dfsFromRoot_recordedAt ops V hlaw hR succs edgeMarks initialStates aux q hst hq hf
+        have hrec' := dfsFromRoot_recordedAt ops V hlaw hR succs edgeMarks expand hexp initialStates aux q hst hq hf
           hwf.toSearchWF hrec
-        have hwf' := dfsFromRoot_enumWF ops V hlaw L succs edgeMarks initialStates fr aux q hwfL hst hq hwf
+        have hwf' := dfsFromRoot_enumWF ops V hlaw L succs edgeMarks expand hexp initialStates fr aux q hwfL hst hq hwf
         simp only [hf] at hu
         simp only [hfw] at hw
         refine ih hrest _ rw' ru ?_ hw (by rw [← hbase] at hu; exact hu) hnone hwf' hrec'
         rw [hbase]
-        exact dfsFromRoot_wellFormed_total ops succs edgeMarks L aux.1 q hwfL hst
+        exact dfsFromRoot_wellFormed_total ops succs edgeMarks expand L aux.1 q hwfL hst
     | dead =>
       simp only [enumOps_getStatus, hst] at hw
       simp only [hst] at hu
@@ -3468,23 +3571,25 @@ theorem enumRun_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : L
     (hlaw : LowlinkLawful ops V) (L : LawfulDFSOps ops) (hwf0 : L.WellFormed ops.initAux)
     {R : ops.Aux → ops.Aux → Prop} (hR : MonotoneAlong ops R)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs)
-    (hnone : (genericDFS ops succs edgeMarks initialStates ops.initAux).1 = none) :
-    RecordedAt ops V succs edgeMarks initialStates R (enumRun ops V succs edgeMarks initialStates)
-      (genericDFS ops succs edgeMarks initialStates ops.initAux).2 := by
+    (hnone : (genericDFS ops succs edgeMarks expand initialStates ops.initAux).1 = none) :
+    RecordedAt ops V succs edgeMarks initialStates R (enumRun ops V succs edgeMarks expand initialStates)
+      (genericDFS ops succs edgeMarks expand initialStates ops.initAux).2 := by
   unfold enumRun
   unfold genericDFS at hnone ⊢
   obtain ⟨ru, hu⟩ := Option.ne_none_iff_exists'.mp
-    (genericDFSGo_ne_none ops succs edgeMarks initialStates ops.initAux)
+    (genericDFSGo_ne_none ops succs edgeMarks expand initialStates ops.initAux)
   obtain ⟨rw', hw⟩ := Option.ne_none_iff_exists'.mp
-    (genericDFSGo_ne_none (enumOps ops V) succs edgeMarks initialStates (enumOps ops V).initAux)
+    (genericDFSGo_ne_none (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux)
   rw [hu] at hnone ⊢
   rw [hw]
   simp only [Option.getD_some] at hnone ⊢
-  have heq := (genericDFSGo_base_eq ops V succs edgeMarks initialStates fr L initialStates
+  have heq := (genericDFSGo_base_eq ops V succs edgeMarks expand hexp initialStates fr L initialStates
     (fun q hq => Reachable.base hq) (enumOps ops V).initAux rw' ru hwf0 hw hu hnone).2
   rw [← heq]
-  exact genericDFSGo_recordedAt ops V hlaw L hR succs edgeMarks initialStates fr initialStates
+  exact genericDFSGo_recordedAt ops V hlaw L hR succs edgeMarks expand hexp initialStates fr initialStates
     (fun q hq => Reachable.base hq) (enumOps ops V).initAux rw' ru hwf0 hw hu hnone
     (enumWF_init ops V hlaw succs edgeMarks initialStates) (fun p hp => by simp [enumOps] at hp)
 

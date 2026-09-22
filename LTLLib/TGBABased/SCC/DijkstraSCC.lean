@@ -1954,66 +1954,74 @@ def dijkstraLawful [Inhabited State] [LawfulBEq State] [LawfulHashable State] (n
 /-- `dfsGo_ne_none` for `dijkstraOps`. -/
 theorem dijkstraOps_ne_none [Inhabited State] [LawfulBEq State] [LawfulHashable State] (numMarks : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs)
     (aux : DijkstraAux State) (stack : List (DFSStep State Nat)) (hwf : DijkstraWellFormed aux)
     (hsucc : ∀ st ∈ stack, st.succ = succs st.state)
     (hreach : ∀ st ∈ stack, Reachable initialStates succs st.state) :
-    dfsGo (dijkstraOps numMarks) succs edgeMarks aux stack ≠ none :=
-  dfsGo_ne_none (dijkstraOps numMarks) succs edgeMarks initialStates fr (dijkstraLawful numMarks)
+    dfsGo (dijkstraOps numMarks) succs edgeMarks expand aux stack ≠ none :=
+  dfsGo_ne_none (dijkstraOps numMarks) succs edgeMarks expand hexp initialStates fr (dijkstraLawful numMarks)
     aux stack hwf hsucc hreach
 
 /-- `dijkstraOps_ne_none` for one fresh root pushed onto a well-formed state. -/
 theorem dijkstraOps_root_ne_none [Inhabited State] [LawfulBEq State] [LawfulHashable State] (numMarks : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs) :
     ∀ aux q, Reachable initialStates succs q → DijkstraWellFormed aux →
       dijkstraGetStatus aux q = .unknown →
-      dfsGo (dijkstraOps numMarks) succs edgeMarks
+      dfsGo (dijkstraOps numMarks) succs edgeMarks expand
         (dijkstraPush aux q (Std.HashSet.emptyWithCapacity 0)).1
         [({ state := q, pos := (dijkstraPush aux q (Std.HashSet.emptyWithCapacity 0)).2,
-            acc := 0, succ := succs q, idx := 0 } :
+            acc := 0, succ := (expand q).1, succMarks := (expand q).2.1, succOpts := (expand q).2.2, idx := 0 } :
           DFSStep State Nat)] ≠ none := by
   intro aux q hqreach hwf hq
-  refine dijkstraOps_ne_none numMarks succs edgeMarks initialStates fr _ _
+  refine dijkstraOps_ne_none numMarks succs edgeMarks expand hexp initialStates fr _ _
     (dijkstraWellFormed_push aux q _ hwf hq) ?_ ?_
-  · intro st hst; simp only [List.mem_singleton] at hst; rw [hst]
+  · intro st hst; simp only [List.mem_singleton] at hst; rw [hst]; exact hexp.fst q
   · intro st hst; simp only [List.mem_singleton] at hst; rw [hst]; exact hqreach
 
 /-- `genericDFS_closed` for `dijkstraOps`. -/
 theorem dijkstraOps_closed [Inhabited State] [LawfulBEq State] [LawfulHashable State] (numMarks : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs)
     (roots : List State) (aux : DijkstraAux State)
     (hrootsReach : ∀ q ∈ roots, Reachable initialStates succs q)
-    (hnone : (genericDFS (dijkstraOps numMarks) succs edgeMarks roots aux).1 = none)
+    (hnone : (genericDFS (dijkstraOps numMarks) succs edgeMarks expand roots aux).1 = none)
     (hwf : DijkstraWellFormed aux)
     (hClosed : ∀ t, dijkstraGetStatus aux t ≠ .unknown → ∀ x ∈ succs t, dijkstraGetStatus aux x ≠ .unknown) :
-    DijkstraWellFormed (genericDFS (dijkstraOps numMarks) succs edgeMarks roots aux).2 ∧
-      ∀ t, dijkstraGetStatus (genericDFS (dijkstraOps numMarks) succs edgeMarks roots aux).2 t
+    DijkstraWellFormed (genericDFS (dijkstraOps numMarks) succs edgeMarks expand roots aux).2 ∧
+      ∀ t, dijkstraGetStatus (genericDFS (dijkstraOps numMarks) succs edgeMarks expand roots aux).2 t
           ≠ .unknown →
         ∀ x ∈ succs t, dijkstraGetStatus
-          (genericDFS (dijkstraOps numMarks) succs edgeMarks roots aux).2 x ≠ .unknown :=
-  genericDFS_closed (dijkstraOps numMarks) succs edgeMarks (dijkstraLawful numMarks)
+          (genericDFS (dijkstraOps numMarks) succs edgeMarks expand roots aux).2 x ≠ .unknown :=
+  genericDFS_closed (dijkstraOps numMarks) succs edgeMarks expand hexp (dijkstraLawful numMarks)
     (Reachable initialStates succs)
-    (fun aux q hq hwf hgs => dijkstraOps_root_ne_none numMarks succs edgeMarks initialStates fr aux q hq hwf hgs)
-    roots aux hrootsReach (genericDFSGo_ne_none (dijkstraOps numMarks) succs edgeMarks roots aux)
+    (fun aux q hq hwf hgs => dijkstraOps_root_ne_none numMarks succs edgeMarks expand hexp initialStates fr aux q hq hwf hgs)
+    roots aux hrootsReach (genericDFSGo_ne_none (dijkstraOps numMarks) succs edgeMarks expand roots aux)
     hnone hwf hClosed
 
 /-- `genericDFS_returns_none_fully_explored` for `dijkstraOps`. -/
 theorem dijkstraOps_returns_none_fully_explored [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (numMarks : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (fr : FiniteReach initialStates succs)
-    (hnone : (genericDFS (dijkstraOps numMarks) succs edgeMarks initialStates
+    (hnone : (genericDFS (dijkstraOps numMarks) succs edgeMarks expand initialStates
       dijkstraInitAux).1 = none) :
     ∀ s, Reachable initialStates succs s →
-      dijkstraGetStatus (genericDFS (dijkstraOps numMarks) succs edgeMarks initialStates
+      dijkstraGetStatus (genericDFS (dijkstraOps numMarks) succs edgeMarks expand initialStates
         dijkstraInitAux).2 s ≠ .unknown :=
-  genericDFS_returns_none_fully_explored (dijkstraOps numMarks) succs edgeMarks (dijkstraLawful numMarks)
+  genericDFS_returns_none_fully_explored (dijkstraOps numMarks) succs edgeMarks expand hexp (dijkstraLawful numMarks)
     (Reachable initialStates succs)
-    (fun aux q hq hwf hgs => dijkstraOps_root_ne_none numMarks succs edgeMarks initialStates fr aux q hq hwf hgs)
+    (fun aux q hq hwf hgs => dijkstraOps_root_ne_none numMarks succs edgeMarks expand hexp initialStates fr aux q hq hwf hgs)
     initialStates (fun q hq => Reachable.base hq)
-    (genericDFSGo_ne_none (dijkstraOps numMarks) succs edgeMarks _ _)
+    (genericDFSGo_ne_none (dijkstraOps numMarks) succs edgeMarks expand _ _)
     dijkstraWellFormed_init dijkstraGetStatus_initAux hnone
 
 /-! ## Completeness: no accepting SCC survives an empty search -/
@@ -2189,12 +2197,16 @@ set_option maxHeartbeats 4000000 in
 reported hint is an accepting SCC. -/
 theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
     :
     ∀ aux (stack : List (DFSStep State Nat)) (r : Option (State × List State) × DijkstraAux State),
-    dfsGo (dijkstraOps numMarks) succs edgeMarks aux stack = some r →
+    dfsGo (dijkstraOps numMarks) succs edgeMarks expand aux stack = some r →
     DijkstraWellFormed aux →
     (∀ st ∈ stack, st.succ = succs st.state) →
+    -- `DFSStep.marks` is `edgeMarks state`, applied once at push; see `GenericDFS.dfsGo`
+    (∀ st ∈ stack, st.succMarks = st.succ.map (edgeMarks st.state)) →
     -- a dispatched edge never leaves its target unknown
     (∀ st ∈ stack, ∀ x ∈ (st.succ.toList.take st.idx), dijkstraGetStatus aux x ≠ .unknown) →
     (∀ st ∈ stack, Reachable initialStates succs st.state) →
@@ -2237,10 +2249,11 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
       InternallyConnected succs (dijkstraSccHint r.2) ∧
       AcceptingMarks succs edgeMarks numMarks (dijkstraSccHint r.2) ∧
       anchor ∈ dijkstraSccHint r.2) := by
-  refine dfsGo.partial_correctness (dijkstraOps numMarks) succs edgeMarks
+  refine dfsGo.partial_correctness (dijkstraOps numMarks) succs edgeMarks expand
     (fun aux stack r =>
       DijkstraWellFormed aux →
       (∀ st ∈ stack, st.succ = succs st.state) →
+      (∀ st ∈ stack, st.succMarks = st.succ.map (edgeMarks st.state)) →
       (∀ st ∈ stack, ∀ x ∈ (st.succ.toList.take st.idx), dijkstraGetStatus aux x ≠ .unknown) →
       (∀ st ∈ stack, Reachable initialStates succs st.state) →
       DijkstraRangeInv succs edgeMarks aux →
@@ -2277,12 +2290,12 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
   cases stack with
   | nil =>
     simp only [Option.some.injEq] at hr
-    intro hwf _ _ _ hrangeinv hstackdfs _ _ _ _ _ _ _ _ _ _ hdead
+    intro hwf _ _ _ _ hrangeinv hstackdfs _ _ _ _ _ _ _ _ _ _ hdead
     rw [← hr]
     exact ⟨hdead, fun _ => ⟨hwf, hrangeinv, hstackdfs.2.2.2.mp rfl⟩,
       fun _ _ h => absurd h (by simp)⟩
   | cons step rest =>
-  intro hwf hsucceq hprefix hreach hrangeinv hstackdfs hrangeclosed hdispatched hmarksClosed hmarksOpen hmerged
+  intro hwf hsucceq hmk hprefix hreach hrangeinv hstackdfs hrangeclosed hdispatched hmarksClosed hmarksOpen hmerged
     hTreeMarks hNoBack hrootsBound hentryBound hrootsNotFull hdead
   have hstepSuccEq : step.succ = succs step.state := hsucceq step (by simp)
   have hrestSuccEq : ∀ st ∈ rest, st.succ = succs st.state :=
@@ -2346,6 +2359,12 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
       rcases List.mem_cons.mp hst with rfl | hst
       · exact hstepSuccEq
       · exact hrestSuccEq st hst
+    have hMk' : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State Nat) :: rest,
+        st.succMarks = st.succ.map (edgeMarks st.state) := by
+      intro st hst
+      rcases List.mem_cons.mp hst with rfl | hst
+      · exact hmk step (by simp)
+      · exact hmk st (List.mem_cons_of_mem _ hst)
     have hdfs'Reach : ∀ st ∈ ({ step with idx := step.idx + 1 } : DFSStep State Nat) :: rest,
         Reachable initialStates succs st.state := by
       intro st hst
@@ -2446,13 +2465,16 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
             rcases List.mem_cons.mp hst' with heq' | hst'
             · exact ⟨{ step with idx := step.idx + 1 }, by simp, heq' ▸ heq, heq' ▸ hlt⟩
             · exact ⟨st', List.mem_cons_of_mem _ hst', heq, hlt⟩
-      exact ih aux _ r hr hwf hSuccEq' hPrefix' hdfs'Reach hrangeinv hstackdfs' hrangeclosed' hdispatched'
+      exact ih aux _ r hr hwf hSuccEq' hMk' hPrefix' hdfs'Reach hrangeinv hstackdfs' hrangeclosed' hdispatched'
         hmarksClosed' hMarksOpen' hmerged' hTreeMarksBump
         (NoBackDispatch.state_congr ({ step with idx := step.idx + 1 }) hNoBack rfl) hrootsBound hentryBound
         (fun i hi => (hrootsNotFull i hi).imp id
           (DijkstraNoInternalEdge.bump hdTake (dijkstraGetStatus_dead_not_mem_range hwf hgs i))) hdead
     | live =>
       simp only [hgs] at hr
+      -- rewrite only the *applied* cache, not the `marks` field inside the frame record
+      rw [show step.succMarks[step.idx]! = edgeMarks step.state d from
+          DFSStep.succMarks_get (hmk step (by simp)) h] at hr
       rcases hupdeq : dijkstraUpdate numMarks aux (edgeMarks step.state d) d with ⟨aux', found⟩
       simp only [hupdeq] at hr
       have haux'1 : (dijkstraUpdate numMarks aux (edgeMarks step.state d) d).1 = aux' :=
@@ -2779,12 +2801,15 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
               rw [hcontra, beq_self_eq_true, hffalse] at hfoundeq
               exact Bool.noConfusion hfoundeq
             · exfalso; omega
-        exact ih aux' _ r hr hwf' hSuccEq' hPrefix' hdfs'Reach hrangeinv' hstackdfs' hrangeclosed' hdispatched'
+        exact ih aux' _ r hr hwf' hSuccEq' hMk' hPrefix' hdfs'Reach hrangeinv' hstackdfs' hrangeclosed' hdispatched'
           hmarksClosed' hMarksOpen' hmerged' hTreeMarks'
           (NoBackDispatch.state_congr ({ step with idx := step.idx + 1 }) hNoBack rfl)
           hrootsBound' hentryBound' hrootsNotFull' hdead'
     | unknown =>
       simp only [hgs] at hr
+      -- rewrite only the *applied* cache, not the `marks` field inside the frame record
+      rw [show step.succMarks[step.idx]! = edgeMarks step.state d from
+          DFSStep.succMarks_get (hmk step (by simp)) h] at hr
       rcases hpsheq : dijkstraPush aux d (edgeMarks step.state d) with ⟨aux', pos'⟩
       simp only [hpsheq] at hr
       have haux'2 : (dijkstraPush aux d (edgeMarks step.state d)).1 = aux' := congrArg Prod.fst hpsheq
@@ -2798,13 +2823,20 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         have h2 : (dijkstraPush aux d (edgeMarks step.state d)).2 = pos' := congrArg Prod.snd hpsheq
         rw [← h2]; rfl
       set newStep : DFSStep State Nat :=
-        { state := d, pos := pos', acc := marksToBitmask (edgeMarks step.state d), succ := succs d, idx := 0 } with hnewStep_def
+        { state := d, pos := pos', acc := marksToBitmask (edgeMarks step.state d), succ := (expand d).1, succMarks := (expand d).2.1, succOpts := (expand d).2.2, idx := 0 } with hnewStep_def
       have hSuccEq'' : ∀ st ∈ newStep :: ({ step with idx := step.idx + 1 } : DFSStep State Nat) :: rest,
           st.succ = succs st.state := by
         intro st hst
         rcases List.mem_cons.mp hst with rfl | hst
-        · rfl
+        · exact hexp.fst d
         · exact hSuccEq' st hst
+      have hMk'' : ∀ st ∈ newStep :: ({ step with idx := step.idx + 1 } : DFSStep State Nat) :: rest,
+          st.succMarks = st.succ.map (edgeMarks st.state) := by
+        intro st hst
+        rcases List.mem_cons.mp hst with rfl | hst
+        · show (expand d).2.1 = (expand d).1.map (edgeMarks d)
+          rw [hexp.snd d, hexp.fst d]
+        · exact hMk' st hst
       have hReach'' : ∀ st ∈ newStep :: ({ step with idx := step.idx + 1 } : DFSStep State Nat) :: rest,
           Reachable initialStates succs st.state := by
         intro st hst
@@ -3146,7 +3178,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
             rw [hrangeEq j hjlt] at hjr
             rw [hrootsPush, Array.getElem!_push_lt hjlt]
             exact hTreeMarksBump st hst st' hst' hdisp hlt j hjlt hjr m hm
-      exact ih aux' _ r hr hwf' hSuccEq'' hPrefix'' hReach'' hrangeinv' hstackdfs'' hrangeclosed'' hdispatched''
+      exact ih aux' _ r hr hwf' hSuccEq'' hMk'' hPrefix'' hReach'' hrangeinv' hstackdfs'' hrangeclosed'' hdispatched''
         hmarksClosed'' hMarksOpen'' hmerged'' hTreeMarks'' hNoBack'' hrootsBound' hentryBound' hrootsNotFull'
         hdead'
   case neg =>
@@ -3163,6 +3195,8 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
     have haux'eq : (dijkstraPop aux step.pos).1 = aux' := congrArg Prod.fst hpopeq
     have hwf' : DijkstraWellFormed aux' := haux'eq ▸ dijkstraWellFormed_pop aux step.pos hwf
     have hSuccEq' : ∀ st ∈ rest, st.succ = succs st.state := hrestSuccEq
+    have hMk' : ∀ st ∈ rest, st.succMarks = st.succ.map (edgeMarks st.state) :=
+      fun st hst => hmk st (List.mem_cons_of_mem _ hst)
     have hReach' : ∀ st ∈ rest, Reachable initialStates succs st.state := hrestReach
     have hstackdfsPacked : DijkstraStackRoots aux (step :: rest) := hstackdfs
     have hliveCorr := hstackdfs.1
@@ -3533,7 +3567,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         rw [haux'rootsF, Array.getElem!_pop_lt hjpoplt]
         exact hTreeMarks st (List.mem_cons_of_mem _ hst) st' (List.mem_cons_of_mem _ hst') hdisp hlt j
           (by omega) hjr m hm
-      exact ih aux' rest r hr hwf' hSuccEq' hPrefix' hReach' hrangeinv' hstackdfs' hrangeclosed' hdispatched'
+      exact ih aux' rest r hr hwf' hSuccEq' hMk' hPrefix' hReach' hrangeinv' hstackdfs' hrangeclosed' hdispatched'
         hmarksClosed' hMarksOpen' hmerged' hTreeMarks' hNoBack.tail hrootsBound' hentryBound' hrootsNotFull'
         hdead'
     · -- non-flush: POP confirms nothing, so the whole search state is untouched
@@ -3700,7 +3734,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         rw [haux'rootsNF] at hj ⊢
         rw [hrangeEqNF j hj] at hjr
         exact hTreeMarks st (List.mem_cons_of_mem _ hst) st' (List.mem_cons_of_mem _ hst') hdisp hlt j hj hjr m hm
-      exact ih aux' rest r hr hwf' hSuccEq' hPrefix' hReach' hrangeinv' hstackdfs' hrangeclosed' hdispatched'
+      exact ih aux' rest r hr hwf' hSuccEq' hMk' hPrefix' hReach' hrangeinv' hstackdfs' hrangeclosed' hdispatched'
         hmarksClosed' hMarksOpen' hmerged' hTreeMarks' hNoBack.tail hrootsBound' hentryBound' hrootsNotFull'
         hdead'
 
@@ -3738,23 +3772,25 @@ set_option maxHeartbeats 1000000 in
 witness. -/
 theorem dijkstraFromRoot_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
     (fr : FiniteReach initialStates succs)
     (aux : DijkstraAux State) (q0 : State) (hq0 : dijkstraGetStatus aux q0 = .unknown)
     (hq0mem : q0 ∈ initialStates) (hwf : DijkstraWellFormed aux)
     (hrangeinv : DijkstraRangeInv succs edgeMarks aux) (hidle : aux.roots.size = 0)
     (hdead : ∀ s ∈ aux.dead, ∀ (A : AcceptingSCC initialStates succs edgeMarks numMarks), s ∉ A.scc) :
-    (∀ s ∈ (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks aux q0).2.dead,
+    (∀ s ∈ (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks expand aux q0).2.dead,
       ∀ (A : AcceptingSCC initialStates succs edgeMarks numMarks), s ∉ A.scc) ∧
-    ((dfsFromRoot (dijkstraOps numMarks) succs edgeMarks aux q0).1 = none →
-      DijkstraWellFormed (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks aux q0).2 ∧
-      DijkstraRangeInv succs edgeMarks (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks aux q0).2 ∧
-      (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks aux q0).2.roots.size = 0) ∧
-    (∀ anchor stem, (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks aux q0).1 = some (anchor, stem) →
-      InternallyConnected succs (dijkstraSccHint (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks aux q0).2) ∧
+    ((dfsFromRoot (dijkstraOps numMarks) succs edgeMarks expand aux q0).1 = none →
+      DijkstraWellFormed (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks expand aux q0).2 ∧
+      DijkstraRangeInv succs edgeMarks (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks expand aux q0).2 ∧
+      (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks expand aux q0).2.roots.size = 0) ∧
+    (∀ anchor stem, (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks expand aux q0).1 = some (anchor, stem) →
+      InternallyConnected succs (dijkstraSccHint (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks expand aux q0).2) ∧
       AcceptingMarks succs edgeMarks numMarks
-        (dijkstraSccHint (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks aux q0).2) ∧
-      anchor ∈ dijkstraSccHint (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks aux q0).2 ∧
+        (dijkstraSccHint (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks expand aux q0).2) ∧
+      anchor ∈ dijkstraSccHint (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks expand aux q0).2 ∧
       ∃ hs : stem ≠ [], stem.head hs ∈ initialStates ∧
         (∀ i, (hi : i + 1 < stem.length) → stem[i + 1] ∈ succs (stem[i])) ∧
         stem.getLast hs = anchor) := by
@@ -3762,13 +3798,13 @@ theorem dijkstraFromRoot_dead_not_accepting [LawfulBEq State] [LawfulHashable St
   have hlive0 : aux.live.size = 0 := hrangeinv.rootsWF.liveEmptyOfRootsEmpty hidle
   set step : DFSStep State Nat :=
     { state := q0, pos := (dijkstraPush aux q0 (Std.HashSet.emptyWithCapacity 0)).2,
-      acc := 0, succ := succs q0, idx := 0 } with hstepdef
+      acc := 0, succ := (expand q0).1, succMarks := (expand q0).2.1, succOpts := (expand q0).2.2, idx := 0 } with hstepdef
   set aux' := (dijkstraPush aux q0 (Std.HashSet.emptyWithCapacity 0)).1 with haux'def
-  obtain ⟨r, hrr⟩ : ∃ r, dfsGo (dijkstraOps numMarks) succs edgeMarks aux' [step] = some r :=
-    Option.ne_none_iff_exists'.mp (dijkstraOps_root_ne_none numMarks succs edgeMarks initialStates fr
+  obtain ⟨r, hrr⟩ : ∃ r, dfsGo (dijkstraOps numMarks) succs edgeMarks expand aux' [step] = some r :=
+    Option.ne_none_iff_exists'.mp (dijkstraOps_root_ne_none numMarks succs edgeMarks expand hexp initialStates fr
       aux q0 (Reachable.base hq0mem) hwf hq0)
-  have hfr : dfsFromRoot (dijkstraOps numMarks) succs edgeMarks aux q0 = r := by
-    show (dfsGo (dijkstraOps numMarks) succs edgeMarks aux' [step]).getD (none, aux') = r
+  have hfr : dfsFromRoot (dijkstraOps numMarks) succs edgeMarks expand aux q0 = r := by
+    show (dfsGo (dijkstraOps numMarks) succs edgeMarks expand aux' [step]).getD (none, aux') = r
     rw [hrr]; rfl
   rw [hfr]
   -- PUSH on an idle state opens exactly one range, the singleton `{q0}`, at `live` index `0`
@@ -3801,14 +3837,17 @@ theorem dijkstraFromRoot_dead_not_accepting [LawfulBEq State] [LawfulHashable St
       ∃ hs : stem ≠ [], stem.head hs ∈ initialStates ∧
         (∀ i, (hi : i + 1 < stem.length) → stem[i + 1] ∈ succs (stem[i])) ∧
         stem.getLast hs = anchor :=
-    dfsGo_stem_path (dijkstraOps numMarks) succs edgeMarks initialStates aux' [step] r hrr
-      (by intro st hst; simp only [List.mem_singleton] at hst; rw [hst, hstepdef])
+    dfsGo_stem_path (dijkstraOps numMarks) succs edgeMarks expand hexp initialStates aux' [step] r hrr
+      (by intro st hst; simp only [List.mem_singleton] at hst; rw [hst, hstepdef]; exact hexp.fst q0)
       ⟨by intro i hi; simp at hi, by intro _; simpa [hstepdef] using hq0mem⟩
   refine (fun h => ⟨h.1, h.2.1, fun anchor stem heq => ⟨(h.2.2 anchor stem heq).1,
       (h.2.2 anchor stem heq).2.1, (h.2.2 anchor stem heq).2.2, hstem anchor stem heq⟩⟩)
-    (dijkstra_dead_not_accepting numMarks succs edgeMarks initialStates hmarksBound
+    (dijkstra_dead_not_accepting numMarks succs edgeMarks expand hexp initialStates hmarksBound
     aux' [step] r hrr (dijkstraWellFormed_push aux q0 _ hwf hq0)
-    (by intro st hst; simp only [List.mem_singleton] at hst; rw [hst, hstepdef])
+    (by intro st hst; simp only [List.mem_singleton] at hst; rw [hst, hstepdef]; exact hexp.fst q0)
+    (by intro st hst; simp only [List.mem_singleton] at hst; rw [hst, hstepdef]
+        show (expand q0).2.1 = (expand q0).1.map (edgeMarks q0)
+        rw [hexp.snd q0, hexp.fst q0])
     (by intro st hst x hx; simp only [List.mem_singleton] at hst; rw [hst, hstepdef] at hx; simp at hx)
     (by intro st hst; simp only [List.mem_singleton] at hst; rw [hst, hstepdef]
         exact Reachable.base hq0mem)
@@ -3885,10 +3924,12 @@ private theorem dijkstraGetStatus_dead_mem [LawfulBEq State] [LawfulHashable Sta
 /-- `dijkstra_dead_not_accepting` across the outer loop over the roots. -/
 theorem dijkstraGo_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
     (fr : FiniteReach initialStates succs) :
     ∀ (roots : List State) aux (r : Option (State × List State) × DijkstraAux State),
-    genericDFSGo (dijkstraOps numMarks) succs edgeMarks roots aux = some r →
+    genericDFSGo (dijkstraOps numMarks) succs edgeMarks expand roots aux = some r →
     (∀ q ∈ roots, q ∈ initialStates) →
     DijkstraWellFormed aux → DijkstraRangeInv succs edgeMarks aux → aux.roots.size = 0 →
     (∀ s ∈ aux.dead, ∀ (A : AcceptingSCC initialStates succs edgeMarks numMarks), s ∉ A.scc) →
@@ -3902,7 +3943,7 @@ theorem dijkstraGo_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [
       ∃ hs : stem ≠ [], stem.head hs ∈ initialStates ∧
         (∀ i, (hi : i + 1 < stem.length) → stem[i + 1] ∈ succs (stem[i])) ∧
         stem.getLast hs = anchor) := by
-  refine genericDFSGo.partial_correctness (dijkstraOps numMarks) succs edgeMarks
+  refine genericDFSGo.partial_correctness (dijkstraOps numMarks) succs edgeMarks expand
     (fun roots aux r => (∀ q ∈ roots, q ∈ initialStates) →
       DijkstraWellFormed aux → DijkstraRangeInv succs edgeMarks aux → aux.roots.size = 0 →
       (∀ s ∈ aux.dead, ∀ (A : AcceptingSCC initialStates succs edgeMarks numMarks), s ∉ A.scc) →
@@ -3932,11 +3973,11 @@ theorem dijkstraGo_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [
   | live => simp only [hgs] at hr; exact ih rest aux r hr hrestMem hwf hrangeinv hidle hdead
   | unknown =>
     simp only [hgs] at hr
-    rcases hdfr : dfsFromRoot (dijkstraOps numMarks) succs edgeMarks aux q with ⟨found?, aux'⟩
+    rcases hdfr : dfsFromRoot (dijkstraOps numMarks) succs edgeMarks expand aux q with ⟨found?, aux'⟩
     simp only [hdfr] at hr
-    have haux'eq : (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks aux q).2 = aux' := by rw [hdfr]
+    have haux'eq : (dfsFromRoot (dijkstraOps numMarks) succs edgeMarks expand aux q).2 = aux' := by rw [hdfr]
     have hgs' : dijkstraGetStatus aux q = .unknown := hgs
-    obtain ⟨hdead', hbundle, hfound⟩ := dijkstraFromRoot_dead_not_accepting numMarks succs edgeMarks
+    obtain ⟨hdead', hbundle, hfound⟩ := dijkstraFromRoot_dead_not_accepting numMarks succs edgeMarks expand hexp
       initialStates hmarksBound fr aux q hgs' (hmem q (by simp)) hwf hrangeinv hidle hdead
     rw [haux'eq] at hdead' hbundle hfound
     cases hf : found? with
@@ -3956,22 +3997,24 @@ theorem dijkstraGo_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [
 idle. -/
 theorem dijkstra_genericDFS_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
     (fr : FiniteReach initialStates succs)
-    (hnone : (genericDFS (dijkstraOps numMarks) succs edgeMarks initialStates dijkstraInitAux).1 = none) :
-    (∀ s ∈ (genericDFS (dijkstraOps numMarks) succs edgeMarks initialStates dijkstraInitAux).2.dead,
+    (hnone : (genericDFS (dijkstraOps numMarks) succs edgeMarks expand initialStates dijkstraInitAux).1 = none) :
+    (∀ s ∈ (genericDFS (dijkstraOps numMarks) succs edgeMarks expand initialStates dijkstraInitAux).2.dead,
       ∀ (A : AcceptingSCC initialStates succs edgeMarks numMarks), s ∉ A.scc) ∧
-    DijkstraWellFormed (genericDFS (dijkstraOps numMarks) succs edgeMarks initialStates dijkstraInitAux).2 ∧
+    DijkstraWellFormed (genericDFS (dijkstraOps numMarks) succs edgeMarks expand initialStates dijkstraInitAux).2 ∧
     DijkstraRangeInv succs edgeMarks
-      (genericDFS (dijkstraOps numMarks) succs edgeMarks initialStates dijkstraInitAux).2 ∧
-    (genericDFS (dijkstraOps numMarks) succs edgeMarks initialStates dijkstraInitAux).2.roots.size = 0 := by
-  obtain ⟨r, hrr⟩ : ∃ r, genericDFSGo (dijkstraOps numMarks) succs edgeMarks initialStates
-      dijkstraInitAux = some r := Option.ne_none_iff_exists'.mp (genericDFSGo_ne_none (dijkstraOps numMarks) succs edgeMarks _ _)
-  have hgd : genericDFS (dijkstraOps numMarks) succs edgeMarks initialStates dijkstraInitAux = r := by
-    show (genericDFSGo (dijkstraOps numMarks) succs edgeMarks initialStates dijkstraInitAux).getD _ = r
+      (genericDFS (dijkstraOps numMarks) succs edgeMarks expand initialStates dijkstraInitAux).2 ∧
+    (genericDFS (dijkstraOps numMarks) succs edgeMarks expand initialStates dijkstraInitAux).2.roots.size = 0 := by
+  obtain ⟨r, hrr⟩ : ∃ r, genericDFSGo (dijkstraOps numMarks) succs edgeMarks expand initialStates
+      dijkstraInitAux = some r := Option.ne_none_iff_exists'.mp (genericDFSGo_ne_none (dijkstraOps numMarks) succs edgeMarks expand _ _)
+  have hgd : genericDFS (dijkstraOps numMarks) succs edgeMarks expand initialStates dijkstraInitAux = r := by
+    show (genericDFSGo (dijkstraOps numMarks) succs edgeMarks expand initialStates dijkstraInitAux).getD _ = r
     rw [hrr]; rfl
   rw [hgd] at hnone ⊢
-  exact (dijkstraGo_dead_not_accepting numMarks succs edgeMarks initialStates hmarksBound
+  exact (dijkstraGo_dead_not_accepting numMarks succs edgeMarks expand hexp initialStates hmarksBound
     fr initialStates dijkstraInitAux r hrr (fun _ hq => hq)
     dijkstraWellFormed_init dijkstraRangeInv_init
     (by simp [dijkstraInitAux]) (by intro s hs; simp [dijkstraInitAux] at hs)).1 hnone
@@ -3980,18 +4023,20 @@ theorem dijkstra_genericDFS_dead_not_accepting [LawfulBEq State] [LawfulHashable
 containing the anchor. -/
 theorem dijkstra_genericDFS_found_acceptingSCC [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
     (fr : FiniteReach initialStates succs) :
-    SccHintSound (dijkstraOps numMarks) succs edgeMarks numMarks initialStates := by
+    SccHintSound (dijkstraOps numMarks) succs edgeMarks expand numMarks initialStates := by
   unfold SccHintSound
-  obtain ⟨r, hrr⟩ : ∃ r, genericDFSGo (dijkstraOps numMarks) succs edgeMarks initialStates
-      dijkstraInitAux = some r := Option.ne_none_iff_exists'.mp (genericDFSGo_ne_none (dijkstraOps numMarks) succs edgeMarks _ _)
-  have hgd : genericDFS (dijkstraOps numMarks) succs edgeMarks initialStates
+  obtain ⟨r, hrr⟩ : ∃ r, genericDFSGo (dijkstraOps numMarks) succs edgeMarks expand initialStates
+      dijkstraInitAux = some r := Option.ne_none_iff_exists'.mp (genericDFSGo_ne_none (dijkstraOps numMarks) succs edgeMarks expand _ _)
+  have hgd : genericDFS (dijkstraOps numMarks) succs edgeMarks expand initialStates
       (dijkstraOps numMarks).initAux = r := by
-    show (genericDFSGo (dijkstraOps numMarks) succs edgeMarks initialStates dijkstraInitAux).getD _ = r
+    show (genericDFSGo (dijkstraOps numMarks) succs edgeMarks expand initialStates dijkstraInitAux).getD _ = r
     rw [hrr]; rfl
   rw [hgd]
-  exact (dijkstraGo_dead_not_accepting numMarks succs edgeMarks initialStates hmarksBound
+  exact (dijkstraGo_dead_not_accepting numMarks succs edgeMarks expand hexp initialStates hmarksBound
     fr initialStates dijkstraInitAux r hrr (fun _ hq => hq)
     dijkstraWellFormed_init dijkstraRangeInv_init
     (by simp [dijkstraInitAux]) (by intro s hs; simp [dijkstraInitAux] at hs)).2
@@ -3999,20 +4044,22 @@ theorem dijkstra_genericDFS_found_acceptingSCC [LawfulBEq State] [LawfulHashable
 /-- Completeness: a search that reports no counterexample proves there is no reachable `AcceptingSCC`. -/
 theorem dijkstra_no_acceptingSCC_of_none [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
     (fr : FiniteReach initialStates succs)
-    (hnone : (genericDFS (dijkstraOps numMarks) succs edgeMarks initialStates dijkstraInitAux).1 = none)
+    (hnone : (genericDFS (dijkstraOps numMarks) succs edgeMarks expand initialStates dijkstraInitAux).1 = none)
     (A : AcceptingSCC initialStates succs edgeMarks numMarks) : False := by
-  obtain ⟨hdead, hwf, hrangeinv, hidle⟩ := dijkstra_genericDFS_dead_not_accepting numMarks succs edgeMarks
+  obtain ⟨hdead, hwf, hrangeinv, hidle⟩ := dijkstra_genericDFS_dead_not_accepting numMarks succs edgeMarks expand hexp
     initialStates hmarksBound fr hnone
   obtain ⟨s, hs⟩ := A.nonempty
-  have hexplored := dijkstraOps_returns_none_fully_explored numMarks succs edgeMarks initialStates fr
+  have hexplored := dijkstraOps_returns_none_fully_explored numMarks succs edgeMarks expand hexp initialStates fr
     hnone s (A.reachable s hs)
   have hnotlive := dijkstraGetStatus_ne_live_of_idle hwf hrangeinv.rootsWF hidle s
   have hsdead : dijkstraGetStatus
-      (genericDFS (dijkstraOps numMarks) succs edgeMarks initialStates dijkstraInitAux).2 s = .dead := by
+      (genericDFS (dijkstraOps numMarks) succs edgeMarks expand initialStates dijkstraInitAux).2 s = .dead := by
     cases hst : dijkstraGetStatus
-        (genericDFS (dijkstraOps numMarks) succs edgeMarks initialStates dijkstraInitAux).2 s with
+        (genericDFS (dijkstraOps numMarks) succs edgeMarks expand initialStates dijkstraInitAux).2 s with
     | dead => rfl
     | live => exact absurd hst hnotlive
     | unknown => exact absurd hst hexplored
@@ -4020,9 +4067,10 @@ theorem dijkstra_no_acceptingSCC_of_none [LawfulBEq State] [LawfulHashable State
 
 /-- Dijkstra's SCC-based emptiness check. -/
 def dijkstraCheck [LawfulBEq State] [LawfulHashable State] (succs : State → Array State)
-    (initialStates : List State) (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat) :
+    (initialStates : List State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (numMarks : Nat) :
     EmptinessResult State :=
-  checkWithWitness (dijkstraOps numMarks) succs edgeMarks numMarks initialStates
+  checkWithWitness (dijkstraOps numMarks) succs edgeMarks expand numMarks initialStates
 
 
 /-! ## The `TEmptinessChecker` contract -/
@@ -4030,38 +4078,42 @@ def dijkstraCheck [LawfulBEq State] [LawfulHashable State] (succs : State → Ar
 /-- Soundness: a reported `stem` and `loop` are a `TAcceptingCycle`'s stem and cycle. -/
 theorem dijkstraCheck_nonEmpty_valid [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
     (fr : FiniteReach initialStates succs)
     {stem loop : List State}
-    (h : dijkstraCheck succs initialStates edgeMarks numMarks = .nonEmpty stem loop) :
+    (h : dijkstraCheck succs initialStates edgeMarks expand numMarks = .nonEmpty stem loop) :
     ∃ ac : TAcceptingCycle initialStates succs edgeMarks numMarks, ac.stem = stem ∧ ac.cycle = loop.tail :=
-  checkWithWitness_nonEmpty_valid (dijkstraOps numMarks) succs edgeMarks numMarks initialStates
-    (dijkstra_genericDFS_found_acceptingSCC numMarks succs edgeMarks initialStates hmarksBound
+  checkWithWitness_nonEmpty_valid (dijkstraOps numMarks) succs edgeMarks expand numMarks initialStates
+    (dijkstra_genericDFS_found_acceptingSCC numMarks succs edgeMarks expand hexp initialStates hmarksBound
       fr) h
 
 /-- Completeness: an `.empty` answer proves no `TAcceptingCycle` exists. -/
 theorem dijkstraCheck_empty_no_cycle [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
     (fr : FiniteReach initialStates succs)
-    {n : Nat} (h : dijkstraCheck succs initialStates edgeMarks numMarks = .empty n) :
+    {n : Nat} (h : dijkstraCheck succs initialStates edgeMarks expand numMarks = .empty n) :
     ¬∃ _ac : TAcceptingCycle initialStates succs edgeMarks numMarks, True := by
-  have hnone := checkWithWitness_empty_of_none (dijkstraOps numMarks) succs edgeMarks numMarks initialStates
-    (dijkstra_genericDFS_found_acceptingSCC numMarks succs edgeMarks initialStates hmarksBound
+  have hnone := checkWithWitness_empty_of_none (dijkstraOps numMarks) succs edgeMarks expand numMarks initialStates
+    (dijkstra_genericDFS_found_acceptingSCC numMarks succs edgeMarks expand hexp initialStates hmarksBound
       fr) h
   intro hcyc
   obtain ⟨A, -⟩ := acceptingSCC_iff_acceptingCycle.mpr hcyc
-  exact dijkstra_no_acceptingSCC_of_none numMarks succs edgeMarks initialStates hmarksBound
+  exact dijkstra_no_acceptingSCC_of_none numMarks succs edgeMarks expand hexp initialStates hmarksBound
     fr hnone A
 
 /-- `dijkstraCheck` as a `TEmptinessChecker`. -/
 def dijkstraTChecker [LawfulBEq State] [LawfulHashable State] [Inhabited State] :
     TEmptinessChecker State where
-  check := fun succs initialStates _fr edgeMarks numMarks =>
-    dijkstraCheck succs initialStates edgeMarks numMarks
-  nonEmpty_valid := fun {succs initialStates fr edgeMarks numMarks _stem _loop} hmarksBound h =>
-    dijkstraCheck_nonEmpty_valid numMarks succs edgeMarks initialStates hmarksBound fr h
-  empty_no_cycle := fun {succs initialStates fr edgeMarks numMarks _n} hmarksBound h =>
-    dijkstraCheck_empty_no_cycle numMarks succs edgeMarks initialStates hmarksBound fr h
+  check := fun succs initialStates _fr edgeMarks expand numMarks =>
+    dijkstraCheck succs initialStates edgeMarks expand numMarks
+  nonEmpty_valid := fun {succs initialStates fr edgeMarks expand numMarks _stem _loop} hexp hmarksBound h =>
+    dijkstraCheck_nonEmpty_valid numMarks succs edgeMarks expand hexp initialStates hmarksBound fr h
+  empty_no_cycle := fun {succs initialStates fr edgeMarks expand numMarks _n} hexp hmarksBound h =>
+    dijkstraCheck_empty_no_cycle numMarks succs edgeMarks expand hexp initialStates hmarksBound fr h
 
 end LTLLib

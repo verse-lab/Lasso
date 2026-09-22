@@ -177,6 +177,27 @@ def eval : BoolFormula α → Std.HashSet α → Bool
   | .and φ ψ, l => φ.eval l && ψ.eval l
   | .or φ ψ, l => φ.eval l || ψ.eval l
 
+/-- The atoms the formula actually inspects. Used to decide, syntactically, that a formula cannot tell two
+letters apart — which is how a caller discharges `LSys.StateOnly` without reasoning semantically. -/
+def atoms : BoolFormula α → List α
+  | .tt | .ff => []
+  | .prop a | .nprop a => [a]
+  | .and φ ψ | .or φ ψ => φ.atoms ++ ψ.atoms
+
+/-- Two letters agreeing on every atom the formula looks at score the same. -/
+theorem eval_congr {b : BoolFormula α} {l m : Std.HashSet α}
+    (h : ∀ a ∈ b.atoms, l.contains a = m.contains a) : b.eval l = b.eval m := by
+  induction b with
+  | tt | ff => rfl
+  | prop a => exact h a (by simp [atoms])
+  | nprop a => rw [eval, eval, h a (by simp [atoms])]
+  | and φ ψ ihφ ihψ =>
+    rw [eval, eval, ihφ (fun a ha => h a (by simp [atoms, ha])),
+      ihψ (fun a ha => h a (by simp [atoms, ha]))]
+  | or φ ψ ihφ ihψ =>
+    rw [eval, eval, ihφ (fun a ha => h a (by simp [atoms, ha])),
+      ihψ (fun a ha => h a (by simp [atoms, ha]))]
+
 /-- `eval` is `holds` read against set membership. -/
 theorem eval_iff_holds (b : BoolFormula α) (l : Std.HashSet α) :
     b.eval l = true ↔ holds (fun a => a ∈ l) b := by

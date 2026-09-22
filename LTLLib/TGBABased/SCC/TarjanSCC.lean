@@ -341,7 +341,9 @@ def tarjanLowlinkLawful (numMarks : Nat) :
 recording run never reports, so `numMarks` is irrelevant. -/
 def tarjanSCCs [LawfulBEq State] [LawfulHashable State] (succs : State → Array State)
     (initialStates : List State) : List (Std.HashSet State) :=
-  enumSCCs (tarjanOps 0) (tarjanView 0) succs (fun _ _ => ∅) initialStates
+  -- the recording run carries no marks, so the fused expansion is the plain successors with empty marks
+  enumSCCs (tarjanOps 0) (tarjanView 0) succs (fun _ _ => ∅)
+    (fun s => (succs s, (succs s).map (fun _ => ∅), #[])) initialStates
 
 /-- The maximal SCCs of the subgraph induced on the states of `inside` that `keep` admits. -/
 def tarjanSCCsWithin [LawfulBEq State] [LawfulHashable State] (succs : State → Array State)
@@ -355,7 +357,8 @@ theorem tarjanSCCs_sound [LawfulBEq State] [LawfulHashable State] [Inhabited Sta
     (fr : FiniteReach initialStates succs) :
     SCCEnumerationSound initialStates succs (tarjanSCCs succs initialStates) :=
   enumSCCs_sound (tarjanOps 0) (tarjanView 0) (tarjanLowlinkLawful 0) (tarjanLawful 0)
-    (liveWF_init 0) succs (fun _ _ => ∅) initialStates fr
+    (liveWF_init 0) succs (fun _ _ => ∅) (fun s => (succs s, (succs s).map (fun _ => ∅), #[]))
+    (fun _ => rfl) initialStates fr
 
 /-! ## The accepting-mask test
 
@@ -450,18 +453,20 @@ theorem tarjan_full_of_acceptingMarks [Inhabited State] [LawfulBEq State] [Lawfu
 POP [CCLMT18]. -/
 theorem tarjan_sccHintSound [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
     (fr : FiniteReach initialStates succs) :
-    SccHintSound (tarjanOps numMarks) succs edgeMarks numMarks initialStates := by
+    SccHintSound (tarjanOps numMarks) succs edgeMarks expand numMarks initialStates := by
   intro anchor stem hfound
   obtain ⟨-, hout⟩ := genericDFS_searchOutcome (tarjanOps numMarks) (tarjanView numMarks)
-    (tarjanLowlinkLawful numMarks) (tarjanLawful numMarks) (liveWF_init 0) succs edgeMarks initialStates fr
+    (tarjanLowlinkLawful numMarks) (tarjanLawful numMarks) (liveWF_init 0) succs edgeMarks expand hexp initialStates fr
   obtain ⟨aux, step, gray, hwf, hsucc, hanchor, hrep⟩ := hout anchor stem hfound
   rcases hrep with ⟨hidx, hpop⟩ | ⟨d, -, -, hupd⟩
   swap
   -- UPDATE never reports
   · have h1 := congrArg Prod.snd hupd
-    have h2 : ((tarjanOps numMarks).update aux (edgeMarks step.state d) d).2 = false :=
+    have h2 : ((tarjanOps numMarks).update aux (step.succMarks[step.idx]!) d).2 = false :=
       tarjanUpdate_snd numMarks aux _ d
     rw [h2] at h1
     exact absurd h1 (by simp)
@@ -473,11 +478,11 @@ theorem tarjan_sccHintSound [LawfulBEq State] [LawfulHashable State] [Inhabited 
   have hacc0 : (tarjanView numMarks).accAt aux 0 = fullMask numMarks :=
     revGetD_zero (by simp [tarjanView, Array.back?_map, hback])
   -- the hint holds exactly the flushed range
-  have hFeq : F = tarjanSccHint (genericDFS (tarjanOps numMarks) succs edgeMarks initialStates
+  have hFeq : F = tarjanSccHint (genericDFS (tarjanOps numMarks) succs edgeMarks expand initialStates
       (tarjanOps numMarks).initAux).2 := by
     simp only [hF, flushedSet, tarjanSccHint, hwit, tarjanView, id_eq]
   have hmemF : ∀ s, s ∈ F ↔
-      s ∈ (tarjanOps numMarks).sccHint (genericDFS (tarjanOps numMarks) succs edgeMarks initialStates
+      s ∈ (tarjanOps numMarks).sccHint (genericDFS (tarjanOps numMarks) succs edgeMarks expand initialStates
         (tarjanOps numMarks).initAux).2 := fun s => hFeq ▸ Iff.rfl
   have hanchorF : anchor ∈ F := by
     obtain ⟨h1, h2⟩ := hwf.frame_pos ⟨step.state, (tarjanView numMarks).posNat step.pos, step.idx, step.acc⟩
@@ -486,7 +491,7 @@ theorem tarjan_sccHintSound [LawfulBEq State] [LawfulHashable State] [Inhabited 
     exact (mem_flushedSet _ _ anchor).mpr ⟨_, h1, le_refl _, h2.trans hanchor⟩
   have hAF := tarjan_acceptingMarks_of_full numMarks hclose hwf hacc0
   exact ⟨hconn.congr hmemF, hAF.mono (fun s hs => (hmemF s).mp hs), (hmemF anchor).mp hanchorF,
-    genericDFS_stem_path (tarjanOps numMarks) succs edgeMarks initialStates _ anchor stem hfound⟩
+    genericDFS_stem_path (tarjanOps numMarks) succs edgeMarks expand hexp initialStates _ anchor stem hfound⟩
 
 private theorem tarjanMonotone (numMarks : Nat) :
     MonotoneAlong (tarjanOps numMarks (State := State)) (fun _ _ => True) where
@@ -499,16 +504,18 @@ private theorem tarjanMonotone (numMarks : Nat) :
 /-- A run that reports nothing leaves no `AcceptingSCC`. -/
 theorem tarjan_no_acceptingSCC_of_none [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
     (fr : FiniteReach initialStates succs)
-    (hnone : (genericDFS (tarjanOps numMarks) succs edgeMarks initialStates tarjanInitAux).1 = none)
+    (hnone : (genericDFS (tarjanOps numMarks) succs edgeMarks expand initialStates tarjanInitAux).1 = none)
     (A : AcceptingSCC initialStates succs edgeMarks numMarks) : False := by
   have hsound := enumSCCs_sound (tarjanOps numMarks) (tarjanView numMarks) (tarjanLowlinkLawful numMarks)
-    (tarjanLawful numMarks) (liveWF_init 0) succs edgeMarks initialStates fr
+    (tarjanLawful numMarks) (liveWF_init 0) succs edgeMarks expand hexp initialStates fr
   obtain ⟨C, hCmem, hCsub⟩ := hsound.2.2 A.scc A.nonempty A.connected A.reachable
   have hAC : AcceptingMarks succs edgeMarks numMarks C := A.covers.mono hCsub
   have hrec := enumRun_recordedAt (tarjanOps numMarks) (tarjanView numMarks) (tarjanLowlinkLawful numMarks)
-    (tarjanLawful numMarks) (liveWF_init 0) (tarjanMonotone numMarks) succs edgeMarks initialStates fr hnone
+    (tarjanLawful numMarks) (liveWF_init 0) (tarjanMonotone numMarks) succs edgeMarks expand hexp initialStates fr hnone
   simp only [enumSCCs, List.mem_map] at hCmem
   obtain ⟨p, hp, rfl⟩ := hCmem
   obtain ⟨step, gray, hwf, hsucc, hidx, hclose, hflush, hpopfalse, -⟩ := hrec p (by simpa using hp)
@@ -531,42 +538,47 @@ theorem tarjan_no_acceptingSCC_of_none [LawfulBEq State] [LawfulHashable State] 
 
 /-- Tarjan's SCC-based emptiness check. -/
 def tarjanCheck [LawfulBEq State] [LawfulHashable State] (succs : State → Array State)
-    (initialStates : List State) (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat) :
+    (initialStates : List State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (numMarks : Nat) :
     EmptinessResult State :=
-  checkWithWitness (tarjanOps numMarks) succs edgeMarks numMarks initialStates
+  checkWithWitness (tarjanOps numMarks) succs edgeMarks expand numMarks initialStates
 
 /-- Soundness: a reported `stem` and `loop` are a `TAcceptingCycle`'s stem and cycle. -/
 theorem tarjanCheck_nonEmpty_valid [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
     (fr : FiniteReach initialStates succs)
     {stem loop : List State}
-    (h : tarjanCheck succs initialStates edgeMarks numMarks = .nonEmpty stem loop) :
+    (h : tarjanCheck succs initialStates edgeMarks expand numMarks = .nonEmpty stem loop) :
     ∃ ac : TAcceptingCycle initialStates succs edgeMarks numMarks, ac.stem = stem ∧ ac.cycle = loop.tail :=
-  checkWithWitness_nonEmpty_valid (tarjanOps numMarks) succs edgeMarks numMarks initialStates
-    (tarjan_sccHintSound numMarks succs edgeMarks initialStates hmarksBound fr) h
+  checkWithWitness_nonEmpty_valid (tarjanOps numMarks) succs edgeMarks expand numMarks initialStates
+    (tarjan_sccHintSound numMarks succs edgeMarks expand hexp initialStates hmarksBound fr) h
 
 /-- Completeness: an `.empty` answer proves no `TAcceptingCycle` exists. -/
 theorem tarjanCheck_empty_no_cycle [LawfulBEq State] [LawfulHashable State] [Inhabited State]
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
     (fr : FiniteReach initialStates succs)
-    {n : Nat} (h : tarjanCheck succs initialStates edgeMarks numMarks = .empty n) :
+    {n : Nat} (h : tarjanCheck succs initialStates edgeMarks expand numMarks = .empty n) :
     ¬∃ _ac : TAcceptingCycle initialStates succs edgeMarks numMarks, True := by
-  have hnone := checkWithWitness_empty_of_none (tarjanOps numMarks) succs edgeMarks numMarks initialStates
-    (tarjan_sccHintSound numMarks succs edgeMarks initialStates hmarksBound fr) h
+  have hnone := checkWithWitness_empty_of_none (tarjanOps numMarks) succs edgeMarks expand numMarks initialStates
+    (tarjan_sccHintSound numMarks succs edgeMarks expand hexp initialStates hmarksBound fr) h
   intro hcyc
   obtain ⟨A, -⟩ := acceptingSCC_iff_acceptingCycle.mpr hcyc
-  exact tarjan_no_acceptingSCC_of_none numMarks succs edgeMarks initialStates hmarksBound fr hnone A
+  exact tarjan_no_acceptingSCC_of_none numMarks succs edgeMarks expand hexp initialStates hmarksBound fr hnone A
 
 /-- `tarjanCheck` as a `TEmptinessChecker`. -/
 def tarjanTChecker [LawfulBEq State] [LawfulHashable State] [Inhabited State] :
     TEmptinessChecker State where
-  check := fun succs initialStates _fr edgeMarks numMarks =>
-    tarjanCheck succs initialStates edgeMarks numMarks
-  nonEmpty_valid := fun {succs initialStates fr edgeMarks numMarks _stem _loop} hmarksBound h =>
-    tarjanCheck_nonEmpty_valid numMarks succs edgeMarks initialStates hmarksBound fr h
-  empty_no_cycle := fun {succs initialStates fr edgeMarks numMarks _n} hmarksBound h =>
-    tarjanCheck_empty_no_cycle numMarks succs edgeMarks initialStates hmarksBound fr h
+  check := fun succs initialStates _fr edgeMarks expand numMarks =>
+    tarjanCheck succs initialStates edgeMarks expand numMarks
+  nonEmpty_valid := fun {succs initialStates fr edgeMarks expand numMarks _stem _loop} hexp hmarksBound h =>
+    tarjanCheck_nonEmpty_valid numMarks succs edgeMarks expand hexp initialStates hmarksBound fr h
+  empty_no_cycle := fun {succs initialStates fr edgeMarks expand numMarks _n} hexp hmarksBound h =>
+    tarjanCheck_empty_no_cycle numMarks succs edgeMarks expand hexp initialStates hmarksBound fr h
 
 end LTLLib

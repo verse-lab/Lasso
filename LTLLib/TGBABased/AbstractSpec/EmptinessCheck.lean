@@ -69,25 +69,34 @@ variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 index stays below `numMarks`, a hypothesis `check` itself is not given. -/
 structure TEmptinessChecker (State : Type u) [BEq State] [Hashable State]
     [LawfulBEq State] where
+  -- `expand` is the fused `(succs, edgeMarks)` the search actually walks with: one call per state gives its
+  -- successors and their marks, so a caller whose per-source cost is high pays it once per state rather
+  -- than once per edge. `ExpandCoherent` says it agrees with the two callbacks the spec is stated in terms
+  -- of; the proof fields assume it. See `GenericDFS.DFSStep.succMarks`.
   check : (succs : State → Array State) → (initialStates : List State) →
     FiniteReach initialStates succs →
-    (edgeMarks : State → State → Std.HashSet Nat) → (numMarks : Nat) →
+    (edgeMarks : State → State → Std.HashSet Nat) →
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) → (numMarks : Nat) →
     EmptinessResult State
   -- Soundness of `.nonEmpty`: a returned `stem`/`loop` is a `TAcceptingCycle` witness.
   nonEmpty_valid : ∀ {succs : State → Array State} {initialStates : List State}
       {fr : FiniteReach initialStates succs}
-      {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat}
+      {edgeMarks : State → State → Std.HashSet Nat}
+      {expand : State → Array State × Array (Std.HashSet Nat) × Array Nat} {numMarks : Nat}
       {stem loop : List State},
+    ExpandCoherent succs edgeMarks expand →
     (∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks) →
-    check succs initialStates fr edgeMarks numMarks = .nonEmpty stem loop →
+    check succs initialStates fr edgeMarks expand numMarks = .nonEmpty stem loop →
     ∃ ac : TAcceptingCycle initialStates succs edgeMarks numMarks,
       ac.stem = stem ∧ ac.cycle = loop.tail
   -- Completeness of `.empty`: no `TAcceptingCycle` exists.
   empty_no_cycle : ∀ {succs : State → Array State} {initialStates : List State}
       {fr : FiniteReach initialStates succs}
-      {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat} {n : Nat},
+      {edgeMarks : State → State → Std.HashSet Nat}
+      {expand : State → Array State × Array (Std.HashSet Nat) × Array Nat} {numMarks : Nat} {n : Nat},
+    ExpandCoherent succs edgeMarks expand →
     (∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks) →
-    check succs initialStates fr edgeMarks numMarks = .empty n →
+    check succs initialStates fr edgeMarks expand numMarks = .empty n →
     ¬∃ _ac : TAcceptingCycle initialStates succs edgeMarks numMarks, True
 
 end LTLLib

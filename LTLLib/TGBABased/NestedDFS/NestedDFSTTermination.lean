@@ -36,19 +36,20 @@ variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 and the same three cases as `outerDFST_fuel` (back edge, postorder-triggered tree edge, immediate forward/cross edge). -/
 def outerDFSTWF [LawfulHashable State] {initialStates : List State}
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (fr : FiniteReach initialStates succs)
-    (stack : List (RFrame initialStates succs × Bool))
+    (stack : List (RFrame initialStates succs × Bool × List (Std.HashSet Nat)))
     (pathStack : List State)
     (st : FNDFSState State)
     : EmptinessResult State × FNDFSState State :=
   match stack with
   | [] => (.empty st.outerVisited.size, st)
-  | (frame, marked) :: rest =>
+  | (frame, marked, marksRem) :: rest =>
     match hrem : frame.remaining with
     | [] =>
       match _hrest : rest with
-      | [] => outerDFSTWF succs edgeMarks fr rest pathStack.dropLast st
-      | (parentFrame, _) :: _ =>
+      | [] => outerDFSTWF succs edgeMarks expand fr rest pathStack.dropLast st
+      | (parentFrame, _, _) :: _ =>
         if marked then
           let ancestors := pathStack.dropLast
           let innerVisited := Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)
@@ -58,22 +59,30 @@ def outerDFSTWF [LawfulHashable State] {initialStates : List State}
             let loopTail := (pathStack.dropWhile (fun y => !(y == target))).dropLast.dropLast
             (.nonEmpty ancestors (parentFrame.state :: parentFrame.state :: cyclePath ++ loopTail), st')
           | (none, _, st') =>
-            outerDFSTWF succs edgeMarks fr rest ancestors st'
+            outerDFSTWF succs edgeMarks expand fr rest ancestors st'
         else
-          outerDFSTWF succs edgeMarks fr rest pathStack.dropLast st
+          outerDFSTWF succs edgeMarks expand fr rest pathStack.dropLast st
     | succ :: remainingTail =>
       have hmemrem : succ ∈ frame.remaining := hrem ▸ List.mem_cons_self
       have hmemsuccs : succ ∈ succs frame.state :=
         Array.mem_toList_iff.mp (frame.hsuffix.mem hmemrem)
-      let stack' := (frame.consumeOne succ remainingTail hrem, marked) :: rest
-      let edgeMarked := (edgeMarks frame.state succ).contains 0
+      -- PERF: the edge's marks are read off the frame's cached `marksRem` rather than recomputed by
+      -- `edgeMarks frame.state succ`. `marksRem` is filled once per pushed frame from `(expand _).2.1`, so
+      -- the caller's per-source work — for `TBAProduct` a `sysLabel` *and* a `sysSucc` (`sys.tr`) call —
+      -- is paid once per state instead of once per outgoing edge. Under `ExpandCoherent` the invariant
+      -- `marksRem = frame.remaining.map (edgeMarks frame.state)` holds, so the head is exactly
+      -- `edgeMarks frame.state succ` and the `[]` branch is unreachable. See `EdgeLabels.md` §9, §12.11.
+      let marksHead := marksRem.head?.getD (Std.HashSet.emptyWithCapacity 0)
+      let marksTail := marksRem.tail
+      let stack' := (frame.consumeOne succ remainingTail hrem, marked, marksTail) :: rest
+      let edgeMarked := marksHead.contains 0
       if pathStack.contains succ then
         if edgeMarked then
           let stem := pathStack.takeWhile (fun y => !(y == succ)) ++ [succ]
           let loop := succ :: pathStack.dropWhile (fun y => !(y == succ))
           (.nonEmpty stem loop, st)
         else
-          outerDFSTWF succs edgeMarks fr stack' pathStack st
+          outerDFSTWF succs edgeMarks expand fr stack' pathStack st
       else if _hvis : st.outerVisited.contains succ then
         if edgeMarked then
           let innerVisited := Std.HashSet.emptyWithCapacity (st.outerVisited.size / 2)
@@ -83,13 +92,14 @@ def outerDFSTWF [LawfulHashable State] {initialStates : List State}
             let loopTail := (pathStack.dropWhile (fun y => !(y == target))).dropLast
             (.nonEmpty pathStack (frame.state :: frame.state :: cyclePath ++ loopTail), st')
           | (none, _, st') =>
-            outerDFSTWF succs edgeMarks fr stack' pathStack st'
+            outerDFSTWF succs edgeMarks expand fr stack' pathStack st'
         else
-          outerDFSTWF succs edgeMarks fr stack' pathStack st
+          outerDFSTWF succs edgeMarks expand fr stack' pathStack st
       else
         let st2 := { st with outerVisited := st.outerVisited.insert succ }
-        outerDFSTWF succs edgeMarks fr
-          ((frame.push succ hmemsuccs, edgeMarked) :: stack') (pathStack ++ [succ]) st2
+        outerDFSTWF succs edgeMarks expand fr
+          ((frame.push succ hmemsuccs, edgeMarked, (expand succ).2.1.toList) :: stack')
+          (pathStack ++ [succ]) st2
 termination_by
   (({s | Reachable initialStates succs s} \ {x | st.outerVisited.contains x}).ncard,
    pendingSum (stack.map Prod.fst) + stack.length)
@@ -408,18 +418,39 @@ theorem outerDFST_fuel_add_preserves (succs : State → Array State)
 
 variable {initialStates : List State} [LawfulHashable State] (succs : State → Array State)
   (fr : FiniteReach initialStates succs) (edgeMarks : State → State → Std.HashSet Nat)
+  (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
 
-/-- For a suitable `stack`, `pathStack` and `st`, some fuel makes `outerDFST_fuel` succeed and agree with `outerDFSTWF`. -/
+/-- The marks cached when a frame is pushed are exactly the marks of that state's outgoing edges.
+Immediate from `ExpandCoherent`, and the only thing the frame-cache invariant needs at a push. -/
+theorem expand_snd_toList (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
+    (hexp : ExpandCoherent succs edgeMarks expand) (s : State) :
+    (expand s).2.1.toList = (succs s).toList.map (edgeMarks s) := by
+  -- §13.17: `ExpandCoherent` is now an equation between the first two projections, so the marks come
+  -- out through `.snd` rather than by rewriting with the pair equation directly
+  rw [hexp.snd s]; simp
+
+/-- For a suitable `stack`, `pathStack` and `st`, some fuel makes `outerDFST_fuel` succeed and agree with
+`outerDFSTWF`.
+
+`hmarks` is the frame-cache invariant: every frame's cached `marksRem` is exactly the marks of its own
+remaining successors. It is established at each push from `hexp` and preserved by `consumeOne`, and it is
+what makes the cached head equal `edgeMarks frame.state succ`, so the fuel spec — which still reads
+`edgeMarks` pointwise — agrees with the cached search. See `EdgeLabels.md` §12.11. -/
 theorem outerDFST_fuel_eq_outerDFSTWF
-    (stack : List (RFrame initialStates succs × Bool)) (pathStack : List State) (st : FNDFSState State)
+    (hexp : ExpandCoherent succs edgeMarks expand)
+    (stack : List (RFrame initialStates succs × Bool × List (Std.HashSet Nat)))
+    (hmarks : ∀ f ∈ stack, f.2.2 = f.1.remaining.map (edgeMarks f.1.state))
+    (pathStack : List State) (st : FNDFSState State)
     (hfin : ∀ x, st.innerFinished.contains x → Reachable initialStates succs x) :
     ∃ fuel result st', outerDFST_fuel succs edgeMarks fuel
-        (stack.map (fun f => (f.1.state, f.1.remaining, f.2))) pathStack st =
+        (stack.map (fun f => (f.1.state, f.1.remaining, f.2.1))) pathStack st =
         some (result, st') ∧
       (∀ x, st'.innerFinished.contains x → Reachable initialStates succs x) ∧
-      (result, st') = outerDFSTWF succs edgeMarks fr stack pathStack st := by
-  induction stack, pathStack, st using outerDFSTWF.induct (succs := succs) (edgeMarks := edgeMarks)
-      (fr := fr) with
+      (result, st') = outerDFSTWF succs edgeMarks expand fr stack pathStack st := by
+  induction stack, pathStack, st using outerDFSTWF.induct (succs := succs)
+      (expand := expand) (fr := fr) with
   | case1 =>
     rename_i pathStack st
     refine ⟨1, .empty st.outerVisited.size, st,
@@ -427,8 +458,8 @@ theorem outerDFST_fuel_eq_outerDFSTWF
     unfold outerDFSTWF
     rfl
   | case2 =>
-    rename_i pathStack st frame marked hrem ih1
-    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 hfin
+    rename_i pathStack st frame marked marksRem hrem ih1
+    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 (by simp) hfin
     refine ⟨fuel2 + 1, result2, st2, ?_, hfin2, ?_⟩
     · simp only [List.map_cons, List.map_nil, hrem]
       exact outerDFST_fuel_postorder_skip_norest succs edgeMarks fuel2 frame.state marked
@@ -436,8 +467,8 @@ theorem outerDFST_fuel_eq_outerDFSTWF
     · unfold outerDFSTWF
       grind
   | case3 =>
-    rename_i pathStack st frame hrem parentFrame snd tail ancestors innerVisited cyclePath target
-      fst st' hr
+    rename_i pathStack st frame marksRem hrem parentFrame snd pmarks tail ancestors innerVisited
+      cyclePath target fst st' hr
     have hiv : ∀ x, innerVisited.contains x → Reachable initialStates succs x := by
       simp [innerVisited, Std.HashSet.contains_emptyWithCapacity]
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
@@ -453,12 +484,13 @@ theorem outerDFST_fuel_eq_outerDFSTWF
     · simp only [List.map_cons, hrem]
       exact outerDFST_fuel_postorder_found succs edgeMarks
         (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) frame.state parentFrame.state
-        parentFrame.remaining snd (List.map (fun f => (f.1.state, f.1.remaining, f.2)) tail)
+        parentFrame.remaining snd (List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) tail)
         pathStack st cyclePath target iv₁ st₁ heq
     · unfold outerDFSTWF
       grind
   | case4 =>
-    rename_i pathStack st frame hrem parentFrame snd tail ancestors innerVisited fst st' hr ih1
+    rename_i pathStack st frame marksRem hrem parentFrame snd pmarks tail ancestors innerVisited
+      fst st' hr ih1
     have hiv : ∀ x, innerVisited.contains x → Reachable initialStates succs x := by
       simp [innerVisited, Std.HashSet.contains_emptyWithCapacity]
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
@@ -468,7 +500,7 @@ theorem outerDFST_fuel_eq_outerDFSTWF
     rw [hr] at heqC
     simp only [Prod.mk.injEq] at heqC
     obtain ⟨rfl, rfl, rfl⟩ := heqC
-    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 hfin1
+    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 (fun f hf => hmarks f (List.mem_cons_of_mem _ hf)) hfin1
     simp only [List.map_cons] at heq2
     let m := max (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) fuel2
     have heqm : innerDFS_fuel succs parentFrame.state ancestors m frame.state innerVisited st =
@@ -479,58 +511,77 @@ theorem outerDFST_fuel_eq_outerDFSTWF
         (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) frame.state innerVisited st none iv₁ st₁ heq
     have heq2m : outerDFST_fuel succs edgeMarks m
         ((parentFrame.state, parentFrame.remaining, snd) ::
-          List.map (fun f => (f.1.state, f.1.remaining, f.2)) tail) ancestors st₁ =
+          List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) tail) ancestors st₁ =
         some (result2, st2) := by
       rw [show m = fuel2 + (m - fuel2) by simp only [m]; omega]
       exact outerDFST_fuel_add_preserves succs edgeMarks _ fuel2 _ ancestors st₁ result2 st2 heq2
     refine ⟨m + 1, result2, st2, ?_, hfin2, ?_⟩
     · simp only [List.map_cons, hrem]
       exact (outerDFST_fuel_postorder_not_found succs edgeMarks m frame.state parentFrame.state
-        parentFrame.remaining snd (List.map (fun f => (f.1.state, f.1.remaining, f.2)) tail)
+        parentFrame.remaining snd (List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) tail)
         pathStack st iv₁ st₁ heqm).trans heq2m
     · unfold outerDFSTWF
       grind
   | case5 =>
-    rename_i pathStack st frame marked hrem parentFrame snd tail hmk ih1
+    rename_i pathStack st frame marked marksRem hrem parentFrame snd pmarks tail hmk ih1
     have hmk' : marked = false := by simpa using hmk
-    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 hfin
+    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ :=
+      ih1 (fun f hf => hmarks f (List.mem_cons_of_mem _ hf)) hfin
     refine ⟨fuel2 + 1, result2, st2, ?_, hfin2, ?_⟩
     · simp only [List.map_cons, hrem, hmk']
       exact outerDFST_fuel_postorder_skip_unmarked succs edgeMarks fuel2 frame.state
         parentFrame.state parentFrame.remaining snd
-        (List.map (fun f => (f.1.state, f.1.remaining, f.2)) tail) pathStack st ▸ heq2
+        (List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) tail) pathStack st ▸ heq2
     · unfold outerDFSTWF
       grind
   | case6 =>
-    rename_i pathStack st frame marked rest succ remainingTail hrem hmemrem hmemsuccs _edgeMarked
-      hb hm
+    rename_i pathStack st frame marked marksRem rest succ remainingTail hrem hmemrem hmemsuccs
+      marksHead _edgeMarked hb hm
+    have hbase : marksRem = edgeMarks frame.state succ :: remainingTail.map (edgeMarks frame.state) := by
+      have h := hmarks (frame, marked, marksRem) List.mem_cons_self
+      simpa only [hrem, List.map_cons] using h
+    have hmh : marksHead = edgeMarks frame.state succ := by simp [marksHead, hbase]
     refine ⟨1, .nonEmpty (pathStack.takeWhile (fun y => !(y == succ)) ++ [succ])
       (succ :: pathStack.dropWhile (fun y => !(y == succ))), st, ?_, hfin, ?_⟩
     · simp only [List.map_cons, hrem]
       exact outerDFST_fuel_back_edge_marked succs edgeMarks 0 frame.state succ remainingTail
-        marked (List.map (fun f => (f.1.state, f.1.remaining, f.2)) rest) pathStack st
-        (by simpa using hb) (by simpa [_edgeMarked] using hm)
+        marked (List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) rest) pathStack st
+        (by simpa using hb) (by simpa [_edgeMarked, hmh] using hm)
     · unfold outerDFSTWF
       grind
   | case7 =>
-    rename_i pathStack st frame marked rest succ remainingTail hrem hmemrem hmemsuccs stack'
-      _edgeMarked hb hm ih1
+    rename_i pathStack st frame marked marksRem rest succ remainingTail hrem hmemrem hmemsuccs
+      marksHead marksTail stack' _edgeMarked hb hm ih1
+    have hbase : marksRem = edgeMarks frame.state succ :: remainingTail.map (edgeMarks frame.state) := by
+      have h := hmarks (frame, marked, marksRem) List.mem_cons_self
+      simpa only [hrem, List.map_cons] using h
+    have hmh : marksHead = edgeMarks frame.state succ := by simp [marksHead, hbase]
+    have hmt : marksTail = remainingTail.map (edgeMarks frame.state) := by simp [marksTail, hbase]
+    have hmarks' : ∀ f ∈ stack', f.2.2 = f.1.remaining.map (edgeMarks f.1.state) := by
+      intro f hf
+      rcases List.mem_cons.mp hf with rfl | hf
+      · simpa [RFrame.consumeOne] using hmt
+      · exact hmarks f (List.mem_cons_of_mem _ hf)
     have hb' : succ ∈ pathStack := by simpa using hb
-    have hm' : (edgeMarks frame.state succ).contains 0 = false := by simpa [_edgeMarked] using hm
-    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 hfin
+    have hm' : (edgeMarks frame.state succ).contains 0 = false := by simpa [_edgeMarked, hmh] using hm
+    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 hmarks' hfin
     simp only [stack', RFrame.consumeOne, List.map_cons] at heq2
     refine ⟨fuel2 + 1, result2, st2, ?_, hfin2, ?_⟩
     · simp only [List.map_cons, hrem]
       exact outerDFST_fuel_back_edge_skip succs edgeMarks fuel2 frame.state succ remainingTail
-        marked (List.map (fun f => (f.1.state, f.1.remaining, f.2)) rest) pathStack st hb' hm' ▸ heq2
+        marked (List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) rest) pathStack st hb' hm' ▸ heq2
     · unfold outerDFSTWF
       grind
   | case8 =>
-    rename_i pathStack st frame marked rest succ remainingTail hrem hmemrem hmemsuccs _edgeMarked
-      hnb hvis hm innerVisited cyclePath target fst st' hr
+    rename_i pathStack st frame marked marksRem rest succ remainingTail hrem hmemrem hmemsuccs
+      marksHead _edgeMarked hnb hvis hm innerVisited cyclePath target fst st' hr
+    have hbase : marksRem = edgeMarks frame.state succ :: remainingTail.map (edgeMarks frame.state) := by
+      have h := hmarks (frame, marked, marksRem) List.mem_cons_self
+      simpa only [hrem, List.map_cons] using h
+    have hmh : marksHead = edgeMarks frame.state succ := by simp [marksHead, hbase]
     have hnb' : succ ∉ pathStack := by simpa using hnb
     have hvis' : st.outerVisited.contains succ = true := hvis
-    have hm' : (edgeMarks frame.state succ).contains 0 = true := by simpa [_edgeMarked] using hm
+    have hm' : (edgeMarks frame.state succ).contains 0 = true := by simpa [_edgeMarked, hmh] using hm
     have hiv : ∀ x, innerVisited.contains x → Reachable initialStates succs x := by
       simp [innerVisited, Std.HashSet.contains_emptyWithCapacity]
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
@@ -546,16 +597,26 @@ theorem outerDFST_fuel_eq_outerDFSTWF
     · simp only [List.map_cons, hrem]
       exact outerDFST_fuel_forward_found succs edgeMarks
         (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) frame.state succ remainingTail marked
-        (List.map (fun f => (f.1.state, f.1.remaining, f.2)) rest) pathStack st hnb' hvis' hm'
+        (List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) rest) pathStack st hnb' hvis' hm'
         cyclePath target iv₁ st₁ heq
     · unfold outerDFSTWF
       grind
   | case9 =>
-    rename_i pathStack st frame marked rest succ remainingTail hrem hmemrem hmemsuccs stack'
-      _edgeMarked hnb hvis hm innerVisited fst st' hr ih1
+    rename_i pathStack st frame marked marksRem rest succ remainingTail hrem hmemrem hmemsuccs
+      marksHead marksTail stack' _edgeMarked hnb hvis hm innerVisited fst st' hr ih1
+    have hbase : marksRem = edgeMarks frame.state succ :: remainingTail.map (edgeMarks frame.state) := by
+      have h := hmarks (frame, marked, marksRem) List.mem_cons_self
+      simpa only [hrem, List.map_cons] using h
+    have hmh : marksHead = edgeMarks frame.state succ := by simp [marksHead, hbase]
+    have hmt : marksTail = remainingTail.map (edgeMarks frame.state) := by simp [marksTail, hbase]
+    have hmarks' : ∀ f ∈ stack', f.2.2 = f.1.remaining.map (edgeMarks f.1.state) := by
+      intro f hf
+      rcases List.mem_cons.mp hf with rfl | hf
+      · simpa [RFrame.consumeOne] using hmt
+      · exact hmarks f (List.mem_cons_of_mem _ hf)
     have hnb' : succ ∉ pathStack := by simpa using hnb
     have hvis' : st.outerVisited.contains succ = true := hvis
-    have hm' : (edgeMarks frame.state succ).contains 0 = true := by simpa [_edgeMarked] using hm
+    have hm' : (edgeMarks frame.state succ).contains 0 = true := by simpa [_edgeMarked, hmh] using hm
     have hiv : ∀ x, innerVisited.contains x → Reachable initialStates succs x := by
       simp [innerVisited, Std.HashSet.contains_emptyWithCapacity]
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
@@ -565,7 +626,7 @@ theorem outerDFST_fuel_eq_outerDFSTWF
     rw [hr] at heqC
     simp only [Prod.mk.injEq] at heqC
     obtain ⟨rfl, rfl, rfl⟩ := heqC
-    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 hfin1
+    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 hmarks' hfin1
     simp only [stack', RFrame.consumeOne, List.map_cons] at heq2
     let m := max (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) fuel2
     have heqm : innerDFS_fuel succs frame.state pathStack m succ innerVisited st =
@@ -576,51 +637,75 @@ theorem outerDFST_fuel_eq_outerDFSTWF
         (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) succ innerVisited st none iv₁ st₁ heq
     have heq2m : outerDFST_fuel succs edgeMarks m
         ((frame.state, remainingTail, marked) ::
-          List.map (fun f => (f.1.state, f.1.remaining, f.2)) rest) pathStack st₁ =
+          List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) rest) pathStack st₁ =
         some (result2, st2) := by
       rw [show m = fuel2 + (m - fuel2) by simp only [m]; omega]
       exact outerDFST_fuel_add_preserves succs edgeMarks _ fuel2 _ pathStack st₁ result2 st2 heq2
     refine ⟨m + 1, result2, st2, ?_, hfin2, ?_⟩
     · simp only [List.map_cons, hrem]
       exact (outerDFST_fuel_forward_not_found succs edgeMarks m frame.state succ remainingTail
-        marked (List.map (fun f => (f.1.state, f.1.remaining, f.2)) rest) pathStack st hnb' hvis'
+        marked (List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) rest) pathStack st hnb' hvis'
         hm' iv₁ st₁ heqm).trans heq2m
     · unfold outerDFSTWF
       grind
   | case10 =>
-    rename_i pathStack st frame marked rest succ remainingTail hrem hmemrem hmemsuccs stack'
-      _edgeMarked hnb hvis hm ih1
+    rename_i pathStack st frame marked marksRem rest succ remainingTail hrem hmemrem hmemsuccs
+      marksHead marksTail stack' _edgeMarked hnb hvis hm ih1
+    have hbase : marksRem = edgeMarks frame.state succ :: remainingTail.map (edgeMarks frame.state) := by
+      have h := hmarks (frame, marked, marksRem) List.mem_cons_self
+      simpa only [hrem, List.map_cons] using h
+    have hmh : marksHead = edgeMarks frame.state succ := by simp [marksHead, hbase]
+    have hmt : marksTail = remainingTail.map (edgeMarks frame.state) := by simp [marksTail, hbase]
+    have hmarks' : ∀ f ∈ stack', f.2.2 = f.1.remaining.map (edgeMarks f.1.state) := by
+      intro f hf
+      rcases List.mem_cons.mp hf with rfl | hf
+      · simpa [RFrame.consumeOne] using hmt
+      · exact hmarks f (List.mem_cons_of_mem _ hf)
     have hnb' : succ ∉ pathStack := by simpa using hnb
     have hvis' : st.outerVisited.contains succ = true := hvis
-    have hm' : (edgeMarks frame.state succ).contains 0 = false := by simpa [_edgeMarked] using hm
-    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 hfin
+    have hm' : (edgeMarks frame.state succ).contains 0 = false := by simpa [_edgeMarked, hmh] using hm
+    obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 hmarks' hfin
     simp only [stack', RFrame.consumeOne, List.map_cons] at heq2
     refine ⟨fuel2 + 1, result2, st2, ?_, hfin2, ?_⟩
     · simp only [List.map_cons, hrem]
       exact outerDFST_fuel_forward_skip succs edgeMarks fuel2 frame.state succ remainingTail
-        marked (List.map (fun f => (f.1.state, f.1.remaining, f.2)) rest) pathStack st hnb' hvis'
+        marked (List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) rest) pathStack st hnb' hvis'
         hm' ▸ heq2
     · unfold outerDFSTWF
       grind
   | case11 =>
-    rename_i pathStack st frame marked rest succ remainingTail hrem hmemrem hmemsuccs stack'
-      _edgeMarked hnb hvis st2 ih1
+    rename_i pathStack st frame marked marksRem rest succ remainingTail hrem hmemrem hmemsuccs
+      marksHead marksTail stack' _edgeMarked hnb hvis st2 ih1
+    have hbase : marksRem = edgeMarks frame.state succ :: remainingTail.map (edgeMarks frame.state) := by
+      have h := hmarks (frame, marked, marksRem) List.mem_cons_self
+      simpa only [hrem, List.map_cons] using h
+    have hmh : marksHead = edgeMarks frame.state succ := by simp [marksHead, hbase]
+    have hmt : marksTail = remainingTail.map (edgeMarks frame.state) := by simp [marksTail, hbase]
+    have hmarks' : ∀ f ∈ stack', f.2.2 = f.1.remaining.map (edgeMarks f.1.state) := by
+      intro f hf
+      rcases List.mem_cons.mp hf with rfl | hf
+      · simpa [RFrame.consumeOne] using hmt
+      · exact hmarks f (List.mem_cons_of_mem _ hf)
     have hnb' : succ ∉ pathStack := by simpa using hnb
     have hvis' : st.outerVisited.contains succ = false := by simpa using hvis
     have hfin2' : ∀ x, st2.innerFinished.contains x → Reachable initialStates succs x := by
       simp only [st2]; exact hfin
-    obtain ⟨fuel2, result2, st2', heq2, hfin2, heqC2⟩ := ih1 hfin2'
-    simp only [stack', RFrame.push, RFrame.consumeOne, List.map_cons] at heq2
+    have hmarksPush : ∀ f ∈ (frame.push succ hmemsuccs, _edgeMarked, (expand succ).2.1.toList) :: stack',
+        f.2.2 = f.1.remaining.map (edgeMarks f.1.state) := by
+      intro f hf
+      rcases List.mem_cons.mp hf with rfl | hf
+      · simpa [RFrame.push] using expand_snd_toList succs edgeMarks expand hexp succ
+      · exact hmarks' f hf
+    obtain ⟨fuel2, result2, st2', heq2, hfin2, heqC2⟩ := ih1 hmarksPush hfin2'
+    simp only [stack', st2, _edgeMarked, hmh, RFrame.push, RFrame.consumeOne, List.map_cons] at heq2
     refine ⟨fuel2 + 1, result2, st2', ?_, hfin2, ?_⟩
     · simp only [List.map_cons, hrem]
       exact outerDFST_fuel_push succs edgeMarks fuel2 frame.state succ remainingTail marked
-        (List.map (fun f => (f.1.state, f.1.remaining, f.2)) rest) pathStack st hnb' hvis' ▸ heq2
+        (List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) rest) pathStack st hnb' hvis' ▸ heq2
     · unfold outerDFSTWF
       grind
 
 end OuterFuelBridge
-
-/-! ## Top-level `nestedDFST`, well-founded -/
 
 section TopLevelWF
 
@@ -628,16 +713,18 @@ variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- Well-founded top-level edge-aware nested DFS emptiness check. -/
 def nestedDFSTWF [LawfulHashable State] (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State)
     (fr : FiniteReach initialStates succs) : EmptinessResult State :=
   let st : FNDFSState State := {
     outerVisited := Std.HashSet.emptyWithCapacity 1024
     innerFinished := Std.HashSet.emptyWithCapacity 1024
   }
-  nestedDFSTWF.go succs edgeMarks initialStates fr initialStates (List.suffix_refl _) st
+  nestedDFSTWF.go succs edgeMarks expand initialStates fr initialStates (List.suffix_refl _) st
 where
   go [LawfulHashable State] (succs : State → Array State)
-      (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
+      (edgeMarks : State → State → Std.HashSet Nat)
+      (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State)
       (fr : FiniteReach initialStates succs)
       (remaining : List State) (hsub : remaining <:+ initialStates) (st : FNDFSState State) :
       EmptinessResult State :=
@@ -645,19 +732,19 @@ where
     | [] => .empty st.outerVisited.size
     | init :: rest =>
       if st.outerVisited.contains init then
-        go succs edgeMarks initialStates fr rest ((List.suffix_cons init rest).trans hsub) st
+        go succs edgeMarks expand initialStates fr rest ((List.suffix_cons init rest).trans hsub) st
       else
         let st := { st with outerVisited := st.outerVisited.insert init }
         have hinit_reach : Reachable initialStates succs init :=
           .base (hsub.mem List.mem_cons_self)
         let succsList := (succs init).toList
-        match outerDFSTWF succs edgeMarks fr
+        match outerDFSTWF succs edgeMarks expand fr
             [({ state := init, hreach := hinit_reach, remaining := succsList,
-                hsuffix := List.suffix_refl _ }, false)]
+                hsuffix := List.suffix_refl _ }, false, (expand init).2.1.toList)]
             [init] st with
         | (.nonEmpty stem loop, _) => .nonEmpty stem loop
         | (.empty _, st') =>
-          go succs edgeMarks initialStates fr rest ((List.suffix_cons init rest).trans hsub) st'
+          go succs edgeMarks expand initialStates fr rest ((List.suffix_cons init rest).trans hsub) st'
 
 end TopLevelWF
 
@@ -761,13 +848,15 @@ theorem nestedDFST_fuel_go_add_preserves (succs : State → Array State)
 
 variable {initialStates : List State} [LawfulHashable State] (succs : State → Array State)
   (fr : FiniteReach initialStates succs) (edgeMarks : State → State → Std.HashSet Nat)
+  (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
 
 /-- For a suitable `remaining` and `st`, some fuel makes `nestedDFST_fuel.go` succeed and agree with `nestedDFSTWF.go`. -/
 theorem nestedDFST_fuel_go_eq_nestedDFSTWF_go
+    (hexp : ExpandCoherent succs edgeMarks expand)
     (remaining : List State) (hsub : remaining <:+ initialStates) (st : FNDFSState State)
     (hfin : ∀ x, st.innerFinished.contains x → Reachable initialStates succs x) :
     ∃ fuel result, nestedDFST_fuel.go succs edgeMarks remaining st fuel = some result ∧
-      result = nestedDFSTWF.go succs edgeMarks initialStates fr remaining hsub st := by
+      result = nestedDFSTWF.go succs edgeMarks expand initialStates fr remaining hsub st := by
   induction remaining generalizing st with
   | nil =>
     refine ⟨1, .empty st.outerVisited.size, nestedDFST_fuel_go_nil succs edgeMarks st 0, ?_⟩
@@ -788,9 +877,14 @@ theorem nestedDFST_fuel_go_eq_nestedDFSTWF_go
       let st2 := { st with outerVisited := st.outerVisited.insert init }
       have hfin2 : ∀ x, st2.innerFinished.contains x → Reachable initialStates succs x := hfin
       obtain ⟨fuelI, resultI, stI, heqI, hfinI, heqCI⟩ :=
-        outerDFST_fuel_eq_outerDFSTWF succs fr edgeMarks
+        outerDFST_fuel_eq_outerDFSTWF succs fr edgeMarks expand hexp
           [({ state := init, hreach := hinit_reach, remaining := (succs init).toList,
-              hsuffix := List.suffix_refl _ }, false)]
+              hsuffix := List.suffix_refl _ }, false, (expand init).2.1.toList)]
+          (by
+            intro f hf
+            simp only [List.mem_singleton] at hf
+            subst hf
+            simpa using expand_snd_toList succs edgeMarks expand hexp init)
           [init] st2 hfin2
       simp only [List.map] at heqI
       cases resultI with
@@ -800,20 +894,20 @@ theorem nestedDFST_fuel_go_eq_nestedDFSTWF_go
             heqI
         · unfold nestedDFSTWF.go
           have heqCI' : (EmptinessResult.nonEmpty stem loop, stI) =
-              outerDFSTWF succs edgeMarks fr
+              outerDFSTWF succs edgeMarks expand fr
                 [({ state := init, hreach := hinit_reach, remaining := (succs init).toList,
-                    hsuffix := List.suffix_refl _ }, false)]
+                    hsuffix := List.suffix_refl _ }, false, (expand init).2.1.toList)]
                 [init] { st with outerVisited := st.outerVisited.insert init } := by
             simpa only [st2] using heqCI
           rw [if_neg (by simp [hvis])]
           show EmptinessResult.nonEmpty stem loop =
-              match outerDFSTWF succs edgeMarks fr
+              match outerDFSTWF succs edgeMarks expand fr
                   [({ state := init, hreach := hinit_reach, remaining := (succs init).toList,
-                      hsuffix := List.suffix_refl _ }, false)]
+                      hsuffix := List.suffix_refl _ }, false, (expand init).2.1.toList)]
                   [init] { st with outerVisited := st.outerVisited.insert init } with
               | (EmptinessResult.nonEmpty stem loop, _) => EmptinessResult.nonEmpty stem loop
               | (EmptinessResult.empty _, st') =>
-                nestedDFSTWF.go succs edgeMarks initialStates fr rest hsub_rest st'
+                nestedDFSTWF.go succs edgeMarks expand initialStates fr rest hsub_rest st'
           rw [← heqCI']
       | empty m =>
         obtain ⟨fuelR, resultR, heqR, heqCR⟩ := ih hsub_rest stI hfinI
@@ -836,32 +930,33 @@ theorem nestedDFST_fuel_go_eq_nestedDFSTWF_go
           exact heqCR
 
 /-- Some fuel makes `nestedDFST_fuel` succeed and agree with `nestedDFSTWF`. -/
-theorem nestedDFST_fuel_eq_nestedDFSTWF :
+theorem nestedDFST_fuel_eq_nestedDFSTWF (hexp : ExpandCoherent succs edgeMarks expand) :
     ∃ fuel, nestedDFST_fuel initialStates succs edgeMarks fuel =
-      some (nestedDFSTWF succs edgeMarks initialStates fr) := by
+      some (nestedDFSTWF succs edgeMarks expand initialStates fr) := by
   unfold nestedDFST_fuel nestedDFSTWF
   obtain ⟨fuel, result, heq, heqC⟩ :=
-    nestedDFST_fuel_go_eq_nestedDFSTWF_go succs fr edgeMarks initialStates (List.suffix_refl _)
+    nestedDFST_fuel_go_eq_nestedDFSTWF_go succs fr edgeMarks expand hexp initialStates
+      (List.suffix_refl _)
       { outerVisited := Std.HashSet.emptyWithCapacity 1024
         innerFinished := Std.HashSet.emptyWithCapacity 1024 }
       (fun x hx => absurd hx (by simp [Std.HashSet.contains_emptyWithCapacity]))
   exact ⟨fuel, heqC ▸ heq⟩
 
 /-- If `nestedDFSTWF` returns `.empty`, no `TAcceptingCycle` with one mark exists. -/
-theorem nestedDFSTWF_empty_no_cycle
-    (n : Nat) (h : nestedDFSTWF succs edgeMarks initialStates fr = .empty n) :
+theorem nestedDFSTWF_empty_no_cycle (hexp : ExpandCoherent succs edgeMarks expand)
+    (n : Nat) (h : nestedDFSTWF succs edgeMarks expand initialStates fr = .empty n) :
     ¬∃ _ac : TAcceptingCycle initialStates succs edgeMarks 1, True := by
-  obtain ⟨fuel, heq⟩ := nestedDFST_fuel_eq_nestedDFSTWF succs fr edgeMarks
+  obtain ⟨fuel, heq⟩ := nestedDFST_fuel_eq_nestedDFSTWF succs fr edgeMarks expand hexp
   rw [h] at heq
   exact nestedDFST_fuel_empty_no_cycle heq
 
 /-- If `nestedDFSTWF` returns `.nonEmpty stem loop`, then `(stem, loop.tail)` is a `TAcceptingCycle` with one mark. -/
-theorem nestedDFSTWF_nonEmpty_valid
+theorem nestedDFSTWF_nonEmpty_valid (hexp : ExpandCoherent succs edgeMarks expand)
     (stem loop : List State)
-    (h : nestedDFSTWF succs edgeMarks initialStates fr = .nonEmpty stem loop) :
+    (h : nestedDFSTWF succs edgeMarks expand initialStates fr = .nonEmpty stem loop) :
     ∃ ac : TAcceptingCycle initialStates succs edgeMarks 1,
       ac.stem = stem ∧ ac.cycle = loop.tail := by
-  obtain ⟨fuel, heq⟩ := nestedDFST_fuel_eq_nestedDFSTWF succs fr edgeMarks
+  obtain ⟨fuel, heq⟩ := nestedDFST_fuel_eq_nestedDFSTWF succs fr edgeMarks expand hexp
   rw [h] at heq
   exact nestedDFST_fuel_nonEmpty_valid heq
 

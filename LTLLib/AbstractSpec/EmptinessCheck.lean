@@ -129,6 +129,110 @@ theorem Reachable.of_run {State : Type u} {initialStates : List State} {succs : 
   | zero => exact .base hinit
   | succ n ih => exact .step ih (htrans n)
 
+/-- `expand` is the fused form of the two callbacks it stands for: one call yields a state's successors and
+the marks of each. Fusing them is what lets `dfsGo` pay the caller's per-source cost once per pushed frame
+instead of once per outgoing edge — see `DFSStep.succMarks`. Every theorem that reads a frame's cache back
+as `succs`/`edgeMarks` takes this as a hypothesis. -/
+def ExpandCoherent {State : Type u} (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+    (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) : Prop :=
+  ∀ s, ((expand s).1, (expand s).2.1) = (succs s, (succs s).map (edgeMarks s))
+
+/-- Filter a fused expansion by a predicate on the target, keeping the successors, their marks and their
+option bits in step. This is how a route that walks a *restricted* graph — the prune's induced subgraphs,
+the latch's committed copy — reuses the caller's fused expansion instead of recomputing the marks pointwise.
+
+The option-bit array obeys the dichotomy `derivedExpand` sets up: it is **either empty** — the caller has
+no options, which is every route but the Streett prune — **or parallel to the successors**. Filtering
+preserves that, which is why the payload is filtered by its own pass rather than by one three-way `zip`.
+A single `((e.1.zip e.2.1).zip e.2.2)` is wrong and silently so: `Array.zip` truncates to the shorter
+operand, so an empty payload takes *every successor with it* and the restricted graph comes back edgeless.
+The searches that walk it then report `.empty` — no counterexample — on a graph that has no edges to find
+one in. Caught by a probe, not by the bench: the benched properties leave `aux.pending` empty (§13.14), so
+neither caller runs on them. -/
+def filterExpand {State : Type u} (e : Array State × Array (Std.HashSet Nat) × Array Nat)
+    (p : State → Bool) : Array State × Array (Std.HashSet Nat) × Array Nat :=
+  let z := (e.1.zip e.2.1).filter fun x => p x.1
+  (z.map Prod.fst, z.map Prod.snd,
+    if e.2.2.isEmpty then #[] else ((e.1.zip e.2.2).filter fun x => p x.1).map Prod.snd)
+
+/-- Zipping an array against its own image and filtering on the source is filtering then re-pairing. The
+engine under `filterExpand_fst_snd`, and the reason the filter is stated on the *pair* rather than on the
+triple: it is the shape that does not depend on the payload's length. -/
+theorem zip_filter_map {State : Type u} {β : Type v} (ss : Array State) (f : State → β)
+    (p : State → Bool) :
+    ((ss.zip (ss.map f)).filter fun x => p x.1) = (ss.filter p).map (fun a => (a, f a)) := by
+  have hlist : ∀ (l : List State),
+      (l.zip (l.map f)).filter (fun x => p x.1) = (l.filter p).map (fun a => (a, f a)) := by
+    intro l
+    induction l with
+    | nil => rfl
+    | cons a l ih => by_cases h : p a <;> simp [List.zip_cons_cons, h, ih]
+  apply Array.ext'
+  simp only [Array.toList_filter, Array.toList_zip, Array.toList_map, hlist]
+
+/-- Filtering a fused expansion agrees with filtering the successors and re-deriving their marks, on the
+two projections `ExpandCoherent` is stated over.
+
+Deliberately silent about the option bits. Coherence constrains `.1` and `.2.1` only, and the payload is
+`#[]` on every route but the prune, so a statement that mentioned it would either have to case on
+emptiness or — as the first version of this theorem did — assume a full-length `ss.map g` that its own
+callers cannot supply. The hypothesis is exactly an `ExpandCoherent` instance at one state, so each
+coherence proof downstream is this lemma applied to the expansion it is filtering. -/
+theorem filterExpand_fst_snd {State : Type u}
+    {e : Array State × Array (Std.HashSet Nat) × Array Nat}
+    {ss : Array State} {f : State → Std.HashSet Nat} (p : State → Bool)
+    (h : (e.1, e.2.1) = (ss, ss.map f)) :
+    ((filterExpand e p).1, (filterExpand e p).2.1) = (ss.filter p, (ss.filter p).map f) := by
+  have h1 : e.1 = ss := congrArg Prod.fst h
+  have h2 : e.2.1 = ss.map f := congrArg Prod.snd h
+  simp only [filterExpand, h1, h2, zip_filter_map, Array.map_map, Function.comp_def]
+  simp
+
+/-- The fused expansion derived pointwise from the two callbacks: coherent by definition, but it does the
+per-source work once per *edge*, so it is only for callers whose `succs`/`edgeMarks` are cheap — a table
+lookup, a hand-written test graph, an automaton walked on its own. A caller that pays real per-source cost
+(Veil, via `TGBAProduct.expand`) supplies a genuinely fused one instead. -/
+def derivedExpand {State : Type u} (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (optBits : Option (State → State → Nat) := none) :
+    State → Array State × Array (Std.HashSet Nat) × Array Nat :=
+  -- `none` means "this caller has no options", and then the third array is empty rather than a run of
+  -- zeros: no allocation on the routes that never run the option scan.
+  fun s =>
+    let ss := succs s
+    (ss, ss.map (edgeMarks s), match optBits with | none => #[] | some f => ss.map (f s))
+
+/-- Carries `derivedExpand`'s own `optBits` default, so that a spec taking `regionExpand`'s default
+discharges its proof field with the documented `fun r => derivedExpand_coherent _ _`. Without the default
+that idiom is a three-explicit-argument term applied to two, and the error lands on the *spec*, not here. -/
+theorem derivedExpand_coherent {State : Type u} (succs : State → Array State)
+    (edgeMarks : State → State → Std.HashSet Nat)
+    (optBits : Option (State → State → Nat) := none) :
+    ExpandCoherent succs edgeMarks (derivedExpand succs edgeMarks optBits) := fun _ => rfl
+
+/-- The fused successors are the plain ones. -/
+theorem ExpandCoherent.fst {State : Type u} {succs : State → Array State}
+    {edgeMarks : State → State → Std.HashSet Nat}
+    {expand : State → Array State × Array (Std.HashSet Nat) × Array Nat}
+    (h : ExpandCoherent succs edgeMarks expand)
+    (s : State) : (expand s).1 = succs s := congrArg Prod.fst (h s)
+
+/-- The fused marks are the pointwise ones. -/
+theorem ExpandCoherent.snd {State : Type u} {succs : State → Array State}
+    {edgeMarks : State → State → Std.HashSet Nat}
+    {expand : State → Array State × Array (Std.HashSet Nat) × Array Nat}
+    (h : ExpandCoherent succs edgeMarks expand)
+    (s : State) : (expand s).2.1 = (succs s).map (edgeMarks s) := congrArg Prod.snd (h s)
+
+/-- Reading one cached mark back: entry `i` of a coherent frame's cache is that edge's `edgeMarks`. -/
+theorem ExpandCoherent.getElem {State : Type u} {succs : State → Array State}
+    {edgeMarks : State → State → Std.HashSet Nat}
+    {expand : State → Array State × Array (Std.HashSet Nat) × Array Nat}
+    (h : ExpandCoherent succs edgeMarks expand)
+    (s : State) {i : Nat} (hi : i < (succs s).size) :
+    (expand s).2.1[i]! = edgeMarks s (succs s)[i] := by
+  rw [h.snd s, getElem!_pos _ i (by simpa using hi), Array.getElem_map]
+
 /-- Bare existence certificate: the canonically-reachable set is finite.
     No witness must be provided. -/
 def FiniteReach {State : Type u} (initialStates : List State)

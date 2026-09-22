@@ -33,13 +33,18 @@ def tgbaPipeline (φ : NNF α) : EmptinessResult Nat :=
   match ltl3ba φ with
   | some tgba =>
     let c := tgba.consistentPart
-    dijkstraCheck c.succStates c.initialStates.toList c.cachedEdgeMarks c.numAcceptSets
+    -- satisfiability walks the automaton alone, where the marks are already a cheap table lookup
+    dijkstraCheck c.succStates c.initialStates.toList c.cachedEdgeMarks
+      (fun q => (c.succStates q, (c.succStates q).map (c.cachedEdgeMarks q), #[])) c.numAcceptSets
   | none => .empty 0
 
 theorem tgbaPipeline_eq (φ : NNF α) {tgba : TGBA α} (htg : ltl3ba φ = some tgba) :
     tgbaPipeline φ =
       dijkstraCheck tgba.consistentPart.succStates tgba.consistentPart.initialStates.toList
-        tgba.consistentPart.cachedEdgeMarks tgba.consistentPart.numAcceptSets := by
+        tgba.consistentPart.cachedEdgeMarks
+        (fun q => (tgba.consistentPart.succStates q,
+          (tgba.consistentPart.succStates q).map (tgba.consistentPart.cachedEdgeMarks q), #[]))
+        tgba.consistentPart.numAcceptSets := by
   unfold tgbaPipeline
   split
   next tgba' htg' =>
@@ -74,7 +79,10 @@ theorem tgbaPipeline_nonEmpty_sat (φ : NNF α) {stem loop : List Nat} (h : tgba
   rw [tgbaPipeline_eq φ htg] at h
   have hwf := TGBA.consistentPart_wellFormed (ltl3ba_wellFormed φ htg)
   obtain ⟨ac, -, -⟩ := dijkstraCheck_nonEmpty_valid tgba.consistentPart.numAcceptSets
-    tgba.consistentPart.succStates tgba.consistentPart.cachedEdgeMarks tgba.consistentPart.initialStates.toList
+    tgba.consistentPart.succStates tgba.consistentPart.cachedEdgeMarks
+    (fun q => (tgba.consistentPart.succStates q,
+      (tgba.consistentPart.succStates q).map (tgba.consistentPart.cachedEdgeMarks q), #[])) (fun _ => rfl)
+    tgba.consistentPart.initialStates.toList
     (cached_marksBound φ htg) (tgba.consistentPart.finiteReach hwf) h
   obtain ⟨ξ, hacc⟩ := tgba.accepts_of_consistentPart_cycle
     (ac.congr_edgeMarks fun s t m => cached_iff_edgeMarks _ s t m)
@@ -92,7 +100,10 @@ theorem tgbaPipeline_empty_unsat (φ : NNF α) {n : Nat} (h : tgbaPipeline φ = 
   obtain ⟨σ, hrun, -, hacc⟩ := (tgba.consistentPart_accepts ξ).mpr ((ltl3ba_accepts φ htg ξ).mpr hξ)
   obtain ⟨ac, -⟩ := TGBA.exists_TAcceptingCycle_of_acceptingRun _ hwf hrun hacc
   exact dijkstraCheck_empty_no_cycle tgba.consistentPart.numAcceptSets tgba.consistentPart.succStates
-    tgba.consistentPart.cachedEdgeMarks tgba.consistentPart.initialStates.toList (cached_marksBound φ htg)
+    tgba.consistentPart.cachedEdgeMarks
+    (fun q => (tgba.consistentPart.succStates q,
+      (tgba.consistentPart.succStates q).map (tgba.consistentPart.cachedEdgeMarks q), #[])) (fun _ => rfl)
+    tgba.consistentPart.initialStates.toList (cached_marksBound φ htg)
     (tgba.consistentPart.finiteReach hwf) h
     ⟨ac.congr_edgeMarks (fun s t m => (cached_iff_edgeMarks _ s t m).symm), trivial⟩
 

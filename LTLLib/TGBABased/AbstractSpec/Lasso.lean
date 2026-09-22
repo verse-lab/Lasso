@@ -898,6 +898,90 @@ theorem TValidLasso.run_src_hits_cycle {A : TOASpec State Edge α k} {stemE : Li
   obtain ⟨t, ht⟩ := hv.find_cycle_position_at j hj n
   exact ⟨t, by rw [ht]; exact hsrc⟩
 
+/-! ## Reading a property off the realized edges
+
+Every edge the bridge emits is a `stepEdge` or a `markEdge`, so any property both constructors guarantee
+holds of the whole lasso. A witness built over a *restricted* graph only ever emits restricted edges, which
+is how a caller reads an `FG` restriction back off the run. -/
+
+theorem stemEdges_forall {stepEdge : State → State → Edge} (P : Edge → Prop)
+    (hstep : ∀ s s', s' ∈ succs s → P (stepEdge s s')) :
+    ∀ (l : List State), (∀ i, (hi : i + 1 < l.length) → l[i + 1] ∈ succs (l[i])) →
+      ∀ e ∈ stemEdges stepEdge l, P e := by
+  intro l
+  induction l with
+  | nil => simp [stemEdges]
+  | cons a l ih =>
+    cases l with
+    | nil => simp [stemEdges]
+    | cons b l =>
+      intro hchain e he
+      rw [stemEdges, List.mem_cons] at he
+      rcases he with rfl | he
+      · exact hstep a b (by simpa using hchain 0 (by simp))
+      · exact ih (fun i hi => by simpa using hchain (i + 1) (by simpa using hi)) e he
+
+/-- Every edge the bridge emits is a `stepEdge` or a `markEdge` applied to a genuine step of the cycle, so a
+property both constructors guarantee there holds of the whole cycle. A witness built over a *restricted*
+graph only emits restricted edges, which is how a caller reads an `FG` restriction off the run. -/
+theorem cycleE_forall {A : TOASpec State Edge α k} (W : TEdgeWitness A succs edgeMarks)
+    (ac : TAcceptingCycle initialStates succs edgeMarks k) (P : Edge → Prop)
+    (hstep : ∀ s s', s' ∈ succs s → P (W.stepEdge s s'))
+    (hmark : ∀ s s' m, s' ∈ succs s → m ∈ edgeMarks s s' → P (W.markEdge s s' m)) :
+    ∀ e ∈ ac.cycleE W, P e := by
+  have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos (by have := ac.cycle_nonempty; omega)
+  have hclosed := cycleClosed_chain ac
+  intro e he
+  unfold TAcceptingCycle.cycleE at he
+  split at he
+  · exact stemEdges_forall P hstep _ hclosed e he
+  · obtain ⟨m, -, hem⟩ := List.mem_flatMap.mp he
+    unfold cycleLapAt at hem
+    split at hem
+    · unfold lapFor at hem
+      rcases List.mem_or_eq_of_mem_set hem with h | h
+      · exact stemEdges_forall P hstep _ hclosed e h
+      · rename_i hmlt
+        exact h ▸ hmark _ _ m (ac.cycle_succ_mem hne _ _)
+          (ac.cycle_covers_marks m hmlt).choose_spec.choose_spec
+    · simp at hem
+
+/-- A cycle confined to a subgraph, reached by a stem that need not be — what a static `FG` restriction
+asks for. The cycle's edges lie in `succsR` and its marks are `edgeMarksR`'s, because a mark there has to be
+realizable by a *restricted* step; see `EdgeLabels.md` §6.3. -/
+structure TRegionCycle (initialStates : List State) (succs succsR : State → Array State)
+    (edgeMarks edgeMarksR : State → State → Std.HashSet Nat) (numMarks : Nat) where
+  stem : List State
+  cycle : List State
+  stem_nonempty : stem.length ≥ 1
+  cycle_nonempty : cycle.length ≥ 1
+  stem_head_initial : stem.head (List.ne_nil_of_length_pos (by omega)) ∈ initialStates
+  stem_chain : ∀ (i : Nat), (hi : i + 1 < stem.length) → stem[i + 1] ∈ succs (stem[i])
+  overlap : stem.getLast (List.ne_nil_of_length_pos (by omega)) =
+            cycle.head (List.ne_nil_of_length_pos (by omega))
+  cycle_chain : ∀ (i : Nat), (hi : i + 1 < cycle.length) → cycle[i + 1] ∈ succsR (cycle[i])
+  cycle_back : cycle.head (List.ne_nil_of_length_pos (by omega)) ∈
+    succsR (cycle.getLast (List.ne_nil_of_length_pos (by omega)))
+  cycle_covers_marks : ∀ m, m < numMarks → ∃ (i : Nat) (hi : i < cycle.length),
+    m ∈ edgeMarksR (cycle[i]) (cycle[(i + 1) % cycle.length]'(Nat.mod_lt _ (by omega)))
+
+/-- The cycle read as an accepting cycle of the *restricted* graph, rooted at its own head. This is what
+gives `cycleE` a restricted witness to pick realizations from. -/
+def TRegionCycle.cycleAc {initialStates : List State} {succs succsR : State → Array State}
+    {edgeMarks edgeMarksR : State → State → Std.HashSet Nat} {numMarks : Nat}
+    (rc : TRegionCycle initialStates succs succsR edgeMarks edgeMarksR numMarks) :
+    TAcceptingCycle rc.cycle succsR edgeMarksR numMarks where
+  stem := [rc.cycle.head (List.ne_nil_of_length_pos (by have := rc.cycle_nonempty; omega))]
+  cycle := rc.cycle
+  stem_nonempty := by simp
+  cycle_nonempty := rc.cycle_nonempty
+  stem_head_initial := by simpa using List.head_mem _
+  stem_chain := by intro i hi; simp at hi
+  overlap := by simp
+  cycle_chain := rc.cycle_chain
+  cycle_back := rc.cycle_back
+  cycle_covers_marks := rc.cycle_covers_marks
+
 /-- The full bridge: a `TAcceptingCycle` (over `succs`/`edgeMarks`) yields a `TValidLasso` for any `TOASpec` compatible with it. -/
 theorem TAcceptingCycle.toTValidLassoOf {A : TOASpec State Edge α k}
     (W : TEdgeWitness A succs edgeMarks) (hinit : ∀ {s}, s ∈ initialStates → A.initial s)
@@ -941,6 +1025,59 @@ theorem TAcceptingCycle.toTValidLassoOf {A : TOASpec State Edge α k}
     have hcne : ac.cycleE W ≠ [] := List.ne_nil_of_length_pos (by omega)
     rw [stemEdges_last_dst W ac.stem hschain h (List.ne_nil_of_length_pos (by have := ac.stem_nonempty; omega)),
       hchead hcne, ac.overlap]
+
+/-- The bridge for a region cycle: the stem is realized by `Ws` in the ambient graph, the cycle by `Wc` in
+the restricted one. `toTValidLassoOf` is the case where the two coincide. Splitting them is what makes an
+edge-indexed `◇□ψ` sound — the cycle's edges must be realized by ψ-steps, and the ambient witness is free to
+pick a non-ψ step where a ψ one exists. -/
+theorem TRegionCycle.toTValidLasso {A : TOASpec State Edge α k}
+    {succsR : State → Array State} {edgeMarksR : State → State → Std.HashSet Nat}
+    (Ws : TEdgeWitness A succs edgeMarks) (Wc : TEdgeWitness A succsR edgeMarksR)
+    (hinit : ∀ {s}, s ∈ initialStates → A.initial s)
+    (rc : TRegionCycle initialStates succs succsR edgeMarks edgeMarksR k) :
+    TValidLasso A (stemEdges Ws.stepEdge rc.stem) (rc.cycleAc.cycleE Wc) := by
+  have hne : rc.cycleAc.cycle ≠ [] :=
+    List.ne_nil_of_length_pos (by have := rc.cycle_nonempty; exact rc.cycleAc.cycle_nonempty)
+  obtain ⟨hclen, hcvalid, hcchain, hchead, hclast⟩ := cycleE_spec Wc rc.cycleAc
+  have hschain := rc.stem_chain
+  refine
+    { cycle_nonempty := hclen
+      stem_valid := stemEdges_valid Ws rc.stem hschain
+      stem_chain := stemEdges_chain Ws rc.stem hschain
+      cycle_valid := hcvalid
+      cycle_chain := hcchain
+      cycle_back := (hclast (List.ne_nil_of_length_pos (by omega))).trans
+        (hchead (List.ne_nil_of_length_pos (by omega))).symm
+      cycle_covers_marks := cycleE_covers_marks Wc rc.cycleAc
+      stem_initial := ?_
+      overlap := ?_ }
+  · by_cases hse : stemEdges Ws.stepEdge rc.stem = []
+    · have hcne : rc.cycleAc.cycleE Wc ≠ [] := List.ne_nil_of_length_pos (by omega)
+      have hheq : (stemEdges Ws.stepEdge rc.stem ++ rc.cycleAc.cycleE Wc).head
+          (List.ne_nil_of_length_pos (by simp only [List.length_append]; omega)) =
+          (rc.cycleAc.cycleE Wc).head hcne := by
+        simp only [hse]; simp
+      rw [hheq, hchead hcne]
+      have hslen1 : rc.stem.length = 1 := by
+        have hsl := stemEdges_length Ws.stepEdge rc.stem
+        have hse_len : (stemEdges Ws.stepEdge rc.stem).length = 0 := by rw [hse]; simp
+        have := rc.stem_nonempty
+        omega
+      have hheadlast : rc.stem.head (List.ne_nil_of_length_pos (by omega)) =
+          rc.stem.getLast (List.ne_nil_of_length_pos (by omega)) := by
+        rw [List.head_eq_getElem, List.getLast_eq_getElem]; congr 1; omega
+      rw [show (rc.cycleAc.cycle.head hne) = rc.stem.head
+          (List.ne_nil_of_length_pos (by omega)) from by
+        rw [hheadlast]; exact rc.overlap.symm]
+      exact hinit rc.stem_head_initial
+    · rw [List.head_append_of_ne_nil hse, stemEdges_head_src Ws rc.stem hschain hse
+        (List.ne_nil_of_length_pos (by have := rc.stem_nonempty; omega))]
+      exact hinit rc.stem_head_initial
+  · intro h
+    have hcne : rc.cycleAc.cycleE Wc ≠ [] := List.ne_nil_of_length_pos (by omega)
+    rw [stemEdges_last_dst Ws rc.stem hschain h
+      (List.ne_nil_of_length_pos (by have := rc.stem_nonempty; omega)), hchead hcne]
+    exact rc.overlap
 
 end Bridge
 
