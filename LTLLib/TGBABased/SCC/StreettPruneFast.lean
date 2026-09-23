@@ -64,9 +64,15 @@ private def letterBitsFrom (cs : CompiledSpec State L) (l : L) (o acc : Nat) : N
 termination_by cs.letterOptions.size - o
 
 /-- The option bits one letter contributes to an edge that reads it. An edge with several realizations
-takes the `|||` of theirs, which is the existential `contains` of `StreettOption.onEdges`. Pure: the
-options' predicates are Boolean formulas over the letter, and nothing here enters the system. -/
-def CompiledSpec.letterBits (cs : CompiledSpec State L) (l : L) : Nat := letterBitsFrom cs l 0 0
+takes the `|||` of theirs, which is the existential `contains` of `StreettOption.onEdgesIn`. Pure: the
+options' predicates are Boolean formulas over the letter, and nothing here enters the system.
+
+A letter outside the candidate's own region contributes nothing at all, and the test is hoisted out of
+the loop: at a candidate's compiled spec every option's reading is conjoined with `restrict`, so on such
+a letter every bit would be clear anyway. At the top-level spec `restrict` is `⊤` and this is one extra
+constant test per letter. -/
+def CompiledSpec.letterBits (cs : CompiledSpec State L) (l : L) : Nat :=
+  if cs.restrict l then letterBitsFrom cs l 0 0 else 0
 
 /-! ## The search state
 
@@ -206,21 +212,28 @@ def streettPopF [Inhabited State] (cs : CompiledSpec State L) (curRegions : Nat)
           ls.shrink step.pos, lo.shrink step.pos, ws⟩, false)
       else
         let (regionAlive, marksSeen) := scanFrameF cs liveIndex ls lo step.pos
-        match firstUnsatisfied cs regionAlive marksSeen with
-        | none =>
-          let wit' := live.extract step.pos live.size
-          -- the witness's successors, the same slice of the retained arrays (§13.26)
-          let ws' := ls.extract step.pos live.size
-          let wopts' := selectedOptions cs regionAlive marksSeen
-          let (live', liveIndex', dead') := liveFlush live liveIndex dead step.pos
-          (⟨live', liveIndex', dead', dstack, wit', wopts', pending,
-            ls.shrink step.pos, lo.shrink step.pos, ws'⟩, true)
-        | some liveOpts =>
-          let pending' := liveOpts.foldl (init := pending) fun ps o =>
+        let blame : Array Nat → Array (Candidate State) := fun liveOpts =>
+          liveOpts.foldl (init := pending) fun ps o =>
             let C : Candidate State := ⟨sccSetOf live step.pos, curRegions ||| (1 <<< o)⟩
             if C.states.isEmpty || curRegions.testBit o then ps else ps.push C
+        match firstUnsatisfied cs regionAlive marksSeen with
+        | none =>
+          match firstUncommitted cs curRegions regionAlive marksSeen with
+          | none =>
+            let wit' := live.extract step.pos live.size
+            -- the witness's successors, the same slice of the retained arrays (§13.26)
+            let ws' := ls.extract step.pos live.size
+            let wopts' := selectedOptions cs curRegions regionAlive marksSeen
+            let (live', liveIndex', dead') := liveFlush live liveIndex dead step.pos
+            (⟨live', liveIndex', dead', dstack, wit', wopts', pending,
+              ls.shrink step.pos, lo.shrink step.pos, ws'⟩, true)
+          | some liveOpts =>
+            let (live', liveIndex', dead') := liveFlush live liveIndex dead step.pos
+            (⟨live', liveIndex', dead', dstack, wit, wopts, blame liveOpts,
+              ls.shrink step.pos, lo.shrink step.pos, ws⟩, false)
+        | some liveOpts =>
           let (live', liveIndex', dead') := liveFlush live liveIndex dead step.pos
-          (⟨live', liveIndex', dead', dstack, wit, wopts, pending',
+          (⟨live', liveIndex', dead', dstack, wit, wopts, blame liveOpts,
             ls.shrink step.pos, lo.shrink step.pos, ws⟩, false)
     else
       match dstack.back? with
@@ -261,8 +274,8 @@ as `Candidate.expand` does. -/
 def candidateRunF (cs : CompiledSpec State L)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (c : Candidate State) : Option (State × List State) × StreettAuxF State :=
-  streettRunF cs c.regions (fun s => filterExpand (regionExpand (c.region cs) s) c.states.contains)
-    c.states.toList
+  streettRunF (cs.atBits c.regions) c.regions
+    (fun s => filterExpand (regionExpand (c.region cs) s) c.states.contains) c.states.toList
 
 /-- `pruneLoop` for the fast path. -/
 def pruneLoopF (cs : CompiledSpec State L)
@@ -302,13 +315,14 @@ def streettCheckF (cs : CompiledSpec State L) (succs : State → Array State)
     (initialStates : List State) : EmptinessResult State :=
   match streettRunF cs 0 expand initialStates with
   | (some (anchor, stem), aux) =>
-    buildResult cs (memoGraph (witnessMemo aux.witness aux.witnessSuccs) succs) succs edgeMarks
-      initialStates aux.witness aux.witnessOpts anchor stem (aux.live.size + aux.dead.size)
+    buildResult cs (memoGraph (witnessMemo aux.witness aux.witnessSuccs) succs) succs
+      (cs.spec.regionMarks cs.restrict) initialStates aux.witness aux.witnessOpts anchor stem
+      (aux.live.size + aux.dead.size)
   | (none, aux) =>
     match pruneLoopF cs regionExpand (aux.live.size + aux.dead.size) aux.pending.toList with
     | some (some (anchor, wit, ws, wopts, C), n) =>
-      buildResult cs (memoGraph (witnessMemo wit ws) (C.graph cs cs.spec)) succs edgeMarks
-        initialStates wit wopts anchor
+      buildResult (cs.atBits C.regions) (memoGraph (witnessMemo wit ws) (C.graph cs cs.spec)) succs
+        (cs.spec.regionMarks (C.region cs)) initialStates wit wopts anchor
         ((bfsFindPath aux.dead succs initialStates (· == anchor)).getD [anchor]) n
     | some (none, n) => .empty n
     | none => .empty (aux.live.size + aux.dead.size)
@@ -934,12 +948,29 @@ omit [Hashable State] in
 conjunction `StreettOption.onEdges` builds into each mark predicate. -/
 theorem CompiledSpec.letterBits_testBit (cs : CompiledSpec State L) (hwf : cs.WF) (l : L) (b : Nat) :
     (cs.letterBits l).testBit b = true ↔
-      (b < cs.numOptions ∧ (cs.letterOptions[b]!).region l = true) ∨
+      cs.restrict l = true ∧
+      ((b < cs.numOptions ∧ (cs.letterOptions[b]!).region l = true) ∨
       (∃ p, p < cs.numOptions ∧ (cs.letterOptions[p]!).region l = true ∧
         ∃ k, k < (cs.letterOptions[p]!).marks.size ∧ cs.numOptions + cs.optMarkBase[p]! + k = b ∧
-          ((cs.letterOptions[p]!).marks)[k]! l = true) := by
-  rw [CompiledSpec.letterBits, letterBitsFrom_testBit cs l b _ 0 0 rfl, hwf.letterOptions_size]
-  simp [Nat.zero_testBit]
+          ((cs.letterOptions[p]!).marks)[k]! l = true)) := by
+  rw [CompiledSpec.letterBits]
+  by_cases hr : cs.restrict l = true
+  · rw [if_pos hr, letterBitsFrom_testBit cs l b _ 0 0 rfl, hwf.letterOptions_size]
+    simp [Nat.zero_testBit, hr]
+  · rw [if_neg hr]
+    simp [Nat.zero_testBit, hr]
+
+/-- A letter inside a candidate's region contributes the same bits there as at the spec it was derived
+from: `letterBitsFrom` reads only the options' own regions and marks, which recompiling does not touch,
+and the hoisted test passes on both sides. -/
+theorem CompiledSpec.letterBits_atBits (cs : CompiledSpec State L) (hwf : cs.WF) (bits : Nat) {l : L}
+    (hr : regionOf cs bits l = true) (htop : cs.restrict l = true) :
+    (cs.atBits bits).letterBits l = cs.letterBits l := by
+  refine Nat.eq_of_testBit_eq fun b => ?_
+  rw [Bool.eq_iff_iff, CompiledSpec.letterBits_testBit _ (hwf.atBits bits),
+    CompiledSpec.letterBits_testBit _ hwf]
+  simp only [CompiledSpec.atBits_restrict, CompiledSpec.atBits_numOptions, hr, htop, true_and]
+  rfl
 
 end LetterBits
 
@@ -1318,7 +1349,11 @@ theorem streettPopF_spec [Inhabited State] [LawfulBEq State] [LawfulHashable Sta
       · rw [if_neg hacc, if_neg hacc, hscan]
         cases hfu : firstUnsatisfied cs (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with
-        | none => exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hnew⟩
+        | none =>
+          cases hfc : firstUncommitted cs cr (scanFrame cs succs live step.pos).1
+              (scanFrame cs succs live step.pos).2 with
+          | none => exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hnew⟩
+          | some liveOpts => exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hwit⟩
         | some liveOpts => exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hwit⟩
     · simp only [hll, if_false]
       cases hb2 : dstack0.pop.back? with
@@ -1973,33 +2008,37 @@ theorem candidateRunF_eq [Inhabited State] [LawfulBEq State] [LawfulHashable Sta
     (cs : CompiledSpec State L) (hwf : cs.WF) (rspec : RStreettSpec State L)
     (regionExpandOpts : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (hregO : ∀ r, ExpandCoherent (rspec.regionSuccs r) (rspec.regionMarks r) (regionExpandOpts r))
-    (hbitsR : cs.numOptions ≠ 0 → ∀ r s,
-      (regionExpandOpts r s).2.2 = (rspec.regionSuccs r s).map fun t => cs.edgeBits (s, t))
+    (hbitsR : cs.numOptions ≠ 0 → ∀ bits s, (regionExpandOpts (regionOf cs bits) s).2.2 =
+      (rspec.regionSuccs (regionOf cs bits) s).map fun t => (cs.atBits bits).edgeBits (s, t))
     (c : Candidate State) :
     liftF (candidateRunF cs regionExpandOpts c) = candidateRun cs rspec c := by
   unfold candidateRunF candidateRun
-  refine streettRunF_eq cs hwf c.regions (c.graph cs rspec) (rspec.regionMarks (c.region cs))
+  refine streettRunF_eq (cs.atBits c.regions) (hwf.atBits c.regions) c.regions (c.graph cs rspec)
+    (rspec.regionMarks (c.region cs))
     (c.expand cs rspec) _ (c.expand_coherent cs rspec) ?_ ?_ c.states.toList
   · intro s
     exact filterExpand_fst_snd _ (hregO (c.region cs) s)
   · intro hn s
-    exact filterExpand_thd _ ((hregO (c.region cs)).fst s) (hbitsR hn _ s)
+    exact filterExpand_thd _ ((hregO (c.region cs)).fst s)
+      (hbitsR (by simpa using hn) c.regions s)
 
 theorem candidateRunF_witOK [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hwf : cs.WF) (rspec : RStreettSpec State L)
     (regionExpandOpts : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (hregO : ∀ r, ExpandCoherent (rspec.regionSuccs r) (rspec.regionMarks r) (regionExpandOpts r))
-    (hbitsR : cs.numOptions ≠ 0 → ∀ r s,
-      (regionExpandOpts r s).2.2 = (rspec.regionSuccs r s).map fun t => cs.edgeBits (s, t))
+    (hbitsR : cs.numOptions ≠ 0 → ∀ bits s, (regionExpandOpts (regionOf cs bits) s).2.2 =
+      (rspec.regionSuccs (regionOf cs bits) s).map fun t => (cs.atBits bits).edgeBits (s, t))
     (c : Candidate State) :
     WitOK (c.graph cs rspec) (candidateRunF cs regionExpandOpts c).2 := by
   unfold candidateRunF
-  refine streettRunF_witOK cs hwf c.regions (c.graph cs rspec) (rspec.regionMarks (c.region cs))
+  refine streettRunF_witOK (cs.atBits c.regions) (hwf.atBits c.regions) c.regions (c.graph cs rspec)
+    (rspec.regionMarks (c.region cs))
     (c.expand cs rspec) _ (c.expand_coherent cs rspec) ?_ ?_ c.states.toList
   · intro s
     exact filterExpand_fst_snd _ (hregO (c.region cs) s)
   · intro hn s
-    exact filterExpand_thd _ ((hregO (c.region cs)).fst s) (hbitsR hn _ s)
+    exact filterExpand_thd _ ((hregO (c.region cs)).fst s)
+      (hbitsR (by simpa using hn) c.regions s)
 
 /-- A fast prune result without its retained successors: what the proved loop returns. -/
 def dropWS (r : Option (State × Array State × Array (Array State) × Array Nat × Candidate State) × Nat) :
@@ -2017,8 +2056,8 @@ theorem pruneLoopF_le [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hwf : cs.WF) (rspec : RStreettSpec State L)
     (regionExpandOpts : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (hregO : ∀ r, ExpandCoherent (rspec.regionSuccs r) (rspec.regionMarks r) (regionExpandOpts r))
-    (hbitsR : cs.numOptions ≠ 0 → ∀ r s,
-      (regionExpandOpts r s).2.2 = (rspec.regionSuccs r s).map fun t => cs.edgeBits (s, t)) :
+    (hbitsR : cs.numOptions ≠ 0 → ∀ bits s, (regionExpandOpts (regionOf cs bits) s).2.2 =
+      (rspec.regionSuccs (regionOf cs bits) s).map fun t => (cs.atBits bits).edgeBits (s, t)) :
     ∀ n cands r, pruneLoopF cs regionExpandOpts n cands = some r →
       pruneLoop cs rspec n cands = some (dropWS r) ∧ WSOK cs rspec r := by
   refine pruneLoopF.partial_correctness cs regionExpandOpts
@@ -2055,8 +2094,8 @@ theorem pruneLoop_le [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hwf : cs.WF) (rspec : RStreettSpec State L)
     (regionExpandOpts : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (hregO : ∀ r, ExpandCoherent (rspec.regionSuccs r) (rspec.regionMarks r) (regionExpandOpts r))
-    (hbitsR : cs.numOptions ≠ 0 → ∀ r s,
-      (regionExpandOpts r s).2.2 = (rspec.regionSuccs r s).map fun t => cs.edgeBits (s, t)) :
+    (hbitsR : cs.numOptions ≠ 0 → ∀ bits s, (regionExpandOpts (regionOf cs bits) s).2.2 =
+      (rspec.regionSuccs (regionOf cs bits) s).map fun t => (cs.atBits bits).edgeBits (s, t)) :
     ∀ n cands r, pruneLoop cs rspec n cands = some r →
       ∃ rF, pruneLoopF cs regionExpandOpts n cands = some rF ∧ dropWS rF = r ∧ WSOK cs rspec rF := by
   refine pruneLoop.partial_correctness cs rspec
@@ -2091,8 +2130,8 @@ theorem pruneLoopF_eq [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hwf : cs.WF) (rspec : RStreettSpec State L)
     (regionExpandOpts : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (hregO : ∀ r, ExpandCoherent (rspec.regionSuccs r) (rspec.regionMarks r) (regionExpandOpts r))
-    (hbitsR : cs.numOptions ≠ 0 → ∀ r s,
-      (regionExpandOpts r s).2.2 = (rspec.regionSuccs r s).map fun t => cs.edgeBits (s, t))
+    (hbitsR : cs.numOptions ≠ 0 → ∀ bits s, (regionExpandOpts (regionOf cs bits) s).2.2 =
+      (rspec.regionSuccs (regionOf cs bits) s).map fun t => (cs.atBits bits).edgeBits (s, t))
     (n : Nat) (cands : List (Candidate State)) :
     (pruneLoopF cs regionExpandOpts n cands).map dropWS = pruneLoop cs rspec n cands ∧
       ∀ rF, pruneLoopF cs regionExpandOpts n cands = some rF → WSOK cs rspec rF := by
@@ -2154,8 +2193,8 @@ theorem streettCheckF_eq [Inhabited State] [LawfulBEq State] [LawfulHashable Sta
     (hbits : cs.numOptions ≠ 0 → ∀ s, (expandOpts s).2.2 = (succs s).map fun t => cs.edgeBits (s, t))
     (regionExpandOpts : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (hregO : ∀ r, ExpandCoherent (cs.spec.regionSuccs r) (cs.spec.regionMarks r) (regionExpandOpts r))
-    (hbitsR : cs.numOptions ≠ 0 → ∀ r s,
-      (regionExpandOpts r s).2.2 = (cs.spec.regionSuccs r s).map fun t => cs.edgeBits (s, t))
+    (hbitsR : cs.numOptions ≠ 0 → ∀ bits s, (regionExpandOpts (regionOf cs bits) s).2.2 =
+      (cs.spec.regionSuccs (regionOf cs bits) s).map fun t => (cs.atBits bits).edgeBits (s, t))
     (initialStates : List State) :
     streettCheckF cs succs edgeMarks expandOpts regionExpandOpts initialStates =
       streettCheck cs succs edgeMarks expand initialStates := by

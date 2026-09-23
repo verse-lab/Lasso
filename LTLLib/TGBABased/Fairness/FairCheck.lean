@@ -92,6 +92,40 @@ def modelCheckTGBADisjunct (φ : Formula α) (fg : BoolFormula α) (gfs : List (
       (tgba.numAcceptSets + gfs.length + 1)
   | none => .empty 0
 
+/-- `modelCheckTGBADisjunct` over one system callback. §15 -/
+def modelCheckTGBADisjunctOfStep (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
+    (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
+    (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1))
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker) :
+    EmptinessResult ((SysState × Nat) × Bool) :=
+  match htg : ltl3ba (φ.toNNF false) with
+  | some tgba =>
+    checker.check
+      (latchSuccs (TGBAProduct.getSuccessorsOfStep tgba sysStep)
+        (TGBAProduct.keptSuccsOfStep tgba sysStep fg.eval))
+      (latchInit (TGBAProduct.initialStates tgba sysInit) fg.isTrue)
+      (latch_finiteReach
+        (by rw [TGBAProduct.keptSuccsOfStep_eq', TGBAProduct.getSuccessorsOfStep_eq']
+            exact TGBAProduct.keptSuccs_sub tgba _ _ fg.eval) fg.isTrue
+        (by rw [TGBAProduct.getSuccessorsOfStep_eq']
+            exact modelCheckTGBA_finiteReach φ sysInit _ _ sysFR htg))
+      (latchMarks (TGBAProduct.edgeMarksFairOfStep tgba sysStep gfs)
+        (TGBAProduct.keptEdgeMarksFairOfStep tgba sysStep fg.eval gfs)
+        (tgba.numAcceptSets + gfs.length))
+      (latchExpand (TGBAProduct.expandFairOfStep tgba sysStep gfs)
+        (TGBAProduct.keptExpandFairOfStep tgba sysStep fg.eval gfs)
+        (tgba.numAcceptSets + gfs.length))
+      (tgba.numAcceptSets + gfs.length + 1)
+  | none => .empty 0
+
+theorem modelCheckTGBADisjunctOfStep_eq (φ : Formula α) (fg : BoolFormula α)
+    (gfs : List (BoolFormula α)) (sysInit : List SysState)
+    (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
+    (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool)) :
+    modelCheckTGBADisjunctOfStep φ fg gfs sysInit (fun s => (sysSucc s, sysLabel s)) sysFR checker
+      = modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel sysFR checker := rfl
+
 theorem modelCheckTGBADisjunct_eq (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
@@ -477,6 +511,112 @@ theorem modelCheckTGBADisjunctFast_nonEmpty_sat [DecidableEq α] (φ : Formula �
   · exact modelCheckTGBADisjunct_nonEmpty_sat φ fg gfs sysInit sysSucc sysLabel sysFR
       checker h
   · exact absurd h (by simp)
+
+/-! ## The same crossing, from one system callback
+
+`LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair, so a state's transitions are computed once on
+the system-level feasibility check as well as on the product. Bodies are repeated rather than refactored;
+the `rfl` bridges are what guarantee the repeat is faithful. `EdgeLabels.md` §15. -/
+
+section OfStep
+
+variable (sysStep : LSys.StepFn α SysState)
+
+def sysFairMarksOfStep (gfs : List (BoolFormula α)) : SysState → SysState → Std.HashSet Nat :=
+  fun s _ =>
+    let r := sysStep s
+    let steps := LSys.totalizeAt r.1 s
+    let base := r.2
+    Std.HashSet.ofList ((List.range gfs.length).filter fun i =>
+      steps.any fun st => (TGBAProduct.fairConj gfs i).eval (LSys.letter base st.1))
+
+def sysFairExpandOfStep (gfs : List (BoolFormula α)) :
+    SysState → Array SysState × Array (Std.HashSet Nat) × Array Nat :=
+  fun s =>
+    let r := sysStep s
+    let steps := LSys.totalizeAt r.1 s
+    let base := r.2
+    let ss := steps.map Prod.snd
+    let m := Std.HashSet.ofList ((List.range gfs.length).filter fun i =>
+      steps.any fun st => (TGBAProduct.fairConj gfs i).eval (LSys.letter base st.1))
+    (ss, ss.map fun _ => m, #[])
+
+def sysKeptSuccsOfStep (fg : BoolFormula α) : SysState → Array SysState :=
+  LSys.targets (TGBAProduct.keptStepsOfStep sysStep fg.eval)
+
+def sysFairExpandROfStep (fg : BoolFormula α) (gfs : List (BoolFormula α)) :
+    SysState → Array SysState × Array (Std.HashSet Nat) × Array Nat :=
+  fun s =>
+    let r := sysStep s
+    let steps := LSys.totalizeAt r.1 s
+    let base := r.2
+    let ss := (steps.filter fun st => fg.eval (LSys.letter base st.1)).map Prod.snd
+    let m := Std.HashSet.ofList ((List.range gfs.length).filter fun i =>
+      steps.any fun st => (TGBAProduct.fairConj gfs i).eval (LSys.letter base st.1))
+    (ss, ss.map fun _ => m, #[])
+
+theorem sysFairMarksOfStep_eq' (gfs : List (BoolFormula α)) :
+    sysFairMarksOfStep sysStep gfs
+      = sysFairMarks gfs (fun s => (sysStep s).1) (fun s => (sysStep s).2) := rfl
+
+theorem sysFairExpandOfStep_eq' (gfs : List (BoolFormula α)) :
+    sysFairExpandOfStep sysStep gfs
+      = sysFairExpand gfs (fun s => (sysStep s).1) (fun s => (sysStep s).2) := rfl
+
+theorem sysKeptSuccsOfStep_eq' (fg : BoolFormula α) :
+    sysKeptSuccsOfStep sysStep fg
+      = sysKeptSuccs fg (fun s => (sysStep s).1) (fun s => (sysStep s).2) := rfl
+
+theorem sysFairExpandROfStep_eq' (fg : BoolFormula α) (gfs : List (BoolFormula α)) :
+    sysFairExpandROfStep sysStep fg gfs
+      = sysFairExpandR fg gfs (fun s => (sysStep s).1) (fun s => (sysStep s).2) := rfl
+
+end OfStep
+
+/-- `disjunctFeasible` over one system callback. §15 -/
+def disjunctFeasibleOfStep (fg : BoolFormula α) (gfs : List (BoolFormula α))
+    (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
+    (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1))
+    (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) : Bool :=
+  match sysChecker.check
+      (latchSuccs (Product.totalizeSucc (LSys.targets fun s => (sysStep s).1))
+        (sysKeptSuccsOfStep sysStep fg))
+      (latchInit sysInit fg.isTrue)
+      (latch_finiteReach (by rw [sysKeptSuccsOfStep_eq']; exact sysKeptSuccs_sub fg _ _) fg.isTrue
+        (Product.finiteReach_totalizeSucc sysInit (LSys.targets fun s => (sysStep s).1) sysFR))
+      (latchMarks (sysFairMarksOfStep sysStep gfs) (sysFairMarksOfStep sysStep gfs) gfs.length)
+      (latchExpand (sysFairExpandOfStep sysStep gfs) (sysFairExpandROfStep sysStep fg gfs)
+        gfs.length) (gfs.length + 1) with
+  | .empty _ => false
+  | .nonEmpty _ _ => true
+
+theorem disjunctFeasibleOfStep_eq (fg : BoolFormula α) (gfs : List (BoolFormula α))
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    (sysChecker : TEmptinessChecker (SysState × Bool)) :
+    disjunctFeasibleOfStep fg gfs sysInit (fun s => (sysSucc s, sysLabel s)) sysFR sysChecker
+      = disjunctFeasible fg gfs sysInit sysSucc sysLabel sysFR sysChecker := rfl
+
+/-- `modelCheckTGBADisjunctFast` over one system callback. §15 -/
+def modelCheckTGBADisjunctFastOfStep (φ : Formula α) (fg : BoolFormula α)
+    (gfs : List (BoolFormula α)) (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
+    (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1))
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
+    (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
+    EmptinessResult ((SysState × Nat) × Bool) :=
+  if disjunctFeasibleOfStep fg gfs sysInit sysStep sysFR sysChecker then
+    modelCheckTGBADisjunctOfStep φ fg gfs sysInit sysStep sysFR checker
+  else .empty 0
+
+theorem modelCheckTGBADisjunctFastOfStep_eq (φ : Formula α) (fg : BoolFormula α)
+    (gfs : List (BoolFormula α)) (sysInit : List SysState)
+    (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
+    (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool))
+    (sysChecker : TEmptinessChecker (SysState × Bool)) :
+    modelCheckTGBADisjunctFastOfStep φ fg gfs sysInit (fun s => (sysSucc s, sysLabel s)) sysFR
+        checker sysChecker
+      = modelCheckTGBADisjunctFast φ fg gfs sysInit sysSucc sysLabel sysFR checker sysChecker := rfl
 
 end Feasible
 

@@ -107,6 +107,58 @@ theorem fairMarksEdge_eq_of (tgba : TGBA α) (sysSucc : SysState → Array (LSte
       = fairMarksOf base extra
           (fun i => keptSuccs tgba sysSucc sysLabel (fairKeep keep extra i) p) p' := rfl
 
+/-- The conjunct marks with the per-source decision made once. On a source whose steps all carry the
+empty letter every step reads `base`, so a conjunct holds on all of the source's edges or on none of them:
+the marks are `fairMarks bm extra base`, one set shared by every successor, and the conjunct-restricted
+family `ks` need not be built at all. `none` is the general path, `fairMarksOf` over `ks`. -/
+def fairMarksGen (bm : Nat) (extra : List (BoolFormula α)) (uniform? : Option (Std.HashSet Nat))
+    (ks : Nat → Array (SysState × Nat)) (p' : SysState × Nat) : Std.HashSet Nat :=
+  match uniform? with
+  | some m => m
+  | none => fairMarksOf bm extra ks p'
+
+/-- The shared conjunct marks, when every step reads `base`. -/
+def fairMarksTable (bm : Nat) (extra : List (BoolFormula α)) (base : Std.HashSet α)
+    (steps : Array (LStep α SysState)) : Option (Std.HashSet Nat) :=
+  if steps.all (·.1.isEmpty) then some (fairMarks bm extra base) else none
+
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
+theorem letter_of_isEmpty (base L : Std.HashSet α) (h : L.isEmpty = true) : LSys.letter base L = base := by
+  simp [LSys.letter, h]
+
+omit [Hashable SysState] [LawfulBEq SysState] in
+/-- On a uniform source, `fairMarksOf` over the conjunct-restricted family is `fairMarks` at the source's
+letter, for every successor the source's kept steps generate. -/
+theorem fairMarksOf_uniform [LawfulBEq SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
+    (steps : Array (LStep α SysState)) (keep : Std.HashSet α → Bool) (bm : Nat)
+    (extra : List (BoolFormula α)) (p' : SysState × Nat)
+    (hu : steps.all (·.1.isEmpty) = true)
+    (hp' : ∃ st ∈ steps, keep (LSys.letter base st.1) = true ∧ ∃ t ∈ tgba.getSuccessors q,
+      transCompatible t (LSys.letter base st.1) = true ∧ st.2 = p'.1 ∧ t.target = p'.2) :
+    fairMarksOf bm extra (fun i => keptSuccsFrom tgba q base steps (fairKeep keep extra i)) p'
+      = fairMarks bm extra base := by
+  have hl : ∀ st ∈ steps, LSys.letter base st.1 = base := fun st hst =>
+    letter_of_isEmpty base st.1 (Array.all_eq_true_iff_forall_mem.mp hu st hst)
+  unfold fairMarksOf fairMarks
+  congr 2
+  refine List.filter_congr fun i _ => ?_
+  obtain ⟨st, hst, hk, t, ht, hc, h1, h2⟩ := hp'
+  rw [hl st hst] at hk hc
+  apply Bool.eq_iff_iff.mpr
+  show (keptSuccsFrom tgba q base steps (fairKeep keep extra i)).contains p' = true ↔ _
+  rw [Array.contains_iff_mem, keptSuccsFrom, succsFrom_mem_iff]
+  constructor
+  · rintro ⟨st', hst', -⟩
+    simp only [keptStepsFrom, Array.mem_filter] at hst'
+    have hk' := hst'.2
+    rw [hl st' hst'.1] at hk'
+    exact (Bool.and_eq_true _ _ |>.mp hk').2
+  · intro hi
+    refine ⟨st, ?_, t, ht, ?_, h1, h2⟩
+    · simp only [keptStepsFrom, Array.mem_filter]
+      exact ⟨hst, by rw [hl st hst]; exact Bool.and_eq_true _ _ |>.mpr ⟨hk, hi⟩⟩
+    · rw [hl st hst]; exact hc
+
 /-- `edgeMarks` extended with one mark per fairness conjunct, indexed from `tgba.numAcceptSets`. -/
 def edgeMarksFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
@@ -216,8 +268,11 @@ theorem eventuallyAlways_iff_indexed_run [LawfulBEq α] (b : BoolFormula α)
 the fairness conjuncts *that edge* carries.
 
 PERF: the fairness part is per-edge, so both halves are kept out of the inner loop deliberately. The base
-marks are zipped with the targets rather than re-derived, and the `extra.length` conjunct-restricted
-successor arrays are built once per *source* in `ks`, leaving a membership test per (target, conjunct).
+marks come from the grouped table built once per source (`marksTableGen`/`genMarksFromShared`, §13.24).
+The conjunct marks are decided once per source when every step reads `base` (`fairMarksTable`: one
+`fairMarks` set shared by every successor, `ks` not built), and otherwise from the `extra.length`
+conjunct-restricted successor arrays built once per source in `ks`, a membership test per (target,
+conjunct) — a deep state comparison per element, which is why the uniform path exists (§13.27, §13.29).
 Writing this as `e.1.map (edgeMarksFair … p)` would be much shorter and would cost a full re-expansion of
 `p` per (edge, conjunct).
 
@@ -230,34 +285,51 @@ def expandFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState
     Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
   let base := sysLabel p.1
   let steps := LSys.totalize sysSucc p.1
+  -- PERF (§13.29): the base marks come from the grouped table computed once per source, not from a
+  -- per-successor `edgeMarksFrom` that rebuilt it; and on a uniform source the conjunct marks are one
+  -- shared set and the conjunct-restricted family is not built. The general path is unchanged.
+  let byTgt? := marksTableGen tgba p.2 base steps
+  let fm? := fairMarksTable tgba.numAcceptSets extra base steps
   let out := succsFrom tgba p.2 base steps
-  let ks : Array (Array (SysState × Nat)) := (Array.range extra.length).map fun i =>
-    keptSuccsFrom tgba p.2 base steps (fairKeep (fun _ => true) extra i)
+  let ks : Array (Array (SysState × Nat)) :=
+    if steps.all (·.1.isEmpty) then #[] else (Array.range extra.length).map fun i =>
+      keptSuccsFrom tgba p.2 base steps (fairKeep (fun _ => true) extra i)
   (out, Array.zipWith (fun ms p' =>
-    ms.union (fairMarksOf tgba.numAcceptSets extra (fun i => ks[i]!) p'))
-    (out.map fun p' => edgeMarksFrom tgba p.2 base steps p') out, #[])
+    ms.union (fairMarksGen tgba.numAcceptSets extra fm? (fun i => ks[i]!) p'))
+    (out.map fun p' => genMarksFromShared tgba p.2 base steps byTgt? p') out, #[])
 
-theorem expandFair_coherent (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+theorem expandFair_coherent [LawfulHashable SysState] (tgba : TGBA α)
+    (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (extra : List (BoolFormula α)) :
     ExpandCoherent (getSuccessors tgba sysSucc sysLabel) (edgeMarksFair tgba sysSucc sysLabel extra)
       (expandFair tgba sysSucc sysLabel extra) := by
   intro p
-  -- `expandFair`'s successors are `getSuccessors` and its base marks are `edgeMarks` pointwise, both by
-  -- unfolding; this used to be read off `expand`'s body, which no longer has that shape (§13.23).
+  obtain ⟨s, q⟩ := p
   refine Prod.ext rfl ?_
-  show Array.zipWith _ ((getSuccessors tgba sysSucc sysLabel p).map (edgeMarks tgba sysSucc sysLabel p))
-    (getSuccessors tgba sysSucc sysLabel p) = _
-  refine Array.ext (by simp) fun k hk1 hk2 => ?_
-  simp only [Array.getElem_zipWith, Array.getElem_map, edgeMarksFair, fairMarksEdge_eq_of]
+  show Array.zipWith _ ((succsFrom tgba q (sysLabel s) (LSys.totalize sysSucc s)).map _)
+    (succsFrom tgba q (sysLabel s) (LSys.totalize sysSucc s))
+    = (getSuccessors tgba sysSucc sysLabel (s, q)).map (edgeMarksFair tgba sysSucc sysLabel extra (s, q))
+  refine Array.ext (by simp [getSuccessors]) fun k hk1 hk2 => ?_
+  simp only [Array.getElem_zipWith, Array.getElem_map, edgeMarksFair, fairMarksEdge_eq_of,
+    getSuccessors, edgeMarks]
+  have hmem := Array.getElem_mem (xs := succsFrom tgba q (sysLabel s) (LSys.totalize sysSucc s))
+    (by simpa using hk1)
+  rw [genMarksFromShared_eq tgba q _ _ hmem]
   congr 1
-  unfold fairMarksOf
-  congr 2
-  refine List.filter_congr fun i hi => ?_
-  simp only []
-  rw [getElem!_pos _ i (by simpa using List.mem_range.mp hi), Array.getElem_map,
-    Array.getElem_range]
-  -- `keptSuccsFrom` with the source's own label and steps *is* `keptSuccs`, but only definitionally
-  rfl
+  by_cases hu : (LSys.totalize sysSucc s).all (·.1.isEmpty) = true
+  · simp only [fairMarksGen, fairMarksTable, hu, if_true]
+    obtain ⟨st, hst, t, ht, hc, h1, h2⟩ := (succsFrom_mem_iff _ _ _ _ _).mp hmem
+    exact (fairMarksOf_uniform tgba q _ _ (fun _ => true) tgba.numAcceptSets extra _ hu
+      ⟨st, hst, rfl, t, ht, hc, h1, h2⟩).symm
+  · simp only [fairMarksGen, fairMarksTable, hu, if_false, Bool.false_eq_true]
+    unfold fairMarksOf
+    congr 2
+    refine List.filter_congr fun i hi => ?_
+    simp only []
+    rw [getElem!_pos _ i (by simpa using List.mem_range.mp hi), Array.getElem_map,
+      Array.getElem_range]
+    -- `keptSuccsFrom` with the source's own label and steps *is* `keptSuccs`, but only definitionally
+    rfl
 
 /-! ## Extended product spec -/
 
@@ -489,7 +561,7 @@ def toTValidLassoProductFair (tgba : TGBA α) (sysSucc : SysState → Array (LSt
 
 /-- Marks of the restricted extended product: the restricted base marks, widened by the fairness conjuncts
 the source satisfies. -/
-def keptEdgeMarksFair [BEq SysState] [Hashable SysState] (tgba : TGBA α)
+def keptEdgeMarksFair (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α)) :
     (SysState × Nat) → (SysState × Nat) → Std.HashSet Nat :=
@@ -498,50 +570,57 @@ def keptEdgeMarksFair [BEq SysState] [Hashable SysState] (tgba : TGBA α)
 
 /-- The fused expansion for the restricted extended product. Same shape, and the same `PERF` note as
 `expandFair`. -/
-def keptExpandFair [BEq SysState] [Hashable SysState] (tgba : TGBA α)
+def keptExpandFair (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α)) (p : SysState × Nat) :
     Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
   let base := sysLabel p.1
   let steps := LSys.totalize sysSucc p.1
   let kept := keptStepsFrom base steps keep
-  let byTgt? := marksTable tgba p.2 base kept
+  let byTgt? := marksTableGen tgba p.2 base kept
+  let fm? := fairMarksTable tgba.numAcceptSets extra base steps
   let out := succsFrom tgba p.2 base kept
-  let ks : Array (Array (SysState × Nat)) := (Array.range extra.length).map fun i =>
-    keptSuccsFrom tgba p.2 base steps (fairKeep keep extra i)
+  let ks : Array (Array (SysState × Nat)) :=
+    if steps.all (·.1.isEmpty) then #[] else (Array.range extra.length).map fun i =>
+      keptSuccsFrom tgba p.2 base steps (fairKeep keep extra i)
   (out, Array.zipWith (fun ms p' =>
-    ms.union (fairMarksOf tgba.numAcceptSets extra (fun i => ks[i]!) p'))
-    (out.map fun p' => edgeMarksFromShared tgba p.2 base kept byTgt? p') out, #[])
+    ms.union (fairMarksGen tgba.numAcceptSets extra fm? (fun i => ks[i]!) p'))
+    (out.map fun p' => genMarksFromShared tgba p.2 base kept byTgt? p') out, #[])
 
-theorem keptExpandFair_coherent [BEq SysState] [Hashable SysState] (tgba : TGBA α)
+theorem keptExpandFair_coherent [LawfulHashable SysState] (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α)) :
     ExpandCoherent (keptSuccs tgba sysSucc sysLabel keep)
       (keptEdgeMarksFair tgba sysSucc sysLabel keep extra)
       (keptExpandFair tgba sysSucc sysLabel keep extra) := by
   intro p
-  have h1 : (keptExpand tgba sysSucc sysLabel keep p).1 = keptSuccs tgba sysSucc sysLabel keep p :=
-    (keptExpand_coherent tgba sysSucc sysLabel keep).fst p
-  have h2 : (keptExpand tgba sysSucc sysLabel keep p).2.1
-      = (keptSuccs tgba sysSucc sysLabel keep p).map
-        (keptEdgeMarks tgba sysSucc sysLabel keep p) :=
-    (keptExpand_coherent tgba sysSucc sysLabel keep).snd p
-  show ((keptExpand tgba sysSucc sysLabel keep p).1, _) = _
-  refine Prod.ext h1 ?_
-  show Array.zipWith _ (keptExpand tgba sysSucc sysLabel keep p).2.1
-    (keptExpand tgba sysSucc sysLabel keep p).1 = _
-  rw [h1, h2]
-  refine Array.ext (by simp) fun k hk1 hk2 => ?_
-  simp only [Array.getElem_zipWith, Array.getElem_map, keptEdgeMarksFair, fairMarksEdge_eq_of]
+  obtain ⟨s, q⟩ := p
+  refine Prod.ext rfl ?_
+  show Array.zipWith _ ((succsFrom tgba q (sysLabel s)
+      (keptStepsFrom (sysLabel s) (LSys.totalize sysSucc s) keep)).map _)
+    (succsFrom tgba q (sysLabel s) (keptStepsFrom (sysLabel s) (LSys.totalize sysSucc s) keep))
+    = (keptSuccs tgba sysSucc sysLabel keep (s, q)).map
+        (keptEdgeMarksFair tgba sysSucc sysLabel keep extra (s, q))
+  refine Array.ext (by simp [keptSuccs, keptSuccsFrom]) fun k hk1 hk2 => ?_
+  simp only [Array.getElem_zipWith, Array.getElem_map, keptEdgeMarksFair, fairMarksEdge_eq_of,
+    keptSuccs, keptSuccsFrom, keptSteps, keptEdgeMarks]
+  have hmem := Array.getElem_mem (xs := succsFrom tgba q (sysLabel s)
+    (keptStepsFrom (sysLabel s) (LSys.totalize sysSucc s) keep)) (by simpa using hk1)
+  rw [genMarksFromShared_eq tgba q _ _ hmem]
   congr 1
-  unfold fairMarksOf
-  congr 2
-  refine List.filter_congr fun i hi => ?_
-  simp only []
-  rw [getElem!_pos _ i (by simpa using List.mem_range.mp hi), Array.getElem_map,
-    Array.getElem_range]
-  -- `keptSuccsFrom` with the source's own label and steps *is* `keptSuccs`, but only definitionally
-  rfl
+  by_cases hu : (LSys.totalize sysSucc s).all (·.1.isEmpty) = true
+  · simp only [fairMarksGen, fairMarksTable, hu, if_true]
+    obtain ⟨st, hst, t, ht, hc, h1, h2⟩ := (succsFrom_mem_iff _ _ _ _ _).mp hmem
+    simp only [keptStepsFrom, Array.mem_filter] at hst
+    exact (fairMarksOf_uniform tgba q _ _ keep tgba.numAcceptSets extra _ hu
+      ⟨st, hst.1, hst.2, t, ht, hc, h1, h2⟩).symm
+  · simp only [fairMarksGen, fairMarksTable, hu, if_false, Bool.false_eq_true]
+    unfold fairMarksOf
+    congr 2
+    refine List.filter_congr fun i hi => ?_
+    simp only []
+    rw [getElem!_pos _ i (by simpa using List.mem_range.mp hi), Array.getElem_map,
+      Array.getElem_range]
 
 /-- The state-labelled special case for the fairness marks: every step out of `p.1` reads `sysLabel p.1`,
 so a restriction that holds there cuts nothing and the conjunct-restricted graphs coincide. -/
@@ -792,6 +871,89 @@ theorem exists_run_of_TRegionCycle [LawfulBEq α] [BEq SysState] [Hashable SysSt
       exact (fairKeep_le (keptEdgeWitness_stepEdge_letter tgba sysSucc sysLabel
         (fairKeep keep extra (m - tgba.numAcceptSets)) sysInit s s' hmem)).1
 
+/-! ## The same extended product, from one system callback
+
+`LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair. The two expansions repeat their bodies rather
+than being refactored, because the `rfl` bridges below are a machine-checked guarantee that the repeat
+computes the same thing — a mistyped copy fails to compile. See `EdgeLabels.md` §15. -/
+
+section OfStep
+
+variable (tgba : TGBA α) (sysStep : LSys.StepFn α SysState)
+
+def fairMarksEdgeOfStep (keep : Std.HashSet α → Bool) (base : Nat)
+    (extra : List (BoolFormula α)) (p p' : SysState × Nat) : Std.HashSet Nat :=
+  Std.HashSet.ofList
+    (((List.range extra.length).filter fun i =>
+      (keptSuccsOfStep tgba sysStep (fairKeep keep extra i) p).contains p').map (base + ·))
+
+def edgeMarksFairOfStep (extra : List (BoolFormula α)) :
+    (SysState × Nat) → (SysState × Nat) → Std.HashSet Nat :=
+  fun p p' => (edgeMarksOfStep tgba sysStep p p').union
+    (fairMarksEdgeOfStep tgba sysStep (fun _ => true) tgba.numAcceptSets extra p p')
+
+def keptEdgeMarksFairOfStep (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α)) :
+    (SysState × Nat) → (SysState × Nat) → Std.HashSet Nat :=
+  fun p p' => (keptEdgeMarksOfStep tgba sysStep keep p p').union
+    (fairMarksEdgeOfStep tgba sysStep keep tgba.numAcceptSets extra p p')
+
+def expandFairOfStep (extra : List (BoolFormula α)) (p : SysState × Nat) :
+    Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
+  let r := sysStep p.1
+  let base := r.2
+  let steps := LSys.totalizeAt r.1 p.1
+  let byTgt? := marksTableGen tgba p.2 base steps
+  let fm? := fairMarksTable tgba.numAcceptSets extra base steps
+  let out := succsFrom tgba p.2 base steps
+  let ks : Array (Array (SysState × Nat)) :=
+    if steps.all (·.1.isEmpty) then #[] else (Array.range extra.length).map fun i =>
+      keptSuccsFrom tgba p.2 base steps (fairKeep (fun _ => true) extra i)
+  (out, Array.zipWith (fun ms p' =>
+    ms.union (fairMarksGen tgba.numAcceptSets extra fm? (fun i => ks[i]!) p'))
+    (out.map fun p' => genMarksFromShared tgba p.2 base steps byTgt? p') out, #[])
+
+def keptExpandFairOfStep (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α))
+    (p : SysState × Nat) : Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
+  let r := sysStep p.1
+  let base := r.2
+  let steps := LSys.totalizeAt r.1 p.1
+  let kept := keptStepsFrom base steps keep
+  let byTgt? := marksTableGen tgba p.2 base kept
+  let fm? := fairMarksTable tgba.numAcceptSets extra base steps
+  let out := succsFrom tgba p.2 base kept
+  let ks : Array (Array (SysState × Nat)) :=
+    if steps.all (·.1.isEmpty) then #[] else (Array.range extra.length).map fun i =>
+      keptSuccsFrom tgba p.2 base steps (fairKeep keep extra i)
+  (out, Array.zipWith (fun ms p' =>
+    ms.union (fairMarksGen tgba.numAcceptSets extra fm? (fun i => ks[i]!) p'))
+    (out.map fun p' => genMarksFromShared tgba p.2 base kept byTgt? p') out, #[])
+
+theorem fairMarksEdgeOfStep_eq' (keep : Std.HashSet α → Bool) (base : Nat)
+    (extra : List (BoolFormula α)) :
+    fairMarksEdgeOfStep tgba sysStep keep base extra
+      = fairMarksEdge tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) keep base extra := rfl
+
+theorem edgeMarksFairOfStep_eq' (extra : List (BoolFormula α)) :
+    edgeMarksFairOfStep tgba sysStep extra
+      = edgeMarksFair tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) extra := rfl
+
+theorem keptEdgeMarksFairOfStep_eq' (keep : Std.HashSet α → Bool)
+    (extra : List (BoolFormula α)) :
+    keptEdgeMarksFairOfStep tgba sysStep keep extra
+      = keptEdgeMarksFair tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) keep extra := rfl
+
+theorem expandFairOfStep_eq' (extra : List (BoolFormula α)) :
+    expandFairOfStep tgba sysStep extra
+      = expandFair tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) extra := rfl
+
+theorem keptExpandFairOfStep_eq' (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α)) :
+    keptExpandFairOfStep tgba sysStep keep extra
+      = keptExpandFair tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) keep extra := rfl
+
+end OfStep
+
 end TGBAProduct
+
+
 
 end LTLLib

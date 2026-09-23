@@ -62,6 +62,29 @@ over infinite words requires. A deadlocked state stutters and takes no action. -
 def totalize (sysSucc : SysState → Array (LStep α SysState)) : SysState → Array (LStep α SysState) :=
   fun s => let ss := sysSucc s; if ss.isEmpty then #[((∅ : Std.HashSet α), s)] else ss
 
+/-- A system presented as **one** callback: a state's steps and its own atoms, together.
+
+This is the shape the product actually consumes. `getSuccessors` and friends each apply `sysSucc s` and
+`sysLabel s` at the same `s` in the same expression, so a two-callback system forces whoever implements it
+to compute `s`'s transitions twice — and on Veil that is a full `tr` walk each. Taking the pair as the
+primitive makes "one walk per state" a fact about the *type*, so nothing has to be memoised and nothing
+outside the kernel has to be trusted. `EdgeLabels.md` §15. -/
+abbrev StepFn (α : Type u) (SysState : Type v) [BEq α] [Hashable α] :=
+  SysState → Array (LStep α SysState) × Std.HashSet α
+
+/-- `totalize` with the steps already in hand, so a caller holding `sysStep s` does not re-enter it. -/
+def totalizeAt (ss : Array (LStep α SysState)) (s : SysState) : Array (LStep α SysState) :=
+  if ss.isEmpty then #[((∅ : Std.HashSet α), s)] else ss
+
+theorem totalize_eq_totalizeAt (sysSucc : SysState → Array (LStep α SysState)) (s : SysState) :
+    totalize sysSucc s = totalizeAt (sysSucc s) s := rfl
+
+/-- The two-callback view of a fused one. Every bridge below is stated against this, and Lean's
+definitional eta for structures makes `ofPair (fun s => ((f s).1, (f s).2)) = f` hold by `rfl`. -/
+def StepFn.succ (f : StepFn α SysState) : SysState → Array (LStep α SysState) := fun s => (f s).1
+
+def StepFn.label (f : StepFn α SysState) : SysState → Std.HashSet α := fun s => (f s).2
+
 /-- The letter read on a step whose source contributes `base` and which itself contributes `L`. Taking the
 source's atoms as a value rather than as `sysLabel` and a state lets a caller hoist `sysLabel s` out of its
 loop over the steps leaving `s`, which matters when deciding a state's atoms is expensive. The `isEmpty`

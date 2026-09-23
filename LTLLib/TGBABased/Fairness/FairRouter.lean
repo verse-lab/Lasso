@@ -53,6 +53,7 @@ import LTLLib.TGBABased.Fairness.StreettRegionProduct
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 import LTLLib.TGBABased.SCC.DijkstraSCC
 import LTLLib.TGBABased.SCC.StreettPrune
+import LTLLib.TGBABased.SCC.StreettPruneFastP
 
 namespace LTLLib
 
@@ -319,13 +320,51 @@ def modelCheckPruneSplit (kept : Formula α) (dss : List (List (NNF.FairDisjunct
     -- region predicates. `modelCheckPruneSplit_eq` below is the bridge to the proved `streettCheck`
     -- (§13.22), and every soundness theorem of this route goes through that one rewrite.
     let cs := CompiledSpec.of (streettRSpecOf tgba sysSucc sysLabel dss)
-    streettCheckF cs
+    -- §13.30: the position-carrying driver; `streettCheckP_eq` bridges it to `streettCheckF`.
+    streettCheckP cs
       (TGBAProduct.getSuccessors tgba sysSucc sysLabel)
       (TGBAProduct.edgeMarks tgba sysSucc sysLabel)
       (TGBAProduct.expandWithOpts tgba sysSucc sysLabel cs)
       (TGBAProduct.keptExpandWithOpts tgba sysSucc sysLabel cs)
       (TGBAProduct.initialStates tgba sysInit)
   | none => .empty 0
+
+/-! ## The same route, from one system callback
+
+`modelCheckPruneSplitOfStep` is `modelCheckPruneSplit` with `LSys.StepFn` in place of the
+`sysSucc`/`sysLabel` pair: the product's transitions out of a state are computed once, as a fact about
+the type rather than a memo installed behind `@[implemented_by]`. The bridge is `rfl` — Lean's
+definitional eta for structures makes `fun s => ((f s).1, (f s).2)` the same term as `f` — so every
+soundness theorem below transfers by one rewrite and none of them is restated. `EdgeLabels.md` §15. -/
+
+def streettRSpecOfStep (tgba : TGBA α) (sysStep : LSys.StepFn α SysState)
+    (dss : List (List (NNF.FairDisjunct α))) : RStreettSpec (SysState × Nat) (Std.HashSet α) :=
+  TGBAProduct.streettRSpecOfStep tgba sysStep tgba.numAcceptSets (hoistedOptions dss)
+
+theorem streettRSpecOfStep_eq (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α) (dss : List (List (NNF.FairDisjunct α))) :
+    streettRSpecOfStep tgba (fun s => (sysSucc s, sysLabel s)) dss
+      = streettRSpecOf tgba sysSucc sysLabel dss := rfl
+
+def modelCheckPruneSplitOfStep (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
+    (sysInit : List SysState) (sysStep : LSys.StepFn α SysState) :
+    EmptinessResult (SysState × Nat) :=
+  match ltl3ba (kept.toNNF false) with
+  | some tgba =>
+    let cs := CompiledSpec.of (streettRSpecOfStep tgba sysStep dss)
+    streettCheckP cs
+      (TGBAProduct.getSuccessorsOfStep tgba sysStep)
+      (TGBAProduct.edgeMarksOfStep tgba sysStep)
+      (TGBAProduct.expandWithOptsOfStep tgba sysStep cs)
+      (TGBAProduct.keptExpandWithOptsOfStep tgba sysStep cs)
+      (TGBAProduct.initialStates tgba sysInit)
+  | none => .empty 0
+
+theorem modelCheckPruneSplitOfStep_eq (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α) :
+    modelCheckPruneSplitOfStep kept dss sysInit (fun s => (sysSucc s, sysLabel s))
+      = modelCheckPruneSplit kept dss sysInit sysSucc sysLabel := rfl
 
 /-- The fast path computes what the proved route computes (§13.22). Nothing else in the tree unfolds
 `modelCheckPruneSplit`, so every soundness theorem of the fair routes goes through this one rewrite.
@@ -343,6 +382,7 @@ theorem modelCheckPruneSplit_eq [LawfulHashable SysState] (kept : Formula α)
         (TGBAProduct.initialStates tgba sysInit) := by
   unfold modelCheckPruneSplit
   rw [htg]
+  refine (streettCheckP_eq _ _ _ _ _ _).trans ?_
   exact streettCheckF_eq (CompiledSpec.of (streettRSpecOf tgba sysSucc sysLabel dss))
     (CompiledSpec.of_wf _) _ _ _ _
     (TGBAProduct.expand_coherent tgba sysSucc sysLabel)
@@ -351,7 +391,8 @@ theorem modelCheckPruneSplit_eq [LawfulHashable SysState] (kept : Formula α)
       (CompiledSpec.of (streettRSpecOf tgba sysSucc sysLabel dss)) (CompiledSpec.of_wf _) (fun _ => rfl))
     _ (TGBAProduct.keptExpandWithOpts_coherent tgba sysSucc sysLabel _)
     (TGBAProduct.keptExpandWithOpts_bits tgba sysSucc sysLabel
-      (CompiledSpec.of (streettRSpecOf tgba sysSucc sysLabel dss)) (CompiledSpec.of_wf _) (fun _ => rfl))
+      (CompiledSpec.of (streettRSpecOf tgba sysSucc sysLabel dss)) (CompiledSpec.of_wf _)
+      (fun _ => rfl) (fun _ => rfl))
     _
 
 variable [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
@@ -369,6 +410,25 @@ def modelCheckCrossSplit (kept : Formula α) (dss : List (List (NNF.FairDisjunct
     EmptinessResult ((SysState × Nat) × Bool) :=
   checkDisjuncts (fun d => modelCheckTGBADisjunctFast kept d.1 d.2 sysInit sysSucc sysLabel sysFR checker sysChecker)
     (NNF.crossAllDNF dss)
+
+/-- `modelCheckCrossSplit` over one system callback. §15 -/
+def modelCheckCrossSplitOfStep (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
+    (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
+    (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1))
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
+    (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
+    EmptinessResult ((SysState × Nat) × Bool) :=
+  checkDisjuncts (fun d => modelCheckTGBADisjunctFastOfStep kept d.1 d.2 sysInit sysStep sysFR
+    checker sysChecker) (NNF.crossAllDNF dss)
+
+theorem modelCheckCrossSplitOfStep_eq (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool))
+    (sysChecker : TEmptinessChecker (SysState × Bool)) :
+    modelCheckCrossSplitOfStep kept dss sysInit (fun s => (sysSucc s, sysLabel s)) sysFR checker
+        sysChecker
+      = modelCheckCrossSplit kept dss sysInit sysSucc sysLabel sysFR checker sysChecker := rfl
 
 /-! ## Soundness -/
 
@@ -451,15 +511,19 @@ set_option maxHeartbeats 1000000 in
 /-- Completeness of the prune with the split given: a reported witness is a run satisfying every hoisted
 conjunct through one of its options and violating the kept property.
 
-This is the direction that needs `hstate`. The prune's per-SCC test decides each conjunct's options
-*independently*, which for step regions is an over-approximation: separately available options need not
-be jointly available, and deciding whether they are is NP-hard (`EdgeLabels.md` §12.1). `LSys.StateOnly`
-is what closes the gap without an algorithm — a region that cannot see a step's own atoms is decided by
-the source state, so options available separately hold at the same state and therefore together. -/
+**Unconditional** since `EdgeLabels.md` §14. It used to need `LSys.StateOnly` on every hoisted region,
+because the per-SCC scan decides each conjunct's options *independently* and with step regions that is an
+over-approximation: separately available options need not be jointly available. The scan still decides
+them independently — it is the hot loop — but it no longer licenses a report. A candidate reads every
+option *inside* the region its commitments denote, `streettPop` reports only once each conjunct's
+selected option is one of those commitments, and `CompiledSpec.fairCycleOpts` re-checks the reported
+cycle against that one region. So what comes back is `RStreettSpec.AvailableWith`, which is exactly the
+run-level statement below, and the jointness that `StateOnly` used to supply is decided rather than
+assumed. §12.1's NP-hardness is unaffected: it is paid by branching, and only over the conjuncts that
+need it. -/
 theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
-    (hstate : ∀ ds ∈ dss, ∀ d ∈ ds, LSys.StateOnly sysSucc sysLabel d.1.eval)
     {stem loop : List (SysState × Nat)}
     (h : modelCheckPruneSplit kept dss sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
@@ -467,50 +531,60 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) kept := by
   obtain ⟨tgba, htg⟩ := Option.isSome_iff_exists.mp (ltl3ba_isSome (kept.toNNF false))
   rw [modelCheckPruneSplit_eq kept dss sysInit sysSucc sysLabel htg] at h
-  obtain ⟨ac, -, hcyc, hfair⟩ := streettCheck_nonEmpty_valid _ _ _ _ _ h
-  -- keep the compiled spec folded: `CompiledSpec.of` flattens, and forcing it here is ruinous
-  rw [CompiledSpec.of_spec] at hfair
-  -- One option per conjunct, as the edge test reports them.
-  have hsel0 : ∀ ds ∈ dss, ∃ d, d ∈ ds ∧
+  obtain ⟨bits, ac, -, hcyc, hfair⟩ := streettCheck_nonEmpty_valid _ (CompiledSpec.of_wf _) _ _ _ _ h
+  set cs := (CompiledSpec.of (streettRSpecOf tgba sysSucc sysLabel dss)).atBits bits with hcs
+  have hcsspec : cs.spec = streettRSpecOf tgba sysSucc sysLabel dss := rfl
+  have hmono : cs.spec.Mono :=
+    (TGBAProduct.streettRSpecOf_compat tgba sysSucc sysLabel _ _).toMono
+  -- One option per conjunct, as the report-time validator reports them. The validator answers every
+  -- conjunct at the *one* predicate `cs.restrict`, which entails each selected option's region because
+  -- the report branch only fires on options the candidate had already committed — so what comes back is
+  -- `AvailableWith`, not the per-option approximation. `EdgeLabels.md` §12.
+  have hsel0 : ∀ ds ∈ dss, ∃ d, d ∈ ds ∧ LePred cs.restrict d.1.eval ∧
       (∀ e ∈ cycleEdges loop.tail,
-        e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel d.1.eval e.1) ∧
+        e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel cs.restrict e.1) ∧
       (∀ g ∈ d.2, ∃ e ∈ cycleEdges loop.tail,
-        e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel (fun l => d.1.eval l && g.eval l) e.1) := by
+        e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel
+          (fun l => cs.restrict l && g.eval l) e.1) := by
     intro ds hds
-    obtain ⟨opt, hopt, hregionE, hmarksE⟩ := exists_option_of_fairCycleEdges hfair
-      (Array.mem_map_of_mem (f := fun (ds : List (NNF.FairDisjunct α)) => ds.toArray.map fun d =>
-        ({ region := d.1.eval, marks := d.2.toArray.map (·.eval) } : StreettOption (Std.HashSet α)))
-        (by simpa using hds))
-    simp only [streettRSpecOf_regionSuccs] at hregionE hmarksE
+    obtain ⟨i, hi, hci⟩ : ∃ i, ∃ _ : i < cs.spec.conjuncts.size,
+        cs.spec.conjuncts[i]! = ds.toArray.map fun d =>
+          ({ region := d.1.eval, marks := d.2.toArray.map (·.eval) } :
+            StreettOption (Std.HashSet α)) := by
+      obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp hds
+      have hj' : j < cs.spec.conjuncts.size := by
+        show j < (hoistedOptions dss).size
+        simpa [hoistedOptions] using hj
+      refine ⟨j, hj', ?_⟩
+      show (hoistedOptions dss)[j]! = _
+      rw [getElem!_pos _ j (by simpa [hoistedOptions] using hj)]
+      simp [hoistedOptions]
+    obtain ⟨opt, hopt, hle, hregionE, hmarksE⟩ :=
+      exists_option_of_fairCycleOpts (CompiledSpec.WF.atBits (CompiledSpec.of_wf _) bits) hmono hfair
+        hi
+    rw [hci] at hopt
     obtain ⟨d, hd, rfl⟩ := Array.mem_map.mp hopt
-    exact ⟨d, by simpa using hd, hregionE,
-      fun g hg => hmarksE g.eval (Array.mem_map_of_mem (by simpa using hg))⟩
-  choose sel hmem hR hM using hsel0
-  -- the conjoined region, and the selected options' marks in one list
+    simp only [hcsspec, streettRSpecOf_regionSuccs] at hregionE hmarksE
+    refine ⟨d, by simpa using hd, hle, fun e he => hregionE e he, fun g hg => ?_⟩
+    exact hmarksE g.eval (Array.mem_map_of_mem (by simpa using hg))
+  choose sel hmem hle hR hM using hsel0
+  -- the cycle lives in the restricted graph, stated once and not per conjunct
+  have hedgeR : ∀ e ∈ cycleEdges loop.tail,
+      e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel cs.restrict e.1 := by
+    intro e he
+    have := fairCycleOpts_edges hfair e he
+    simpa using this
+  have hedgeR' : ∀ e ∈ cycleEdges ac.cycle,
+      e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel cs.restrict e.1 := by
+    rw [hcyc]; exact hedgeR
+  -- the region is the reporting candidate's own, and it entails every selected option's
   set selected : List (NNF.FairDisjunct α) := dss.attach.map (fun p => sel p.1 p.2) with hselected
-  set r : Std.HashSet α → Bool := fun l => selected.all (fun d => d.1.eval l) with hr
+  set r : Std.HashSet α → Bool := cs.restrict with hr
   set extra : List (BoolFormula α) := selected.flatMap (·.2) with hextra
-  have hsel_state : ∀ d ∈ selected, LSys.StateOnly sysSucc sysLabel d.1.eval := by
-    intro d hd
+  have hrle : ∀ d ∈ selected, ∀ l, r l = true → d.1.eval l = true := by
+    intro d hd l hl
     obtain ⟨⟨ds, hds⟩, -, rfl⟩ := List.mem_map.mp hd
-    exact hstate ds hds _ (hmem ds hds)
-  have hrstate : LSys.StateOnly sysSucc sysLabel r := LSys.stateOnly_all hsel_state
-  have hrle : ∀ d ∈ selected, ∀ l, r l = true → d.1.eval l = true :=
-    fun d hd l hl => List.all_eq_true.mp hl d hd
-  -- **Jointness.** Each selected region is available on every cycle edge, so by `StateOnly` each holds
-  -- at the edge's source *state*; hence so does their conjunction, and a `StateOnly` region true at a
-  -- state admits every step out of it. This is the inference §12.1 shows is NP-hard in general.
-  have hrsrc : ∀ p ∈ loop.tail, r (sysLabel p.1) = true := by
-    intro p hp
-    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hp
-    refine List.all_eq_true.mpr fun d hd => ?_
-    obtain ⟨⟨ds, hds⟩, -, rfl⟩ := List.mem_map.mp hd
-    rw [← getElem!_pos loop.tail i hi]
-    exact TGBAProduct.region_of_mem_keptSuccs_stateOnly tgba sysSucc sysLabel
-      (hstate ds hds _ (hmem ds hds))
-      (hR ds hds (loop.tail[i]!, loop.tail[(i + 1) % loop.tail.length]!)
-        (mem_cycleEdges_iff.mpr ⟨i, hi, rfl⟩))
-  have hcycsrc : ∀ p ∈ ac.cycle, r (sysLabel p.1) = true := by rw [hcyc]; exact hrsrc
+    exact hle ds hds l hl
   -- The reported cycle, read in the region-restricted graph with the selected marks.
   have rc : TRegionCycle (TGBAProduct.initialStates tgba sysInit)
       (TGBAProduct.getSuccessors tgba sysSucc sysLabel)
@@ -529,22 +603,36 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
         cycle_chain := ?_
         cycle_back := ?_
         cycle_covers_marks := ?_ }
+    -- the cycle's edges: the validator answered them at `r` itself, so there is nothing to transfer
     · intro i hi
-      exact TGBAProduct.mem_keptSuccs_of_stateOnly tgba sysSucc sysLabel hrstate
-        (hcycsrc _ (List.getElem_mem (by omega))) (ac.cycle_chain i hi)
-    · exact TGBAProduct.mem_keptSuccs_of_stateOnly tgba sysSucc sysLabel hrstate
-        (hcycsrc _ (List.getLast_mem _)) ac.cycle_back
+      have hmod : (i + 1) % ac.cycle.length = i + 1 := Nat.mod_eq_of_lt (by omega)
+      have := hedgeR' _ (mem_cycleEdges_iff.mpr ⟨i, by omega, rfl⟩)
+      rw [getElem!_pos ac.cycle i (by omega), hmod,
+        getElem!_pos ac.cycle (i + 1) hi] at this
+      exact this
+    · have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos (by have := ac.cycle_nonempty; omega)
+      have hq : ac.cycle.length - 1 < ac.cycle.length := by have := ac.cycle_nonempty; omega
+      have hmod : (ac.cycle.length - 1 + 1) % ac.cycle.length = 0 := by
+        have h1 : ac.cycle.length - 1 + 1 = ac.cycle.length := by have := ac.cycle_nonempty; omega
+        rw [h1]; exact Nat.mod_self _
+      have := hedgeR' _ (mem_cycleEdges_iff.mpr ⟨ac.cycle.length - 1, hq, rfl⟩)
+      rw [getElem!_pos ac.cycle _ hq, hmod,
+        getElem!_pos ac.cycle 0 (by have := ac.cycle_nonempty; omega)] at this
+      have he1 : ac.cycle[ac.cycle.length - 1] = ac.cycle.getLast hne := by
+        rw [List.getLast_eq_getElem hne]
+      have he2 : ac.cycle[0]'(by have := ac.cycle_nonempty; omega) = ac.cycle.head hne :=
+        (List.head_eq_getElem hne).symm
+      rw [he1, he2] at this
+      exact this
     · intro m hm
       by_cases hlt : m < tgba.numAcceptSets
-      · -- a property mark: every realization out of an in-region state is in region, so the ambient
-        -- cover transfers to the restricted marks unchanged
+      · -- a property mark: the reported lasso was validated against `regionMarks r` in the first
+        -- place (`buildResult`), so this is the same fact, not a transfer
         obtain ⟨i, hi, hmi⟩ := ac.cycle_covers_marks m hlt
         refine ⟨i, hi, Std.HashSet.mem_iff_contains.mpr ?_⟩
         simp only [TGBAProduct.keptEdgeMarksFair, Std.HashSet.union_eq,
           Std.HashSet.contains_union, Bool.or_eq_true]
-        exact Or.inl (Std.HashSet.mem_iff_contains.mp
-          (TGBAProduct.mem_keptEdgeMarks_of_stateOnly tgba sysSucc sysLabel hrstate
-            (hcycsrc _ (List.getElem_mem hi)) hmi))
+        exact Or.inl (Std.HashSet.mem_iff_contains.mp hmi)
       · -- a selected option's mark: the witnessing realization reads a letter satisfying the option's
         -- region and the mark, and `r` a fortiori, so it survives `fairKeep r extra _`
         have hidx : m - tgba.numAcceptSets < extra.length := by omega
@@ -574,8 +662,9 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
             = extra[m - tgba.numAcceptSets] :=
           (List.getElem_eq_getD (l := extra) (i := m - tgba.numAcceptSets) .ff).symm
         simp only [TGBAProduct.fairKeep, Bool.and_eq_true, hgi]
-        exact ⟨LSys.mem_of_stateOnly hrstate (hcycsrc _ (List.getElem_mem hi)) hst',
-          (Bool.and_eq_true _ _).mp hkeep |>.2⟩
+        -- the witness realization was found at `r ∧ g`, so it satisfies both halves at once — this is
+        -- the jointness the validator now decides, where it used to be inferred from `StateOnly`
+        exact ⟨(Bool.and_eq_true _ _).mp hkeep |>.1, (Bool.and_eq_true _ _).mp hkeep |>.2⟩
   obtain ⟨ρ, hρrun, hlang, hfairρ, hregionρ⟩ := TGBAProduct.exists_run_of_TRegionCycle tgba
     sysSucc sysLabel sysInit extra r (ltl3ba_marks_lt _ htg) rc
   refine ⟨ρ, hρrun, fun ds hds => ⟨sel ds hds, hmem ds hds, ?_, ?_⟩,
@@ -624,6 +713,18 @@ def modelCheckUnderFairnessFlat (φ : Formula α)
     (sysLabel : SysState → Std.HashSet α) : EmptinessResult (SysState × Nat) :=
   let split := hoistFlat (φ.toNNF false).splitConj
   modelCheckPruneSplit (keptProperty split.2) split.1 sysInit sysSucc sysLabel
+
+/-- `modelCheckUnderFairnessFlat` over one system callback. §15 -/
+def modelCheckUnderFairnessFlatOfStep (φ : Formula α)
+    (sysInit : List SysState) (sysStep : LSys.StepFn α SysState) :
+    EmptinessResult (SysState × Nat) :=
+  let split := hoistFlat (φ.toNNF false).splitConj
+  modelCheckPruneSplitOfStep (keptProperty split.2) split.1 sysInit sysStep
+
+theorem modelCheckUnderFairnessFlatOfStep_eq (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α) :
+    modelCheckUnderFairnessFlatOfStep φ sysInit (fun s => (sysSucc s, sysLabel s))
+      = modelCheckUnderFairnessFlat φ sysInit sysSucc sysLabel := rfl
 
 /-- An `.empty` result means every run of `sys` satisfies `φ`. -/
 theorem modelCheckUnderFairness_empty_unsat (φ : Formula α)
@@ -678,14 +779,12 @@ theorem modelCheckUnderFairnessPrune_empty_unsat [LawfulHashable SysState] (φ :
 theorem modelCheckUnderFairnessPrune_nonEmpty_sat (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
-    (hstate : ∀ ds ∈ (hoistFairness (φ.toNNF false).splitConj).1, ∀ d ∈ ds,
-      LSys.StateOnly sysSucc sysLabel d.1.eval)
     {stem loop : List (SysState × Nat)}
     (h : modelCheckUnderFairnessPrune φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
   obtain ⟨ρ, hρ, hdss, hviol⟩ :=
-    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
+    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel h
   -- the violated goal is the kept conjuncts negated, so they all hold on this run
   have hkept := not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   exact ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
@@ -710,14 +809,12 @@ theorem modelCheckUnderFairnessFlat_empty_unsat [LawfulHashable SysState] (φ : 
 theorem modelCheckUnderFairnessFlat_nonEmpty_sat (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
-    (hstate : ∀ ds ∈ (hoistFlat (φ.toNNF false).splitConj).1, ∀ d ∈ ds,
-      LSys.StateOnly sysSucc sysLabel d.1.eval)
     {stem loop : List (SysState × Nat)}
     (h : modelCheckUnderFairnessFlat φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
   obtain ⟨ρ, hρ, hdss, hviol⟩ :=
-    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
+    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel h
   have hkept := not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   exact ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
     ((hoistFlat_correct _ (φ.toNNF false).splitConj).mpr ⟨hdss, hkept⟩))⟩

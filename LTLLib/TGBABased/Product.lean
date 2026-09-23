@@ -87,8 +87,12 @@ def realizationsFrom [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Na
     (steps : Array (LStep α SysState)) (p' : SysState × Nat) :
     Array (LStep α SysState × TGBA.Transition α) :=
   (steps.filter fun st => st.2 == p'.1).flatMap fun st =>
+    -- PERF: the step's letter is loop-invariant in the transition scan, but `LSys.letter` *allocates*
+    -- (`base.union L` whenever the step carries atoms of its own), so leaving it inside cost one
+    -- `HashSet` per (step, transition) rather than per step. `EdgeLabels.md` §12.10 (b).
+    let lbl := LSys.letter base st.1
     ((tgba.getSuccessors q).filter fun t =>
-      t.target == p'.2 && transCompatible t (LSys.letter base st.1)).map (st, ·)
+      t.target == p'.2 && transCompatible t lbl).map (st, ·)
 
 /-- Every (system step, automaton transition) pair realizing the product step `p → p'`. -/
 def realizations [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
@@ -315,6 +319,134 @@ theorem keptExpand_coherent [BEq SysState] [Hashable SysState] (tgba : TGBA α)
     (keep : Std.HashSet α → Bool) :
     ExpandCoherent (keptSuccs tgba sysSucc sysLabel keep) (keptEdgeMarks tgba sysSucc sysLabel keep)
       (keptExpand tgba sysSucc sysLabel keep) := fun _ => rfl
+
+/-! ## The same product, from one system callback
+
+Each definition above applies `sysLabel s` and `sysSucc s` at the same `s`, so a two-callback system makes
+its implementer compute `s` twice. These take `LSys.StepFn` — steps and atoms together — and are otherwise
+the same expressions, which is why every bridge is `rfl` up to unfolding the pattern match on the product
+state. Nothing above changes; the two-callback forms remain the ones every theorem is stated over, and a
+fused caller reaches them through the bridges. `EdgeLabels.md` §15. -/
+
+section OfStep
+
+variable (tgba : TGBA α) (sysStep : LSys.StepFn α SysState)
+
+def getSuccessorsOfStep : (SysState × Nat) → Array (SysState × Nat) :=
+  fun p => let r := sysStep p.1; succsFrom tgba p.2 r.2 (LSys.totalizeAt r.1 p.1)
+
+def keptStepsOfStep (keep : Std.HashSet α → Bool) (s : SysState) : Array (LStep α SysState) :=
+  let r := sysStep s; keptStepsFrom r.2 (LSys.totalizeAt r.1 s) keep
+
+def keptSuccsOfStep (keep : Std.HashSet α → Bool) :
+    (SysState × Nat) → Array (SysState × Nat) :=
+  fun p => let r := sysStep p.1; keptSuccsFrom tgba p.2 r.2 (LSys.totalizeAt r.1 p.1) keep
+
+variable [BEq SysState] [Hashable SysState]
+
+def edgeMarksOfStep (p : SysState × Nat) : (SysState × Nat) → Std.HashSet Nat :=
+  let r := sysStep p.1
+  fun p' => edgeMarksFrom tgba p.2 r.2 (LSys.totalizeAt r.1 p.1) p'
+
+def expandOfStep (p : SysState × Nat) :
+    Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
+  let r := sysStep p.1
+  let base := r.2
+  let steps := LSys.totalizeAt r.1 p.1
+  let byTgt? := marksTableGen tgba p.2 base steps
+  let out := succsFrom tgba p.2 base steps
+  (out, out.map fun p' => genMarksFromShared tgba p.2 base steps byTgt? p', #[])
+
+def keptEdgeMarksOfStep (keep : Std.HashSet α → Bool) :
+    (SysState × Nat) → (SysState × Nat) → Std.HashSet Nat :=
+  fun p p' => edgeMarksFrom tgba p.2 (sysStep p.1).2 (keptStepsOfStep sysStep keep p.1) p'
+
+def keptExpandOfStep (keep : Std.HashSet α → Bool) (p : SysState × Nat) :
+    Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
+  let r := sysStep p.1
+  let base := r.2
+  let kept := keptStepsFrom base (LSys.totalizeAt r.1 p.1) keep
+  let byTgt? := marksTable tgba p.2 base kept
+  let out := succsFrom tgba p.2 base kept
+  (out, out.map fun p' => edgeMarksFromShared tgba p.2 base kept byTgt? p', #[])
+
+end OfStep
+
+section OfStepEq
+
+variable (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+  (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool)
+
+private abbrev pair : LSys.StepFn α SysState := fun s => (sysSucc s, sysLabel s)
+
+theorem getSuccessorsOfStep_eq :
+    getSuccessorsOfStep tgba (pair sysSucc sysLabel) = getSuccessors tgba sysSucc sysLabel := by
+  funext p; obtain ⟨s, q⟩ := p; rfl
+
+theorem keptStepsOfStep_eq :
+    keptStepsOfStep (pair sysSucc sysLabel) keep = keptSteps sysSucc sysLabel keep := rfl
+
+theorem keptSuccsOfStep_eq :
+    keptSuccsOfStep tgba (pair sysSucc sysLabel) keep = keptSuccs tgba sysSucc sysLabel keep := rfl
+
+variable [BEq SysState] [Hashable SysState]
+
+theorem edgeMarksOfStep_eq :
+    edgeMarksOfStep tgba (pair sysSucc sysLabel) = edgeMarks tgba sysSucc sysLabel := rfl
+
+theorem expandOfStep_eq :
+    expandOfStep tgba (pair sysSucc sysLabel) = expand tgba sysSucc sysLabel := rfl
+
+theorem keptEdgeMarksOfStep_eq :
+    keptEdgeMarksOfStep tgba (pair sysSucc sysLabel) keep
+      = keptEdgeMarks tgba sysSucc sysLabel keep := rfl
+
+theorem keptExpandOfStep_eq :
+    keptExpandOfStep tgba (pair sysSucc sysLabel) keep = keptExpand tgba sysSucc sysLabel keep := rfl
+
+end OfStepEq
+
+/-! Generic forms, at an arbitrary `sysStep` rather than at a literal pair. These are what a `rw` inside
+a definition needs, since `rw` matches syntactically and a route's callback is an opaque variable. They
+hold for the same reason: `fun s => ((f s).1, (f s).2)` is `f`. -/
+
+section OfStepEqGen
+
+variable (tgba : TGBA α) (sysStep : LSys.StepFn α SysState) (keep : Std.HashSet α → Bool)
+
+theorem getSuccessorsOfStep_eq' :
+    getSuccessorsOfStep tgba sysStep
+      = getSuccessors tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) :=
+  getSuccessorsOfStep_eq tgba _ _
+
+theorem keptStepsOfStep_eq' :
+    keptStepsOfStep sysStep keep
+      = keptSteps (fun s => (sysStep s).1) (fun s => (sysStep s).2) keep := rfl
+
+theorem keptSuccsOfStep_eq' :
+    keptSuccsOfStep tgba sysStep keep
+      = keptSuccs tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) keep := rfl
+
+variable [BEq SysState] [Hashable SysState]
+
+theorem edgeMarksOfStep_eq' :
+    edgeMarksOfStep tgba sysStep
+      = edgeMarks tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) := rfl
+
+theorem expandOfStep_eq' :
+    expandOfStep tgba sysStep
+      = expand tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) := rfl
+
+theorem keptEdgeMarksOfStep_eq' :
+    keptEdgeMarksOfStep tgba sysStep keep
+      = keptEdgeMarks tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) keep := rfl
+
+theorem keptExpandOfStep_eq' :
+    keptExpandOfStep tgba sysStep keep
+      = keptExpand tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) keep := rfl
+
+end OfStepEqGen
+
 
 theorem succsFrom_mem_iff (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) (p' : SysState × Nat) :

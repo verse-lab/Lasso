@@ -210,6 +210,30 @@ def StreettOption.onEdges (spec : RStreettSpec State L) (opt : StreettOption L) 
   marks := opt.marks.map fun g e =>
     (spec.regionSuccs (fun l => opt.region l && g l) e.1).contains e.2
 
+/-- An option read on edges *inside a letter restriction* `r`: its region admits an edge that has a
+realization satisfying `r` and the region, and its mark `g` is witnessed by an edge with a realization
+satisfying `r`, the region **and** `g`, all three at once.
+
+`r` is the candidate's own region — the conjunction of the options already committed to it. Reading an
+option at `r ∧ opt.region` rather than at `opt.region` alone is what makes the scan's verdict joint with
+those commitments. Without it two conjuncts can each be witnessed by a *different* realization of the
+same edge, which is `EdgeLabels.md` §6.3 one level up and exactly what `AvailableWith` forbids by
+evaluating everything at `selRegion sel`. `onEdges` is the case `r = ⊤`, which is the top-level search. -/
+def StreettOption.onEdgesIn (spec : RStreettSpec State L) (r : L → Bool) (opt : StreettOption L) :
+    StreettOption (State × State) where
+  region := fun e => (spec.regionSuccs (fun l => r l && opt.region l) e.1).contains e.2
+  marks := opt.marks.map fun g e =>
+    (spec.regionSuccs (fun l => r l && opt.region l && g l) e.1).contains e.2
+
+/-- At the top region an option's edge reading is the unrestricted one, definitionally: `true && b` is
+`b` by `Bool.and`'s own recursion, so the two predicates are the same term. -/
+@[simp] theorem StreettOption.onEdgesIn_top (spec : RStreettSpec State L) (opt : StreettOption L) :
+    opt.onEdgesIn spec (fun _ => true) = opt.onEdges spec := rfl
+
+@[simp] theorem StreettOption.onEdgesIn_marks_size (spec : RStreettSpec State L) (r : L → Bool)
+    (opt : StreettOption L) : (opt.onEdgesIn spec r).marks.size = opt.marks.size := by
+  simp [StreettOption.onEdgesIn]
+
 /-- The spec the prune compiles: the same conjuncts, read on edges. Its `label` is never consulted — the
 edge scan is pointed at an explicit edge list — so it is pinned to the diagonal. -/
 def RStreettSpec.edgeSpec (spec : RStreettSpec State L) : StreettSpec State (State × State) where

@@ -59,6 +59,27 @@ def modelCheckTBA (φ : Formula α) (sysInit : List SysState)
       (TBAProduct.initialStates tba sysInit) (modelCheckTBA_finiteReach φ sysInit sysSucc sysLabel sysFR htg)
   | none => .empty 0
 
+/-- `modelCheckTBA` over one system callback. §15 -/
+def modelCheckTBAOfStep (φ : Formula α) (sysInit : List SysState)
+    (sysStep : LSys.StepFn α SysState)
+    (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1)) :
+    EmptinessResult (SysState × TBAState) :=
+  match htg : ltl3ba (φ.toNNF false) with
+  | some tgba =>
+    let tba := tgba.degeneralize
+    nestedDFSTWF (TBAProduct.getSuccessorsOfStep tba sysStep) (TBAProduct.edgeMarksOfStep tba sysStep)
+      (TBAProduct.expandOfStep tba sysStep)
+      (TBAProduct.initialStates tba sysInit)
+      (by rw [TBAProduct.getSuccessorsOfStep_eq']
+          exact modelCheckTBA_finiteReach φ sysInit _ _ sysFR htg)
+  | none => .empty 0
+
+theorem modelCheckTBAOfStep_eq (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
+    (sysFR : FiniteReach sysInit (LSys.targets sysSucc)) :
+    modelCheckTBAOfStep φ sysInit (fun s => (sysSucc s, sysLabel s)) sysFR
+      = modelCheckTBA φ sysInit sysSucc sysLabel sysFR := rfl
+
 theorem modelCheckTBA_eq (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit (LSys.targets sysSucc)) {tgba : TGBA α} (htg : ltl3ba (φ.toNNF false) = some tgba) :

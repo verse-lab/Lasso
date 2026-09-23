@@ -42,6 +42,24 @@ def streettRSpecOf (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysS
   regionExpand := fun r => keptExpand tgba sysSucc sysLabel r
   regionExpand_coherent := fun r => keptExpand_coherent tgba sysSucc sysLabel r
 
+/-- `streettRSpecOf` over one system callback. The three region functions are the `OfStep` forms, so the
+spec a fused route compiles computes a source's transitions once. `EdgeLabels.md` §15. -/
+def streettRSpecOfStep (tgba : TGBA α) (sysStep : LSys.StepFn α SysState) (numMarks : Nat)
+    (conjuncts : Array (Array (StreettOption (Std.HashSet α)))) :
+    RStreettSpec (SysState × Nat) (Std.HashSet α) where
+  numMarks := numMarks
+  regionSuccs := fun r => keptSuccsOfStep tgba sysStep r
+  regionMarks := fun r => keptEdgeMarksOfStep tgba sysStep r
+  conjuncts := conjuncts
+  regionExpand := fun r => keptExpandOfStep tgba sysStep r
+  regionExpand_coherent := fun _ _ => rfl
+
+theorem streettRSpecOfStep_eq (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α) (numMarks : Nat)
+    (conjuncts : Array (Array (StreettOption (Std.HashSet α)))) :
+    streettRSpecOfStep tgba (fun s => (sysSucc s, sysLabel s)) numMarks conjuncts
+      = streettRSpecOf tgba sysSucc sysLabel numMarks conjuncts := rfl
+
 /-- Projections, as rewrite rules. A goal that mentions `regionSuccs` of this spec should never be left to
 `whnf`: the spec usually arrives wrapped in `CompiledSpec.of`, and unfolding through the flattening is
 ruinous. -/

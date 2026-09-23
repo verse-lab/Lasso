@@ -135,6 +135,47 @@ def expand [BEq SysState] [Hashable SysState] (tba : TBA α) (sysSucc : SysState
   -- nothing, neither an allocation per edge nor an array of zeros
   (out, out.map fun p' => edgeMarksFrom tba p.2 base steps p', #[])
 
+/-! ## The same product, from one system callback
+
+`LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair, so a source's transitions are computed once.
+Mirrors `TGBAProduct`'s `OfStep` section; see `EdgeLabels.md` §15. -/
+
+section OfStep
+
+variable (tba : TBA α) (sysStep : LSys.StepFn α SysState)
+
+def getSuccessorsOfStep : (SysState × TBAState) → Array (SysState × TBAState) :=
+  fun p => let r := sysStep p.1; succsFrom tba p.2 r.2 (LSys.totalizeAt r.1 p.1)
+
+variable [BEq SysState] [Hashable SysState]
+
+def edgeMarksOfStep (p : SysState × TBAState) : (SysState × TBAState) → Std.HashSet Nat :=
+  let r := sysStep p.1
+  fun p' => edgeMarksFrom tba p.2 r.2 (LSys.totalizeAt r.1 p.1) p'
+
+def expandOfStep (p : SysState × TBAState) :
+    Array (SysState × TBAState) × Array (Std.HashSet Nat) × Array Nat :=
+  let r := sysStep p.1
+  let base := r.2
+  let steps := LSys.totalizeAt r.1 p.1
+  let out := succsFrom tba p.2 base steps
+  (out, out.map fun p' => edgeMarksFrom tba p.2 base steps p', #[])
+
+theorem getSuccessorsOfStep_eq' :
+    getSuccessorsOfStep tba sysStep
+      = getSuccessors tba (fun s => (sysStep s).1) (fun s => (sysStep s).2) := by
+  funext p; obtain ⟨s, q⟩ := p; rfl
+
+theorem edgeMarksOfStep_eq' :
+    edgeMarksOfStep tba sysStep
+      = edgeMarks tba (fun s => (sysStep s).1) (fun s => (sysStep s).2) := rfl
+
+theorem expandOfStep_eq' :
+    expandOfStep tba sysStep
+      = expand tba (fun s => (sysStep s).1) (fun s => (sysStep s).2) := rfl
+
+end OfStep
+
 /-- `expand` is the fused form of `getSuccessors` and `edgeMarks`: one call per product state. Coherence is
 definitional, because `expand` is literally the two of them sharing their per-source work. -/
 theorem expand_coherent [BEq SysState] [Hashable SysState] (tba : TBA α)

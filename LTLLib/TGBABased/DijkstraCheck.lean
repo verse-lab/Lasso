@@ -74,6 +74,30 @@ def modelCheckTGBA (φ : Formula α) (sysInit : List SysState)
       tgba.numAcceptSets
   | none => .empty 0
 
+/-- `modelCheckTGBA` over one system callback. The `FiniteReach` witness transports by defeq: its type
+mentions `getSuccessors tgba _ _`, which `getSuccessorsOfStep tgba sysStep` is definitionally. §15 -/
+def modelCheckTGBAOfStep (φ : Formula α) (sysInit : List SysState)
+    (sysStep : LSys.StepFn α SysState)
+    (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1))
+    (checker : TEmptinessChecker (SysState × Nat) := dijkstraTChecker) :
+    EmptinessResult (SysState × Nat) :=
+  match htg : ltl3ba (φ.toNNF false) with
+  | some tgba =>
+    checker.check (TGBAProduct.getSuccessorsOfStep tgba sysStep)
+      (TGBAProduct.initialStates tgba sysInit)
+      (by rw [TGBAProduct.getSuccessorsOfStep_eq']
+          exact modelCheckTGBA_finiteReach φ sysInit _ _ sysFR htg)
+      (TGBAProduct.edgeMarksOfStep tgba sysStep) (TGBAProduct.expandOfStep tgba sysStep)
+      tgba.numAcceptSets
+  | none => .empty 0
+
+theorem modelCheckTGBAOfStep_eq (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
+    (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    (checker : TEmptinessChecker (SysState × Nat)) :
+    modelCheckTGBAOfStep φ sysInit (fun s => (sysSucc s, sysLabel s)) sysFR checker
+      = modelCheckTGBA φ sysInit sysSucc sysLabel sysFR checker := rfl
+
 theorem modelCheckTGBA_eq (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit (LSys.targets sysSucc)) (checker : TEmptinessChecker (SysState × Nat))
