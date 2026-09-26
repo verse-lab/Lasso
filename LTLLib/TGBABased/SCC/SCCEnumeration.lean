@@ -332,6 +332,7 @@ theorem dfsGo_enumOpsFast (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (su
       cases hr
   · exact dfsGo_enumOpsFast_of_some ops V succs edgeMarks expand aux stack r h
 
+set_option backward.isDefEq.respectTransparency false in
 theorem dfsFromRoot_enumOpsFast (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (aux : (enumOps ops V).Aux) (q0 : State) :
@@ -1725,13 +1726,13 @@ theorem SearchWF.push_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V : L
       have hc := hexppush _ _ hst (h.gray_chain k hkold)
       simp only [List.getElem_cons_succ]
       rw [(hbump k hkold0).1]
-      simpa using hc
+      exact hc
   · intro k hk
     rcases k with _ | k
     · simp [hmarks]
     · simp only [List.getElem_cons_succ]
       rw [(hbump k (by simp at hk ⊢; omega)).2.2, (hbump k (by simp at hk ⊢; omega)).1]
-      simpa using h.gray_acc k (by simp at hk ⊢; omega)
+      exact h.gray_acc k (by simp at hk ⊢; omega)
   · intro k l hk hl hkl
     rcases k with _ | k
     · rcases l with _ | l
@@ -2206,14 +2207,14 @@ theorem SearchWF.popClose_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V
     rw [liveFlush_getElem!_lt (V.posNat step.pos) _ _ _ g.pos hglt]
     exact hg2
   · intro k hk
-    exact hexpdrop _ _ (by simpa using h.gray_chain (k + 1) (by simpa using hk))
+    exact hexpdrop _ _ (h.gray_chain (k + 1) (by simpa using hk))
   · intro k hk
-    simpa using h.gray_acc (k + 1) (by simpa using hk)
+    exact h.gray_acc (k + 1) (by simpa using hk)
   · intro k l hk hl hkl
-    simpa using h.frames_mono (k + 1) (l + 1) (by simpa using hk) (by simpa using hl) (by omega)
+    exact h.frames_mono (k + 1) (l + 1) (by simpa using hk) (by simpa using hl) (by omega)
   · intro k hk
     rw [hpopAt k]
-    simpa using h.lowlink_le (k + 1) (by simpa using hk)
+    exact h.lowlink_le (k + 1) (by simpa using hk)
   · rw [hlive']
     intro k hk
     have hle := h.lowlink_le (k + 1) (by simpa using hk)
@@ -2559,17 +2560,17 @@ theorem SearchWF.popMerge_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V
       rw [hlive']
       exact h.frame_pos g (List.mem_cons_of_mem _ hg)
     · intro k hk
-      exact hexpdrop _ _ (by simpa using h.gray_chain (k + 1) (by simpa using hk))
+      exact hexpdrop _ _ (h.gray_chain (k + 1) (by simpa using hk))
     · intro k hk
-      simpa using h.gray_acc (k + 1) (by simpa using hk)
+      exact h.gray_acc (k + 1) (by simpa using hk)
     · intro k l hk hl hkl
-      simpa using h.frames_mono (k + 1) (l + 1) (by simpa using hk) (by simpa using hl) (by omega)
+      exact h.frames_mono (k + 1) (l + 1) (by simpa using hk) (by simpa using hl) (by omega)
     · intro k hk
       rcases k with _ | k
       · rw [hnew0]
         simpa using le_trans (min_le_left pll ll) hpllle
       · rw [hnewS k]
-        simpa using h.lowlink_le (k + 2) (by simpa using hk)
+        exact h.lowlink_le (k + 2) (by simpa using hk)
     · rw [hlive']
       intro k hk
       rcases k with _ | k
@@ -2932,9 +2933,9 @@ private theorem dfsFromRoot_enumWF [Inhabited State] (ops : DFSOps.{u,v,w} State
   rw [hdg]
   simp only [Option.getD_some]
   refine dfsGo_enumWF ops V hlaw succs edgeMarks expand hexp initialStates _ _ r hdg
-    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hexp.fst q0)
-    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rw [hexp.snd q0, hexp.fst q0])
-    (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hq0) ?_
+    (fun st hst => by rcases List.mem_singleton.mp hst with rfl; exact hexp.fst q0)
+    (fun st hst => by rcases List.mem_singleton.mp hst with rfl; rw [hexp.snd q0, hexp.fst q0])
+    (fun st hst => by rcases List.mem_singleton.mp hst with rfl; exact hq0) ?_
   exact hwf.of_dead_eq (SearchWF.pushRoot_step hlaw hq0status hq0 hwf.toSearchWF) (hlaw.push_dead _ _ _)
 
 private theorem genericDFSGo_enumWF [Inhabited State] (ops : DFSOps.{u,v,w} State)
@@ -3496,9 +3497,9 @@ private theorem dfsFromRoot_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} S
   | some r =>
     simp only [Option.getD_some]
     refine dfsGo_recordedAt ops V hlaw hR succs edgeMarks expand hexp initialStates _ _ r hdg ?_
-      (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hexp.fst q0)
-      (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; rw [hexp.snd q0, hexp.fst q0])
-      (fun st hst => by simp only [List.mem_singleton] at hst; subst hst; exact hq0)
+      (fun st hst => by rcases List.mem_singleton.mp hst with rfl; exact hexp.fst q0)
+      (fun st hst => by rcases List.mem_singleton.mp hst with rfl; rw [hexp.snd q0, hexp.fst q0])
+      (fun st hst => by rcases List.mem_singleton.mp hst with rfl; exact hq0)
       (SearchWF.pushRoot_step hlaw hq0status hq0 hwf) (hrec.mono hR hmono)
     intro r' h
     have h' : dfsGo ops succs edgeMarks expand (ops.push aux.1 q0 (Std.HashSet.emptyWithCapacity 0)).1

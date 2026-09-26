@@ -28,7 +28,7 @@ import Mathlib.Order.Nat
 
 namespace LTLLib
 
-open NNF TLA
+open NNF Lentil
 
 variable {α : Type u}
 
@@ -116,13 +116,11 @@ theorem old_implies_satisfied
     intro n h
     have h_next := spec.next_propag _ (h_nodes n) _ h
     have h_old := spec.successor_old _ (h_nodes n) _ (h_nodes (n+1)) (h_succ n) _ h_next
-    dsimp [NNF.satisfies, NNF.toPred] at ih ⊢
-    tunfold_simp
+    rw [NNF.satisfies_next, exec.drop_drop]
     exact ih (n + 1) h_old
   | «until» μ η ih_μ ih_η =>
     intro n h_old
-    dsimp [NNF.satisfies, NNF.toPred] at ih_μ ih_η ⊢
-    tunfold_simp
+    simp only [NNF.satisfies_until, exec.drop_drop]
     have hsub := spec.old_subformula _ (h_nodes n) _ h_old
     have hex := h_accept μ η hsub n
     classical
@@ -158,7 +156,7 @@ theorem old_implies_satisfied
       exact ih_μ (n + i) (h_mu_before i hi)
   | «release» μ ψ ih_μ ih_ψ =>
     intro n h_old
-    dsimp [NNF.satisfies, NNF.toPred, tla_release] at ih_μ ih_ψ ⊢
+    rw [NNF.satisfies_release]
     intro j
     classical
     by_cases h : ∃ i, i < j ∧ (σ (n + i)).old μ
@@ -260,8 +258,7 @@ theorem expandOASpec_soundness
     obtain ⟨j, hj⟩ := haccRun i n
     refine ⟨j, ?_⟩
     simp only [expandOASpec] at hj
-    have : untils.get ⟨↑i, i.isLt⟩ = (μ, η) := hi
-    rw [this] at hj
+    rw [hi] at hj
     exact hj
 
 /-! ### Concrete soundness via expandOASpec -/

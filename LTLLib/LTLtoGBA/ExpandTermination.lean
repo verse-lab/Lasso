@@ -65,10 +65,10 @@ theorem NNF.acc_subset_fold_cons (χ : NNF α) (acc : List (NNF α)) :
     exact List.subset_cons_self _ _
   | next ψ ih =>
     simp only [fold]
-    exact (List.subset_cons_self _ _).trans (ih _)
+    exact List.Subset.trans (List.subset_cons_self _ _) (ih _)
   | and ψ1 ψ2 ih1 ih2 | or ψ1 ψ2 ih1 ih2 | «until» ψ1 ψ2 ih1 ih2 | «release» ψ1 ψ2 ih1 ih2 =>
     simp only [fold]
-    exact ((List.subset_cons_self _ _).trans (ih1 _)).trans (ih2 _)
+    exact List.Subset.trans (List.Subset.trans (List.subset_cons_self _ _) (ih1 _)) (ih2 _)
 
 /-- `χ` is always a member of its own fold. -/
 theorem NNF.self_mem_fold_cons (χ : NNF α) (acc : List (NNF α)) :

@@ -46,7 +46,7 @@ import LTLLib.LTL.Semantics
 
 namespace LTLLib
 
-open TLA
+open Lentil
 
 namespace NNF
 

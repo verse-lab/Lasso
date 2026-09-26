@@ -20,7 +20,7 @@ import LTLLib.TGBABased.AbstractSpec.Acceptance
 
 namespace LTLLib
 
-open TLA Classical
+open Lentil Classical
 
 /-! ## Abstract degeneralization -/
 

@@ -986,7 +986,7 @@ theorem measureTGBA_dropImpliedAll_le (tgba : TGBA α) : measureTGBA (dropImplie
     unfold dropImpliedAll
     unfold TGBA.getSuccessors
     rw [getElem?_foldl_insert_of_mem _ q tgba.states.toList hnd hq]
-    simpa using dropImpliedTrans_weight_le (tgba.getSuccessors q)
+    exact dropImpliedTrans_weight_le (tgba.getSuccessors q)
   unfold measureTGBA
   rw [hst]
   exact Nat.add_le_add_left (Finset.sum_le_sum hgs) _
@@ -1824,9 +1824,8 @@ private theorem mergeEquivalentStates_spec (tgba : TGBA α) (hwf : tgba.WellForm
         sameLabelsTargets (tgba.getSuccessors q) (tgba.getSuccessors (redirect.getD q q)) = true) := by
     intro q hq
     by_cases hc : redirect.contains q = true
-    · have h := (hrootAux q hc).2.2.2
-      unfold mergeCond at h
-      simpa only [Bool.or_eq_true, Bool.and_eq_true] using h
+    · have h : mergeCond tgba transient q (redirect.getD q q) = true := (hrootAux q hc).2.2.2
+      simpa only [mergeCond, Bool.or_eq_true, Bool.and_eq_true] using h
     · rw [Bool.not_eq_true] at hc
       rw [Std.HashMap.getD_eq_fallback_of_contains_eq_false hc]
       exact Or.inl (sameOutgoing_refl _)
@@ -1940,7 +1939,7 @@ theorem measureTGBA_pruneDeadAndUnreachable_le (tgba : TGBA α) :
     rw [htrimmed]
     unfold TGBA.getSuccessors
     rw [getElem?_foldl_insert_of_mem _ q live hlivend hq]
-    simpa using transWeight_filter_le (fun t => alive t.target) (tgba.successors[q]?.getD #[])
+    exact transWeight_filter_le (fun t => alive t.target) (tgba.successors[q]?.getD #[])
   have hresultStates : result.states = Std.HashSet.ofList reached := by rw [hresult]
   have hresultFinset : result.states.toList.toFinset = reached.toFinset := by
     rw [hresultStates]; exact toList_toFinset_ofList reached
@@ -1994,12 +1993,12 @@ decreasing_by
 
 
 /-- Run compatibility reads only the edges, so it agrees for any two `TGBA`s on the same run. -/
-theorem TGBA.toSpec_runCompatible_indep (T1 T2 : TGBA α) (σ : TLA.exec (TGBA.Edge α)) (ξ : OmegaWord α) :
+theorem TGBA.toSpec_runCompatible_indep (T1 T2 : TGBA α) (σ : Lentil.exec (TGBA.Edge α)) (ξ : OmegaWord α) :
     T1.toSpec.runCompatible σ ξ ↔ T2.toSpec.runCompatible σ ξ := Iff.rfl
 
 /-- Acceptance of a run agrees for any two `TGBA`s with the same `numAcceptSets`. -/
 theorem TGBA.toSpec_isAcceptingRun_indep (T1 T2 : TGBA α) (hk : T1.numAcceptSets = T2.numAcceptSets)
-    (σ : TLA.exec (TGBA.Edge α)) : T1.toSpec.isAcceptingRun σ ↔ T2.toSpec.isAcceptingRun σ := by
+    (σ : Lentil.exec (TGBA.Edge α)) : T1.toSpec.isAcceptingRun σ ↔ T2.toSpec.isAcceptingRun σ := by
   unfold TGBA.toSpec TOASpec.isAcceptingRun
   rw [hk]
 

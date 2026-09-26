@@ -314,7 +314,7 @@ theorem exists_infBranch_of_shift (hv : r.ValidFrom A S ξ) (hb : r.shift.InfBra
   intro i
   match i with
   | 0 => simpa using hbp
-  | i + 1 => simpa using hb.2 i
+  | i + 1 => simpa [VWAA.Run.shift] using hb.2 i
 
 /-- Acceptance survives dropping level 0. -/
 theorem acceptingRun_shift (hv : r.ValidFrom A S ξ) (hacc : A.AcceptingRun r) :

@@ -420,6 +420,7 @@ theorem genericDFSGoP_eq (cs : CompiledSpec State L) (cr : Nat) (succs : State �
   | nil =>
     intro aux
     rw [genericDFSGoP.eq_def (streettOpsP cs cr), genericDFSGo.eq_def (streettOpsF cs cr)]
+    rfl
   | cons q rest ih =>
     intro aux
     rw [genericDFSGoP.eq_def (streettOpsP cs cr), genericDFSGo.eq_def (streettOpsF cs cr)]
@@ -453,6 +454,7 @@ theorem genericDFSP_eq (cs : CompiledSpec State L) (cr : Nat) (succs : State →
       genericDFS (streettOpsF cs cr) succs edgeMarks expand roots aux := by
   unfold genericDFSP genericDFS
   rw [genericDFSGoP_eq]
+  rfl
 
 theorem streettRunP_eq (cs : CompiledSpec State L) (cr : Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State) :

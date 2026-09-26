@@ -48,7 +48,7 @@ import LTLLib.LTL.Propositional
 
 namespace LTLLib
 
-open TLA
+open Lentil
 
 namespace NNF
 

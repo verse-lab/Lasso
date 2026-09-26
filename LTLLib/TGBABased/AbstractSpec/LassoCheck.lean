@@ -154,7 +154,7 @@ theorem chainOK_of_chain {succs : State → Array State} :
       intro h
       rw [chainOK, Bool.and_eq_true]
       exact ⟨Array.contains_iff_mem.mpr (by simpa using h 0 (by simp)),
-        ih fun i hi => by simpa using h (i + 1) (by simp only [List.length_cons] at hi ⊢; omega)⟩
+        ih fun i hi => h (i + 1) (by simp only [List.length_cons] at hi ⊢; omega)⟩
 
 /-- A genuine accepting cycle passes the check. -/
 theorem validLasso_of_TAcceptingCycle [Hashable State] [Inhabited State] {succs : State → Array State}

@@ -124,8 +124,8 @@ theorem degeneralize_canonicalLabel_compat (gba : GBA α) (s : BAState)
       (canonicalLabel (gba.degeneralize).labeling s.gbaState) := by
   rw [degeneralize_labeling]
   show (BA.toSpec (gba.degeneralize)).labelCompat s _
-  simp only [BA.toSpec]
-  simpa only [GBA.toSpec] using h
+  simp only [BA.toSpec, degeneralize_labeling]
+  exact h
 
 /-! ## Initial states characterization -/
 

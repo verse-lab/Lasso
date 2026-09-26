@@ -554,7 +554,6 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
         hi
     rw [hci] at hopt
     obtain ⟨d, hd, rfl⟩ := Array.mem_map.mp hopt
-    simp only [hcsspec, streettRSpecOf_regionSuccs] at hregionE hmarksE
     refine ⟨d, by simpa using hd, fun e he => hregionE e he, fun g hg => ?_⟩
     exact hmarksE g.eval (Array.mem_map_of_mem (by simpa using hg))
   choose sel hmem hR hM using hsel0

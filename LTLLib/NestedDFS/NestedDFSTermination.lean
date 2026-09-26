@@ -1632,7 +1632,7 @@ theorem exists_acceptingCycle_of_run
       intro i hi
       simp only [List.length_map, List.length_range] at hi
       rw [hcycle_get i (by omega), hcycle_get (i + 1) (by omega)]
-      simpa using htrans (p + i)
+      simpa [Nat.add_assoc] using htrans (p + i)
     cycle_back := by
       rw [List.head_eq_getElem, List.getLast_eq_getElem]
       simp only [List.length_map, List.length_range]

@@ -1980,8 +1980,8 @@ theorem dijkstraOps_root_ne_none [Inhabited State] [LawfulBEq State] [LawfulHash
   intro aux q hqreach hwf hq
   refine dijkstraOps_ne_none numMarks succs edgeMarks expand hexp initialStates fr _ _
     (dijkstraWellFormed_push aux q _ hwf hq) ?_ ?_
-  · intro st hst; simp only [List.mem_singleton] at hst; rw [hst]; exact hexp.fst q
-  · intro st hst; simp only [List.mem_singleton] at hst; rw [hst]; exact hqreach
+  · intro st hst; rcases List.mem_singleton.mp hst with rfl; exact hexp.fst q
+  · intro st hst; rcases List.mem_singleton.mp hst with rfl; exact hqreach
 
 /-- `genericDFS_closed` for `dijkstraOps`. -/
 theorem dijkstraOps_closed [Inhabited State] [LawfulBEq State] [LawfulHashable State] (numMarks : Nat)
@@ -2193,6 +2193,7 @@ private theorem dijkstraGetStatus_live_of_pos [Inhabited State] [LawfulBEq State
   simp [Std.HashMap.contains_eq_isSome_getElem?, hfwd]
 
 set_option maxHeartbeats 4000000 in
+set_option backward.isDefEq.respectTransparency false in
 /-- Through a `dfsGo` run, `dead` stays disjoint from every `AcceptingSCC`, a run without a witness ends idle, and a
 reported hint is an accepting SCC. -/
 theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [Inhabited State]

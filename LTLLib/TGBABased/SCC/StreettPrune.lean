@@ -1527,7 +1527,7 @@ theorem mem_internalEdges {succs : State → Array State}
   constructor
   · rintro ⟨s, hs, hmem⟩
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hmem
-    obtain ⟨h1, h2⟩ := Array.mem_filter.mp (by simpa using ht)
+    obtain ⟨h1, h2⟩ := Array.mem_filter.mp (Array.mem_def.mpr ht)
     exact ⟨hs, h1, Std.HashSet.mem_iff_contains.mpr h2⟩
   · rintro ⟨hs, h1, h2⟩
     refine ⟨e.1, hs, List.mem_map.mpr ⟨e.2, ?_, rfl⟩⟩
@@ -3334,7 +3334,7 @@ theorem pruneLoop_none_refuted (cs : CompiledSpec State L) (hcs : cs.WF) (hmono 
           (fun s t m hm => by
             rw [CompiledSpec.atBits_numMarks]; exact hrm (D.region cs) s t m hm)
           (by rw [CompiledSpec.atBits_restrict, regionOf_atBits]; exact LePred.refl _)
-          (fun _ _ hst => by simpa using (Array.mem_filter.mp hst).1) hrun
+          (fun _ _ hst => by simpa [Candidate.region] using (Array.mem_filter.mp hst).1) hrun
         -- an SCC of the candidate's graph lies inside the candidate
         have hMsub : ∀ M ∈ sccs, ∀ s ∈ M, s ∈ D.states :=
           fun M hM s hs => mem_of_reachable_sccSuccs (henum.1 M hM s hs)
@@ -3481,7 +3481,7 @@ theorem pruneLoop_found (cs : CompiledSpec State L) (hcs : cs.WF) (Q : State →
       · exact hQ C (by simp) s (mem_of_reachable_sccSuccs
           (streettRun_pending_reachable (cs.atBits C.regions) (hcs.atBits C.regions) C.regions
             (C.graph cs cs.spec) (cs.spec.regionMarks (C.region cs)) (C.expand cs cs.spec)
-            (C.expand_coherent cs cs.spec) C.states.toList P (by simpa using hP) s hs))
+            (C.expand_coherent cs cs.spec) C.states.toList P (Array.mem_def.mpr hP) s hs))
       · exact hQ P (by simp [hP]) s hs
 
 /-- An `.empty` answer means the search refuted the whole graph in the sense of `RRefutedFrom`. -/
@@ -3551,7 +3551,7 @@ theorem streettCheck_empty_refutes (spec : RStreettSpec State L) (succs : State 
       rw [streettCheck, hrun] at h
       simp only [hq, hpath, Option.getD_some] at h
       exact buildResult_ne_empty _ (hcs.atBits C.regions) succs hg
-        (fun _ _ hb => by simpa using (Array.mem_filter.mp hb).1) _ initialStates hbound' _
+        (fun _ _ hb => (Array.mem_filter.mp hb).1) _ initialStates hbound' _
         hconn hAamb hanchor hstem hopts h
   -- a genuine find on the whole graph never degrades to `.empty`
   · exfalso

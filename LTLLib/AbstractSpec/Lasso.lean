@@ -27,7 +27,7 @@ import LTLLib.AbstractSpec.Acceptance
 
 namespace LTLLib
 
-open TLA
+open Lentil
 
 private theorem List.ne_nil_of_length_ge_one {l : List α} (h : l.length ≥ 1) : l ≠ [] :=
   List.ne_nil_of_length_pos (by omega)

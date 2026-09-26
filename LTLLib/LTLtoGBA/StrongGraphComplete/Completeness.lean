@@ -26,7 +26,7 @@ import LTLLib.AbstractSpec.Acceptance
 
 namespace LTLLib
 
-open NNF TLA
+open NNF Lentil
 
 variable {α : Type u}
 
@@ -51,7 +51,7 @@ def StrongGraphComplete (φ : NNF α) (nodes : NodeData α → Prop) : Prop :=
 private theorem satisfies_until_iff (ξ : OmegaWord α) (μ η : NNF α) :
     NNF.satisfies ξ (.until μ η) ↔
     ∃ j, NNF.satisfies (ξ.drop j) η ∧ ∀ i, i < j → NNF.satisfies (ξ.drop i) μ := by
-  simp only [NNF.satisfies, NNF.toPred, tla_until]
+  exact NNF.satisfies_until ξ μ η
 
 /-- Characterize `NNF.satisfies` for prop. -/
 private theorem satisfies_prop_iff (ξ : OmegaWord α) (a : α) :
@@ -106,7 +106,6 @@ theorem expandOASpec_completeness_strong
         .trans (.until_right .refl) hsub
       -- (ξ.drop n).drop j = ξ.drop (n + j)
       have heta_sat' : NNF.satisfies (ξ.drop (n + j)) (untils[i]).2 := by
-        show (untils[i]).2.toPred (ξ.drop (n + j))
         rw [← exec.drop_drop]
         exact heta_sat
       have h_in_old := (h_old_iff (n + j) (untils[i]).2).mpr ⟨h_eta_sub, heta_sat'⟩

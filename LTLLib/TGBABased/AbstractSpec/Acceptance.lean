@@ -18,7 +18,7 @@ import LTLLib.AbstractSpec.Acceptance
 
 namespace LTLLib
 
-open TLA
+open Lentil
 
 /-! ## Edge-indexed automaton specification -/
 

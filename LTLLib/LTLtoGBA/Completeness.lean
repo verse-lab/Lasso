@@ -48,7 +48,7 @@ import LTLLib.LTLtoGBA.Bridge
 
 namespace LTLLib
 
-open NNF TLA
+open NNF Lentil
 
 variable {α : Type u} {S : Type v} [FSet (NNF α) S] [Hashable (NNF α)] [BEq (NNF α)] [LawfulBEq (NNF α)]
 
@@ -87,12 +87,13 @@ private theorem satisfies_or_iff (ξ : OmegaWord α) (μ η : NNF α) :
 omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] [Hashable (NNF α)] in
 private theorem satisfies_next_iff (ξ : OmegaWord α) (ψ : NNF α) :
     NNF.satisfies ξ (.next ψ) ↔ NNF.satisfies (ξ.drop 1) ψ :=
-  Iff.rfl
+  NNF.satisfies_next ξ ψ
 
 omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] [Hashable (NNF α)] in
 private theorem satisfies_until_expand (ξ : OmegaWord α) (μ η : NNF α) :
     NNF.satisfies ξ (.until μ η) →
     NNF.satisfies ξ η ∨ (NNF.satisfies ξ μ ∧ NNF.satisfies (ξ.drop 1) (.until μ η)) := by
+  simp only [NNF.satisfies_until]
   intro ⟨j, hη, hμ⟩
   cases j with
   | zero => left; exact hη
@@ -108,6 +109,7 @@ omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] [Hashable (NNF α)] i
 private theorem satisfies_release_expand (ξ : OmegaWord α) (μ η : NNF α) :
     NNF.satisfies ξ (.release μ η) →
     NNF.satisfies ξ η ∧ (NNF.satisfies ξ μ ∨ NNF.satisfies (ξ.drop 1) (.release μ η)) := by
+  simp only [NNF.satisfies_release]
   intro h
   refine ⟨?_, ?_⟩
   · have := h 0; simp [exec.drop] at this; exact this
@@ -1564,15 +1566,7 @@ theorem expandOASpec_completeness
       -- Unfold until semantics: ∃ j, η satisfied at n+j
       obtain ⟨j, hη_sat, _⟩ : ∃ j, NNF.satisfies (ξ.drop (n + j)) (untils[i]).2 ∧
           ∀ i_1, i_1 < j → NNF.satisfies (ξ.drop (n + i_1)) (untils[i]).1 := by
-        simp only [NNF.satisfies, NNF.toPred, tla_until] at hsat_u
-        obtain ⟨j, hη, hμ⟩ := hsat_u
-        refine ⟨j, ?_, fun k hk => ?_⟩
-        · show (untils[i]).2.toPred (ξ.drop (n + j))
-          have : ξ.drop (n + j) = (ξ.drop n).drop j := by rw [exec.drop_drop]
-          rw [this]; exact hη
-        · show (untils[i]).1.toPred (ξ.drop (n + k))
-          have : ξ.drop (n + k) = (ξ.drop n).drop k := by rw [exec.drop_drop]
-          rw [this]; exact hμ k hk
+        simpa only [NNF.satisfies_until, exec.drop_drop] using hsat_u
       -- Find the FIRST position where η ∈ old (may be before j), rather than showing until persists to exactly n+j.
       suffices ∃ j', (σ (n + j')).old (untils[i]).2 by
         obtain ⟨j', hη_old⟩ := this

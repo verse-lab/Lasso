@@ -279,7 +279,7 @@ def finiteReach (tba : TBA α) (htwf : tba.WellFormed)
 /-- A product run splits into a TGBA edge-run and an `LSys.toSpec` run that stay compatible at every step. -/
 theorem run_decompose (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    {σ : TLA.exec (Edge SysState α)} (hrun : (toSpec tba sysSucc sysLabel sysInit).isRun σ) :
+    {σ : Lentil.exec (Edge SysState α)} (hrun : (toSpec tba sysSucc sysLabel sysInit).isRun σ) :
     tba.toSpec.isRun (fun n => (σ n).2.2) ∧
     (LSys.toSpec sysSucc sysInit sysLabel).isRun (fun n => ((σ n).1, (σ n).2.1)) ∧
     ∀ n, transCompatible (σ n).2.2.2 (LSys.letter (sysLabel (σ n).1) (σ n).2.1.1) = true := by
@@ -300,7 +300,7 @@ theorem run_decompose (tba : TBA α) (sysSucc : SysState → Array (LStep α Sys
 /-- A TGBA edge-run and a labelled system run that agree step by step combine into a genuine product run. -/
 theorem run_combine (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    {σ : TLA.exec (TBA.Edge α)} {ρ : TLA.exec (LSys.Edge α SysState)}
+    {σ : Lentil.exec (TBA.Edge α)} {ρ : Lentil.exec (LSys.Edge α SysState)}
     (htba : tba.toSpec.isRun σ) (hsys : (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ)
     (hcompat : ∀ n, transCompatible (σ n).2 (LSys.letter (sysLabel (ρ n).1) (ρ n).2.1) = true) :
     (toSpec tba sysSucc sysLabel sysInit).isRun (fun n => ((ρ n).1, (ρ n).2, σ n)) := by
@@ -327,7 +327,7 @@ private theorem transCompatible_iff_labelCompat [LawfulBEq α] (tba : TBA α)
 the letters that run reads. -/
 theorem gsp_correct1 [LawfulBEq α] (tba : TBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
-    (sysInit : List SysState) {σ : TLA.exec (Edge SysState α)}
+    (sysInit : List SysState) {σ : Lentil.exec (Edge SysState α)}
     (hacc : (toSpec tba sysSucc sysLabel sysInit).isRun σ ∧
             (toSpec tba sysSucc sysLabel sysInit).isAcceptingRun σ) :
     (LSys.toSpec sysSucc sysInit sysLabel).isRun (fun n => ((σ n).1, (σ n).2.1)) ∧
@@ -343,10 +343,10 @@ theorem gsp_correct1 [LawfulBEq α] (tba : TBA α)
 projecting back down to it. -/
 theorem gsp_correct2 [LawfulBEq α] (tba : TBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
-    (sysInit : List SysState) {ρ : TLA.exec (LSys.Edge α SysState)}
+    (sysInit : List SysState) {ρ : Lentil.exec (LSys.Edge α SysState)}
     (hsys : (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ)
     (hlang : tba.toSpec.accepts (LSys.valuation sysLabel ρ)) :
-    ∃ σ : TLA.exec (Edge SysState α), ρ = (fun n => ((σ n).1, (σ n).2.1)) ∧
+    ∃ σ : Lentil.exec (Edge SysState α), ρ = (fun n => ((σ n).1, (σ n).2.1)) ∧
       (toSpec tba sysSucc sysLabel sysInit).isRun σ ∧
       (toSpec tba sysSucc sysLabel sysInit).isAcceptingRun σ := by
   obtain ⟨σ, hrun, hcompat, hacc⟩ := hlang
@@ -473,7 +473,7 @@ def edgeWitness (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState)
 carries every mark infinitely often. -/
 theorem acceptingRun_states (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    {σ : TLA.exec (Edge SysState α)}
+    {σ : Lentil.exec (Edge SysState α)}
     (hrun : (toSpec tba sysSucc sysLabel sysInit).isRun σ)
     (hacc : (toSpec tba sysSucc sysLabel sysInit).isAcceptingRun σ) :
     ((σ 0).1, (σ 0).2.2.1) ∈ initialStates tba sysInit ∧
@@ -501,7 +501,7 @@ theorem exists_TAcceptingCycle_of_acceptingRun (tba : TBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysInit : List SysState)
     (fr : FiniteReach (initialStates tba sysInit) (getSuccessors tba sysSucc sysLabel))
-    {σ : TLA.exec (Edge SysState α)}
+    {σ : Lentil.exec (Edge SysState α)}
     (hrun : (toSpec tba sysSucc sysLabel sysInit).isRun σ)
     (hacc : (toSpec tba sysSucc sysLabel sysInit).isAcceptingRun σ) :
     ∃ _ac : TAcceptingCycle (initialStates tba sysInit) (getSuccessors tba sysSucc sysLabel)

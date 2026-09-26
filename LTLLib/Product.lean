@@ -227,7 +227,7 @@ theorem gsp_correct1 [LawfulBEq α] (ba : BA α) (sysSucc : SysState → Array S
     fun n => (compatible_iff_labelCompat ba (r n).2 (sysLabel (r n).1)).mp (hcompat n),
     fun i n => ?_⟩
   obtain ⟨j, hj⟩ := hacc i n
-  exact ⟨j, by simpa [acc_iff] using hj⟩
+  exact ⟨j, hj⟩
 
 /-- A genuine system run whose real labeling lies in the BA's language lifts to an accepting
 product run projecting back down to it. -/
@@ -245,7 +245,7 @@ theorem gsp_correct2 [LawfulBEq α] (ba : BA α) (sysSucc : SysState → Array S
       (fun n => (compatible_iff_labelCompat ba (σ n) (sysLabel (τ n))).mpr (hσcompat n)),
     fun i n => ?_⟩
   obtain ⟨j, hj⟩ := hσacc i n
-  exact ⟨j, by simpa [acc_iff] using hj⟩
+  exact ⟨j, hj⟩
 
 end Product
 

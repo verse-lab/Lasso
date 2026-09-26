@@ -107,7 +107,7 @@ its transition's marks survive into `keptEdgeMarks` because the same realization
 `keptSuccs` rather than of the fields being defined. -/
 private theorem rrun_step (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    {σ : TLA.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
+    {σ : Lentil.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
     (n : Nat) (r : Std.HashSet α → Bool)
     (hr : r (LSys.letter (sysLabel (σ n).1) (σ n).2.1.1) = true) :
     ((σ (n + 1)).1, (σ (n + 1)).2.2.1)
@@ -122,7 +122,7 @@ private theorem rrun_step (tgba : TGBA α) (sysSucc : SysState → Array (LStep 
 marks it carries survive with it. -/
 private theorem rrun_mark (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    {σ : TLA.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
+    {σ : Lentil.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
     (n : Nat) (r : Std.HashSet α → Bool)
     (hr : r (LSys.letter (sysLabel (σ n).1) (σ n).2.1.1) = true)
     (m : Nat) (hm : m ∈ (σ n).2.2.2.acceptMarks) :
@@ -140,7 +140,7 @@ automaton transition it takes carries. -/
 def acceptingRRun (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) (numMarks : Nat)
     (conjuncts : Array (Array (StreettOption (Std.HashSet α))))
-    {σ : TLA.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ) :
+    {σ : Lentil.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ) :
     RRun (streettRSpecOf tgba sysSucc sysLabel numMarks conjuncts) (initialStates tgba sysInit) where
   st := fun n => ((σ n).1, (σ n).2.2.1)
   lets := fun n => LSys.letter (sysLabel (σ n).1) (σ n).2.1.1
@@ -153,7 +153,7 @@ def acceptingRRun (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysSt
 theorem acceptingRRun_marks (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) (numMarks : Nat)
     (conjuncts : Array (Array (StreettOption (Std.HashSet α))))
-    {σ : TLA.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
+    {σ : Lentil.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
     (hacc : (toSpec tgba sysSucc sysLabel sysInit).isAcceptingRun σ) (hnm : numMarks ≤ tgba.numAcceptSets) :
     ∀ m, m < numMarks → ∀ K, ∃ n ≥ K,
       m ∈ (acceptingRRun tgba sysSucc sysLabel sysInit numMarks conjuncts hrun).rmarks n := by
@@ -182,7 +182,7 @@ theorem acceptingRRun_lets_stateOnly (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) (numMarks : Nat)
     (conjuncts : Array (Array (StreettOption (Std.HashSet α))))
-    {σ : TLA.exec (Edge SysState α)}
+    {σ : Lentil.exec (Edge SysState α)}
     (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
     {keep : Std.HashSet α → Bool} (hstate : LSys.StateOnly sysSucc sysLabel keep) (n : Nat) :
     keep ((acceptingRRun tgba sysSucc sysLabel sysInit numMarks conjuncts hrun).lets n)

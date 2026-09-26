@@ -466,6 +466,7 @@ theorem buildLabeling_neg_correct
 
 /-! ### Accept-set correctness -/
 
+set_option backward.isDefEq.respectTransparency false in
 omit [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] in
 /-- `buildAcceptSets[i]` contains `q` iff node `q` either lacks the `i`-th until-formula in `old`, or has that
 formula's right operand in `old`. -/

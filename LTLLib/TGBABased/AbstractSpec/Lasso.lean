@@ -27,7 +27,7 @@ import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
 
 namespace LTLLib
 
-open TLA
+open Lentil
 
 /-! ## Lasso run construction -/
 
@@ -919,7 +919,7 @@ theorem stemEdges_forall {stepEdge : State → State → Edge} (P : Edge → Pro
       rw [stemEdges, List.mem_cons] at he
       rcases he with rfl | he
       · exact hstep a b (by simpa using hchain 0 (by simp))
-      · exact ih (fun i hi => by simpa using hchain (i + 1) (by simpa using hi)) e he
+      · exact ih (fun i hi => hchain (i + 1) (by simpa using hi)) e he
 
 /-- Every edge the bridge emits is a `stepEdge` or a `markEdge` applied to a genuine step of the cycle, so a
 property both constructors guarantee there holds of the whole cycle. A witness built over a *restricted*

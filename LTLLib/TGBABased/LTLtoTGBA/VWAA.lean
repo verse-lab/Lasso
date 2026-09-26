@@ -549,7 +549,7 @@ private theorem remapIds_eq_of_getElem? (cv : ConcreteVWAA α) (old j : Nat)
     (hj : (keptIds cv)[j]? = some old) : (remapIds cv).getD old 0 = j := by
   have h := SubformulaTable.buildIndex_get (keptIds cv) (keptIds_nodup cv)
     (Std.HashMap.emptyWithCapacity (keptIds cv).length) 0 j old hj
-  simpa using h
+  simpa [remapIds] using h
 
 /-- Reading `keptIds` at a kept id's new position gives back the original id. -/
 theorem remap_left_inv (cv : ConcreteVWAA α) (old : Nat) (hold : old ∈ keptIds cv) :

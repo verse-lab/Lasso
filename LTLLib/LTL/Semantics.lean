@@ -4,7 +4,7 @@
 
   Key definitions:
   - `tla_release`: Release operator (dual of Until), missing from Lentil
-  - `NNF.toPred`: Denotation from NNF syntax to Lentil `TLA.pred`
+  - `NNF.toPred`: Denotation from NNF syntax to Lentil `Lentil.pred`
   - `NNF.satisfies`: ω-word satisfies an NNF formula
   - `Formula.directSatisfies`: Independent semantics on user-facing Formula type
   - `Formula.satisfies`: Defined via NNF
@@ -28,7 +28,7 @@ import LTLLib.LTL.Syntax
 
 namespace LTLLib
 
-open TLA
+open Lentil
 
 /-! ## ω-words
 
@@ -42,52 +42,59 @@ abbrev OmegaWord (α : Type u) := exec (α → Prop)
 
 /-! ## Release operator
 
-Lentil provides `tla_until` but not its dual `release`.
+Lentil provides `tl_until` but not its dual `release`.
 We define it here and prove the key properties. -/
 
 /-- Release operator: `p R q` holds iff for every `j`, `q` holds at suffix `j` or `p` held at some `i < j`.
     Dual of Until: `p R q ≡ ¬(¬p U ¬q)`. -/
 def tla_release {α : Type u} (p q : pred α) : pred α :=
-  fun σ => ∀ j, (q <| σ.drop j) ∨ ∃ i, i < j ∧ (p <| σ.drop i)
+  fun σ n => ∀ j, q σ (n + j) ∨ ∃ i, i < j ∧ p σ (n + i)
 
-syntax:25 tlafml:26 " 𝑅 " tlafml:25 : tlafml
+syntax:25 tlfml:26 " 𝑅 " tlfml:25 : tlfml
 
 macro_rules
-  | `([tlafml| $f1:tlafml 𝑅 $f2:tlafml ]) => `(LTLLib.tla_release [tlafml| $f1 ] [tlafml| $f2 ])
+  | `([tlfml| $f1:tlfml 𝑅 $f2:tlfml ]) => `(LTLLib.tla_release [tlfml| $f1 ] [tlfml| $f2 ])
 
 /-- Release is the dual of Until: `p R q ↔ ¬(¬p U ¬q)`. -/
 theorem release_iff_not_until_neg {α : Type u} (p q : pred α) :
-  ((p 𝑅 q)) =tla= (¬ (¬ p 𝑈 ¬ q)) := by
-  funext e ; unfold tla_release ; tunfold_simp ; grind
+  ((p 𝑅 q)) =tl= (¬ (¬ p 𝑈 ¬ q)) := by
+  funext e n ; unfold tla_release ; tunfold_simp ; grind
 
 /-- Until is the dual of release: `p U q ↔ ¬(¬p R ¬q)`. -/
 theorem until_iff_not_release_neg {α : Type u} (p q : pred α) :
-  ((p 𝑈 q)) =tla= (¬ (¬ p 𝑅 ¬ q)) := by
-  funext e ; unfold tla_release ; tunfold_simp
+  ((p 𝑈 q)) =tl= (¬ (¬ p 𝑅 ¬ q)) := by
+  funext e n ; unfold tla_release ; tunfold_simp
 
 /-- □ p = ⊥ R p. -/
 theorem always_eq_release_false {α : Type u} (p : pred α) :
-  (□ p) =tla= (⊥ 𝑅 p) := by
-  funext e ; unfold tla_release ; tunfold_simp
+  (□ p) =tl= (⊥ 𝑅 p) := by
+  funext e n ; unfold tla_release ; tunfold_simp
 
 /-! ## NNF denotation -/
 
 /-- Denotational semantics: map an NNF formula to a Lentil predicate over ω-words.
     Each ω-word position is a valuation `α → Prop`. -/
 def NNF.toPred {α} : NNF α → pred (α → Prop)
-  | .tt        => tla_true
-  | .ff        => tla_false
+  | .tt        => tl_true
+  | .ff        => tl_false
   | .prop a    => state_pred (fun v => v a)
   | .nprop a   => state_pred (fun v => ¬ v a)
-  | .and φ ψ   => tla_and φ.toPred ψ.toPred
-  | .or φ ψ    => tla_or φ.toPred ψ.toPred
+  | .and φ ψ   => tl_and φ.toPred ψ.toPred
+  | .or φ ψ    => tl_or φ.toPred ψ.toPred
   | .next φ    => later φ.toPred
-  | .until φ ψ => tla_until φ.toPred ψ.toPred
+  | .until φ ψ => tl_until φ.toPred ψ.toPred
   | .release φ ψ => tla_release φ.toPred ψ.toPred
+
+private theorem NNF.toPred_drop (φ : NNF α) (ξ : OmegaWord α) (k n : Nat) :
+    φ.toPred (ξ.drop k) n = φ.toPred ξ (n + k) := by
+  induction φ generalizing n with
+  | _ => simp [toPred, tl_true, tl_false, pure_pred, state_pred, tl_and, tl_or,
+      later, tl_until, tla_release, exec.drop, *, Nat.add_assoc, Nat.add_comm,
+      Nat.add_left_comm]
 
 /-- An ω-word `ξ` satisfies an NNF formula `φ`. -/
 def NNF.satisfies {α} (ξ : OmegaWord α) (φ : NNF α) : Prop :=
-  φ.toPred ξ
+  φ.toPred ξ 0
 
 /-! ## Unfolding lemmas for NNF.satisfies -/
 
@@ -114,32 +121,38 @@ theorem NNF.satisfies_or (ξ : OmegaWord α) (φ ψ : NNF α) :
     (NNF.or φ ψ).satisfies ξ ↔ φ.satisfies ξ ∨ ψ.satisfies ξ := Iff.rfl
 
 theorem NNF.satisfies_next (ξ : OmegaWord α) (φ : NNF α) :
-    (NNF.next φ).satisfies ξ ↔ φ.satisfies (ξ.drop 1) := Iff.rfl
+    (NNF.next φ).satisfies ξ ↔ φ.satisfies (ξ.drop 1) := by
+  simp [satisfies, toPred, later, toPred_drop]
 
 theorem NNF.satisfies_until (ξ : OmegaWord α) (φ ψ : NNF α) :
     (NNF.until φ ψ).satisfies ξ ↔
-      ∃ i, ψ.satisfies (ξ.drop i) ∧ ∀ j, j < i → φ.satisfies (ξ.drop j) := Iff.rfl
+      ∃ i, ψ.satisfies (ξ.drop i) ∧ ∀ j, j < i → φ.satisfies (ξ.drop j) := by
+  simp [satisfies, toPred, tl_until, toPred_drop]
 
 theorem NNF.satisfies_release (ξ : OmegaWord α) (φ ψ : NNF α) :
     (NNF.release φ ψ).satisfies ξ ↔
-      ∀ j, ψ.satisfies (ξ.drop j) ∨ ∃ i, i < j ∧ φ.satisfies (ξ.drop i) := Iff.rfl
+      ∀ j, ψ.satisfies (ξ.drop j) ∨ ∃ i, i < j ∧ φ.satisfies (ξ.drop i) := by
+  simp [satisfies, toPred, tla_release, toPred_drop]
 
 /-- `□φ` holds at every suffix, the `⊥ R φ` encoding's left disjunct being unreachable. -/
 theorem NNF.satisfies_always (ξ : OmegaWord α) (φ : NNF α) :
     (NNF.always φ).satisfies ξ ↔ ∀ k, φ.satisfies (ξ.drop k) := by
-  dsimp [satisfies, NNF.always, NNF.toPred, tla_release] ; tunfold_simp
+  simp [NNF.always, satisfies_release, satisfies_ff]
 
 /-- `◇φ` holds at some suffix, the `⊤ U φ` encoding's guard being vacuous. -/
 theorem NNF.satisfies_eventually (ξ : OmegaWord α) (φ : NNF α) :
     (NNF.eventually φ).satisfies ξ ↔ ∃ k, φ.satisfies (ξ.drop k) := by
-  dsimp [satisfies, NNF.eventually, NNF.toPred] ; tunfold_simp
+  simp [NNF.eventually, satisfies_until, satisfies_tt]
 
 /-! ## Negation correctness -/
 
 /-- Negating an NNF formula flips satisfaction. -/
 theorem NNF.neg_correct (ξ : OmegaWord α) (φ : NNF α) :
   φ.neg.satisfies ξ ↔ ¬ φ.satisfies ξ := by
-  induction φ generalizing ξ <;> dsimp [satisfies, NNF.neg, NNF.toPred, tla_release] at * <;> tunfold_simp <;> try grind
+  induction φ generalizing ξ <;>
+    simp only [NNF.neg, satisfies_tt, satisfies_ff, satisfies_prop, satisfies_nprop,
+      satisfies_and, satisfies_or, satisfies_next, satisfies_until, satisfies_release] <;>
+    grind
 
 /-! ## Formula-level semantics
 
@@ -202,7 +215,12 @@ theorem Formula.directSatisfies_assuming {α} (ξ : OmegaWord α) (ψs : List (F
 private theorem Formula.toNNF_correct_aux {α} (ξ : OmegaWord α) (φ : Formula α) :
     (φ.directSatisfies ξ ↔ (φ.toNNF true).satisfies ξ) ∧
     (¬ φ.directSatisfies ξ ↔ (φ.toNNF false).satisfies ξ) := by
-  induction φ generalizing ξ <;> dsimp [toNNF, directSatisfies, NNF.satisfies, NNF.toPred, state_pred, tla_release] at * <;> tunfold_simp' <;> try grind
+  induction φ generalizing ξ <;>
+    dsimp [toNNF, directSatisfies] <;>
+    simp [NNF.satisfies_tt, NNF.satisfies_ff,
+      NNF.satisfies_prop, NNF.satisfies_nprop, NNF.satisfies_and, NNF.satisfies_or,
+      NNF.satisfies_next, NNF.satisfies_until, NNF.satisfies_release, *] <;>
+    grind
 
 /-- Converting to NNF preserves satisfaction. -/
 theorem Formula.toNNF_correct {α} (ξ : OmegaWord α) (φ : Formula α) :

@@ -202,7 +202,7 @@ theorem RevPathFrom.tail {State : Type u} {initialStates : List State} {succs : 
     {a : State} {l : List State} (h : RevPathFrom initialStates succs (a :: l)) :
     RevPathFrom initialStates succs l := by
   refine ⟨fun i hi => ?_, fun hne => ?_⟩
-  · simpa using h.1 (i + 1) (by simp only [List.length_cons]; omega)
+  · exact h.1 (i + 1) (by simp only [List.length_cons]; omega)
   · have := h.2 (by simp)
     rwa [List.getLast_cons hne] at this
 

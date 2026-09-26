@@ -352,7 +352,7 @@ theorem TAcceptingCycle.run_states_mem {tgba : TGBA α} (hwf : tgba.WellFormed)
 
 /-- The converse of `TAcceptingCycle.toTValidLasso`: an accepting run of `tgba.toSpec` yields a `TAcceptingCycle`. -/
 theorem TGBA.exists_TAcceptingCycle_of_acceptingRun (tgba : TGBA α) (hwf : tgba.WellFormed)
-    {σ : TLA.exec (TGBA.Edge α)} (hrun : tgba.toSpec.isRun σ) (hacc : tgba.toSpec.isAcceptingRun σ) :
+    {σ : Lentil.exec (TGBA.Edge α)} (hrun : tgba.toSpec.isRun σ) (hacc : tgba.toSpec.isAcceptingRun σ) :
     ∃ _ac : TAcceptingCycle tgba.initialStates.toList tgba.succStates tgba.edgeMarks tgba.numAcceptSets,
       True := by
   obtain ⟨hinit, hstep⟩ := hrun

@@ -25,7 +25,7 @@ import Mathlib.Order.Nat
 
 namespace LTLLib
 
-open TLA Classical
+open Lentil Classical
 
 /-! ## Proof-level automaton specification -/
 
@@ -246,7 +246,6 @@ private theorem degeneralize_forward {ξ : OmegaWord α}
       obtain ⟨j, hj⟩ := hacc_ba n
       refine ⟨j, ?_, ?_⟩
       · have h1 := hj.1
-        simp at h1
         rw [hcounter] at h1
         exact congrArg Fin.val h1
       · exact hj.2
