@@ -15,9 +15,6 @@ rev = "v4.28.0"
 [[lean_lib]]
 name = "LTLLib"
 
-[[lean_lib]]
-name = "ProbMC"
-
 [[lean_exe]]
 name = "tgbabench"
 root = "LTLLib.TGBABased.Benchmark.PipelineBench"
