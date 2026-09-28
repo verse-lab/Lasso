@@ -218,19 +218,13 @@ def streettPopF [Inhabited State] (cs : CompiledSpec State L) (curRegions : Nat)
             if C.states.isEmpty || curRegions.testBit o then ps else ps.push C
         match firstUnsatisfied cs regionAlive marksSeen with
         | none =>
-          match firstUncommitted cs curRegions regionAlive marksSeen with
-          | none =>
-            let wit' := live.extract step.pos live.size
-            -- the witness's successors, the same slice of the retained arrays (§13.26)
-            let ws' := ls.extract step.pos live.size
-            let wopts' := selectedOptions cs curRegions regionAlive marksSeen
-            let (live', liveIndex', dead') := liveFlush live liveIndex dead step.pos
-            (⟨live', liveIndex', dead', dstack, wit', wopts', pending,
-              ls.shrink step.pos, lo.shrink step.pos, ws'⟩, true)
-          | some liveOpts =>
-            let (live', liveIndex', dead') := liveFlush live liveIndex dead step.pos
-            (⟨live', liveIndex', dead', dstack, wit, wopts, blame liveOpts,
-              ls.shrink step.pos, lo.shrink step.pos, ws⟩, false)
+          let wit' := live.extract step.pos live.size
+          -- the witness's successors, the same slice of the retained arrays (§13.26)
+          let ws' := ls.extract step.pos live.size
+          let wopts' := selectedOptions cs curRegions regionAlive marksSeen
+          let (live', liveIndex', dead') := liveFlush live liveIndex dead step.pos
+          (⟨live', liveIndex', dead', dstack, wit', wopts', pending,
+            ls.shrink step.pos, lo.shrink step.pos, ws'⟩, true)
         | some liveOpts =>
           let (live', liveIndex', dead') := liveFlush live liveIndex dead step.pos
           (⟨live', liveIndex', dead', dstack, wit, wopts, blame liveOpts,
@@ -1349,11 +1343,7 @@ theorem streettPopF_spec [Inhabited State] [LawfulBEq State] [LawfulHashable Sta
       · rw [if_neg hacc, if_neg hacc, hscan]
         cases hfu : firstUnsatisfied cs (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with
-        | none =>
-          cases hfc : firstUncommitted cs cr (scanFrame cs succs live step.pos).1
-              (scanFrame cs succs live step.pos).2 with
-          | none => exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hnew⟩
-          | some liveOpts => exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hwit⟩
+        | none => exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hnew⟩
         | some liveOpts => exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hwit⟩
     · simp only [hll, if_false]
       cases hb2 : dstack0.pop.back? with

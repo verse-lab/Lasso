@@ -131,12 +131,15 @@ theorem modelCheckUnderFairnessRehoistPrune_empty_unsat [LawfulHashable SysState
 theorem modelCheckUnderFairnessRehoistPrune_nonEmpty_sat (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
+    (hstate : ∀ ds ∈ (hoistFairness (φ.toNNF false).splitConj).1 ++
+        (rehoist (hoistFairness (φ.toNNF false).splitConj).2).1,
+      ∀ d ∈ ds, LSys.StateOnly sysSucc sysLabel d.1.eval)
     {stem loop : List (SysState × Nat)}
     (h : modelCheckUnderFairnessRehoistPrune φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
   obtain ⟨ρ, hτ, hdss, hviol⟩ :=
-    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel h
+    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
   -- the violated goal is the kept conjuncts negated, so they all hold on this run
   have hkept := not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   refine ⟨ρ, hτ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
@@ -256,13 +259,19 @@ theorem modelCheckUnderFairnessDisjunctiveHoist_nonEmpty_sat (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
     -- Quantified over every branch, since which one reports is not known until the search runs.
+    -- Disjunctive hoisting *adds* options after the first split, so the hypothesis is stated against
+    -- the regions each branch actually hands the prune — `EdgeLabels.md` §12.6 step 6, §17.
+    (hstate : ∀ b ∈ branches (rehoist (hoistFairness (φ.toNNF false).splitConj).2).2,
+      ∀ ds ∈ (hoistFairness (φ.toNNF false).splitConj).1 ++
+          (rehoist (hoistFairness (φ.toNNF false).splitConj).2).1 ++ b.1,
+      ∀ d ∈ ds, LSys.StateOnly sysSucc sysLabel d.1.eval)
     {stem loop : List (SysState × Nat)}
     (h : modelCheckUnderFairnessDisjunctiveHoist φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
   obtain ⟨b, hb, hfb⟩ := firstNonEmpty_nonEmpty h
   obtain ⟨τ, hτ, hdss, hviol⟩ :=
-    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hfb
+    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel (hstate b hb) hfb
   -- the violated goal is the branch's kept conjuncts negated, so they all hold on this run
   have hkept := not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   have hkept' := (branches_correct _ _).mpr

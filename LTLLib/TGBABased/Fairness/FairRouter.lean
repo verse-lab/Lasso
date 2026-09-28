@@ -524,6 +524,7 @@ need it. -/
 theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
+    (hstate : ∀ ds ∈ dss, ∀ d ∈ ds, LSys.StateOnly sysSucc sysLabel d.1.eval)
     {stem loop : List (SysState × Nat)}
     (h : modelCheckPruneSplit kept dss sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
@@ -536,16 +537,14 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
   have hcsspec : cs.spec = streettRSpecOf tgba sysSucc sysLabel dss := rfl
   have hmono : cs.spec.Mono :=
     (TGBAProduct.streettRSpecOf_compat tgba sysSucc sysLabel _ _).toMono
-  -- One option per conjunct, as the report-time validator reports them. The validator answers every
-  -- conjunct at the *one* predicate `cs.restrict`, which entails each selected option's region because
-  -- the report branch only fires on options the candidate had already committed — so what comes back is
-  -- `AvailableWith`, not the per-option approximation. `EdgeLabels.md` §12.
-  have hsel0 : ∀ ds ∈ dss, ∃ d, d ∈ ds ∧ LePred cs.restrict d.1.eval ∧
+  -- One option per conjunct, as the report-time validator reports them — each at *its own* region.
+  -- Jointness across conjuncts is not established here; `hstate` supplies it below, which is the
+  -- inference §12.1 shows is NP-hard in general and §17 discharges by routing.
+  have hsel0 : ∀ ds ∈ dss, ∃ d, d ∈ ds ∧
       (∀ e ∈ cycleEdges loop.tail,
-        e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel cs.restrict e.1) ∧
+        e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel d.1.eval e.1) ∧
       (∀ g ∈ d.2, ∃ e ∈ cycleEdges loop.tail,
-        e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel
-          (fun l => cs.restrict l && g.eval l) e.1) := by
+        e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel (fun l => d.1.eval l && g.eval l) e.1) := by
     intro ds hds
     obtain ⟨i, hi, hci⟩ : ∃ i, ∃ _ : i < cs.spec.conjuncts.size,
         cs.spec.conjuncts[i]! = ds.toArray.map fun d =>
@@ -559,32 +558,40 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
       show (hoistedOptions dss)[j]! = _
       rw [getElem!_pos _ j (by simpa [hoistedOptions] using hj)]
       simp [hoistedOptions]
-    obtain ⟨opt, hopt, hle, hregionE, hmarksE⟩ :=
+    obtain ⟨opt, hopt, hregionE, hmarksE⟩ :=
       exists_option_of_fairCycleOpts (CompiledSpec.WF.atBits (CompiledSpec.of_wf _) bits) hmono hfair
         hi
     rw [hci] at hopt
     obtain ⟨d, hd, rfl⟩ := Array.mem_map.mp hopt
     simp only [hcsspec, streettRSpecOf_regionSuccs] at hregionE hmarksE
-    refine ⟨d, by simpa using hd, hle, fun e he => hregionE e he, fun g hg => ?_⟩
+    refine ⟨d, by simpa using hd, fun e he => hregionE e he, fun g hg => ?_⟩
     exact hmarksE g.eval (Array.mem_map_of_mem (by simpa using hg))
-  choose sel hmem hle hR hM using hsel0
-  -- the cycle lives in the restricted graph, stated once and not per conjunct
-  have hedgeR : ∀ e ∈ cycleEdges loop.tail,
-      e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel cs.restrict e.1 := by
-    intro e he
-    have := fairCycleOpts_edges hfair e he
-    simpa using this
-  have hedgeR' : ∀ e ∈ cycleEdges ac.cycle,
-      e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel cs.restrict e.1 := by
-    rw [hcyc]; exact hedgeR
-  -- the region is the reporting candidate's own, and it entails every selected option's
+  choose sel hmem hR hM using hsel0
+  -- the conjoined region, and the selected options' marks in one list
   set selected : List (NNF.FairDisjunct α) := dss.attach.map (fun p => sel p.1 p.2) with hselected
-  set r : Std.HashSet α → Bool := cs.restrict with hr
+  set r : Std.HashSet α → Bool := fun l => selected.all (fun d => d.1.eval l) with hr
   set extra : List (BoolFormula α) := selected.flatMap (·.2) with hextra
-  have hrle : ∀ d ∈ selected, ∀ l, r l = true → d.1.eval l = true := by
-    intro d hd l hl
+  have hsel_state : ∀ d ∈ selected, LSys.StateOnly sysSucc sysLabel d.1.eval := by
+    intro d hd
     obtain ⟨⟨ds, hds⟩, -, rfl⟩ := List.mem_map.mp hd
-    exact hle ds hds l hl
+    exact hstate ds hds _ (hmem ds hds)
+  have hrstate : LSys.StateOnly sysSucc sysLabel r := LSys.stateOnly_all hsel_state
+  have hrle : ∀ d ∈ selected, ∀ l, r l = true → d.1.eval l = true :=
+    fun d hd l hl => List.all_eq_true.mp hl d hd
+  -- **Jointness.** Each selected region is available on every cycle edge, so by `StateOnly` each holds
+  -- at the edge's source *state*; hence so does their conjunction, and a `StateOnly` region true at a
+  -- state admits every step out of it. This is the inference §12.1 shows is NP-hard in general.
+  have hrsrc : ∀ p ∈ loop.tail, r (sysLabel p.1) = true := by
+    intro p hp
+    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hp
+    refine List.all_eq_true.mpr fun d hd => ?_
+    obtain ⟨⟨ds, hds⟩, -, rfl⟩ := List.mem_map.mp hd
+    rw [← getElem!_pos loop.tail i hi]
+    exact TGBAProduct.region_of_mem_keptSuccs_stateOnly tgba sysSucc sysLabel
+      (hstate ds hds _ (hmem ds hds))
+      (hR ds hds (loop.tail[i]!, loop.tail[(i + 1) % loop.tail.length]!)
+        (mem_cycleEdges_iff.mpr ⟨i, hi, rfl⟩))
+  have hcycsrc : ∀ p ∈ ac.cycle, r (sysLabel p.1) = true := by rw [hcyc]; exact hrsrc
   -- The reported cycle, read in the region-restricted graph with the selected marks.
   have rc : TRegionCycle (TGBAProduct.initialStates tgba sysInit)
       (TGBAProduct.getSuccessors tgba sysSucc sysLabel)
@@ -603,36 +610,25 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
         cycle_chain := ?_
         cycle_back := ?_
         cycle_covers_marks := ?_ }
-    -- the cycle's edges: the validator answered them at `r` itself, so there is nothing to transfer
     · intro i hi
-      have hmod : (i + 1) % ac.cycle.length = i + 1 := Nat.mod_eq_of_lt (by omega)
-      have := hedgeR' _ (mem_cycleEdges_iff.mpr ⟨i, by omega, rfl⟩)
-      rw [getElem!_pos ac.cycle i (by omega), hmod,
-        getElem!_pos ac.cycle (i + 1) hi] at this
-      exact this
-    · have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos (by have := ac.cycle_nonempty; omega)
-      have hq : ac.cycle.length - 1 < ac.cycle.length := by have := ac.cycle_nonempty; omega
-      have hmod : (ac.cycle.length - 1 + 1) % ac.cycle.length = 0 := by
-        have h1 : ac.cycle.length - 1 + 1 = ac.cycle.length := by have := ac.cycle_nonempty; omega
-        rw [h1]; exact Nat.mod_self _
-      have := hedgeR' _ (mem_cycleEdges_iff.mpr ⟨ac.cycle.length - 1, hq, rfl⟩)
-      rw [getElem!_pos ac.cycle _ hq, hmod,
-        getElem!_pos ac.cycle 0 (by have := ac.cycle_nonempty; omega)] at this
-      have he1 : ac.cycle[ac.cycle.length - 1] = ac.cycle.getLast hne := by
-        rw [List.getLast_eq_getElem hne]
-      have he2 : ac.cycle[0]'(by have := ac.cycle_nonempty; omega) = ac.cycle.head hne :=
-        (List.head_eq_getElem hne).symm
-      rw [he1, he2] at this
-      exact this
+      exact TGBAProduct.mem_keptSuccs_of_stateOnly tgba sysSucc sysLabel hrstate
+        (hcycsrc _ (List.getElem_mem (by omega))) (ac.cycle_chain i hi)
+    · exact TGBAProduct.mem_keptSuccs_of_stateOnly tgba sysSucc sysLabel hrstate
+        (hcycsrc _ (List.getLast_mem _)) ac.cycle_back
     · intro m hm
       by_cases hlt : m < tgba.numAcceptSets
-      · -- a property mark: the reported lasso was validated against `regionMarks r` in the first
-        -- place (`buildResult`), so this is the same fact, not a transfer
+      · -- A property mark. §14 kept `buildResult` validating against the *candidate's* restricted
+        -- marks, so the cover arrives already in-region; weaken it to the ambient marks and put it
+        -- back inside `r`, where `StateOnly` says every realization out of an in-region state is in
+        -- region. The weakening is where the candidate's region and `r` stop having to agree.
         obtain ⟨i, hi, hmi⟩ := ac.cycle_covers_marks m hlt
         refine ⟨i, hi, Std.HashSet.mem_iff_contains.mpr ?_⟩
         simp only [TGBAProduct.keptEdgeMarksFair, Std.HashSet.union_eq,
           Std.HashSet.contains_union, Bool.or_eq_true]
-        exact Or.inl (Std.HashSet.mem_iff_contains.mp hmi)
+        exact Or.inl (Std.HashSet.mem_iff_contains.mp
+          (TGBAProduct.mem_keptEdgeMarks_of_stateOnly tgba sysSucc sysLabel hrstate
+            (hcycsrc _ (List.getElem_mem hi))
+            (TGBAProduct.keptEdgeMarks_sub tgba sysSucc sysLabel _ _ _ m hmi)))
       · -- a selected option's mark: the witnessing realization reads a letter satisfying the option's
         -- region and the mark, and `r` a fortiori, so it survives `fairKeep r extra _`
         have hidx : m - tgba.numAcceptSets < extra.length := by omega
@@ -662,9 +658,8 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
             = extra[m - tgba.numAcceptSets] :=
           (List.getElem_eq_getD (l := extra) (i := m - tgba.numAcceptSets) .ff).symm
         simp only [TGBAProduct.fairKeep, Bool.and_eq_true, hgi]
-        -- the witness realization was found at `r ∧ g`, so it satisfies both halves at once — this is
-        -- the jointness the validator now decides, where it used to be inferred from `StateOnly`
-        exact ⟨(Bool.and_eq_true _ _).mp hkeep |>.1, (Bool.and_eq_true _ _).mp hkeep |>.2⟩
+        exact ⟨LSys.mem_of_stateOnly hrstate (hcycsrc _ (List.getElem_mem hi)) hst',
+          (Bool.and_eq_true _ _).mp hkeep |>.2⟩
   obtain ⟨ρ, hρrun, hlang, hfairρ, hregionρ⟩ := TGBAProduct.exists_run_of_TRegionCycle tgba
     sysSucc sysLabel sysInit extra r (ltl3ba_marks_lt _ htg) rc
   refine ⟨ρ, hρrun, fun ds hds => ⟨sel ds hds, hmem ds hds, ?_, ?_⟩,
@@ -779,12 +774,14 @@ theorem modelCheckUnderFairnessPrune_empty_unsat [LawfulHashable SysState] (φ :
 theorem modelCheckUnderFairnessPrune_nonEmpty_sat (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
+    (hstate : ∀ ds ∈ (hoistFairness (φ.toNNF false).splitConj).1, ∀ d ∈ ds,
+      LSys.StateOnly sysSucc sysLabel d.1.eval)
     {stem loop : List (SysState × Nat)}
     (h : modelCheckUnderFairnessPrune φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
   obtain ⟨ρ, hρ, hdss, hviol⟩ :=
-    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel h
+    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
   -- the violated goal is the kept conjuncts negated, so they all hold on this run
   have hkept := not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   exact ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
@@ -809,12 +806,14 @@ theorem modelCheckUnderFairnessFlat_empty_unsat [LawfulHashable SysState] (φ : 
 theorem modelCheckUnderFairnessFlat_nonEmpty_sat (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
+    (hstate : ∀ ds ∈ (hoistFlat (φ.toNNF false).splitConj).1, ∀ d ∈ ds,
+      LSys.StateOnly sysSucc sysLabel d.1.eval)
     {stem loop : List (SysState × Nat)}
     (h : modelCheckUnderFairnessFlat φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
   obtain ⟨ρ, hρ, hdss, hviol⟩ :=
-    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel h
+    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
   have hkept := not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   exact ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
     ((hoistFlat_correct _ (φ.toNNF false).splitConj).mpr ⟨hdss, hkept⟩))⟩
