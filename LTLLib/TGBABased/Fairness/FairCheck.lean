@@ -19,11 +19,12 @@
     version
 
   Sections:
-  - Region and checker obligations
   - Model checking one disjunct
+  - Region and checker obligations
   - Soundness
   - Completeness
   - Feasibility fail-fast
+  - The same crossing, from one system callback
 -/
 import LTLLib.TGBABased.AbstractSpec.RegionLatch
 import LTLLib.TGBABased.DijkstraCheck
@@ -33,6 +34,91 @@ namespace LTLLib
 
 variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
 
+section Search
+
+variable [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState]
+
+/-! ## Model checking one disjunct -/
+
+/-- Does `sys` satisfy `φ` on every run that satisfies `◇□fg` and every `□◇ b` for `b` in `gfs`? The `gfs`
+become marks and `fg` becomes the latch's region, so neither reaches the translator.
+
+The system is *labelled* (`TGBABased/LabelledSys.lean`): both the marks and the region are read off the
+letter each step contributes, so a hoisted `◇□ψ` or `□◇ψ` may mention an edge atom such as `taken(a)`. A
+system with no edge atoms is passed as `LSys.unlabelled sysSucc`. -/
+def modelCheckTGBADisjunct (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α)
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker) :
+    EmptinessResult ((SysState × Nat) × Bool) :=
+  match ltl3ba (φ.toNNF false) with
+  | some tgba =>
+    checker.check
+      (latchSuccs (TGBAProduct.getSuccessors tgba sysSucc sysLabel)
+        (TGBAProduct.keptSuccs tgba sysSucc sysLabel fg.eval))
+      (latchInit (TGBAProduct.initialStates tgba sysInit) fg.isTrue)
+      (latchMarks (TGBAProduct.edgeMarksFair tgba sysSucc sysLabel gfs)
+        (TGBAProduct.keptEdgeMarksFair tgba sysSucc sysLabel fg.eval gfs)
+        (tgba.numAcceptSets + gfs.length))
+      (latchExpand (TGBAProduct.expandFair tgba sysSucc sysLabel gfs)
+        (TGBAProduct.keptExpandFair tgba sysSucc sysLabel fg.eval gfs)
+        (tgba.numAcceptSets + gfs.length))
+      (tgba.numAcceptSets + gfs.length + 1)
+  | none => .empty 0
+
+/-- `modelCheckTGBADisjunct` over one system callback. -/
+def modelCheckTGBADisjunctOfStep (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
+    (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker) :
+    EmptinessResult ((SysState × Nat) × Bool) :=
+  match ltl3ba (φ.toNNF false) with
+  | some tgba =>
+    checker.check
+      (latchSuccs (TGBAProduct.getSuccessorsOfStep tgba sysStep)
+        (TGBAProduct.keptSuccsOfStep tgba sysStep fg.eval))
+      (latchInit (TGBAProduct.initialStates tgba sysInit) fg.isTrue)
+      (latchMarks (TGBAProduct.edgeMarksFairOfStep tgba sysStep gfs)
+        (TGBAProduct.keptEdgeMarksFairOfStep tgba sysStep fg.eval gfs)
+        (tgba.numAcceptSets + gfs.length))
+      (latchExpand (TGBAProduct.expandFairOfStep tgba sysStep gfs)
+        (TGBAProduct.keptExpandFairOfStep tgba sysStep fg.eval gfs)
+        (tgba.numAcceptSets + gfs.length))
+      (tgba.numAcceptSets + gfs.length + 1)
+  | none => .empty 0
+
+theorem modelCheckTGBADisjunctOfStep_eq (φ : Formula α) (fg : BoolFormula α)
+    (gfs : List (BoolFormula α)) (sysInit : List SysState)
+    (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool)) :
+    modelCheckTGBADisjunctOfStep φ fg gfs sysInit (fun s => (sysSucc s, sysLabel s)) checker
+      = modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel checker := rfl
+
+theorem modelCheckTGBADisjunct_eq (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α)
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool))
+    {tgba : TGBA α} (htg : ltl3ba (φ.toNNF false) = some tgba) :
+    modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel checker =
+      checker.check
+      (latchSuccs (TGBAProduct.getSuccessors tgba sysSucc sysLabel)
+          (TGBAProduct.keptSuccs tgba sysSucc sysLabel fg.eval))
+        (latchInit (TGBAProduct.initialStates tgba sysInit) fg.isTrue)
+        (latchMarks (TGBAProduct.edgeMarksFair tgba sysSucc sysLabel gfs)
+          (TGBAProduct.keptEdgeMarksFair tgba sysSucc sysLabel fg.eval gfs)
+          (tgba.numAcceptSets + gfs.length))
+        (latchExpand (TGBAProduct.expandFair tgba sysSucc sysLabel gfs)
+          (TGBAProduct.keptExpandFair tgba sysSucc sysLabel fg.eval gfs)
+          (tgba.numAcceptSets + gfs.length))
+        (tgba.numAcceptSets + gfs.length + 1) := by
+  unfold modelCheckTGBADisjunct
+  split
+  next tgba' htg' =>
+    obtain rfl : tgba' = tgba := Option.some.inj (htg'.symm.trans htg)
+    rfl
+  next htg' => exact absurd (htg'.symm.trans htg) (by simp)
+
+end Search
+
 /-! ## Region and checker obligations -/
 
 -- The `FG` conjunct enters as a *letter* restriction `fg.eval`, not as a state predicate: the latch's
@@ -40,7 +126,7 @@ variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
 -- system the letter is the source state's label, so this is the old state region (`keptSteps_unlabelled`);
 -- for a labelled system it also constrains edge atoms, which is what lets `◇□ψ` mention `taken(a)`.
 
-section Search
+section Correctness
 
 variable [LawfulBEq α] [LawfulHashable α]
 
@@ -61,98 +147,6 @@ theorem modelCheckTGBADisjunct_marksBound [BEq SysState] [Hashable SysState] [La
 
 variable [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState]
 
-/-! ## Model checking one disjunct -/
-
-/-- Does `sys` satisfy `φ` on every run that satisfies `◇□fg` and every `□◇ b` for `b` in `gfs`? The `gfs`
-become marks and `fg` becomes the latch's region, so neither reaches the translator.
-
-The system is *labelled* (`TGBABased/LabelledSys.lean`): both the marks and the region are read off the
-letter each step contributes, so a hoisted `◇□ψ` or `□◇ψ` may mention an edge atom such as `taken(a)`. A
-system with no edge atoms is passed as `LSys.unlabelled sysSucc`. -/
-def modelCheckTGBADisjunct (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
-    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
-    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
-    (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker) :
-    EmptinessResult ((SysState × Nat) × Bool) :=
-  match htg : ltl3ba (φ.toNNF false) with
-  | some tgba =>
-    checker.check
-      (latchSuccs (TGBAProduct.getSuccessors tgba sysSucc sysLabel)
-        (TGBAProduct.keptSuccs tgba sysSucc sysLabel fg.eval))
-      (latchInit (TGBAProduct.initialStates tgba sysInit) fg.isTrue)
-      (latch_finiteReach
-        (TGBAProduct.keptSuccs_sub tgba sysSucc sysLabel fg.eval) fg.isTrue
-        (modelCheckTGBA_finiteReach φ sysInit sysSucc sysLabel sysFR htg))
-      (latchMarks (TGBAProduct.edgeMarksFair tgba sysSucc sysLabel gfs)
-        (TGBAProduct.keptEdgeMarksFair tgba sysSucc sysLabel fg.eval gfs)
-        (tgba.numAcceptSets + gfs.length))
-      (latchExpand (TGBAProduct.expandFair tgba sysSucc sysLabel gfs)
-        (TGBAProduct.keptExpandFair tgba sysSucc sysLabel fg.eval gfs)
-        (tgba.numAcceptSets + gfs.length))
-      (tgba.numAcceptSets + gfs.length + 1)
-  | none => .empty 0
-
-/-- `modelCheckTGBADisjunct` over one system callback. §15 -/
-def modelCheckTGBADisjunctOfStep (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
-    (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
-    (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1))
-    (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker) :
-    EmptinessResult ((SysState × Nat) × Bool) :=
-  match htg : ltl3ba (φ.toNNF false) with
-  | some tgba =>
-    checker.check
-      (latchSuccs (TGBAProduct.getSuccessorsOfStep tgba sysStep)
-        (TGBAProduct.keptSuccsOfStep tgba sysStep fg.eval))
-      (latchInit (TGBAProduct.initialStates tgba sysInit) fg.isTrue)
-      (latch_finiteReach
-        (by rw [TGBAProduct.keptSuccsOfStep_eq', TGBAProduct.getSuccessorsOfStep_eq']
-            exact TGBAProduct.keptSuccs_sub tgba _ _ fg.eval) fg.isTrue
-        (by rw [TGBAProduct.getSuccessorsOfStep_eq']
-            exact modelCheckTGBA_finiteReach φ sysInit _ _ sysFR htg))
-      (latchMarks (TGBAProduct.edgeMarksFairOfStep tgba sysStep gfs)
-        (TGBAProduct.keptEdgeMarksFairOfStep tgba sysStep fg.eval gfs)
-        (tgba.numAcceptSets + gfs.length))
-      (latchExpand (TGBAProduct.expandFairOfStep tgba sysStep gfs)
-        (TGBAProduct.keptExpandFairOfStep tgba sysStep fg.eval gfs)
-        (tgba.numAcceptSets + gfs.length))
-      (tgba.numAcceptSets + gfs.length + 1)
-  | none => .empty 0
-
-theorem modelCheckTGBADisjunctOfStep_eq (φ : Formula α) (fg : BoolFormula α)
-    (gfs : List (BoolFormula α)) (sysInit : List SysState)
-    (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
-    (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
-    (checker : TEmptinessChecker ((SysState × Nat) × Bool)) :
-    modelCheckTGBADisjunctOfStep φ fg gfs sysInit (fun s => (sysSucc s, sysLabel s)) sysFR checker
-      = modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel sysFR checker := rfl
-
-theorem modelCheckTGBADisjunct_eq (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
-    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
-    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
-    (checker : TEmptinessChecker ((SysState × Nat) × Bool))
-    {tgba : TGBA α} (htg : ltl3ba (φ.toNNF false) = some tgba) :
-    modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel sysFR checker =
-      checker.check
-      (latchSuccs (TGBAProduct.getSuccessors tgba sysSucc sysLabel)
-          (TGBAProduct.keptSuccs tgba sysSucc sysLabel fg.eval))
-        (latchInit (TGBAProduct.initialStates tgba sysInit) fg.isTrue)
-        (latch_finiteReach
-          (TGBAProduct.keptSuccs_sub tgba sysSucc sysLabel fg.eval) fg.isTrue
-          (modelCheckTGBA_finiteReach φ sysInit sysSucc sysLabel sysFR htg))
-        (latchMarks (TGBAProduct.edgeMarksFair tgba sysSucc sysLabel gfs)
-          (TGBAProduct.keptEdgeMarksFair tgba sysSucc sysLabel fg.eval gfs)
-          (tgba.numAcceptSets + gfs.length))
-        (latchExpand (TGBAProduct.expandFair tgba sysSucc sysLabel gfs)
-          (TGBAProduct.keptExpandFair tgba sysSucc sysLabel fg.eval gfs)
-          (tgba.numAcceptSets + gfs.length))
-        (tgba.numAcceptSets + gfs.length + 1) := by
-  unfold modelCheckTGBADisjunct
-  split
-  next tgba' htg' =>
-    obtain rfl : tgba' = tgba := Option.some.inj (htg'.symm.trans htg)
-    rfl
-  next htg' => exact absurd (htg'.symm.trans htg) (by simp)
-
 /-! ## Soundness -/
 
 set_option maxHeartbeats 1000000 in
@@ -162,7 +156,7 @@ theorem modelCheckTGBADisjunct_empty_unsat [DecidableEq α] (φ : Formula α) (f
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
     (checker : TEmptinessChecker ((SysState × Nat) × Bool)) {n : Nat}
-    (h : modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel sysFR checker = .empty n) :
+    (h : modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel checker = .empty n) :
     ∀ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ →
       (BoolFormula.eventuallyAlways fg).satisfies (LSys.valuation sysLabel ρ) →
       (∀ b ∈ gfs, (BoolFormula.alwaysEventually b).satisfies (LSys.valuation sysLabel ρ)) →
@@ -170,7 +164,7 @@ theorem modelCheckTGBADisjunct_empty_unsat [DecidableEq α] (φ : Formula α) (f
   intro ρ hρ hfg hgf
   by_contra hviolate
   obtain ⟨tgba, htg⟩ := Option.isSome_iff_exists.mp (ltl3ba_isSome (φ.toNNF false))
-  rw [modelCheckTGBADisjunct_eq φ fg gfs sysInit sysSucc sysLabel sysFR checker htg] at h
+  rw [modelCheckTGBADisjunct_eq φ fg gfs sysInit sysSucc sysLabel checker htg] at h
   have hacc0 : tgba.toSpec.accepts (LSys.valuation sysLabel ρ) :=
     (ltl3ba_accepts _ htg _).mpr ((Formula.toNNF_correct_neg _ φ).mp hviolate)
   obtain ⟨N, hN⟩ := (TGBAProduct.eventuallyAlways_iff_indexed_run fg sysLabel ρ).mp hfg
@@ -217,6 +211,7 @@ theorem modelCheckTGBADisjunct_empty_unsat [DecidableEq α] (φ : Formula α) (f
           sysInit gfs hrun hacc fg.eval (N := 0) (fun n _ => htot n) m hm K
         exact ⟨k, hkK, hmm⟩
   exact checker.empty_no_cycle
+    (latch_finiteReach (TGBAProduct.keptSuccs_sub tgba sysSucc sysLabel fg.eval) fg.isTrue hfrbase)
     (latchExpand_coherent (TGBAProduct.expandFair_coherent tgba sysSucc sysLabel gfs)
       (TGBAProduct.keptExpandFair_coherent tgba sysSucc sysLabel fg.eval gfs)
       (tgba.numAcceptSets + gfs.length))
@@ -234,15 +229,17 @@ theorem modelCheckTGBADisjunct_nonEmpty_sat [DecidableEq α] (φ : Formula α) (
     (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
     {stem loop : List ((SysState × Nat) × Bool)}
-    (h : modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel sysFR checker
+    (h : modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel checker
       = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       (BoolFormula.eventuallyAlways fg).satisfies (LSys.valuation sysLabel ρ) ∧
       (∀ b ∈ gfs, (BoolFormula.alwaysEventually b).satisfies (LSys.valuation sysLabel ρ)) ∧
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
   obtain ⟨tgba, htg⟩ := Option.isSome_iff_exists.mp (ltl3ba_isSome (φ.toNNF false))
-  rw [modelCheckTGBADisjunct_eq φ fg gfs sysInit sysSucc sysLabel sysFR checker htg] at h
+  rw [modelCheckTGBADisjunct_eq φ fg gfs sysInit sysSucc sysLabel checker htg] at h
   obtain ⟨ac, -, -⟩ := checker.nonEmpty_valid
+    (latch_finiteReach (TGBAProduct.keptSuccs_sub tgba sysSucc sysLabel fg.eval) fg.isTrue
+      (modelCheckTGBA_finiteReach φ sysInit sysSucc sysLabel sysFR htg))
     (latchExpand_coherent (TGBAProduct.expandFair_coherent tgba sysSucc sysLabel gfs)
       (TGBAProduct.keptExpandFair_coherent tgba sysSucc sysLabel fg.eval gfs)
       (tgba.numAcceptSets + gfs.length))
@@ -260,7 +257,7 @@ theorem modelCheckTGBADisjunct_nonEmpty_sat [DecidableEq α] (φ : Formula α) (
     (TGBAProduct.fair_iff_indexed_run gfs sysLabel ρ).mpr hfair,
     fun hsat => (Formula.toNNF_correct_neg _ φ).mpr ((ltl3ba_accepts _ htg _).mp hlang) hsat⟩
 
-end Search
+end Correctness
 
 /-! ## Feasibility fail-fast
 
@@ -390,18 +387,29 @@ theorem sysFairExpandR_coherent (fg : BoolFormula α) (gfs : List (BoolFormula �
 the region and the `GF` parts read off the letters the system's steps contribute. -/
 def disjunctFeasible (fg : BoolFormula α) (gfs : List (BoolFormula α)) (sysInit : List SysState)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
-    (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
     (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) : Bool :=
   match sysChecker.check
       (latchSuccs (Product.totalizeSucc (LSys.targets sysSucc)) (sysKeptSuccs fg sysSucc sysLabel))
       (latchInit sysInit fg.isTrue)
-      (latch_finiteReach (sysKeptSuccs_sub fg sysSucc sysLabel) fg.isTrue
-        (Product.finiteReach_totalizeSucc sysInit (LSys.targets sysSucc) sysFR))
       (latchMarks (sysFairMarks gfs sysSucc sysLabel) (sysFairMarks gfs sysSucc sysLabel) gfs.length)
       (latchExpand (sysFairExpand gfs sysSucc sysLabel) (sysFairExpandR fg gfs sysSucc sysLabel)
         gfs.length) (gfs.length + 1) with
   | .empty _ => false
   | .nonEmpty _ _ => true
+
+/-- One disjunct behind the fail-fast, which answers `.empty` without touching the product when the disjunct is
+infeasible. -/
+def modelCheckTGBADisjunctFast (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α)
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
+    (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
+    EmptinessResult ((SysState × Nat) × Bool) :=
+  if disjunctFeasible fg gfs sysInit sysSucc sysLabel sysChecker then
+    modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel checker
+  else .empty 0
+
+section Correctness
 
 variable [LawfulBEq α]
 
@@ -410,7 +418,7 @@ theorem no_run_of_disjunctFeasible_false (fg : BoolFormula α) (gfs : List (Bool
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
     (sysChecker : TEmptinessChecker (SysState × Bool))
-    (h : disjunctFeasible fg gfs sysInit sysSucc sysLabel sysFR sysChecker = false)
+    (h : disjunctFeasible fg gfs sysInit sysSucc sysLabel sysChecker = false)
     (ρ : Nat → LSys.Edge α SysState) (hρ : (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ)
     (hfg : (BoolFormula.eventuallyAlways fg).satisfies (LSys.valuation sysLabel ρ))
     (hgf : ∀ b ∈ gfs, (BoolFormula.alwaysEventually b).satisfies (LSys.valuation sysLabel ρ)) :
@@ -450,6 +458,8 @@ theorem no_run_of_disjunctFeasible_false (fg : BoolFormula α) (gfs : List (Bool
   split at h
   · next hempty =>
     exact sysChecker.empty_no_cycle
+      (latch_finiteReach (sysKeptSuccs_sub fg sysSucc sysLabel) fg.isTrue
+        (Product.finiteReach_totalizeSucc sysInit (LSys.targets sysSucc) sysFR))
       (latchExpand_coherent (sysFairExpand_coherent gfs sysSucc sysLabel)
         (sysFairExpandR_coherent fg gfs sysSucc sysLabel) gfs.length)
       (fun s t m hm => latchMarks_lt (sysFairMarks_lt gfs sysSucc sysLabel)
@@ -458,18 +468,6 @@ theorem no_run_of_disjunctFeasible_false (fg : BoolFormula α) (gfs : List (Bool
 
 variable [LawfulHashable α]
 
-/-- One disjunct behind the fail-fast, which answers `.empty` without touching the product when the disjunct is
-infeasible. -/
-def modelCheckTGBADisjunctFast (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
-    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
-    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
-    (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
-    (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
-    EmptinessResult ((SysState × Nat) × Bool) :=
-  if disjunctFeasible fg gfs sysInit sysSucc sysLabel sysFR sysChecker then
-    modelCheckTGBADisjunct φ fg gfs sysInit sysSucc sysLabel sysFR checker
-  else .empty 0
-
 /-- An `.empty` result means every run of `sys` satisfying the disjunct satisfies `φ`. -/
 theorem modelCheckTGBADisjunctFast_empty_unsat [DecidableEq α] (φ : Formula α) (fg : BoolFormula α)
     (gfs : List (BoolFormula α)) (sysInit : List SysState)
@@ -477,7 +475,7 @@ theorem modelCheckTGBADisjunctFast_empty_unsat [DecidableEq α] (φ : Formula α
     (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
     (sysChecker : TEmptinessChecker (SysState × Bool)) {n : Nat}
-    (h : modelCheckTGBADisjunctFast φ fg gfs sysInit sysSucc sysLabel sysFR checker
+    (h : modelCheckTGBADisjunctFast φ fg gfs sysInit sysSucc sysLabel checker
       sysChecker = .empty n) :
     ∀ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ →
       (BoolFormula.eventuallyAlways fg).satisfies (LSys.valuation sysLabel ρ) →
@@ -500,7 +498,7 @@ theorem modelCheckTGBADisjunctFast_nonEmpty_sat [DecidableEq α] (φ : Formula �
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
     (sysChecker : TEmptinessChecker (SysState × Bool))
     {stem loop : List ((SysState × Nat) × Bool)}
-    (h : modelCheckTGBADisjunctFast φ fg gfs sysInit sysSucc sysLabel sysFR checker
+    (h : modelCheckTGBADisjunctFast φ fg gfs sysInit sysSucc sysLabel checker
       sysChecker = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       (BoolFormula.eventuallyAlways fg).satisfies (LSys.valuation sysLabel ρ) ∧
@@ -511,6 +509,8 @@ theorem modelCheckTGBADisjunctFast_nonEmpty_sat [DecidableEq α] (φ : Formula �
   · exact modelCheckTGBADisjunct_nonEmpty_sat φ fg gfs sysInit sysSucc sysLabel sysFR
       checker h
   · exact absurd h (by simp)
+
+end Correctness
 
 /-! ## The same crossing, from one system callback
 
@@ -573,17 +573,14 @@ theorem sysFairExpandROfStep_eq' (fg : BoolFormula α) (gfs : List (BoolFormula 
 
 end OfStep
 
-/-- `disjunctFeasible` over one system callback. §15 -/
+/-- `disjunctFeasible` over one system callback. -/
 def disjunctFeasibleOfStep (fg : BoolFormula α) (gfs : List (BoolFormula α))
     (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
-    (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1))
     (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) : Bool :=
   match sysChecker.check
       (latchSuccs (Product.totalizeSucc (LSys.targets fun s => (sysStep s).1))
         (sysKeptSuccsOfStep sysStep fg))
       (latchInit sysInit fg.isTrue)
-      (latch_finiteReach (by rw [sysKeptSuccsOfStep_eq']; exact sysKeptSuccs_sub fg _ _) fg.isTrue
-        (Product.finiteReach_totalizeSucc sysInit (LSys.targets fun s => (sysStep s).1) sysFR))
       (latchMarks (sysFairMarksOfStep sysStep gfs) (sysFairMarksOfStep sysStep gfs) gfs.length)
       (latchExpand (sysFairExpandOfStep sysStep gfs) (sysFairExpandROfStep sysStep fg gfs)
         gfs.length) (gfs.length + 1) with
@@ -592,31 +589,28 @@ def disjunctFeasibleOfStep (fg : BoolFormula α) (gfs : List (BoolFormula α))
 
 theorem disjunctFeasibleOfStep_eq (fg : BoolFormula α) (gfs : List (BoolFormula α))
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
-    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    (sysLabel : SysState → Std.HashSet α)
     (sysChecker : TEmptinessChecker (SysState × Bool)) :
-    disjunctFeasibleOfStep fg gfs sysInit (fun s => (sysSucc s, sysLabel s)) sysFR sysChecker
-      = disjunctFeasible fg gfs sysInit sysSucc sysLabel sysFR sysChecker := rfl
+    disjunctFeasibleOfStep fg gfs sysInit (fun s => (sysSucc s, sysLabel s)) sysChecker
+      = disjunctFeasible fg gfs sysInit sysSucc sysLabel sysChecker := rfl
 
-/-- `modelCheckTGBADisjunctFast` over one system callback. §15 -/
+/-- `modelCheckTGBADisjunctFast` over one system callback. -/
 def modelCheckTGBADisjunctFastOfStep (φ : Formula α) (fg : BoolFormula α)
     (gfs : List (BoolFormula α)) (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
-    (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1))
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
     (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
     EmptinessResult ((SysState × Nat) × Bool) :=
-  if disjunctFeasibleOfStep fg gfs sysInit sysStep sysFR sysChecker then
-    modelCheckTGBADisjunctOfStep φ fg gfs sysInit sysStep sysFR checker
+  if disjunctFeasibleOfStep fg gfs sysInit sysStep sysChecker then
+    modelCheckTGBADisjunctOfStep φ fg gfs sysInit sysStep checker
   else .empty 0
 
 theorem modelCheckTGBADisjunctFastOfStep_eq (φ : Formula α) (fg : BoolFormula α)
     (gfs : List (BoolFormula α)) (sysInit : List SysState)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
-    (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
     (sysChecker : TEmptinessChecker (SysState × Bool)) :
-    modelCheckTGBADisjunctFastOfStep φ fg gfs sysInit (fun s => (sysSucc s, sysLabel s)) sysFR
-        checker sysChecker
-      = modelCheckTGBADisjunctFast φ fg gfs sysInit sysSucc sysLabel sysFR checker sysChecker := rfl
+    modelCheckTGBADisjunctFastOfStep φ fg gfs sysInit (fun s => (sysSucc s, sysLabel s)) checker sysChecker
+      = modelCheckTGBADisjunctFast φ fg gfs sysInit sysSucc sysLabel checker sysChecker := rfl
 
 end Feasible
 

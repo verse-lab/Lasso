@@ -65,8 +65,8 @@ def TAcceptingCycle.restrictMarks {State : Type u} {initialStates : List State}
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
-/-- Contract any transition-based emptiness-check algorithm must satisfy. The two proof fields assume every mark
-index stays below `numMarks`, a hypothesis `check` itself is not given. -/
+/-- Contract any transition-based emptiness-check algorithm must satisfy. The two proof fields assume the reachable set
+is finite and every mark index stays below `numMarks`, neither of which `check` itself is given. -/
 structure TEmptinessChecker (State : Type u) [BEq State] [Hashable State]
     [LawfulBEq State] where
   -- `expand` is the fused `(succs, edgeMarks)` the search actually walks with: one call per state gives its
@@ -74,29 +74,28 @@ structure TEmptinessChecker (State : Type u) [BEq State] [Hashable State]
   -- than once per edge. `ExpandCoherent` says it agrees with the two callbacks the spec is stated in terms
   -- of; the proof fields assume it. See `GenericDFS.DFSStep.succMarks`.
   check : (succs : State → Array State) → (initialStates : List State) →
-    FiniteReach initialStates succs →
     (edgeMarks : State → State → Std.HashSet Nat) →
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) → (numMarks : Nat) →
     EmptinessResult State
   -- Soundness of `.nonEmpty`: a returned `stem`/`loop` is a `TAcceptingCycle` witness.
   nonEmpty_valid : ∀ {succs : State → Array State} {initialStates : List State}
-      {fr : FiniteReach initialStates succs}
       {edgeMarks : State → State → Std.HashSet Nat}
       {expand : State → Array State × Array (Std.HashSet Nat) × Array Nat} {numMarks : Nat}
       {stem loop : List State},
+    FiniteReach initialStates succs →
     ExpandCoherent succs edgeMarks expand →
     (∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks) →
-    check succs initialStates fr edgeMarks expand numMarks = .nonEmpty stem loop →
+    check succs initialStates edgeMarks expand numMarks = .nonEmpty stem loop →
     ∃ ac : TAcceptingCycle initialStates succs edgeMarks numMarks,
       ac.stem = stem ∧ ac.cycle = loop.tail
   -- Completeness of `.empty`: no `TAcceptingCycle` exists.
   empty_no_cycle : ∀ {succs : State → Array State} {initialStates : List State}
-      {fr : FiniteReach initialStates succs}
       {edgeMarks : State → State → Std.HashSet Nat}
       {expand : State → Array State × Array (Std.HashSet Nat) × Array Nat} {numMarks : Nat} {n : Nat},
+    FiniteReach initialStates succs →
     ExpandCoherent succs edgeMarks expand →
     (∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks) →
-    check succs initialStates fr edgeMarks expand numMarks = .empty n →
+    check succs initialStates edgeMarks expand numMarks = .empty n →
     ¬∃ _ac : TAcceptingCycle initialStates succs edgeMarks numMarks, True
 
 end LTLLib

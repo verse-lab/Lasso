@@ -395,7 +395,7 @@ theorem modelCheckPruneSplit_eq [LawfulHashable SysState] (kept : Formula α)
       (fun _ => rfl) (fun _ => rfl))
     _
 
-variable [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
+variable [DecidableEq α]
 
 /-- The crossing with the split supplied rather than derived, one latched check per disjunct of the crossed `dss`.
 
@@ -404,31 +404,31 @@ latch's region and its extra marks are both decided on the letter each step cont
 (`EdgeLabels.md` §6.5). A system with no edge atoms is passed as `LSys.unlabelled sysSucc`. -/
 def modelCheckCrossSplit (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
-    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    (sysLabel : SysState → Std.HashSet α)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
     (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
     EmptinessResult ((SysState × Nat) × Bool) :=
-  checkDisjuncts (fun d => modelCheckTGBADisjunctFast kept d.1 d.2 sysInit sysSucc sysLabel sysFR checker sysChecker)
+  checkDisjuncts (fun d => modelCheckTGBADisjunctFast kept d.1 d.2 sysInit sysSucc sysLabel checker sysChecker)
     (NNF.crossAllDNF dss)
 
-/-- `modelCheckCrossSplit` over one system callback. §15 -/
+/-- `modelCheckCrossSplit` over one system callback. -/
 def modelCheckCrossSplitOfStep (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
     (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
-    (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1))
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
     (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
     EmptinessResult ((SysState × Nat) × Bool) :=
-  checkDisjuncts (fun d => modelCheckTGBADisjunctFastOfStep kept d.1 d.2 sysInit sysStep sysFR
+  checkDisjuncts (fun d => modelCheckTGBADisjunctFastOfStep kept d.1 d.2 sysInit sysStep
     checker sysChecker) (NNF.crossAllDNF dss)
 
 theorem modelCheckCrossSplitOfStep_eq (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
-    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    (sysLabel : SysState → Std.HashSet α)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
     (sysChecker : TEmptinessChecker (SysState × Bool)) :
-    modelCheckCrossSplitOfStep kept dss sysInit (fun s => (sysSucc s, sysLabel s)) sysFR checker
-        sysChecker
-      = modelCheckCrossSplit kept dss sysInit sysSucc sysLabel sysFR checker sysChecker := rfl
+    modelCheckCrossSplitOfStep kept dss sysInit (fun s => (sysSucc s, sysLabel s)) checker sysChecker
+      = modelCheckCrossSplit kept dss sysInit sysSucc sysLabel checker sysChecker := rfl
+
+variable [LawfulBEq α] [LawfulHashable α]
 
 /-! ## Soundness -/
 
@@ -439,7 +439,7 @@ theorem modelCheckCrossSplit_empty_unsat (kept : Formula α) (dss : List (List (
     (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
     (sysChecker : TEmptinessChecker (SysState × Bool)) {n : Nat}
-    (h : modelCheckCrossSplit kept dss sysInit sysSucc sysLabel sysFR checker sysChecker = .empty n)
+    (h : modelCheckCrossSplit kept dss sysInit sysSucc sysLabel checker sysChecker = .empty n)
     (ρ : Nat → LSys.Edge α SysState) (hρ : (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ)
     (hdss : ∀ ds ∈ dss, ∃ d ∈ ds, NNF.FairDisjunct.holds (LSys.valuation sysLabel ρ) d) :
     Formula.directSatisfies (LSys.valuation sysLabel ρ) kept := by
@@ -498,7 +498,7 @@ theorem modelCheckCrossSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
     (sysChecker : TEmptinessChecker (SysState × Bool))
     {stem loop : List ((SysState × Nat) × Bool)}
-    (h : modelCheckCrossSplit kept dss sysInit sysSucc sysLabel sysFR checker sysChecker = .nonEmpty stem loop) :
+    (h : modelCheckCrossSplit kept dss sysInit sysSucc sysLabel checker sysChecker = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       (∀ ds ∈ dss, ∃ d ∈ ds, NNF.FairDisjunct.holds (LSys.valuation sysLabel ρ) d) ∧
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) kept := by
@@ -508,19 +508,12 @@ theorem modelCheckCrossSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
   exact ⟨ρ, hρ, (NNF.holds_crossAllDNF _ _).mp ⟨d, hd, hfg, hgf⟩, hviol⟩
 
 set_option maxHeartbeats 1000000 in
-/-- Completeness of the prune with the split given: a reported witness is a run satisfying every hoisted
-conjunct through one of its options and violating the kept property.
+/-- Completeness of the prune with the split given: a reported witness is a run satisfying every hoisted conjunct through one of its options and violating the kept property.
 
-**Unconditional** since `EdgeLabels.md` §14. It used to need `LSys.StateOnly` on every hoisted region,
-because the per-SCC scan decides each conjunct's options *independently* and with step regions that is an
-over-approximation: separately available options need not be jointly available. The scan still decides
-them independently — it is the hot loop — but it no longer licenses a report. A candidate reads every
-option *inside* the region its commitments denote, `streettPop` reports only once each conjunct's
-selected option is one of those commitments, and `CompiledSpec.fairCycleOpts` re-checks the reported
-cycle against that one region. So what comes back is `RStreettSpec.AvailableWith`, which is exactly the
-run-level statement below, and the jointness that `StateOnly` used to supply is decided rather than
-assumed. §12.1's NP-hardness is unaffected: it is paid by branching, and only over the conjuncts that
-need it. -/
+The prune checks each conjunct's option on that option's own region, and a product edge can be realized by steps reading different letters,
+so options available one at a time need not be available together on one run.
+`hstate` makes every step out of a state agree on each hoisted region, so availability one at a time implies availability together.
+Deciding joint availability for arbitrary step regions is NP-hard. -/
 theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
@@ -537,9 +530,7 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
   have hcsspec : cs.spec = streettRSpecOf tgba sysSucc sysLabel dss := rfl
   have hmono : cs.spec.Mono :=
     (TGBAProduct.streettRSpecOf_compat tgba sysSucc sysLabel _ _).toMono
-  -- One option per conjunct, as the report-time validator reports them — each at *its own* region.
-  -- Jointness across conjuncts is not established here; `hstate` supplies it below, which is the
-  -- inference §12.1 shows is NP-hard in general and §17 discharges by routing.
+  -- One option per conjunct, as the report-time validator reports them, each at its own region. `hstate` makes them joint below.
   have hsel0 : ∀ ds ∈ dss, ∃ d, d ∈ ds ∧
       (∀ e ∈ cycleEdges loop.tail,
         e.2 ∈ TGBAProduct.keptSuccs tgba sysSucc sysLabel d.1.eval e.1) ∧
@@ -578,9 +569,8 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
   have hrstate : LSys.StateOnly sysSucc sysLabel r := LSys.stateOnly_all hsel_state
   have hrle : ∀ d ∈ selected, ∀ l, r l = true → d.1.eval l = true :=
     fun d hd l hl => List.all_eq_true.mp hl d hd
-  -- **Jointness.** Each selected region is available on every cycle edge, so by `StateOnly` each holds
-  -- at the edge's source *state*; hence so does their conjunction, and a `StateOnly` region true at a
-  -- state admits every step out of it. This is the inference §12.1 shows is NP-hard in general.
+  -- Jointness: each selected region is available on every cycle edge, so by `StateOnly` each holds at the edge's source state.
+  -- Hence so does their conjunction, and a `StateOnly` region true at a state admits every step out of it.
   have hrsrc : ∀ p ∈ loop.tail, r (sysLabel p.1) = true := by
     intro p hp
     obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hp
@@ -617,10 +607,8 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
         (hcycsrc _ (List.getLast_mem _)) ac.cycle_back
     · intro m hm
       by_cases hlt : m < tgba.numAcceptSets
-      · -- A property mark. §14 kept `buildResult` validating against the *candidate's* restricted
-        -- marks, so the cover arrives already in-region; weaken it to the ambient marks and put it
-        -- back inside `r`, where `StateOnly` says every realization out of an in-region state is in
-        -- region. The weakening is where the candidate's region and `r` stop having to agree.
+      · -- A property mark: the report validated it against the candidate's restricted marks, so it is weakened to the ambient marks,
+        -- then put back inside `r`, where `StateOnly` puts every step out of an in-region state in region.
         obtain ⟨i, hi, hmi⟩ := ac.cycle_covers_marks m hlt
         refine ⟨i, hi, Std.HashSet.mem_iff_contains.mpr ?_⟩
         simp only [TGBAProduct.keptEdgeMarksFair, Std.HashSet.union_eq,
@@ -686,12 +674,12 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
 that is a fairness becomes marks and a region on the product, and the rest go back to the translator. -/
 def modelCheckUnderFairness (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
-    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    (sysLabel : SysState → Std.HashSet α)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
     (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
     EmptinessResult ((SysState × Nat) × Bool) :=
   let split := hoistFairness (φ.toNNF false).splitConj
-  modelCheckCrossSplit (keptProperty split.2) split.1 sysInit sysSucc sysLabel sysFR checker sysChecker
+  modelCheckCrossSplit (keptProperty split.2) split.1 sysInit sysSucc sysLabel checker sysChecker
 
 /-- Does `sys` satisfy `φ` on every run? The negated property is split exactly as `modelCheckUnderFairness`
 splits it, and the hoisted conjuncts are then decided per SCC instead of being crossed. -/
@@ -727,7 +715,7 @@ theorem modelCheckUnderFairness_empty_unsat (φ : Formula α)
     (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
     (sysChecker : TEmptinessChecker (SysState × Bool)) {n : Nat}
-    (h : modelCheckUnderFairness φ sysInit sysSucc sysLabel sysFR checker sysChecker = .empty n) :
+    (h : modelCheckUnderFairness φ sysInit sysSucc sysLabel checker sysChecker = .empty n) :
     ∀ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ →
       Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
   intro ρ hρ
@@ -745,7 +733,7 @@ theorem modelCheckUnderFairness_nonEmpty_sat (φ : Formula α)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool))
     (sysChecker : TEmptinessChecker (SysState × Bool))
     {stem loop : List ((SysState × Nat) × Bool)}
-    (h : modelCheckUnderFairness φ sysInit sysSucc sysLabel sysFR checker sysChecker = .nonEmpty stem loop) :
+    (h : modelCheckUnderFairness φ sysInit sysSucc sysLabel checker sysChecker = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
   obtain ⟨ρ, hρ, hdss, hviol⟩ := modelCheckCrossSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel sysFR checker

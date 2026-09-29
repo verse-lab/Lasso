@@ -574,11 +574,10 @@ theorem tarjanCheck_empty_no_cycle [LawfulBEq State] [LawfulHashable State] [Inh
 /-- `tarjanCheck` as a `TEmptinessChecker`. -/
 def tarjanTChecker [LawfulBEq State] [LawfulHashable State] [Inhabited State] :
     TEmptinessChecker State where
-  check := fun succs initialStates _fr edgeMarks expand numMarks =>
-    tarjanCheck succs initialStates edgeMarks expand numMarks
-  nonEmpty_valid := fun {succs initialStates fr edgeMarks expand numMarks _stem _loop} hexp hmarksBound h =>
+  check := tarjanCheck
+  nonEmpty_valid := fun {succs initialStates edgeMarks expand numMarks _stem _loop} fr hexp hmarksBound h =>
     tarjanCheck_nonEmpty_valid numMarks succs edgeMarks expand hexp initialStates hmarksBound fr h
-  empty_no_cycle := fun {succs initialStates fr edgeMarks expand numMarks _n} hexp hmarksBound h =>
+  empty_no_cycle := fun {succs initialStates edgeMarks expand numMarks _n} fr hexp hmarksBound h =>
     tarjanCheck_empty_no_cycle numMarks succs edgeMarks expand hexp initialStates hmarksBound fr h
 
 end LTLLib
