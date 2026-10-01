@@ -447,7 +447,7 @@ theorem no_run_of_disjunctFeasible_false (fg : BoolFormula α) (gfs : List (Bool
           (Product.finiteReach_totalizeSucc sysInit (LSys.targets sysSucc) sysFR))
         hρ.1 (fun n => LSys.targets_of_isRun hρ n) (N := N) hregion (fun m hm K => ?_)
       · obtain ⟨n, hnK, hmm⟩ := hmarks m hm (max K N)
-        exact ⟨n, le_trans (le_max_left _ _) hnK, le_trans (le_max_right _ _) hnK, hmm⟩
+        exact ⟨n, Nat.le_trans (Nat.le_max_left _ _) hnK, Nat.le_trans (Nat.le_max_right _ _) hnK, hmm⟩
     · refine latch_complete_total
         (latch_finiteReach (sysKeptSuccs_sub fg sysSucc sysLabel) true
           (Product.finiteReach_totalizeSucc sysInit (LSys.targets sysSucc) sysFR))

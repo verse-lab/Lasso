@@ -84,6 +84,7 @@ import LTLLib.TGBABased.SCC.GenericDFS
 import LTLLib.TGBABased.SCC.LiveStack
 import LTLLib.TGBABased.SCC.SCCEnumeration
 import LTLLib.TGBABased.SCC.WitnessExtraction
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
@@ -144,7 +145,7 @@ private theorem prefixSums_spec (ns : Array Nat) :
           rw [getElem!_pos _ _ (by simp [hsize])]
           simp [Array.getElem_push, hsize]
         have h4 : (out.push (out[i]! + ns[i]))[i]! = out[i]! := by
-          rw [getElem!_pos _ _ (by simp [hsize])]
+          rw [getElem!_pos _ _ (by simp only [Array.size_push, hsize]; omega)]
           simp [Array.getElem_push, hsize]
         rw [p2 (i + 1) (by omega), p2 i (by omega), h3, h4, getElem!_pos ns i hi]
       · exact p3 j hlt hj
@@ -252,7 +253,7 @@ private theorem regionFrom_eq_true {cs : CompiledSpec State L} {bits : Nat} {l :
       ∀ o', o ≤ o' → o' < cs.numOptions → bits.testBit o' = true →
         (cs.letterOptions[o']!).region l = true) := by
   intro n
-  induction n using Nat.strong_induction_on with
+  induction n using Nat.strongRecOn with
   | _ n ih =>
   intro o hn
   rw [regionFrom]
@@ -702,30 +703,21 @@ an edge prune need not drop a state, so the state count alone cannot carry termi
 component strictly drops at every queue step and the second is never needed. Bounded by `numOptions`,
 which is fixed by the spec. -/
 def Candidate.measure (cs : CompiledSpec State L) (c : Candidate State) : Nat :=
-  cs.numOptions - ((Finset.range cs.numOptions).filter fun o => c.regions.testBit o = true).card
+  cs.numOptions - (List.range cs.numOptions).countP fun o => c.regions.testBit o
 
 /-- Conjoining an option that was not already conjoined strictly drops the measure, so a prune step that
 restricts edges without removing a state still decreases it. -/
 theorem Candidate.measure_lt {cs : CompiledSpec State L} {c : Candidate State} {o : Nat}
     (ho : o < cs.numOptions) (hnew : c.regions.testBit o = false) :
     Candidate.measure cs ⟨c.states, c.regions ||| (1 <<< o)⟩ < Candidate.measure cs c := by
-  classical
-  set F₁ := (Finset.range cs.numOptions).filter fun x => c.regions.testBit x = true with hF₁
-  set F₂ := (Finset.range cs.numOptions).filter
-    fun x => (c.regions ||| (1 <<< o)).testBit x = true with hF₂
-  have hsub : F₁ ⊆ F₂ := by
-    intro x hx
-    obtain ⟨hr, hb⟩ := Finset.mem_filter.mp hx
-    exact Finset.mem_filter.mpr ⟨hr, testBit_or_shift.mpr (Or.inl hb)⟩
-  have hlt : F₁.card < F₂.card := by
-    refine Finset.card_lt_card ((Finset.ssubset_iff_of_subset hsub).mpr ⟨o, ?_, ?_⟩)
-    · exact Finset.mem_filter.mpr ⟨Finset.mem_range.mpr ho, testBit_or_shift.mpr (Or.inr rfl)⟩
-    · intro hmem
-      exact absurd (Finset.mem_filter.mp hmem).2 (by simp [hnew])
-  have hle : F₂.card ≤ cs.numOptions := by
-    calc F₂.card ≤ (Finset.range cs.numOptions).card := Finset.card_filter_le _ _
-    _ = cs.numOptions := Finset.card_range _
-  simp only [Candidate.measure, ← hF₁, ← hF₂]
+  have hlt : (List.range cs.numOptions).countP (fun x => c.regions.testBit x) <
+      (List.range cs.numOptions).countP fun x => (c.regions ||| (1 <<< o)).testBit x :=
+    LTLLib.List.countP_lt_countP (fun _ _ hx => testBit_or_shift.mpr (Or.inl hx)) (List.mem_range.mpr ho)
+      hnew (testBit_or_shift.mpr (Or.inr rfl))
+  have hle := List.countP_le_length (p := fun x => (c.regions ||| (1 <<< o)).testBit x)
+    (l := List.range cs.numOptions)
+  rw [List.length_range] at hle
+  simp only [Candidate.measure]
   omega
 
 end CandidateGraph
@@ -1492,7 +1484,7 @@ private theorem mem_foldl_insert (l : List State) (init : Std.HashSet State) (x 
   | nil => simp
   | cons a l ih =>
     simp only [List.foldl_cons, ih, Std.HashSet.mem_insert, List.mem_cons, beq_iff_eq]
-    tauto
+    grind
 
 /-- The closing SCC as a set: the live stack from `lo` on. -/
 
@@ -2536,7 +2528,7 @@ private theorem hashSet_size_lt {A B : Std.HashSet State} (hsub : ∀ s ∈ A, s
     rcases List.mem_cons.mp hy with rfl | hy'
     · exact Std.HashSet.mem_toList.mpr hxB
     · exact Std.HashSet.mem_toList.mpr (hsub y (Std.HashSet.mem_toList.mp hy'))
-  have hlen := (List.Nodup.subperm hnd hsubl).length_le
+  have hlen := (List.subperm_of_subset hnd hsubl).length_le
   simp only [List.length_cons, Std.HashSet.length_toList] at hlen
   omega
 
@@ -2861,7 +2853,7 @@ theorem streett_acceptingMarks_of_full (cs : CompiledSpec State L) {succs : Stat
         ((1 <<< cs.numMarks).testBit b = true ∨ b ∈ edgeMarks u v) := by
     intro b hb
     have htb : ((streettView cs curRegions).accAt aux 0).testBit b = true := by
-      rw [hfull, fullAccMask, Nat.shiftLeft_eq, one_mul, Nat.testBit_two_pow_sub_one]
+      rw [hfull, fullAccMask, Nat.shiftLeft_eq, Nat.one_mul, Nat.testBit_two_pow_sub_one]
       simpa using Nat.lt_succ_of_le hb
     obtain ⟨u, v, pu, pv, he, hu, hv, hlo, ⟨l, hl, hlb⟩, -, hmk⟩ := hwf.acc_sound 0 (by simp) b htb
     obtain rfl : l = 0 := by omega
@@ -2873,11 +2865,11 @@ theorem streett_acceptingMarks_of_full (cs : CompiledSpec State L) {succs : Stat
     exact ⟨u, (mem_flushedSet _ _ u).mpr ⟨pu, hpu, hlo, hpu'⟩,
       v, (mem_flushedSet _ _ v).mpr ⟨pv, hpv, hlb, hpv'⟩, he.mem, hmk⟩
   refine ⟨?_, fun m hm => ?_⟩
-  · obtain ⟨u, hu, v, hv, he, -⟩ := hbit cs.numMarks le_rfl
+  · obtain ⟨u, hu, v, hv, he, -⟩ := hbit cs.numMarks (Nat.le_refl _)
     exact ⟨u, hu, v, hv, he⟩
-  · obtain ⟨u, hu, v, hv, he, hmk⟩ := hbit m hm.le
+  · obtain ⟨u, hu, v, hv, he, hmk⟩ := hbit m (Nat.le_of_lt hm)
     refine ⟨u, hu, v, hv, he, hmk.resolve_left ?_⟩
-    simp only [Nat.shiftLeft_eq, one_mul, Nat.testBit_two_pow, decide_eq_true_eq]
+    simp only [Nat.shiftLeft_eq, Nat.one_mul, Nat.testBit_two_pow, decide_eq_true_eq]
     omega
 
 /-- At a closing POP a flushed set covering every property mark leaves the accumulator full, the graph's own marks
@@ -2895,7 +2887,7 @@ theorem streett_full_of_acceptingMarks (cs : CompiledSpec State L) {succs : Stat
   have hcomp := hwf.close_acc_complete hsucc hidx
   apply Nat.eq_of_testBit_eq
   intro b
-  rw [fullAccMask, Nat.shiftLeft_eq, one_mul, Nat.testBit_two_pow_sub_one]
+  rw [fullAccMask, Nat.shiftLeft_eq, Nat.one_mul, Nat.testBit_two_pow_sub_one]
   rcases Nat.lt_trichotomy b cs.numMarks with hb | rfl | hb
   -- a property mark, carried by an internal edge
   · obtain ⟨u, hu, v, hv, he, hm⟩ := hA.2 b hb
@@ -2974,7 +2966,7 @@ theorem streettRun_found (cs : CompiledSpec State L) (curRegions : Nat) (hcs : c
     obtain ⟨h1, h2⟩ := hwf.frame_pos ⟨step.state, (streettView cs curRegions).posNat step.pos, step.idx, step.acc⟩
       (List.mem_cons_self ..)
     rw [getElem!_pos ((streettView cs curRegions).live aux) _ h1] at h2
-    exact (mem_flushedSet _ _ anchor).mpr ⟨_, h1, le_refl _, h2.trans hanchor⟩
+    exact (mem_flushedSet _ _ anchor).mpr ⟨_, h1, Nat.le_refl _, h2.trans hanchor⟩
   have hAF := streett_acceptingMarks_of_full cs hclose hwf hacc0
   -- the recorded options are the ones the scan selected on the flushed range
   have hB : ∀ s, s ∈ (streettOps cs curRegions).sccHint (genericDFS (streettOps cs curRegions) succs edgeMarks expand initialStates
@@ -3276,7 +3268,7 @@ theorem streettRun_none_pass (cs : CompiledSpec State L) (hcs : cs.WF) (curRegio
     · refine Or.inr ⟨_, hR _ hin, hmemsc, ?_⟩
       show regionOf cs (curRegions ||| (1 <<< o)) = _
       rw [regionOf_or_shift (hoptlt o ho), hlet]
-  choose pick hpick using hblame
+  obtain ⟨pick, hpick⟩ := Classical.axiomOfChoice hblame
   exact ⟨enumSCCs (streettOps cs curRegions) (streettView cs curRegions) succs edgeMarks expand initialStates, pick,
     streettSCCs_sound cs hcs curRegions succs edgeMarks expand hexp initialStates fr,
     fun M hM hA => (hpick M hM hA).1, fun M hM hA => (hpick M hM hA).2⟩
@@ -3284,7 +3276,7 @@ theorem streettRun_none_pass (cs : CompiledSpec State L) (hcs : cs.WF) (curRegio
 omit [Inhabited State] [LawfulHashable State] in
 private theorem finiteReach_sccSuccs (succs : State → Array State) (C : Std.HashSet State) :
     FiniteReach C.toList (sccSuccs succs C) :=
-  (List.finite_toSet C.toList).subset fun _ hs => Std.HashSet.mem_toList.mpr (mem_of_reachable_sccSuccs hs)
+  ⟨C.toList, fun _ hs => Std.HashSet.mem_toList.mpr (mem_of_reachable_sccSuccs hs)⟩
 
 omit [Inhabited State] [LawfulBEq State] [LawfulHashable State] in
 /-- A candidate's graph is the abstract candidate graph at the region its bitmask denotes. Definitional,

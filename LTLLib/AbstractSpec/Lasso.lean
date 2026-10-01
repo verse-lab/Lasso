@@ -106,11 +106,11 @@ theorem run_initial : A.initial (hv.run 0) := by
   simp only [run]
   by_cases h : stem.length ≥ 2
   · rw [lassoRun_stem _ _ _ 0 (by omega)]
-    convert hv.stem_initial using 1
+    refine (congrArg A.initial ?_).mpr hv.stem_initial
     simp [List.head_eq_getElem]
   · have hslen : stem.length = 1 := by have := hv.stem_nonempty; omega
     rw [lassoRun_cycle_head _ _ _ hv.cycle_nonempty 0 (by omega) (by simp [hslen])]
-    convert hv.stem_initial using 1
+    refine (congrArg A.initial ?_).mpr hv.stem_initial
     rw [← hv.overlap]
     simp [List.getLast_eq_getElem, List.head_eq_getElem, hslen]
 
@@ -169,7 +169,7 @@ theorem run_trans (n : Nat) : A.trans (hv.run n) (hv.run (n + 1)) := by
       have h1 : stem[stem.length - 2 + 1]'(by omega) = stem.getLast hne_stem := by
         simp [List.getLast_eq_getElem]; congr; omega
       rw [h1, hv.overlap] at hstem_trans
-      convert hstem_trans using 1
+      refine (congr (congrArg A.trans ?_) ?_).mpr hstem_trans
       · congr; omega
       · simp [List.head_eq_getElem]
     · -- Both in cycle region
@@ -191,7 +191,7 @@ theorem find_cycle_position (n : Nat) :
   have hcpos : cycle.length > 0 := by have := hv.cycle_nonempty; omega
   -- Find m such that stem.length - 1 + m * cycle.length ≥ n
   have hle : n ≤ stem.length - 1 + n * cycle.length :=
-    le_trans (Nat.le_mul_of_pos_right n hcpos) (Nat.le_add_left ..)
+    Nat.le_trans (Nat.le_mul_of_pos_right n hcpos) (Nat.le_add_left ..)
   -- j = stem.length - 1 + n * cycle.length - n
   have hsum : n + (stem.length - 1 + n * cycle.length - n) =
       stem.length - 1 + n * cycle.length := by omega

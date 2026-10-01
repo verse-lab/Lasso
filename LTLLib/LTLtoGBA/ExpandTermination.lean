@@ -28,9 +28,9 @@
   - Main termination theorem.
 -/
 
-import Mathlib.Data.Finset.Powerset
-import Mathlib.Data.Finset.Prod
 import LTLLib.LTLtoGBA.Invariants
+import LTLLib.Tactic.Set
+import LTLLib.Data.FinSet
 
 namespace LTLLib
 
@@ -189,38 +189,38 @@ end ExpandInvariant
 
 section ExpandMeasure
 
-variable {α : Type u} [DecidableEq α] {S : Type v} [FSet (NNF α) S]
+variable {α : Type u} {S : Type v} [FSet (NNF α) S]
 
-/-- A node's "signature": its (old, next) content as `Finset`s, independent of the underlying `S` representation. -/
-noncomputable def nodeSignature (n : ExpansionNode α S) : Finset (NNF α) × Finset (NNF α) :=
-  ((FSet.toList n.old).toFinset, (FSet.toList n.next).toFinset)
+/-- A node's "signature": its (old, next) content as `FinSet`s, independent of the underlying `S` representation. -/
+noncomputable def nodeSignature (n : ExpansionNode α S) : FinSet (NNF α) × FinSet (NNF α) :=
+  ((FSet.toList n.old).toFinSet, (FSet.toList n.next).toFinSet)
 
 /-- All possible signatures drawable from `subformulas topFormula`. -/
 noncomputable def signatureUniverse (topFormula : NNF α) :
-    Finset (Finset (NNF α) × Finset (NNF α)) :=
-  topFormula.subformulas.toFinset.powerset ×ˢ topFormula.subformulas.toFinset.powerset
+    FinSet (FinSet (NNF α) × FinSet (NNF α)) :=
+  topFormula.subformulas.toFinSet.powerset.product topFormula.subformulas.toFinSet.powerset
 
 /-- A node bounded by `topFormula` has its signature drawn from `signatureUniverse topFormula`. -/
 theorem nodeSignature_mem_signatureUniverse {topFormula : NNF α} {n : ExpansionNode α S}
     (ho : ∀ x, FSet.contains n.old x → NNF.IsSubformula x topFormula)
     (hn : ∀ x, FSet.contains n.next x → NNF.IsSubformula x topFormula) :
     nodeSignature n ∈ signatureUniverse topFormula := by
-  simp only [signatureUniverse, nodeSignature, Finset.mem_product, Finset.mem_powerset,
-    Finset.subset_iff, List.mem_toFinset]
+  simp only [signatureUniverse, nodeSignature, FinSet.mem_product, FinSet.mem_powerset,
+    FinSet.subset_iff, List.mem_toFinSet]
   exact ⟨fun x hx => (ho x ((FSet.mem_toList_iff x n.old).mp hx)).mem_subformulas,
     fun x hx => (hn x ((FSet.mem_toList_iff x n.next).mp hx)).mem_subformulas⟩
 
 /-- Signatures used by the accumulated, already-finished nodes. -/
 noncomputable def usedSignatures (st : ExpandState α S) :
-    Finset (Finset (NNF α) × Finset (NNF α)) :=
-  (st.nodes.toList.map (fun p => nodeSignature p.2)).toFinset
+    FinSet (FinSet (NNF α) × FinSet (NNF α)) :=
+  (st.nodes.toList.map (fun p => nodeSignature p.2)).toFinSet
 
 /-- `NodesBounded` lifts `nodeSignature_mem_signatureUniverse` to all signatures used by `st`. -/
 theorem usedSignatures_subset_signatureUniverse {topFormula : NNF α} {st : ExpandState α S}
     (h : NodesBounded topFormula st) :
     usedSignatures st ⊆ signatureUniverse topFormula := by
   intro sig hsig
-  simp only [usedSignatures, List.mem_toFinset, List.mem_map] at hsig
+  simp only [usedSignatures, List.mem_toFinSet, List.mem_map] at hsig
   obtain ⟨⟨k, n⟩, hkn, rfl⟩ := hsig
   have hmem : st.nodes[k]? = some n := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hkn
   obtain ⟨ho, hn⟩ := h k n hmem
@@ -233,7 +233,6 @@ noncomputable def expandMeasure1 (topFormula : NNF α) (st : ExpandState α S) :
 /-- Secondary (tie-break) measure: weighted size of `node.new`. -/
 noncomputable def expandMeasure2 (n : ExpansionNode α S) : Nat := weightedSize n.new
 
-omit [DecidableEq α] in
 /-- `addToNew` only filters/reorders `formulas` before prepending onto `node.new`, so the weighted sum can only shrink
 relative to appending everything. -/
 theorem weightedSize_foldl_addToNew_le (existing : S) (formulas acc : List (NNF α)) :
@@ -244,11 +243,10 @@ theorem weightedSize_foldl_addToNew_le (existing : S) (formulas acc : List (NNF 
   | cons f fs ih =>
     simp only [List.foldl_cons]
     split
-    · exact (ih acc).trans (by simp)
+    · exact Nat.le_trans (ih acc) (by simp)
     · calc weightedSize (fs.foldl _ (f :: acc)) ≤ weightedSize (f :: acc) + weightedSize fs := ih _
         _ = weightedSize acc + weightedSize (f :: fs) := by simp; omega
 
-omit [DecidableEq α] in
 theorem weightedSize_addToNew_le (node : ExpansionNode α S) (formulas : List (NNF α)) :
     weightedSize (addToNew node formulas) ≤ weightedSize node.new + weightedSize formulas :=
   weightedSize_foldl_addToNew_le node.old formulas node.new
@@ -259,9 +257,9 @@ theorem expandMeasure1_lt {topFormula : NNF α} {st st' : ExpandState α S}
     (hbound' : usedSignatures st' ⊆ signatureUniverse topFormula) :
     expandMeasure1 topFormula st' < expandMeasure1 topFormula st := by
   unfold expandMeasure1
-  have h1 : (usedSignatures st).card < (usedSignatures st').card := Finset.card_lt_card hsub
+  have h1 : (usedSignatures st).card < (usedSignatures st').card := FinSet.card_lt_card hsub
   have h2 : (usedSignatures st').card ≤ (signatureUniverse topFormula).card :=
-    Finset.card_le_card hbound'
+    FinSet.card_le_card hbound'
   omega
 
 /-- Primary-measure non-increase. -/
@@ -269,7 +267,7 @@ theorem expandMeasure1_le {topFormula : NNF α} {st st' : ExpandState α S}
     (hsub : usedSignatures st ⊆ usedSignatures st') :
     expandMeasure1 topFormula st' ≤ expandMeasure1 topFormula st := by
   unfold expandMeasure1
-  have h1 : (usedSignatures st).card ≤ (usedSignatures st').card := Finset.card_le_card hsub
+  have h1 : (usedSignatures st).card ≤ (usedSignatures st').card := FinSet.card_le_card hsub
   omega
 
 end ExpandMeasure
@@ -281,7 +279,7 @@ Helper lemmas for `insert`/`mergeIncoming` bookkeeping, duplicate detection, and
 
 section ExpandTermHelpers
 
-variable {α : Type u} [DecidableEq α] {S : Type v} [FSet (NNF α) S]
+variable {α : Type u} {S : Type v} [FSet (NNF α) S]
 
 theorem nodeSignature_incoming_irrelevant (n : ExpansionNode α S) (inc : Std.HashSet Nat) :
     nodeSignature ({ n with incoming := inc } : ExpansionNode α S) = nodeSignature n := rfl
@@ -291,7 +289,7 @@ theorem usedSignatures_insert_fresh_subset (st : ExpandState α S) (k : Nat) (n 
     (hfresh : st.nodes[k]? = none) :
     usedSignatures st ⊆ usedSignatures { st with nodes := st.nodes.insert k n } := by
   intro sig hsig
-  simp only [usedSignatures, List.mem_toFinset, List.mem_map] at hsig ⊢
+  simp only [usedSignatures, List.mem_toFinSet, List.mem_map] at hsig ⊢
   obtain ⟨⟨k', n'⟩, hkn, rfl⟩ := hsig
   refine ⟨(k', n'), ?_, rfl⟩
   have h := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hkn
@@ -304,7 +302,6 @@ theorem usedSignatures_insert_fresh_subset (st : ExpandState α S) (k : Nat) (n 
     exact absurd h (by simp)
   · rw [if_neg hk]; exact h
 
-omit [DecidableEq α] in
 /-- Every node bounded before an insert stays bounded, plus the freshly inserted node itself if it too is bounded. -/
 theorem NodesBounded_insert {topFormula : NNF α} {st : ExpandState α S}
     (h : NodesBounded topFormula st) {k : Nat} {n : ExpansionNode α S}
@@ -320,7 +317,6 @@ theorem NodesBounded_insert {topFormula : NNF α} {st : ExpandState α S}
   · rw [if_neg hk] at hk'
     exact h k' n' hk'
 
-omit [DecidableEq α] in
 /-- `mergeIncoming` only ever updates the `incoming` field of the target node (never `old`/`next`), so `NodesBounded`
 is trivially preserved. -/
 theorem NodesBounded_mergeIncoming {topFormula : NNF α} {st : ExpandState α S}
@@ -344,7 +340,7 @@ theorem usedSignatures_insert_matching_subset (st : ExpandState α S) (k : Nat) 
     (htarget : st.nodes[k]? = some target) (hsig : nodeSignature n = nodeSignature target) :
     usedSignatures st ⊆ usedSignatures { st with nodes := st.nodes.insert k n } := by
   intro sig hsig'
-  simp only [usedSignatures, List.mem_toFinset, List.mem_map] at hsig' ⊢
+  simp only [usedSignatures, List.mem_toFinSet, List.mem_map] at hsig' ⊢
   obtain ⟨⟨k', n'⟩, hkn, rfl⟩ := hsig'
   have h := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hkn
   by_cases hk : k == k'
@@ -385,7 +381,7 @@ end FindDuplicateNone
 
 section SignatureFreshness
 
-variable {α : Type u} [DecidableEq α] {S : Type v} [FSet (NNF α) S] [Hashable (NNF α)]
+variable {α : Type u} {S : Type v} [FSet (NNF α) S] [Hashable (NNF α)]
 
 omit [Hashable (NNF α)] in
 /-- Equal signatures imply `sameSignature`. -/
@@ -396,25 +392,25 @@ theorem sameSignature_of_nodeSignature_eq {n1 n2 : ExpansionNode α S}
   obtain ⟨h1, h2⟩ := h
   rw [Bool.and_eq_true, FSet.setEq_correct, FSet.setEq_correct]
   refine ⟨⟨?_, ?_⟩, ?_, ?_⟩ <;> intro x hx
-  · have hm : x ∈ (FSet.toList n1.old).toFinset :=
-      List.mem_toFinset.mpr ((FSet.mem_toList_iff x n1.old).mpr hx)
-    rwa [h1, List.mem_toFinset, FSet.mem_toList_iff] at hm
-  · have hm : x ∈ (FSet.toList n2.old).toFinset :=
-      List.mem_toFinset.mpr ((FSet.mem_toList_iff x n2.old).mpr hx)
-    rwa [← h1, List.mem_toFinset, FSet.mem_toList_iff] at hm
-  · have hm : x ∈ (FSet.toList n1.next).toFinset :=
-      List.mem_toFinset.mpr ((FSet.mem_toList_iff x n1.next).mpr hx)
-    rwa [h2, List.mem_toFinset, FSet.mem_toList_iff] at hm
-  · have hm : x ∈ (FSet.toList n2.next).toFinset :=
-      List.mem_toFinset.mpr ((FSet.mem_toList_iff x n2.next).mpr hx)
-    rwa [← h2, List.mem_toFinset, FSet.mem_toList_iff] at hm
+  · have hm : x ∈ (FSet.toList n1.old).toFinSet :=
+      List.mem_toFinSet.mpr ((FSet.mem_toList_iff x n1.old).mpr hx)
+    rwa [h1, List.mem_toFinSet, FSet.mem_toList_iff] at hm
+  · have hm : x ∈ (FSet.toList n2.old).toFinSet :=
+      List.mem_toFinSet.mpr ((FSet.mem_toList_iff x n2.old).mpr hx)
+    rwa [← h1, List.mem_toFinSet, FSet.mem_toList_iff] at hm
+  · have hm : x ∈ (FSet.toList n1.next).toFinSet :=
+      List.mem_toFinSet.mpr ((FSet.mem_toList_iff x n1.next).mpr hx)
+    rwa [h2, List.mem_toFinSet, FSet.mem_toList_iff] at hm
+  · have hm : x ∈ (FSet.toList n2.next).toFinSet :=
+      List.mem_toFinSet.mpr ((FSet.mem_toList_iff x n2.next).mpr hx)
+    rwa [← h2, List.mem_toFinSet, FSet.mem_toList_iff] at hm
 
 /-- If `findDuplicate` finds nothing, `node`'s signature isn't among the already-used ones. -/
 theorem nodeSignature_fresh_of_findDuplicate_none {st : ExpandState α S} {node : ExpansionNode α S}
     (hidx : IndexValid st) (h : findDuplicate st node = none) :
     nodeSignature node ∉ usedSignatures st := by
   intro hmem
-  simp only [usedSignatures, List.mem_toFinset, List.mem_map] at hmem
+  simp only [usedSignatures, List.mem_toFinSet, List.mem_map] at hmem
   obtain ⟨⟨k, n⟩, hkn, heq⟩ := hmem
   have hget := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hkn
   have hfalse := findDuplicate_spec_none st node hidx h k n hget
@@ -426,7 +422,7 @@ end SignatureFreshness
 
 section ExpandTerm
 
-variable {α : Type u} [DecidableEq α] [Hashable (NNF α)] [BEq (NNF α)] [LawfulBEq (NNF α)]
+variable {α : Type u} [Hashable (NNF α)] [BEq (NNF α)] [LawfulBEq (NNF α)]
   {S : Type v} [FSet (NNF α) S]
 
 theorem cons_head!_tail! {β : Type w} [Inhabited β] {l : List β} (h : l.isEmpty = false) :
@@ -480,7 +476,7 @@ theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : Expa
         usedSignatures_insert_fresh_subset st node.name node h_not_in
       have h_sig_mem : nodeSignature node ∈ usedSignatures
           (st.addNode node) := by
-        simp only [usedSignatures, List.mem_toFinset, List.mem_map]
+        simp only [usedSignatures, List.mem_toFinSet, List.mem_map]
         refine ⟨(node.name, node), Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr ?_, rfl⟩
         simp only [ExpandState.addNode, Std.HashMap.getElem?_insert, BEq.refl, if_pos]
       have h_grow : usedSignatures st ⊂ usedSignatures
@@ -530,7 +526,7 @@ theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : Expa
       fun x hx => hinv.node_bounded.new_sub x (mem_of_mem_tail! hx)
     have hweight : weightedSize node.new
         = (2 * sizeOf node.new.head! + 1) + weightedSize node.new.tail! := by
-      conv_lhs => rw [← hcons]
+      conv => lhs; rw [← hcons]
       rw [weightedSize_cons]
     have h_old_ins : ∀ x, FSet.contains (FSet.insert node.old node.new.head!) x →
         NNF.IsSubformula x topFormula := by
@@ -546,7 +542,7 @@ theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : Expa
           simp only
           rw [if_pos hlit, if_pos hcontra]
           rfl
-        exact ⟨(node.name, st), heq, Finset.Subset.refl _, hinv.nodes_bounded⟩
+        exact ⟨(node.name, st), heq, FinSet.Subset.refl _, hinv.nodes_bounded⟩
       · -- literal insert: single recursive call, unchanged `st`
         have hinv' : ExpandInv topFormula
             ({ node with new := node.new.tail!, old := FSet.insert node.old node.new.head! } : ExpansionNode α S) st :=
@@ -590,7 +586,7 @@ theorem expand_term (topFormula : NNF α) (node : ExpansionNode α S) (st : Expa
             rw [if_neg hlit]
             simp only [hff_eq, Bool.false_eq_true, if_false, if_true]
             rfl
-          exact ⟨(node.name, st), heq, Finset.Subset.refl _, hinv.nodes_bounded⟩
+          exact ⟨(node.name, st), heq, FinSet.Subset.refl _, hinv.nodes_bounded⟩
         · by_cases hdet : isDeterministic node.new.head!
           · -- deterministic split (and/next): single recursive call, unchanged `st`
             have h_new1_sub : ∀ x, x ∈ new1 node.new.head! → NNF.IsSubformula x topFormula :=
@@ -716,7 +712,7 @@ decreasing_by
   · exact Prod.Lex.right _ hw2
   · exact Prod.Lex.right _ hw2
   · exact Prod.Lex.right _ hw1
-  · rcases eq_or_lt_of_le hm1_le with heq | hlt
+  · rcases Nat.eq_or_lt_of_le hm1_le with heq | hlt
     · rw [heq]; exact Prod.Lex.right _ hw2
     · exact Prod.Lex.left _ _ hlt
 

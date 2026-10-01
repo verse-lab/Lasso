@@ -30,7 +30,6 @@
 -/
 import LTLLib
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
-import Mathlib.Tactic.DeriveFintype
 
 namespace LTLLib.Examples.FairProperty
 
@@ -38,7 +37,7 @@ open LTLLib
 
 inductive Spot where
   | park | hold | carry | drop
-deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
+deriving BEq, Hashable, Repr, Inhabited, DecidableEq
 
 instance : LawfulBEq Spot where
   eq_of_beq {a b} h := by cases a <;> cases b <;> first | rfl | exact absurd h (by decide)
@@ -57,7 +56,8 @@ def label : Spot → Std.HashSet String
 
 def init : List Spot := [.park]
 
-def fr : FiniteReach init succ := Set.toFinite _
+def fr : FiniteReach init succ :=
+  .of_forall_mem [.park, .hold, .carry, .drop] fun s => by cases s <;> simp
 
 /-- `□◇p`, the token is picked up infinitely often. -/
 def pickup : Formula String := .always (.eventually (.atom "p"))

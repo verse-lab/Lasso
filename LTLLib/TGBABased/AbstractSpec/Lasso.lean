@@ -691,7 +691,7 @@ private theorem flatMap_uniform_getElem (f : Nat → List Edge) (L n m j : Nat)
     · obtain ⟨hidx, heq⟩ := ih (fun i hi => hflen i (by omega)) hmn
       have hmL : m * L + L ≤ n * L := by
         have h1 : (m + 1) * L = m * L + L := by rw [Nat.succ_mul]
-        have h2 : (m + 1) * L ≤ n * L := Nat.mul_le_mul (by omega) (le_refl L)
+        have h2 : (m + 1) * L ≤ n * L := Nat.mul_le_mul (by omega) (Nat.le_refl L)
         omega
       have hidx' : m * L + j < (((List.range n).flatMap f) ++ f n).length := by
         rw [List.length_append]; omega

@@ -54,6 +54,7 @@ import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 import LTLLib.TGBABased.SCC.DijkstraSCC
 import LTLLib.TGBABased.SCC.StreettPrune
 import LTLLib.TGBABased.SCC.StreettPruneFastP
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
@@ -194,7 +195,7 @@ theorem hoistFlat_correct (ξ : OmegaWord α) (cs : List (NNF α)) :
   rw [← and_assoc, ← hoistFairness_correct]
   constructor
   · intro h
-    exact ⟨fun c hc => h c (List.mem_of_mem_filter hc), fun c hc => h c (List.mem_of_mem_filter hc)⟩
+    exact ⟨fun c hc => h c (List.filter_sublist.subset hc), fun c hc => h c (List.filter_sublist.subset hc)⟩
   · rintro ⟨h1, h2⟩ c hc
     by_cases hf : isFlatFairness c = true
     · exact h1 c (List.mem_filter.mpr ⟨hc, hf⟩)
@@ -470,7 +471,7 @@ theorem modelCheckPruneSplit_empty_unsat [LawfulHashable SysState] (kept : Formu
     (TGBAProduct.expand_coherent tgba sysSucc sysLabel) _
     (fun p p' m hm => TGBAProduct.edgeMarks_lt tgba sysSucc sysLabel
       (ltl3ba_marks_lt _ htg) p p' m hm) hFR h
-    (Nonempty.some (exists_RFairSCC_of_run hcompat hFR
+    (Classical.choice (exists_RFairSCC_of_run hcompat hFR
       (TGBAProduct.acceptingRRun tgba sysSucc sysLabel sysInit
         tgba.numAcceptSets (hoistedOptions dss) hrun)
       (TGBAProduct.acceptingRRun_marks tgba sysSucc sysLabel sysInit
@@ -556,7 +557,10 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
     obtain ⟨d, hd, rfl⟩ := Array.mem_map.mp hopt
     refine ⟨d, by simpa using hd, fun e he => hregionE e he, fun g hg => ?_⟩
     exact hmarksE g.eval (Array.mem_map_of_mem (by simpa using hg))
-  choose sel hmem hR hM using hsel0
+  obtain ⟨sel, hsel⟩ := Classical.axiomOfChoice fun ds => Classical.axiomOfChoice (hsel0 ds)
+  have hmem := fun ds hds => (hsel ds hds).1
+  have hR := fun ds hds => (hsel ds hds).2.1
+  have hM := fun ds hds => (hsel ds hds).2.2
   -- the conjoined region, and the selected options' marks in one list
   set selected : List (NNF.FairDisjunct α) := dss.attach.map (fun p => sel p.1 p.2) with hselected
   set r : Std.HashSet α → Bool := fun l => selected.all (fun d => d.1.eval l) with hr
@@ -738,7 +742,7 @@ theorem modelCheckUnderFairness_nonEmpty_sat (φ : Formula α)
   obtain ⟨ρ, hρ, hdss, hviol⟩ := modelCheckCrossSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel sysFR checker
     sysChecker h
   -- the violated goal is the kept conjuncts negated, so they all hold on this run
-  have hkept := not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
+  have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   exact ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
     ((hoistFairness_correct _ (φ.toNNF false).splitConj).mpr ⟨hdss, hkept⟩))⟩
 
@@ -770,7 +774,7 @@ theorem modelCheckUnderFairnessPrune_nonEmpty_sat (φ : Formula α)
   obtain ⟨ρ, hρ, hdss, hviol⟩ :=
     modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
   -- the violated goal is the kept conjuncts negated, so they all hold on this run
-  have hkept := not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
+  have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   exact ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
     ((hoistFairness_correct _ (φ.toNNF false).splitConj).mpr ⟨hdss, hkept⟩))⟩
 
@@ -801,7 +805,7 @@ theorem modelCheckUnderFairnessFlat_nonEmpty_sat (φ : Formula α)
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
   obtain ⟨ρ, hρ, hdss, hviol⟩ :=
     modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
-  have hkept := not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
+  have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   exact ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
     ((hoistFlat_correct _ (φ.toNNF false).splitConj).mpr ⟨hdss, hkept⟩))⟩
 

@@ -1,5 +1,13 @@
 -- This module serves as the root of the `LTLLib` library.
 -- Import modules here that should be built as part of the library.
+
+-- Utilities replacing Mathlib
+import LTLLib.Data.Nat
+import LTLLib.Data.List
+import LTLLib.Data.FinitePred
+import LTLLib.Data.FinSet
+import LTLLib.Tactic.Set
+
 import LTLLib.LTL
 import LTLLib.LTL.Syntax
 import LTLLib.LTL.Subformulas

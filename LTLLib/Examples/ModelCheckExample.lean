@@ -13,13 +13,12 @@
   Formula: `□◇green` ("the light turns green infinitely often"): Holds
 -/
 import LTLLib.Examples.MCPrint
-import Mathlib.Tactic.DeriveFintype
 
 namespace LTLLib.Examples
 
 inductive Light where
   | red | yellow | green
-deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
+deriving BEq, Hashable, Repr, Inhabited, DecidableEq
 
 private theorem Light.beq_def (x y : Light) :
     (x == y) = (match x, y with
@@ -57,7 +56,8 @@ def lightLabel : Light → Std.HashSet Prop'
 
 def lightInit : List Light := [.red]
 
-def lightFR : FiniteReach lightInit lightSucc := Set.toFinite _
+def lightFR : FiniteReach lightInit lightSucc :=
+  .of_forall_mem [.red, .yellow, .green] fun s => by cases s <;> simp
 
 
 

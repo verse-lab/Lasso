@@ -57,6 +57,8 @@ import LTLLib.TGBABased.LTLtoTGBA.SubformulaTable
 import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
 import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAReduce
 import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.LTLToVWAA
+import LTLLib.Tactic.Set
+import LTLLib.Data.FinSet
 
 namespace LTLLib
 
@@ -71,8 +73,8 @@ def maskSub (a b : Nat) : Bool := a &&& b == a
 /-- The ids of `m`, increasing. -/
 def maskMembers (m : Nat) : List Nat := (List.range (m.log2 + 1)).filter m.testBit
 
-/-- The ids of `m` as a `Finset`. -/
-def maskSet (m : Nat) : Finset Nat := (maskMembers m).toFinset
+/-- The ids of `m` as a `FinSet`. -/
+def maskSet (m : Nat) : FinSet Nat := (maskMembers m).toFinSet
 
 theorem mem_maskMembers {m j : Nat} : j ∈ maskMembers m ↔ m.testBit j = true := by
   unfold maskMembers
@@ -83,11 +85,11 @@ theorem mem_maskMembers {m j : Nat} : j ∈ maskMembers m ↔ m.testBit j = true
   rw [Nat.testBit_lt_two_pow hlt] at h
   exact absurd h (by simp)
 
-theorem maskMembers_nodup (m : Nat) : (maskMembers m).Nodup := List.nodup_range.filter _
+theorem maskMembers_nodup (m : Nat) : (maskMembers m).Nodup := List.filter_sublist.nodup List.nodup_range
 
 theorem mem_maskSet {m j : Nat} : j ∈ maskSet m ↔ m.testBit j = true := by
   unfold maskSet
-  rw [List.mem_toFinset, mem_maskMembers]
+  rw [List.mem_toFinSet, mem_maskMembers]
 
 theorem maskSet_zero : maskSet 0 = ∅ := by
   ext j; simp [mem_maskSet]
@@ -149,18 +151,18 @@ theorem testBit_remapMask {f : Nat → Nat} {m k : Nat} :
 
 theorem maskSet_remapMask (f : Nat → Nat) (m : Nat) : maskSet (remapMask f m) = (maskSet m).image f := by
   ext k
-  rw [mem_maskSet, testBit_remapMask, Finset.mem_image]
+  rw [mem_maskSet, testBit_remapMask, FinSet.mem_image]
   simp [mem_maskSet]
 
-/-- A `Finset` of ids as a mask. -/
-noncomputable def maskOf (e : Finset Nat) : Nat := e.toList.foldl (fun acc j => acc ||| bit j) 0
+/-- A `FinSet` of ids as a mask. -/
+noncomputable def maskOf (e : FinSet Nat) : Nat := e.toList.foldl (fun acc j => acc ||| bit j) 0
 
-theorem testBit_maskOf {e : Finset Nat} {j : Nat} : (maskOf e).testBit j = true ↔ j ∈ e := by
+theorem testBit_maskOf {e : FinSet Nat} {j : Nat} : (maskOf e).testBit j = true ↔ j ∈ e := by
   unfold maskOf
   rw [show (fun acc j => acc ||| bit j) = (fun acc (j : Nat) => acc ||| bit (id j)) from rfl, testBit_foldl_bit]
   simp
 
-theorem maskSet_maskOf (e : Finset Nat) : maskSet (maskOf e) = e := by
+theorem maskSet_maskOf (e : FinSet Nat) : maskSet (maskOf e) = e := by
   ext j; rw [mem_maskSet, testBit_maskOf]
 
 theorem maskOf_maskSet (m : Nat) : maskOf (maskSet m) = m :=
@@ -174,7 +176,7 @@ theorem maskOf_maskSet (m : Nat) : maskOf (maskSet m) = m :=
 theorem maskOf_singleton (i : Nat) : maskOf {i} = bit i :=
   Nat.eq_of_testBit_eq fun j => by
     apply Bool.eq_iff_iff.mpr
-    rw [testBit_maskOf, Finset.mem_singleton]
+    rw [testBit_maskOf, FinSet.mem_singleton]
     simp [bit, Nat.one_shiftLeft, Nat.testBit_two_pow, eq_comm]
 
 theorem maskSub_iff_subset {a b : Nat} : maskSub a b = true ↔ maskSet a ⊆ maskSet b :=
@@ -247,13 +249,11 @@ section AbstractTargets
 variable {α : Type u}
 
 /-- `NNF.vwaaTrans`'s targets read through `idx`. -/
-def encAbs (idx : NNF α → Nat) (l : List (((α → Prop) → Prop) × Finset (NNF α))) :
-    List (((α → Prop) → Prop) × Finset Nat) :=
+def encAbs (idx : NNF α → Nat) (l : List (((α → Prop) → Prop) × FinSet (NNF α))) :
+    List (((α → Prop) → Prop) × FinSet Nat) :=
   l.map fun p => (p.1, p.2.image idx)
 
-variable [DecidableEq α]
-
-private theorem encAbs_lprod (idx : NNF α → Nat) (A B : List (((α → Prop) → Prop) × Finset (NNF α))) :
+private theorem encAbs_lprod (idx : NNF α → Nat) (A B : List (((α → Prop) → Prop) × FinSet (NNF α))) :
     encAbs idx (VWAA.lprod A B) = VWAA.lprod (encAbs idx A) (encAbs idx B) := by
   unfold encAbs VWAA.lprod
   rw [List.map_flatMap, List.flatMap_map]
@@ -262,16 +262,16 @@ private theorem encAbs_lprod (idx : NNF α → Nat) (A B : List (((α → Prop) 
   rw [List.map_map, List.map_map]
   congr 1
   funext q
-  simp [Finset.image_union]
+  simp [FinSet.image_union]
 
-private theorem encAbs_map_union (idx : NNF α → Nat) (A : List (((α → Prop) → Prop) × Finset (NNF α)))
+private theorem encAbs_map_union (idx : NNF α → Nat) (A : List (((α → Prop) → Prop) × FinSet (NNF α)))
     (ψ : NNF α) :
     encAbs idx (A.map fun p => (p.1, p.2 ∪ {ψ})) = (encAbs idx A).map fun p => (p.1, p.2 ∪ {idx ψ}) := by
   unfold encAbs
   rw [List.map_map, List.map_map]
   congr 1
   funext p
-  simp
+  simp [FinSet.image_union]
 
 end AbstractTargets
 
@@ -371,7 +371,7 @@ def ConcreteVWAA.VeryWeak (cv : ConcreteVWAA α) : Prop :=
     j = i ∨ (cv.table.formulaOf j).rank < (cv.table.formulaOf i).rank
 
 /-- A concrete transition list read as abstract alternatives, guards through `DNF.sat`, targets through `maskSet`. -/
-def encTrans (l : List (DNF α × Nat)) : List (((α → Prop) → Prop) × Finset Nat) :=
+def encTrans (l : List (DNF α × Nat)) : List (((α → Prop) → Prop) × FinSet Nat) :=
   l.map fun p => (DNF.sat p.1, maskSet p.2)
 
 /-! ## Reachability restriction -/
@@ -479,7 +479,7 @@ theorem reachableFrom_of_reachable [LawfulBEq α] [LawfulHashable α] (cv : Conc
   intro x hx
   induction hx with
   | base q hq =>
-    rw [Finset.mem_singleton] at hq
+    rw [FinSet.mem_singleton] at hq
     subst hq
     exact starts_subset_reachableFrom _ _ _ _ (List.mem_singleton.mpr rfl)
   | step p _ g O hgO q hq ih =>
@@ -502,7 +502,7 @@ theorem reachable_of_reachableFrom [LawfulBEq α] [LawfulHashable α] (cv : Conc
     (fun x hx => by
       rw [List.mem_singleton] at hx
       subst hx
-      exact .base cv.initial (Finset.mem_singleton_self _))
+      exact .base cv.initial (FinSet.mem_singleton_self _))
 
 /-- Every `VWAA.Reachable` state stays inside the table, given every target does. -/
 theorem reachable_lt_size [LawfulBEq α] [LawfulHashable α] (cv : ConcreteVWAA α)
@@ -512,13 +512,13 @@ theorem reachable_lt_size [LawfulBEq α] [LawfulHashable α] (cv : ConcreteVWAA 
     ∀ x, VWAA.Reachable (abstractOf cv hveryWeak) {cv.initial} x → x < cv.table.formulas.size := by
   intro x hx
   induction hx with
-  | base q hq => rw [Finset.mem_singleton] at hq; subst hq; exact hinit
+  | base q hq => rw [FinSet.mem_singleton] at hq; subst hq; exact hinit
   | step p hp g O hgO q hq ih =>
     exact hbound p ih q ((mem_transSucc_iff cv hveryWeak p q).mpr ⟨g, O, hgO, hq⟩)
 
 /-- `keptIds` never repeats an id. -/
 theorem keptIds_nodup (cv : ConcreteVWAA α) : (keptIds cv).Nodup :=
-  List.nodup_range.filter _
+  List.filter_sublist.nodup List.nodup_range
 
 /-- `keptIds` is exactly the `VWAA.Reachable` ids. -/
 theorem mem_keptIds_iff_reachable [LawfulBEq α] [LawfulHashable α] (cv : ConcreteVWAA α)
@@ -704,7 +704,7 @@ theorem restrictReachable_initial_lt_size [LawfulBEq α] [LawfulHashable α] (cv
     rw [restrictReachable_trans, Array.size_map, List.size_toArray]
   have hmem : cv.initial ∈ keptIds cv :=
     (mem_keptIds_iff_reachable cv hveryWeak hinit hbound cv.initial).mpr
-      (.base cv.initial (Finset.mem_singleton_self _))
+      (.base cv.initial (FinSet.mem_singleton_self _))
   rw [restrictReachable_initial, hsize]
   exact remap_lt_length cv cv.initial hmem
 
@@ -722,7 +722,7 @@ theorem relabelsFrom_restrictReachable [LawfulBEq α] [LawfulHashable α] (cv : 
     have hqmem : q ∈ keptIds cv := (mem_keptIds_iff_reachable cv hveryWeak hinit hbound q).mpr hq
     show encTrans ((restrictReachable cv).trans.getD ((remapIds cv).getD q 0) []) =
       (encTrans (cv.trans.getD q [])).map
-        fun (p : ((α → Prop) → Prop) × Finset Nat) => (p.1, p.2.image fun old => (remapIds cv).getD old 0)
+        fun (p : ((α → Prop) → Prop) × FinSet Nat) => (p.1, p.2.image fun old => (remapIds cv).getD old 0)
     rw [restrictReachable_trans_eq cv q hqmem]
     unfold encTrans
     rw [List.map_map, List.map_map]
@@ -746,9 +746,9 @@ theorem restrictReachable_acceptsFrom_iff [LawfulBEq α] [LawfulHashable α] (cv
         {(restrictReachable cv).initial} ξ ↔
       (abstractOf cv hveryWeak).AcceptsFrom {cv.initial} ξ := by
   have hr := relabelsFrom_restrictReachable cv hveryWeak hinit hbound
-  have hSeq : ({cv.initial} : Finset Nat).image (fun old => (remapIds cv).getD old 0) =
+  have hSeq : ({cv.initial} : FinSet Nat).image (fun old => (remapIds cv).getD old 0) =
       {(restrictReachable cv).initial} := by
-    rw [Finset.image_singleton, ← restrictReachable_initial]
+    rw [FinSet.image_singleton, ← restrictReachable_initial]
   rw [← hSeq]
   exact VWAA.acceptsFrom_relabel hr ξ
 
@@ -862,13 +862,13 @@ theorem listSim_mergeByTarget (l : List (DNF α × Nat)) :
     simp only [Prod.mk.injEq] at heq
     obtain ⟨rfl, rfl⟩ := heq
     obtain ⟨g0, hg0, hv0⟩ := (mergeByTarget_sat l t v).mp ⟨g, hm, hv⟩
-    exact ⟨_, _, List.mem_map.mpr ⟨(g0, t), hg0, rfl⟩, hv0, Finset.Subset.refl _⟩
+    exact ⟨_, _, List.mem_map.mpr ⟨(g0, t), hg0, rfl⟩, hv0, FinSet.Subset.refl _⟩
   complete G O v hmem hv := by
     obtain ⟨⟨g, t⟩, hm, heq⟩ := List.mem_map.mp hmem
     simp only [Prod.mk.injEq] at heq
     obtain ⟨rfl, rfl⟩ := heq
     obtain ⟨g0, hg0, hv0⟩ := (mergeByTarget_sat l t v).mpr ⟨g, hm, hv⟩
-    exact ⟨_, _, List.mem_map.mpr ⟨(g0, t), hg0, rfl⟩, hv0, Finset.Subset.refl _⟩
+    exact ⟨_, _, List.mem_map.mpr ⟨(g0, t), hg0, rfl⟩, hv0, FinSet.Subset.refl _⟩
 
 theorem targetsIn_mergeByTarget (l : List (DNF α × Nat)) :
     VWAA.TargetsIn (encTrans (mergeByTarget l)) (encTrans l) := by
@@ -939,7 +939,7 @@ private theorem splitByTarget_complete (l : List (DNF α × Nat)) (t : Nat) (v :
     ∀ t0 g0, (g0, t0) ∈ l → DNF.sat g0 v → maskSub t0 t = true →
       ∃ g' t', (g', t') ∈ splitByTarget l ∧ DNF.sat g' v ∧ maskSub t' t = true := by
   intro t0
-  induction t0 using Nat.strong_induction_on with
+  induction t0 using Nat.strongRecOn with
   | _ t0 ih =>
     intro g0 hmem hv hsub
     by_cases hex : ∃ p ∈ l, maskSub p.2 t0 = true ∧ p.2 ≠ t0 ∧ DNF.sat p.1 v
@@ -961,7 +961,7 @@ theorem listSim_splitByTarget (l : List (DNF α × Nat)) :
     obtain ⟨rfl, rfl⟩ := heq
     obtain ⟨g, hg, rfl, -⟩ := (mem_splitByTarget l g' t).mp hm
     exact ⟨_, _, List.mem_map.mpr ⟨(g, t), hg, rfl⟩, ((sat_splitGuard l g t v).mp hv).1,
-      Finset.Subset.refl _⟩
+      FinSet.Subset.refl _⟩
   complete G O v hmem hv := by
     obtain ⟨⟨g, t⟩, hm, heq⟩ := List.mem_map.mp hmem
     simp only [Prod.mk.injEq] at heq
@@ -1016,7 +1016,7 @@ theorem listSim_tprod [LawfulBEq α] [LawfulHashable α] (xs ys : List (DNF α �
     simp only [Prod.mk.injEq] at heq
     obtain ⟨rfl, rfl⟩ := heq
     exact ⟨_, _, VWAA.mem_lprod.mpr ⟨_, List.mem_map.mpr ⟨p1, h1, rfl⟩, _, List.mem_map.mpr ⟨p2, h2, rfl⟩, rfl⟩,
-      (DNF.sat_and _ _ v).mp hv, (maskSet_or _ _).symm.le⟩
+      (DNF.sat_and _ _ v).mp hv, FinSet.subset_of_eq (maskSet_or _ _).symm⟩
   complete G O v hmem hv := by
     obtain ⟨q1, hq1, q2, hq2, heq⟩ := VWAA.mem_lprod.mp hmem
     obtain ⟨p1, h1, rfl⟩ := List.mem_map.mp hq1
@@ -1028,13 +1028,13 @@ theorem listSim_tprod [LawfulBEq α] [LawfulHashable α] (xs ys : List (DNF α �
       cases h : DNF.isEmpty (DNF.and p1.1 p2.1)
       · rfl
       · exact absurd hsat (DNF.not_sat_of_isEmpty _ h v)
-    exact ⟨_, _, List.mem_map.mpr ⟨_, mem_tprod.mpr ⟨p1, h1, p2, h2, hne, rfl⟩, rfl⟩, hsat, (maskSet_or _ _).le⟩
+    exact ⟨_, _, List.mem_map.mpr ⟨_, mem_tprod.mpr ⟨p1, h1, p2, h2, hne, rfl⟩, rfl⟩, hsat, FinSet.subset_of_eq (maskSet_or _ _)⟩
 
 /-! ## Correspondence with the abstract construction -/
 
 section Correspondence
 
-variable [DecidableEq α] [LawfulBEq α] [LawfulHashable α]
+variable [LawfulBEq α] [LawfulHashable α]
 
 /-- `NNF.rtrans` letterwise simulates `NNF.vwaaTrans` read through `idx`, in both directions, and every target it has
 already occurs in `NNF.vwaaTrans`. -/
@@ -1061,7 +1061,7 @@ theorem rtrans_listSim_targetsIn (idx : NNF α → Nat) (φ : NNF α) :
     rw [h]; exact ⟨.refl _, .refl _⟩
   | next ψ =>
     have h : encTrans ((NNF.next ψ).rtrans idx) = encAbs idx (NNF.next ψ).vwaaTrans := by
-      simp only [NNF.rtrans, NNF.vwaaTrans, encTrans_top_bit, encAbs, List.map_singleton, Finset.image_singleton]
+      simp only [NNF.rtrans, NNF.vwaaTrans, encTrans_top_bit, encAbs, List.map_singleton, FinSet.image_singleton]
     rw [h]; exact ⟨.refl _, .refl _⟩
   | and φ ψ ihφ ihψ =>
     have hA : encAbs idx (NNF.and φ ψ).vwaaTrans = VWAA.lprod (encAbs idx φ.vwaaTrans) (encAbs idx ψ.vwaaTrans) :=
@@ -1171,14 +1171,14 @@ variable [LawfulBEq α] [LawfulHashable α]
 /-- Every target of `NNF.vwaaTrans` at a table id, read through `idOf`, is a table id, and is that id itself or a
 strictly lower-ranked one. -/
 private theorem vwaaTrans_target_spec [DecidableEq α] (φ : NNF α) (i : Nat)
-    (hi : i < (SubformulaTable.build φ).formulas.size) (p : ((α → Prop) → Prop) × Finset Nat)
+    (hi : i < (SubformulaTable.build φ).formulas.size) (p : ((α → Prop) → Prop) × FinSet Nat)
     (hp : p ∈ encAbs (SubformulaTable.build φ).idOf ((SubformulaTable.build φ).formulaOf i).vwaaTrans)
     (j : Nat) (hj : j ∈ p.2) :
     j < (SubformulaTable.build φ).formulas.size ∧
       (j = i ∨ ((SubformulaTable.build φ).formulaOf j).rank < ((SubformulaTable.build φ).formulaOf i).rank) := by
   set table := SubformulaTable.build φ
   obtain ⟨⟨g0, O0⟩, hmem, rfl⟩ := List.mem_map.mp hp
-  obtain ⟨ψ, hψ, rfl⟩ := Finset.mem_image.mp hj
+  obtain ⟨ψ, hψ, rfl⟩ := FinSet.mem_image.mp hj
   have hsub : NNF.IsSubformula ψ φ :=
     (NNF.vwaaTrans_subformula _ g0 O0 hmem ψ hψ).trans (SubformulaTable.formulaOf_isSubformula φ i hi)
   refine ⟨SubformulaTable.idOf_lt_size φ ψ hsub, ?_⟩
@@ -1278,7 +1278,7 @@ private theorem reducedAbstract_reachable (φ : NNF α) :
   intro q hq
   induction hq with
   | base q hq =>
-    rw [Finset.mem_singleton] at hq
+    rw [FinSet.mem_singleton] at hq
     subst hq
     exact ⟨hinit, starts_subset_reachableFrom _ _ _ _ (List.mem_singleton.mpr rfl)⟩
   | step p _ g O hgO q hq ih =>
@@ -1361,7 +1361,7 @@ theorem ConcreteVWAA.build_correct [DecidableEq α] (φ : NNF α) (ξ : OmegaWor
   have h2 := rawStage_acceptsFrom_iff φ ξ
   have h3 := VWAA.acceptsFrom_congr (reducedAbstract_transSim φ) rfl {(SubformulaTable.build φ).idOf φ} ξ
   have h4 : (tableAbstract φ).AcceptsFrom {(SubformulaTable.build φ).idOf φ} ξ ↔ (ltlVWAA φ).AcceptsFrom {φ} ξ := by
-    rw [← Finset.image_singleton]
+    rw [← FinSet.image_singleton]
     exact VWAA.acceptsFrom_relabel (relabelsFrom_tableAbstract φ) ξ
   exact h1.trans (h2.symm.trans (h3.trans (h4.trans (NNF.ltlVWAA_correct φ φ ξ))))
 

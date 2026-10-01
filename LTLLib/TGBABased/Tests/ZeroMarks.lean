@@ -15,7 +15,6 @@
 import LTLLib.TGBABased.DijkstraCheck
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 import LTLLib.TGBABased.Tests.TestUtil
-import Mathlib.Tactic.DeriveFintype
 
 namespace LTLLib.Tests.ZeroMarks
 
@@ -25,7 +24,7 @@ open LTLLib LTLLib.Tests
 
 inductive Reaches where
   | a | b
-deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
+deriving BEq, Hashable, Repr, Inhabited, DecidableEq
 
 instance : LawfulBEq Reaches where
   eq_of_beq {x y} h := by cases x <;> cases y <;> first | rfl | exact absurd h (by decide)
@@ -45,13 +44,14 @@ def reachesLabel : Reaches → Std.HashSet String
 
 def reachesInit : List Reaches := [.a]
 
-def reachesFR : FiniteReach reachesInit reachesSucc := Set.toFinite _
+def reachesFR : FiniteReach reachesInit reachesSucc :=
+  .of_forall_mem [.a, .b] fun s => by cases s <;> simp
 
 /-! ## A system where `◇p` fails -/
 
 inductive Stuck where
   | a
-deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
+deriving BEq, Hashable, Repr, Inhabited, DecidableEq
 
 instance : LawfulBEq Stuck where
   eq_of_beq {x y} _ := by cases x; cases y; rfl
@@ -68,7 +68,8 @@ def stuckLabel : Stuck → Std.HashSet String := fun _ => ∅
 
 def stuckInit : List Stuck := [.a]
 
-def stuckFR : FiniteReach stuckInit stuckSucc := Set.toFinite _
+def stuckFR : FiniteReach stuckInit stuckSucc :=
+  .of_forall_mem [.a] fun s => by cases s <;> simp
 
 /-! ## Report -/
 

@@ -20,13 +20,14 @@ import LTLLib.LTLtoGBA.Correctness
 import LTLLib.DegeneralBridge
 import LTLLib.LTLtoGBA.ExpandTermination
 import LTLLib.Product
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
 variable {α : Type u} {S : Type w} [FSet (NNF α) S]
   {SysState : Type v} [BEq SysState] [Hashable SysState] [LawfulBEq SysState]
   [LawfulHashable SysState]
-  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
+  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
 
 /-! ## Model checking -/
 
@@ -56,7 +57,7 @@ def modelCheck (φ : Formula α) (sysInit : List SysState)
 
 /-! ## Helper: unfolding modelCheck -/
 
-omit [LawfulHashable SysState] [LawfulBEq α] [LawfulHashable α] [DecidableEq α] in
+omit [LawfulHashable SysState] [LawfulBEq α] [LawfulHashable α] in
 theorem modelCheck_eq (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc)

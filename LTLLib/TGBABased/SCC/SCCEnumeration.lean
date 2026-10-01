@@ -55,6 +55,7 @@ import LTLLib.AbstractSpec.EmptinessCheck
 import LTLLib.TGBABased.AbstractSpec.SCCTheory
 import LTLLib.TGBABased.SCC.GenericDFS
 import LTLLib.TGBABased.SCC.LiveStack
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
@@ -524,7 +525,7 @@ private theorem mem_foldl_insert (l : List State) (init : Std.HashSet State) (s 
       simp only [beq_iff_eq]
       exact ⟨fun hx => hx.imp Eq.symm id, fun hx => hx.imp Eq.symm id⟩
     rw [hins]
-    tauto
+    grind
 
 /-- The set a closing POP flushes is exactly the live stack from that position upwards. -/
 theorem mem_flushedSet (live : Array State) (pos : Nat) (s : State) :
@@ -1199,9 +1200,9 @@ theorem SearchWF.update_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V :
     intro k
     rcases k with _ | k
     · simp only [LowlinkView.lowlinkAt, hlow', revGetD_push_zero, revGetD_zero hll]
-      exact min_le_left _ _
+      exact Nat.min_le_left _ _
     · simp only [LowlinkView.lowlinkAt, hlow', revGetD_push_succ, revGetD_pop hll]
-      exact le_refl _
+      exact Nat.le_refl _
   have hzero : V.lowlinkAt (ops.update aux m d).1 0 = min ll pd := by
     simp [LowlinkView.lowlinkAt, hlow']
   have hsza : (V.accs aux).size = gray.length + 1 := by rw [h.accs_length]; simp
@@ -1303,12 +1304,12 @@ theorem SearchWF.update_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V :
             h.acc_sound 0 (by simp) b (by simpa [LowlinkView.accAt, revGetD_zero hacc0] using hbit)
           obtain ⟨l, hl, hlb⟩ := hlow
           exact ⟨u, v, pu, pv, hexpmono _ _ he, hu, hv, hlo,
-            ⟨l, hl, le_trans (hmono l) hlb⟩, fun j hj => absurd hj (by omega), hmk⟩
-        · exact ⟨src, d, p, pd, hedgeexp, hsrcpos, hpd, le_refl _,
-            ⟨0, le_refl _, by rw [hzero]; exact min_le_right _ _⟩, fun l hl => absurd hl (by omega),
+            ⟨l, hl, Nat.le_trans (hmono l) hlb⟩, fun j hj => absurd hj (by omega), hmk⟩
+        · exact ⟨src, d, p, pd, hedgeexp, hsrcpos, hpd, Nat.le_refl _,
+            ⟨0, Nat.le_refl _, by rw [hzero]; exact Nat.min_le_right _ _⟩, fun l hl => absurd hl (by omega),
             Or.inr (by rw [← hmarks]; exact (testBit_marksToBitmask m b).mp hbit)⟩
-        · exact ⟨src, d, p, pd, hedgeexp, hsrcpos, hpd, le_refl _,
-            ⟨0, le_refl _, by rw [hzero]; exact min_le_right _ _⟩, fun l hl => absurd hl (by omega),
+        · exact ⟨src, d, p, pd, hedgeexp, hsrcpos, hpd, Nat.le_refl _,
+            ⟨0, Nat.le_refl _, by rw [hzero]; exact Nat.min_le_right _ _⟩, fun l hl => absurd hl (by omega),
             Or.inl hbit⟩
       · have hacck : V.accAt (ops.update aux m d).1 (k + 1) = V.accAt aux (k + 1) := by
           simp only [LowlinkView.accAt, hacc', revGetD_push_succ, revGetD_pop hacc0]
@@ -1317,7 +1318,7 @@ theorem SearchWF.update_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V :
           h.acc_sound (k + 1) hk b hbit
         obtain ⟨l, hl, hlb⟩ := hlow
         refine ⟨u, v, pu, pv, hexpmono _ _ he, hu, hv, ?_,
-          ⟨l, hl, le_trans (hmono l) hlb⟩, ?_, hmk⟩
+          ⟨l, hl, Nat.le_trans (hmono l) hlb⟩, ?_, hmk⟩
         · rw [(hb1 (k + 1) hk).2.1]; exact hlo
         · intro j hj
           rw [(hb1 j (by simp at hk ⊢; omega)).2.1]
@@ -1386,19 +1387,19 @@ theorem SearchWF.update_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V :
   · intro k l hk hl hkl
     rcases k with _ | k <;> rcases l with _ | l <;> simpa using h.frames_mono _ _ hk hl hkl
   · intro k hk
-    have hb := le_trans (hmono k) (h.lowlink_le k hk)
+    have hb := Nat.le_trans (hmono k) (h.lowlink_le k hk)
     rcases k with _ | k <;> simpa using hb
   · rw [hlive']
     intro k hk
-    refine ⟨lt_of_le_of_lt (hmono k) (h.lowlink_reaches k hk).1, ?_⟩
+    refine ⟨Nat.lt_of_le_of_lt (hmono k) (h.lowlink_reaches k hk).1, ?_⟩
     rcases k with _ | k
     · have h0 : V.lowlinkAt aux 0 = ll := revGetD_zero hll
       rcases Nat.le_total ll pd with hle | hle
-      · rw [hzero, min_eq_left hle]
+      · rw [hzero, Nat.min_eq_left hle]
         have hr := (h.lowlink_reaches 0 hk).2
         rw [h0] at hr
         simpa using hr
-      · rw [hzero, min_eq_right hle]
+      · rw [hzero, Nat.min_eq_right hle]
         exact Or.inr (by simp only [List.getElem_cons_zero]; rw [hpdval]; exact PathTo.direct hmem)
     · have hkk : V.lowlinkAt (ops.update aux m d).1 (k + 1) = V.lowlinkAt aux (k + 1) := by
         simp only [LowlinkView.lowlinkAt, hlow', revGetD_push_succ, revGetD_pop hll]
@@ -1409,11 +1410,11 @@ theorem SearchWF.update_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V :
     have hle' : (⟨src, p, idx, a⟩ :: gray)[k].pos ≤ i := by rcases k with _ | k <;> simpa using hle
     rcases hexp _ t ht with ht' | ⟨-, rfl⟩
     · obtain ⟨l, hlk, hlb⟩ := h.lowlink_bound k hk i hi hle' t ht' pt hpt
-      exact ⟨l, hlk, le_trans (hmono l) hlb⟩
+      exact ⟨l, hlk, Nat.le_trans (hmono l) hlb⟩
     · refine ⟨0, Nat.zero_le _, ?_⟩
       have hpteq : pt = pd := by rw [hpd] at hpt; exact (Option.some.inj hpt).symm
       rw [hzero, hpteq]
-      exact min_le_right _ _
+      exact Nat.min_le_right _ _
 
 /-- PUSH opens a frame on a fresh state, the tree edge from the innermost frame carrying the reachability
 clauses onto it. -/
@@ -2030,7 +2031,7 @@ theorem SearchWF.popClose_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V
     congrArg (fun p => p.2.2) htriple
   have hsizeL : (liveFlush (V.live aux) (V.liveIndex aux) (V.dead aux) (V.posNat step.pos)).1.size
       = V.posNat step.pos :=
-    liveFlush_size _ _ _ _ (le_of_lt hposlt)
+    liveFlush_size _ _ _ _ (Nat.le_of_lt hposlt)
   have hgetlt' : ∀ i, (hi : i < V.posNat step.pos) →
       (liveFlush (V.live aux) (V.liveIndex aux) (V.dead aux)
         (V.posNat step.pos)).1[i]'(by rw [hsizeL]; omega) = (V.live aux)[i]'(by omega) := by
@@ -2445,7 +2446,7 @@ theorem SearchWF.popMerge_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V
           have htreeacc : step.acc = marksToBitmask (edgeMarks y.state step.state) := by
             simpa using h.gray_acc 0 (by simp)
           have hmintree : min pll ll ≤ V.posNat step.pos :=
-            le_trans (min_le_right _ _) hllle
+            Nat.le_trans (Nat.min_le_right _ _) hllle
           rcases k with _ | k
           · have hnewA : V.accAt (ops.pop succs edgeMarks aux step).1 0
                 = pacc0 ||| step.acc ||| acc0 ||| V.extraAcc := by
@@ -2462,16 +2463,16 @@ theorem SearchWF.popMerge_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V
                 h.acc_sound 1 (by simp) b (by rw [haccA1]; exact hbit)
               obtain ⟨l, hl, hlb⟩ := hlow
               refine ⟨u, v, pu, pv, hexpdrop _ _ he, hu, hv, by simpa using hlo,
-                ⟨0, le_refl _, ?_⟩, fun j hj => absurd hj (by omega), hmk⟩
+                ⟨0, Nat.le_refl _, ?_⟩, fun j hj => absurd hj (by omega), hmk⟩
               rw [hnew0]
               rcases Nat.eq_zero_or_pos l with rfl | hl0
-              · rw [hll0] at hlb; exact le_trans (min_le_right _ _) hlb
+              · rw [hll0] at hlb; exact Nat.le_trans (Nat.min_le_right _ _) hlb
               · have hl1 : l = 1 := by omega
                 subst hl1
                 rw [hpll] at hlb
-                exact le_trans (min_le_left _ _) hlb
+                exact Nat.le_trans (Nat.min_le_left _ _) hlb
             · exact ⟨y.state, step.state, y.pos, V.posNat step.pos, htree, hypos, hxpos,
-                by simp, ⟨0, le_refl _, by rw [hnew0]; exact hmintree⟩,
+                by simp, ⟨0, Nat.le_refl _, by rw [hnew0]; exact hmintree⟩,
                 fun j hj => absurd hj (by omega),
                 Or.inr (by rw [htreeacc] at hbit; exact (testBit_marksToBitmask _ b).mp hbit)⟩
             · obtain ⟨u, v, pu, pv, he, hu, hv, hlo, hlow, hup, hmk⟩ :=
@@ -2483,10 +2484,10 @@ theorem SearchWF.popMerge_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V
               have hym := h.frames_mono 0 1 (by simp) (by simp) (by omega)
               simp only [List.getElem_cons_zero, List.getElem_cons_succ] at hym hlo
               refine ⟨u, v, pu, pv, hexpdrop _ _ he, hu, hv, by simp; omega,
-                ⟨0, le_refl _, by rw [hnew0]; exact le_trans (min_le_right _ _) hlb⟩,
+                ⟨0, Nat.le_refl _, by rw [hnew0]; exact Nat.le_trans (Nat.min_le_right _ _) hlb⟩,
                 fun j hj => absurd hj (by omega), hmk⟩
             · exact ⟨y.state, step.state, y.pos, V.posNat step.pos, htree, hypos, hxpos,
-                by simp, ⟨0, le_refl _, by rw [hnew0]; exact hmintree⟩,
+                by simp, ⟨0, Nat.le_refl _, by rw [hnew0]; exact hmintree⟩,
                 fun j hj => absurd hj (by omega), Or.inl hbit⟩
           · have hnewA : V.accAt (ops.pop succs edgeMarks aux step).1 (k + 1)
                 = V.accAt aux (k + 2) := by
@@ -2499,10 +2500,10 @@ theorem SearchWF.popMerge_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V
             refine ⟨u, v, pu, pv, hexpdrop _ _ he, hu, hv, by simpa using hlo, ?_, ?_, hmk⟩
             · rcases l with _ | l
               · rw [hll0] at hlb
-                exact ⟨0, Nat.zero_le _, by rw [hnew0]; exact le_trans (min_le_right _ _) hlb⟩
+                exact ⟨0, Nat.zero_le _, by rw [hnew0]; exact Nat.le_trans (Nat.min_le_right _ _) hlb⟩
               · rcases l with _ | l
                 · rw [hpll] at hlb
-                  exact ⟨0, Nat.zero_le _, by rw [hnew0]; exact le_trans (min_le_left _ _) hlb⟩
+                  exact ⟨0, Nat.zero_le _, by rw [hnew0]; exact Nat.le_trans (Nat.min_le_left _ _) hlb⟩
                 · exact ⟨l + 1, by omega, by rw [hnewS l]; exact hlb⟩
             · intro j hj
               simpa using hup (j + 1) (by omega)
@@ -2568,20 +2569,20 @@ theorem SearchWF.popMerge_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V
     · intro k hk
       rcases k with _ | k
       · rw [hnew0]
-        simpa using le_trans (min_le_left pll ll) hpllle
+        simpa using Nat.le_trans (Nat.min_le_left pll ll) hpllle
       · rw [hnewS k]
         exact h.lowlink_le (k + 2) (by simpa using hk)
     · rw [hlive']
       intro k hk
       rcases k with _ | k
-      · refine ⟨by rw [hnew0]; exact lt_of_le_of_lt (min_le_right _ _) hlllt, ?_⟩
+      · refine ⟨by rw [hnew0]; exact Nat.lt_of_le_of_lt (Nat.min_le_right _ _) hlllt, ?_⟩
         rw [hnew0]
         rcases Nat.le_total pll ll with hle | hle
-        · rw [min_eq_left hle]
+        · rw [Nat.min_eq_left hle]
           have hr := (h.lowlink_reaches 1 (by simp)).2
           rw [hpll] at hr
           simpa using hr
-        · rw [min_eq_right hle]
+        · rw [Nat.min_eq_right hle]
           refine Or.inr ?_
           simp only [List.getElem_cons_zero]
           rw [getElem!_pos (V.live aux) ll hlllt]
@@ -2598,10 +2599,10 @@ theorem SearchWF.popMerge_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V
       obtain ⟨l, hlk, hlb⟩ := h.lowlink_bound (k + 1) hkk i hi hle' t (hexp _ t ht) pt hpt
       rcases l with _ | l
       · rw [hll0] at hlb
-        exact ⟨0, Nat.zero_le _, by rw [hnew0]; exact le_trans (min_le_right _ _) hlb⟩
+        exact ⟨0, Nat.zero_le _, by rw [hnew0]; exact Nat.le_trans (Nat.min_le_right _ _) hlb⟩
       · rcases l with _ | l
         · rw [hpll] at hlb
-          exact ⟨0, Nat.zero_le _, by rw [hnew0]; exact le_trans (min_le_left _ _) hlb⟩
+          exact ⟨0, Nat.zero_le _, by rw [hnew0]; exact Nat.le_trans (Nat.min_le_left _ _) hlb⟩
         · exact ⟨l + 1, by omega, by rw [hnewS l]; exact hlb⟩
 
 /-- PUSH on a fresh root, where no frame is open and the live stack is empty. -/
@@ -2784,7 +2785,7 @@ theorem EnumWF.popClose_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V :
     by_cases hall : ∀ s ∈ D, s ∈ V.dead aux
     · obtain ⟨pr, hpr, hsub⟩ := h.recorded_complete D hDne hDconn hall
       exact ⟨pr, Array.mem_push.mpr (Or.inl hpr), hsub⟩
-    · push_neg at hall
+    · simp only [Classical.not_forall] at hall
       obtain ⟨s0, hs0D, hs0nd⟩ := hall
       have hs0F : s0 ∈ flushedSet (V.live aux) (V.posNat step.pos) := by
         rcases liveFlush_dead_or_old _ _ _ _ s0 (hDdead s0 hs0D) with hdd | ⟨q, hq1, hq2, hq3⟩

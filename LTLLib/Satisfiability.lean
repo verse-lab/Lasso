@@ -6,11 +6,12 @@ import LTLLib.LTLtoGBA.Correctness
 import LTLLib.DegeneralBridge
 import LTLLib.LTLtoGBA.ExpandTermination
 import LTLLib.NestedDFS.NestedDFSTermination
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
 variable {α : Type u} {S : Type v} [FSet (NNF α) S]
-  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
+  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
 
 /-- Chain `createGraph → constructGBA → GBA.degeneralize → nestedDFSWF` -/
 def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
@@ -22,7 +23,7 @@ def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
     nestedDFSWF ba.getSuccessors ba.initialStates.toList (ba.finiteReach hbawf) ba.isAccepting
   | none => .empty 0
 
-omit [LawfulBEq α] [LawfulHashable α] [DecidableEq α] in
+omit [LawfulBEq α] [LawfulHashable α] in
 /-- `fullPipeline` restated with the `createGraph` result exposed as `st`. -/
 theorem fullPipeline_eq (φ : NNF α) {st : ExpandState α S} (hcg : createGraph φ = some st) :
     fullPipeline (S := S) φ =

@@ -9,7 +9,6 @@
 import LTLLib.LTL.Fairness
 import LTLLib.TGBABased.DijkstraCheck
 import LTLLib.TGBABased.Tests.TestUtil
-import Mathlib.Tactic.DeriveFintype
 
 namespace LTLLib.Tests.WeakFairness
 
@@ -17,7 +16,7 @@ open LTLLib LTLLib.Tests
 
 inductive Step where
   | idle | ready | act
-deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
+deriving BEq, Hashable, Repr, Inhabited, DecidableEq
 
 instance : LawfulBEq Step where
   eq_of_beq {a b} h := by cases a <;> cases b <;> first | rfl | exact absurd h (by decide)
@@ -42,7 +41,8 @@ def stepLabel : Step → Std.HashSet String
 def stepInit : List Step := [.idle]
 
 /-- Finitely many states, so the reachable set is trivially finite. -/
-def stepFR : FiniteReach stepInit stepSucc := Set.toFinite _
+def stepFR : FiniteReach stepInit stepSucc :=
+  .of_forall_mem [.idle, .ready, .act] fun s => by cases s <;> simp
 
 /-- `◇goal`, which holds on every run that eventually leaves `ready`. -/
 def ψ : Formula String := .eventually (.atom "goal")

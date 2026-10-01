@@ -14,7 +14,6 @@ import LTLLib.NestedDFS.NestedDFSTermination
 import LTLLib.AbstractSpec.Acceptance
 import LTLLib.AbstractSpec.EmptinessCheck
 import LTLLib.AbstractSpec.Lasso
-import Mathlib.Data.Finite.Prod
 
 namespace LTLLib
 

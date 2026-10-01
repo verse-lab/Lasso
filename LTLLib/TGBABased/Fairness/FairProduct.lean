@@ -28,6 +28,7 @@
 import LTLLib.LTL.Propositional
 import LTLLib.TGBABased.AbstractSpec.RegionLatch
 import LTLLib.TGBABased.Product
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 

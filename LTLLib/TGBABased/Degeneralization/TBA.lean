@@ -104,27 +104,16 @@ structure WellFormed (tba : TBA α) : Prop where
 /-- A well-formed `TBA` has finitely many reachable states, bounded by its state set. -/
 def finiteReach (tba : TBA α) (hwf : tba.WellFormed) :
     FiniteReach tba.initialStates.toList tba.succStates := by
-  show {s | Reachable tba.initialStates.toList tba.succStates s}.Finite
-  have hsub : {s | Reachable tba.initialStates.toList tba.succStates s} ⊆
-      {x | tba.states.contains x} := by
-    intro s hs
-    induction hs with
-    | base hi =>
-      exact hwf.initial_mem _ (by
-        show tba.isInitial _ = true
-        exact Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp hi))
-    | step _ hmem ih =>
-      rename_i prev cur
-      obtain ⟨t, ht, rfl⟩ := Array.mem_map.mp hmem
-      exact hwf.succ_mem _ _ ih ht
-  have hfin : {x | tba.states.contains x}.Finite := by
-    have heq : {x | tba.states.contains x} = {x | x ∈ tba.states.toList} := by
-      ext x
-      exact ⟨fun h => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr h),
-        fun h => Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp h)⟩
-    rw [heq]
-    exact List.finite_toSet tba.states.toList
-  exact hfin.subset hsub
+  refine ⟨tba.states.toList, fun s hs => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr ?_)⟩
+  induction hs with
+  | base hi =>
+    exact hwf.initial_mem _ (by
+      show tba.isInitial _ = true
+      exact Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp hi))
+  | step _ hmem ih =>
+    rename_i prev cur
+    obtain ⟨t, ht, rfl⟩ := Array.mem_map.mp hmem
+    exact hwf.succ_mem _ _ ih ht
 
 /-- An edge of a `TBA`: the source state together with one of its outgoing transitions. -/
 abbrev Edge (α : Type u) [BEq α] [Hashable α] := (_s : TBAState) × TBA.Transition α
@@ -167,7 +156,7 @@ private theorem TBA.mem_edgeMarks_iff {α : Type u} [BEq α] [Hashable α] (tba 
         · exact Or.inr ⟨t, ht, htm⟩
   rw [TBA.edgeMarks, ← Array.foldl_toList, hfold, Std.HashSet.contains_emptyWithCapacity]
   simp only [Bool.false_eq_true, false_or, ← Array.mem_def, Array.mem_filter, beq_iff_eq]
-  tauto
+  grind
 
 private theorem TBA.mem_edgeMarksTable_iff {α : Type u} [BEq α] [Hashable α]
     (tba : TBA α) (s s' : TBAState) (m : Nat) :

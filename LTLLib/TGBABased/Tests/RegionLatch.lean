@@ -11,7 +11,6 @@
 -/
 import LTLLib.TGBABased.Fairness.FairCheck
 import LTLLib.TGBABased.Tests.TestUtil
-import Mathlib.Tactic.DeriveFintype
 
 namespace LTLLib.Tests.RegionLatch
 
@@ -19,7 +18,7 @@ open LTLLib LTLLib.Tests
 
 inductive Node where
   | entry | gate | a | b
-deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
+deriving BEq, Hashable, Repr, Inhabited, DecidableEq
 
 instance : LawfulBEq Node where
   eq_of_beq {x y} h := by cases x <;> cases y <;> first | rfl | exact absurd h (by decide)
@@ -47,7 +46,8 @@ def nodeLabel : Node → Std.HashSet String
 def nodeInit : List Node := [.entry]
 
 /-- Finitely many states, so the reachable set is trivially finite. -/
-def nodeFR : FiniteReach nodeInit nodeSucc := Set.toFinite _
+def nodeFR : FiniteReach nodeInit nodeSucc :=
+  .of_forall_mem [.entry, .gate, .a, .b] fun s => by cases s <;> simp
 
 /-- `◇goal`, which no run satisfies, so every run is a candidate counterexample. -/
 def ψ : Formula String := .eventually (.atom "goal")

@@ -93,6 +93,10 @@ def branches : List (NNF α) → List (List (List (NNF.FairDisjunct α)) × List
       (branches cs).map (fun b => (ds :: b.1, b.2)) ++
         if stay.isEmpty then [] else (branches cs).map fun b => (b.1, orAll stay :: b.2)
 
+private theorem exists_exists_and_eq_and {β : Type v} {γ : Type w} {f : β → γ} {p : β → Prop}
+    {q : γ → Prop} : (∃ c, (∃ b, p b ∧ f b = c) ∧ q c) ↔ ∃ b, p b ∧ q (f b) :=
+  ⟨fun ⟨_, ⟨b, hb, rfl⟩, hq⟩ => ⟨b, hb, hq⟩, fun ⟨b, hb, hq⟩ => ⟨_, ⟨b, hb, rfl⟩, hq⟩⟩
+
 theorem branches_correct (ξ : OmegaWord α) (cs : List (NNF α)) :
     (∀ c ∈ cs, c.satisfies ξ) ↔
       ∃ b ∈ branches cs, (∀ ds ∈ b.1, ∃ d ∈ ds, NNF.FairDisjunct.holds ξ d) ∧ ∀ c ∈ b.2, c.satisfies ξ := by

@@ -24,7 +24,6 @@
   Formula: `□◇on` ("the light turns on infinitely often"): Does not hold.
 -/
 import LTLLib.Examples.MCPrint
-import Mathlib.Tactic.DeriveFintype
 
 namespace LTLLib.Examples
 
@@ -32,7 +31,7 @@ namespace LTLLib.Examples
   `off` is a genuinely terminal state -/
 inductive BreakableLight where
   | on | off
-deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
+deriving BEq, Hashable, Repr, Inhabited, DecidableEq
 
 private theorem BreakableLight.beq_def (x y : BreakableLight) :
     (x == y) = (match x, y with
@@ -67,7 +66,8 @@ def breakableLightLabel : BreakableLight → Std.HashSet Prop'
 /-- The system starts at `on`. -/
 def breakableLightInit : List BreakableLight := [.on]
 
-def breakableLightFR : FiniteReach breakableLightInit breakableLightSucc := Set.toFinite _
+def breakableLightFR : FiniteReach breakableLightInit breakableLightSucc :=
+  .of_forall_mem [.on, .off] fun s => by cases s <;> simp
 
 
 

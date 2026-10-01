@@ -472,7 +472,7 @@ private theorem expand_exist_aux (ξ : OmegaWord α) (node : ExpansionNode α S)
             · exact hk
           · exact hk
         · rw [h_mn]; exact h_name
-        · rw [h_mn]
+        · rw [h_mn]; exact Nat.le_refl _
     | none =>
       -- INSERT + RECURSE CASE
       simp only [freshName] at h_result
@@ -932,7 +932,7 @@ private theorem expand_npi_result (node : ExpansionNode α S) (st : ExpandState 
       · -- nameBound
         rw [h_mn]; exact h_name
       · -- nextNameMono
-        rw [h_mn]
+        rw [h_mn]; exact Nat.le_refl _
     · -- Insert + recurse
       simp only [freshName] at h_result
       have res := ih _ _ _ h_result
@@ -1586,7 +1586,7 @@ theorem expandOASpec_completeness
             · right
               have ⟨_, h_carry⟩ := until_step spec h_nodes h_succ h_u_k h_eta_k
               rwa [show n + k + 1 = n + (k + 1) from by omega] at h_carry
-      rcases h_persist j le_rfl with ⟨k', _, hη'⟩ | h_u_j
+      rcases h_persist j (Nat.le_refl _) with ⟨k', _, hη'⟩ | h_u_j
       · exact ⟨k', hη'⟩
       · exact ⟨j, h_until_rhs (n + j) _ _ h_u_j hη_sat⟩
     · -- until formula NOT in old(σ n)

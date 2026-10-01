@@ -29,6 +29,7 @@ import LTLLib.AbstractSpec.GraphPaths
 import LTLLib.NestedDFS.NestedDFSCorrectness
 import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
 import LTLLib.TGBABased.NestedDFS.NestedDFST
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
@@ -492,7 +493,7 @@ theorem outerDFST_fuel_nonEmpty_witness
             -- `current` is `pathStack`'s last element, so by `Nodup` it is not `target`, which lies in the `dropLast` prefix.
             have hcurrent_notmem_anc : current ∉ pathStack.dropLast := by
               have heq : pathStack = pathStack.dropLast ++ [pathStack.getLast hne_path] :=
-                (List.dropLast_append_getLast hne_path).symm
+                (List.dropLast_concat_getLast hne_path).symm
               rw [hgetlast_path] at heq
               have hnd := heq ▸ hnodup
               rw [List.nodup_append] at hnd
@@ -930,7 +931,7 @@ theorem outerDFST_fuel_nonEmpty_witness
             have hsucc_notmem : succ ∉ pathStack := fun hmem => hnotvisited (hsv succ hmem)
             have hnodup' : (pathStack ++ [succ]).Nodup := by
               rw [List.nodup_append]
-              refine ⟨hnodup, List.nodup_singleton succ, ?_⟩
+              refine ⟨hnodup, List.pairwise_singleton _ succ, ?_⟩
               intro a ha b hb heq
               subst heq
               simp only [List.mem_singleton] at hb
@@ -1337,7 +1338,7 @@ theorem outerDFST_fuel_empty_no_cycle
             have hcurrent_notmem : current ∉ ((parent, parentRem, parentMarked) :: tail).map Prod.fst := by
               have hnd : (current :: ((parent, parentRem, parentMarked) :: tail).map Prod.fst).Nodup := by
                 rw [hps] at hnodup
-                exact List.nodup_reverse.mp hnodup
+                exact (List.pairwise_reverse.mp hnodup).imp Ne.symm
               exact (List.nodup_cons.mp hnd).1
             have hcur : current ≠ parent ∧ current ∉ pathStack.dropLast :=
               ⟨fun heq' => hcurrent_notmem (heq' ▸ by simp),
@@ -1797,7 +1798,7 @@ theorem outerDFST_fuel_empty_no_cycle
             have hsucc_notmem : succ ∉ pathStack := fun hmem => hnotvisited (hsv succ hmem)
             have hnodup' : (pathStack ++ [succ]).Nodup := by
               rw [List.nodup_append]
-              refine ⟨hnodup, List.nodup_singleton succ, ?_⟩
+              refine ⟨hnodup, List.pairwise_singleton _ succ, ?_⟩
               intro a ha b hb heq
               subst heq
               simp only [List.mem_singleton] at hb
@@ -1924,7 +1925,7 @@ theorem nestedDFST_fuel_go_correct
         · exact hroots i hi'
       · -- init fresh
         rename_i hnotvisited
-        have hnodup_pushed : ([init] : List State).Nodup := List.nodup_singleton init
+        have hnodup_pushed : ([init] : List State).Nodup := List.pairwise_singleton _ init
         have hps_pushed : ([init] : List State) =
             ([(init, (succs init).toList, false)].map Prod.fst).reverse := by simp
         have hsv_pushed : ∀ s ∈ ([init] : List State),
@@ -2072,7 +2073,7 @@ theorem nestedDFST_fuel_go_nonEmpty_witness
         exact ⟨fun hs => List.mem_cons_of_mem _ (hmem hs), hrest⟩
       · -- init fresh
         rename_i hnotvisited
-        have hnodup_pushed : ([init] : List State).Nodup := List.nodup_singleton init
+        have hnodup_pushed : ([init] : List State).Nodup := List.pairwise_singleton _ init
         have hps_pushed : ([init] : List State) =
             ([(init, (succs init).toList, false)].map Prod.fst).reverse := by simp
         have hchain_pushed : ∀ i, (hi : i + 1 < ([init] : List State).length) →

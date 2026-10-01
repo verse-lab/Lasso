@@ -24,7 +24,6 @@
   - Soundness
   - Completeness
 -/
-import Mathlib.Data.Finite.Prod
 import LTLLib.TGBABased.AbstractSpec.Lasso
 import LTLLib.TGBABased.AbstractSpec.Pumping
 
@@ -161,7 +160,7 @@ theorem latch_finiteReach {initialStates : List State} {succs succsR : State →
     (hsub : ∀ s t, t ∈ succsR s → t ∈ succs s) (total : Bool)
     (fr : FiniteReach initialStates succs) :
     FiniteReach (latchInit initialStates total) (latchSuccs succs succsR) :=
-  (Set.Finite.prod fr (Set.finite_univ (α := Bool))).subset
+  (fr.prod (FinitePred.of_forall_mem (p := fun _ : Bool => True) [false, true] fun b => by cases b <;> simp)).subset
     fun _ hp => ⟨latch_reachable_fst hsub hp, trivial⟩
 
 /-- The fused expansion for the doubled graph: one call to each side's `expand` per latched state. -/
@@ -299,7 +298,7 @@ theorem latch_complete {initialStates : List State} {succs succsR : State → Ar
       exact ⟨n, by omega, (mem_latchMarks_iff _ _ _ _ _ _).mpr
         (Or.inr ⟨by simp; omega, Or.inl hmark⟩)⟩
     · exact ⟨max K (N + 1), by omega, (mem_latchMarks_iff _ _ _ _ _ _).mpr
-        (Or.inr ⟨by simp, Or.inr ⟨by simp, by omega⟩⟩)⟩
+        (Or.inr ⟨by simp; omega, Or.inr ⟨by simp; omega, by omega⟩⟩)⟩
 
 /-- The same when the restriction is the whole graph, with the run starting committed. -/
 theorem latch_complete_total {initialStates : List State} {succs succsR : State → Array State}

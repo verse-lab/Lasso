@@ -18,6 +18,7 @@
   - The pumping lemma
 -/
 import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
@@ -73,11 +74,11 @@ private theorem coverFrom_lt_succ (hacc : MarksRecur edgeMarks numMarks σ) (k N
 private theorem coverFrom_le_of_le (hacc : MarksRecur edgeMarks numMarks σ) {k k' : Nat} (h : k ≤ k')
     (N : Nat) : coverFrom hacc k N ≤ coverFrom hacc k' N := by
   induction k' with
-  | zero => rw [Nat.le_zero.mp h]
+  | zero => rw [Nat.le_zero.mp h]; exact Nat.le_refl _
   | succ k' ih =>
     rcases Nat.lt_or_ge k (k' + 1) with hlt | hge
-    · exact le_trans (ih (by omega)) (le_of_lt (coverFrom_lt_succ hacc k' N))
-    · rw [Nat.le_antisymm h hge]
+    · exact Nat.le_trans (ih (by omega)) (Nat.le_of_lt (coverFrom_lt_succ hacc k' N))
+    · rw [Nat.le_antisymm h hge]; exact Nat.le_refl _
 
 /-- Every mark below `k` occurs on an edge inside `[N, coverFrom k N)`. -/
 private theorem coverFrom_covers (hacc : MarksRecur edgeMarks numMarks σ) {m k : Nat} (hm : m < numMarks)
@@ -88,12 +89,12 @@ private theorem coverFrom_covers (hacc : MarksRecur edgeMarks numMarks σ) {m k 
   | succ k ih =>
     rcases Nat.lt_or_ge m k with hlt | hge
     · obtain ⟨n, h1, h2, h3⟩ := ih hlt
-      exact ⟨n, h1, le_trans h2 (le_of_lt (coverFrom_lt_succ hacc k N)), h3⟩
+      exact ⟨n, h1, Nat.le_trans h2 (Nat.le_of_lt (coverFrom_lt_succ hacc k N)), h3⟩
     · -- `m = k`, so this sweep's own pick is the witness and the window ends exactly one past it
       have hmk' : m = k := by omega
       subst hmk'
       exact ⟨nextMark hacc m (coverFrom hacc m N),
-        le_trans (coverFrom_ge hacc m N) (nextMark_ge hacc m _), Nat.le_refl _, nextMark_spec hacc hm _⟩
+        Nat.le_trans (coverFrom_ge hacc m N) (nextMark_ge hacc m _), Nat.le_refl _, nextMark_spec hacc hm _⟩
 
 /-- Boundary of the `k`-th round counted from `N`, every mark occurring on an edge strictly inside
 `[roundEnd N k, roundEnd N (k+1))`. -/
@@ -121,8 +122,8 @@ private theorem roundEnd_lt_of_lt (hacc : MarksRecur edgeMarks numMarks σ) (N :
 private theorem roundEnd_le_of_le (hacc : MarksRecur edgeMarks numMarks σ) (N : Nat) {i j : Nat}
     (h : i ≤ j) : roundEnd hacc N i ≤ roundEnd hacc N j := by
   rcases Nat.lt_or_ge i j with hlt | hge
-  · exact le_of_lt (roundEnd_lt_of_lt hacc N hlt)
-  · rw [Nat.le_antisymm h hge]
+  · exact Nat.le_of_lt (roundEnd_lt_of_lt hacc N hlt)
+  · rw [Nat.le_antisymm h hge]; exact Nat.le_refl _
 
 private theorem roundEnd_covers (hacc : MarksRecur edgeMarks numMarks σ) {m : Nat} (hm : m < numMarks)
     (N k : Nat) :
@@ -203,7 +204,7 @@ theorem exists_TAcceptingCycle_of_run_tail {succs : State → Array State}
     cycle_covers_marks := by
       intro m hm
       obtain ⟨n, hn1, hn2, hn3⟩ := roundEnd_covers hacc hm N i
-      have hnq : n + 1 ≤ q := le_trans hn2 (roundEnd_le_of_le hacc N (by omega))
+      have hnq : n + 1 ≤ q := Nat.le_trans hn2 (roundEnd_le_of_le hacc N (by omega))
       refine ⟨n - p, by simpa using (by omega : n - p < q - p), ?_⟩
       simp only [List.getElem_map, List.getElem_range, List.length_map, List.length_range]
       rw [hwrap (n - p) (by omega)]

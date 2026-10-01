@@ -24,7 +24,6 @@ import LTLLib.LTLtoGBA.AbstractSpec.ExpansionSpec
 import LTLLib.LTL.Semantics
 import LTLLib.LTL.Subformulas
 import LTLLib.AbstractSpec.Acceptance
-import Mathlib.Order.Nat
 
 namespace LTLLib
 
@@ -124,14 +123,12 @@ theorem old_implies_satisfied
     have hsub := spec.old_subformula _ (h_nodes n) _ h_old
     have hex := h_accept μ η hsub n
     classical
-    let j₀ := Nat.find hex
-    have hj₀_spec := Nat.find_spec hex
-    have hj₀_min : ∀ k < j₀, ¬(¬(σ (n + k)).old (.until μ η) ∨ (σ (n + k)).old η) :=
-      fun k hk => Nat.find_min hex hk
+    obtain ⟨j₀, -, hj₀_spec, hj₀_min⟩ := LentilLib.Nat.find_min
+      (p := fun j => ¬(σ (n + j)).old (.until μ η) ∨ (σ (n + j)).old η) _ hex.choose_spec
     have h_before : ∀ k < j₀, (σ (n + k)).old (.until μ η) ∧ ¬(σ (n + k)).old η := by
       intro k hk
       have := hj₀_min k hk
-      push_neg at this
+      simp only [_root_.not_or, Classical.not_not] at this
       exact this
     have h_until_stays : ∀ k, k ≤ j₀ → (σ (n + k)).old (.until μ η) := by
       intro k hk
@@ -144,12 +141,12 @@ theorem old_implies_satisfied
         rwa [show n + k + 1 = n + (k + 1) from by omega] at h_step
     have h_eta_j0 : (σ (n + j₀)).old η := by
       rcases hj₀_spec with h | h
-      · exact absurd (h_until_stays j₀ (le_refl j₀)) h
+      · exact absurd (h_until_stays j₀ (Nat.le_refl j₀)) h
       · exact h
     have h_mu_before : ∀ k < j₀, (σ (n + k)).old μ := by
       intro k hk
       exact (until_step spec h_nodes h_succ
-        (h_until_stays k (le_of_lt hk)) (h_before k hk).2).1
+        (h_until_stays k (Nat.le_of_lt hk)) (h_before k hk).2).1
     refine ⟨j₀, ?_, ?_⟩
     · exact ih_η (n + j₀) h_eta_j0
     · intro i hi
@@ -164,7 +161,7 @@ theorem old_implies_satisfied
       obtain ⟨i, hi, hμ⟩ := h
       exact ⟨i, hi, by simp only [exec.drop_drop]; exact ih_μ (n + i) hμ⟩
     · left
-      push_neg at h
+      simp only [_root_.not_exists, _root_.not_and] at h
       have h_rel : ∀ k, k ≤ j → (σ (n + k)).old (.release μ ψ) := by
         intro k hk
         induction k with
@@ -175,7 +172,7 @@ theorem old_implies_satisfied
           have h_no_mu := h k hk_lt
           have h_step := (release_step spec h_nodes h_succ h_rel_k h_no_mu).2
           rwa [show n + k + 1 = n + (k + 1) from by omega] at h_step
-      have h_rel_j := h_rel j (le_refl j)
+      have h_rel_j := h_rel j (Nat.le_refl j)
       have ⟨hψ, _⟩ := spec.release_propag _ (h_nodes (n + j)) _ _ h_rel_j
       simp only [exec.drop_drop]; exact ih_ψ (n + j) hψ
 

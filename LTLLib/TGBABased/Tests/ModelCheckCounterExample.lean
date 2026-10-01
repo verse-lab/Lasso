@@ -6,7 +6,6 @@
 -/
 import LTLLib.TGBABased.DijkstraCheck
 import LTLLib.TGBABased.Tests.TestUtil
-import Mathlib.Tactic.DeriveFintype
 
 namespace LTLLib.Tests.ModelCheckCounterExample
 
@@ -14,7 +13,7 @@ open LTLLib LTLLib.Tests
 
 inductive Light where
   | red | yellow | green
-deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
+deriving BEq, Hashable, Repr, Inhabited, DecidableEq
 
 instance : LawfulBEq Light where
   eq_of_beq {a b} h := by cases a <;> cases b <;> first | rfl | exact absurd h (by decide)
@@ -39,7 +38,8 @@ def lightLabel : Light → Std.HashSet String
 def lightInit : List Light := [.red]
 
 /-- Finitely many states, so the reachable set is trivially finite. -/
-def lightFR : FiniteReach lightInit lightSucc := Set.toFinite _
+def lightFR : FiniteReach lightInit lightSucc :=
+  .of_forall_mem [.red, .yellow, .green] fun s => by cases s <;> simp
 
 /-- `□◇(red ∧ green)`, which no run of this system satisfies. -/
 def ψ : Formula String := .always (.eventually (.and (.atom "red") (.atom "green")))

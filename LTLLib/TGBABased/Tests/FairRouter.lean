@@ -14,7 +14,6 @@ import LTLLib.LTL.FairNormalForm
 import LTLLib.LTL.Syntax
 import LTLLib.TGBABased.Fairness.FairRouter
 import LTLLib.TGBABased.Tests.TestUtil
-import Mathlib.Tactic.DeriveFintype
 
 namespace LTLLib.Tests.FairRouter
 
@@ -22,7 +21,7 @@ open LTLLib LTLLib.Tests
 
 inductive Node where
   | start | spin | wait | go
-deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
+deriving BEq, Hashable, Repr, Inhabited, DecidableEq
 
 instance : LawfulBEq Node where
   eq_of_beq {a b} h := by cases a <;> cases b <;> first | rfl | exact absurd h (by decide)
@@ -49,7 +48,8 @@ def nodeLabel : Node → Std.HashSet String
 
 def nodeInit : List Node := [.start]
 
-def nodeFR : FiniteReach nodeInit nodeSucc := Set.toFinite _
+def nodeFR : FiniteReach nodeInit nodeSucc :=
+  .of_forall_mem [.start, .spin, .wait, .go] fun s => by cases s <;> simp
 
 /-- `◇g`. -/
 def ψ : Formula String := .eventually (.atom "g")

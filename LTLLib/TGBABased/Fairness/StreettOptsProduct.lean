@@ -22,6 +22,7 @@
 -/
 import LTLLib.TGBABased.Product
 import LTLLib.TGBABased.SCC.StreettPruneFast
+import LTLLib.Tactic.Set
 
 namespace LTLLib.TGBAProduct
 
@@ -399,7 +400,7 @@ theorem optBitsFor_eq (tgba : TGBA α) (sysSucc : SysState → Array (LStep α S
 
 
 /-- `foldl_or_testBit` for an unconditional `|||` fold, which is what a target's entry accumulates. -/
-private theorem foldl_or_testBit' {β : Type*} (g : β → Nat) (b : Nat) :
+private theorem foldl_or_testBit' {β : Type w} (g : β → Nat) (b : Nat) :
     ∀ (l : List β) (init : Nat),
       (l.foldl (fun acc x => acc ||| g x) init).testBit b = true ↔
         init.testBit b = true ∨ ∃ x ∈ l, (g x).testBit b = true
@@ -447,7 +448,7 @@ private theorem foldl_insert_getD [LawfulBEq SysState] (p' : SysState × Nat)
       simp [he]
 
 /-- The second component of a pairwise fold is the fold of the second components. -/
-private theorem foldl_pair_snd {γ δ : Type*} (h : Std.HashSet Nat → δ → Std.HashSet Nat)
+private theorem foldl_pair_snd {γ : Type w} {δ : Type w'} (h : Std.HashSet Nat → δ → Std.HashSet Nat)
     (f : γ → δ → γ) :
     ∀ (l : List δ) (a : Std.HashSet Nat) (c : γ),
       (l.foldl (init := (a, c)) fun acc e => (h acc.1 e, f acc.2 e)).2
@@ -456,7 +457,7 @@ private theorem foldl_pair_snd {γ δ : Type*} (h : Std.HashSet Nat → δ → S
   | e :: l, a, c => foldl_pair_snd h f l _ _
 
 /-- The first component, likewise. -/
-private theorem foldl_pair_fst {γ δ : Type*} (h : Std.HashSet Nat → δ → Std.HashSet Nat)
+private theorem foldl_pair_fst {γ : Type w} {δ : Type w'} (h : Std.HashSet Nat → δ → Std.HashSet Nat)
     (f : γ → δ → γ) :
     ∀ (l : List δ) (a : Std.HashSet Nat) (c : γ),
       (l.foldl (init := (a, c)) fun acc e => (h acc.1 e, f acc.2 e)).1
@@ -474,7 +475,7 @@ triples reaching a target to be that target's realizations in the same order. -/
 
 /-- Membership in the fused pass's triples: exactly the compatible (step, transition) pairs. Generic in
 the payload, so it applies whatever `simp` has made of the option-bit `if`. -/
-private theorem mem_fusedTriples {γ : Type*} (tgba : TGBA α)
+private theorem mem_fusedTriples {γ : Type w} (tgba : TGBA α)
     (q : Nat) (base : Std.HashSet α) (steps : Array (LStep α SysState))
     (mk : LStep α SysState → TGBA.Transition α → γ) (e : (SysState × Nat) × γ) :
     (e ∈ steps.flatMap fun st =>
@@ -495,7 +496,7 @@ private theorem mem_fusedTriples {γ : Type*} (tgba : TGBA α)
 /-- One step's contribution, when it does reach `p'`: the transitions it is compatible with that land on
 `p'.2`, in order. Proved on the transition list, elementwise, so neither side has to be coaxed into the
 other's normal form (the left is a `filterMap`, the right a `map` of a `filter`). -/
-private theorem step_payload {γ : Type*} (lbl : Std.HashSet α) (tgt : SysState)
+private theorem step_payload {γ : Type w} (lbl : Std.HashSet α) (tgt : SysState)
     (mk : TGBA.Transition α → γ) (p' : SysState × Nat) (hs : tgt = p'.1)
     (l : List (TGBA.Transition α)) :
     (((l.filterMap fun t =>
@@ -522,7 +523,7 @@ every step and filters inside; a step that reaches a different target contribute
 either way, so `flatMap` sees the same sequence. That the sequences match *in order* is what makes the
 marks equal as `Std.HashSet` **values** — `ExpandCoherent` asks for equality, and a union fold is only
 order-insensitive up to membership. -/
-private theorem fusedTriples_filter_payload {γ : Type*} (tgba : TGBA α)
+private theorem fusedTriples_filter_payload {γ : Type w} (tgba : TGBA α)
     (q : Nat) (base : Std.HashSet α) (steps : Array (LStep α SysState))
     (mk : LStep α SysState → TGBA.Transition α → γ) (p' : SysState × Nat) :
     ((steps.flatMap fun st =>

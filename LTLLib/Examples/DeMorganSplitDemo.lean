@@ -31,7 +31,6 @@
 -/
 import LTLLib
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
-import Mathlib.Tactic.DeriveFintype
 
 namespace LTLLib.Examples.DeMorganSplit
 
@@ -40,7 +39,7 @@ open LTLLib
 inductive Stage where
   | idle | recv | work | emit
   | bidle | brecv | bwork | bemit
-deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
+deriving BEq, Hashable, Repr, Inhabited, DecidableEq
 
 instance : LawfulBEq Stage where
   eq_of_beq {a b} h := by cases a <;> cases b <;> first | rfl | exact absurd h (by decide)
@@ -68,7 +67,8 @@ def label : Stage → Std.HashSet String
 
 def init : List Stage := [.idle]
 
-def fr : FiniteReach init succ := Set.toFinite _
+def fr : FiniteReach init succ :=
+  .of_forall_mem [.idle, .recv, .work, .emit, .bidle, .brecv, .bwork, .bemit] fun s => by cases s <;> simp
 
 def served : Formula String := .always (.eventually (.atom "served"))
 

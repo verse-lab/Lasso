@@ -51,6 +51,7 @@
 import LTLLib.TGBABased.AbstractSpec.Pumping
 import LTLLib.TGBABased.AbstractSpec.SCCTheory
 import LTLLib.TGBABased.AbstractSpec.StreettSCC
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
@@ -313,8 +314,8 @@ private theorem exists_common_threshold' {β : Type u₂} (f : β → Nat → Pr
     obtain ⟨N₂, hN₂⟩ := exists_common_threshold' f l fun x hx => h x (by simp [hx])
     refine ⟨max N₁ N₂, fun x hx n hn => ?_⟩
     rcases List.mem_cons.mp hx with rfl | hx
-    · exact hN₁ n (le_trans (le_max_left _ _) hn)
-    · exact hN₂ x hx n (le_trans (le_max_right _ _) hn)
+    · exact hN₁ n (Nat.le_trans (Nat.le_max_left _ _) hn)
+    · exact hN₂ x hx n (Nat.le_trans (Nat.le_max_right _ _) hn)
 
 /-- The conjunction of a selection holds at a letter exactly when every member's region does. -/
 theorem selRegion_eq_true {sel : List (StreettOption L)} {l : L}

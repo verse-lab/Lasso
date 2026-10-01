@@ -333,8 +333,8 @@ private theorem exists_common_threshold {β : Type u₂} (f : β → Nat → Pro
     obtain ⟨N₂, hN₂⟩ := exists_common_threshold f l fun x hx => h x (by simp [hx])
     refine ⟨max N₁ N₂, fun x hx n hn => ?_⟩
     rcases List.mem_cons.mp hx with rfl | hx
-    · exact hN₁ n (le_trans (le_max_left _ _) hn)
-    · exact hN₂ x hx n (le_trans (le_max_right _ _) hn)
+    · exact hN₁ n (Nat.le_trans (Nat.le_max_left _ _) hn)
+    · exact hN₂ x hx n (Nat.le_trans (Nat.le_max_right _ _) hn)
 
 /-- A run that covers the property marks and satisfies every conjunct settles into a `FairSCC`, [LSFZ16, Theorem 2]
 read one conjunct at a time. -/

@@ -99,27 +99,16 @@ structure WellFormed (tgba : TGBA α) : Prop where
 /-- The `FiniteReach` witness of a well-formed `TGBA`, its state set bounding the reachable set. -/
 def finiteReach (tgba : TGBA α) (hwf : tgba.WellFormed) :
     FiniteReach tgba.initialStates.toList tgba.succStates := by
-  show {q | Reachable tgba.initialStates.toList tgba.succStates q}.Finite
-  have hsub : {q | Reachable tgba.initialStates.toList tgba.succStates q} ⊆
-      {x | tgba.states.contains x} := by
-    intro q hq
-    induction hq with
-    | base hi =>
-      exact hwf.initial_mem _ (by
-        show tgba.isInitial _ = true
-        exact Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp hi))
-    | step _ hmem ih =>
-      rename_i prev cur
-      obtain ⟨t, ht, rfl⟩ := Array.mem_map.mp hmem
-      exact hwf.succ_mem _ _ ih ht
-  have hfin : {x | tgba.states.contains x}.Finite := by
-    have heq : {x | tgba.states.contains x} = {x | x ∈ tgba.states.toList} := by
-      ext x
-      exact ⟨fun h => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr h),
-        fun h => Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp h)⟩
-    rw [heq]
-    exact List.finite_toSet tgba.states.toList
-  exact hfin.subset hsub
+  refine ⟨tgba.states.toList, fun q hq => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr ?_)⟩
+  induction hq with
+  | base hi =>
+    exact hwf.initial_mem _ (by
+      show tgba.isInitial _ = true
+      exact Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp hi))
+  | step _ hmem ih =>
+    rename_i prev cur
+    obtain ⟨t, ht, rfl⟩ := Array.mem_map.mp hmem
+    exact hwf.succ_mem _ _ ih ht
 
 /-! ## Proof-level bridge -/
 
@@ -172,7 +161,7 @@ private theorem TGBA.mem_edgeMarks_iff (tgba : TGBA α) (q q' m : Nat) :
         · exact Or.inr ⟨t, ht, htm⟩
   rw [TGBA.edgeMarks, ← Array.foldl_toList, hfold, Std.HashSet.contains_emptyWithCapacity]
   simp only [Bool.false_eq_true, false_or, ← Array.mem_def, Array.mem_filter, beq_iff_eq]
-  tauto
+  grind
 
 private theorem TGBA.mem_edgeMarksTable_iff (tgba : TGBA α) (q q' m : Nat) :
     (tgba.edgeMarksTable.getD (q, q') (Std.HashSet.emptyWithCapacity 0)).contains m ↔

@@ -33,6 +33,8 @@
 -/
 import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
 import LTLLib.AbstractSpec.GraphPaths
+import LTLLib.Data.Nat
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
@@ -202,7 +204,7 @@ private theorem chain_forward {succs : State → Array State} {rng : Nat → Std
   | succ j hij ih =>
     intro hjhi1 s hs t ht
     have hjhi : j ≤ hi := by omega
-    obtain ⟨s', hs', t', ht', hedge⟩ := hchain j (hloi.trans hij) (by omega)
+    obtain ⟨s', hs', t', ht', hedge⟩ := hchain j (Nat.le_trans hloi hij) (by omega)
     have hmidedge : t' ∈ sccSuccs succs big s' := by
       unfold sccSuccs
       exact Array.mem_filter.mpr ⟨hedge, Std.HashSet.mem_iff_contains.mp (hmem (j + 1) (by omega) hjhi1 t' ht')⟩
@@ -235,11 +237,11 @@ theorem InternallyConnected.chain_merge {succs : State → Array State} {rng : N
   · exact chain_forward hmem hconn hchain i hloi hihi j hij hjhi s hs t ht
   · -- wrap around: `s` forward to `rng hi`, the back-edge to `rng lo`, then forward again to `t`.
     obtain ⟨s', hs', t', ht', hedge⟩ := hback
-    have hstep1 := chain_forward hmem hconn hchain i hloi hihi hi (by omega) (le_refl _) s hs s' hs'
+    have hstep1 := chain_forward hmem hconn hchain i hloi hihi hi (by omega) (Nat.le_refl _) s hs s' hs'
     have hmidedge : t' ∈ sccSuccs succs big s' := by
       unfold sccSuccs
-      exact Array.mem_filter.mpr ⟨hedge, Std.HashSet.mem_iff_contains.mp (hmem lo (le_refl _) (hloi.trans hihi) t' ht')⟩
-    have hstep3 := chain_forward hmem hconn hchain lo (le_refl _) (hloi.trans hihi) j (by omega) hjhi t' ht' t ht
+      exact Array.mem_filter.mpr ⟨hedge, Std.HashSet.mem_iff_contains.mp (hmem lo (Nat.le_refl _) (Nat.le_trans hloi hihi) t' ht')⟩
+    have hstep3 := chain_forward hmem hconn hchain lo (Nat.le_refl _) (Nat.le_trans hloi hihi) j (by omega) hjhi t' ht' t ht
     rcases hstep1 with heq1 | hp1
     · subst heq1
       rcases hstep3 with heq3 | hp3
@@ -370,7 +372,7 @@ private theorem build_tour {succs : State → Array State}
         ∀ m ∈ ms, ∃ (i : Nat) (hi : i + 1 < l'.length), m ∈ edgeMarks (l'[i]) (l'[i + 1]) := by
   intro ms
   induction ms with
-  | nil => intro _ l hne hlast hchain; exact ⟨l, hne, rfl, hlast, le_refl _, hchain, by simp⟩
+  | nil => intro _ l hne hlast hchain; exact ⟨l, hne, rfl, hlast, Nat.le_refl _, hchain, by simp⟩
   | cons m rest ih =>
     intro hms l hne hlast hchain
     obtain ⟨l1, hne1, hhead1, hlast1, hlen1, hchain1, hcov1⟩ :=

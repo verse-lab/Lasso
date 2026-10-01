@@ -266,7 +266,7 @@ theorem expand_invariants (node : ExpansionNode α S)
         nameFresh := mergeIncoming_preserves_absent st node existingName _ h_not_in
         freshInv := mergeIncoming_freshInv st node existingName h_fresh
         nameBound := by rw [mergeIncoming_nextName]; exact h_name
-        nextNameMono := by rw [mergeIncoming_nextName]
+        nextNameMono := by simp only [mergeIncoming_nextName, Nat.le_refl]
       }
     · -- Insert + recurse
       simp only [freshName] at h_result

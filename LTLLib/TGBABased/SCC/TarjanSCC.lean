@@ -39,6 +39,7 @@ import LTLLib.TGBABased.AbstractSpec.SCCTheory
 import LTLLib.TGBABased.SCC.GenericDFS
 import LTLLib.TGBABased.SCC.LiveStack
 import LTLLib.TGBABased.SCC.SCCEnumeration
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
@@ -387,7 +388,7 @@ theorem tarjan_acceptingMarks_of_full [Inhabited State] [LawfulBEq State] [Lawfu
         ((1 <<< numMarks).testBit b = true ∨ b ∈ edgeMarks u v) := by
     intro b hb
     have htb : (V.accAt aux 0).testBit b = true := by
-      rw [hfull, fullMask, Nat.shiftLeft_eq, one_mul, Nat.testBit_two_pow_sub_one]
+      rw [hfull, fullMask, Nat.shiftLeft_eq, Nat.one_mul, Nat.testBit_two_pow_sub_one]
       simpa using Nat.lt_succ_of_le hb
     obtain ⟨u, v, pu, pv, he, hu, hv, hlo, ⟨l, hl, hlb⟩, -, hmk⟩ := hwf.acc_sound 0 (by simp) b htb
     obtain rfl : l = 0 := by omega
@@ -399,11 +400,11 @@ theorem tarjan_acceptingMarks_of_full [Inhabited State] [LawfulBEq State] [Lawfu
     exact ⟨u, (mem_flushedSet _ _ u).mpr ⟨pu, hpu, hlo, hpu'⟩,
       v, (mem_flushedSet _ _ v).mpr ⟨pv, hpv, hlb, hpv'⟩, he.mem, hmk⟩
   refine ⟨?_, fun m hm => ?_⟩
-  · obtain ⟨u, hu, v, hv, he, -⟩ := hbit numMarks le_rfl
+  · obtain ⟨u, hu, v, hv, he, -⟩ := hbit numMarks (Nat.le_refl _)
     exact ⟨u, hu, v, hv, he⟩
-  · obtain ⟨u, hu, v, hv, he, hmk⟩ := hbit m hm.le
+  · obtain ⟨u, hu, v, hv, he, hmk⟩ := hbit m (Nat.le_of_lt hm)
     refine ⟨u, hu, v, hv, he, hmk.resolve_left ?_⟩
-    simp only [Nat.shiftLeft_eq, one_mul, Nat.testBit_two_pow, decide_eq_true_eq]
+    simp only [Nat.shiftLeft_eq, Nat.one_mul, Nat.testBit_two_pow, decide_eq_true_eq]
     omega
 
 /-- At a closing POP, a flushed set covering every mark leaves the accumulator full, the graph's own marks being
@@ -424,7 +425,7 @@ theorem tarjan_full_of_acceptingMarks [Inhabited State] [LawfulBEq State] [Lawfu
   have hcomp := hwf.close_acc_complete hsucc hidx
   apply Nat.eq_of_testBit_eq
   intro b
-  rw [fullMask, Nat.shiftLeft_eq, one_mul, Nat.testBit_two_pow_sub_one]
+  rw [fullMask, Nat.shiftLeft_eq, Nat.one_mul, Nat.testBit_two_pow_sub_one]
   rcases Nat.lt_trichotomy b numMarks with hb | rfl | hb
   -- a property mark, carried by an internal edge
   · obtain ⟨u, hu, v, hv, he, hm⟩ := hA.2 b hb
@@ -488,7 +489,7 @@ theorem tarjan_sccHintSound [LawfulBEq State] [LawfulHashable State] [Inhabited 
     obtain ⟨h1, h2⟩ := hwf.frame_pos ⟨step.state, (tarjanView numMarks).posNat step.pos, step.idx, step.acc⟩
       (List.mem_cons_self ..)
     rw [getElem!_pos ((tarjanView numMarks).live aux) _ h1] at h2
-    exact (mem_flushedSet _ _ anchor).mpr ⟨_, h1, le_refl _, h2.trans hanchor⟩
+    exact (mem_flushedSet _ _ anchor).mpr ⟨_, h1, Nat.le_refl _, h2.trans hanchor⟩
   have hAF := tarjan_acceptingMarks_of_full numMarks hclose hwf hacc0
   exact ⟨hconn.congr hmemF, hAF.mono (fun s hs => (hmemF s).mp hs), (hmemF anchor).mp hanchorF,
     genericDFS_stem_path (tarjanOps numMarks) succs edgeMarks expand hexp initialStates _ anchor stem hfound⟩

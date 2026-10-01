@@ -31,6 +31,7 @@
   the route was benchmarked; it is now a cross-check of the executable against the theorem.
 -/
 import LTLLib.TGBABased.SCC.StreettPrune
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
@@ -357,6 +358,8 @@ theorem CompiledSpec.edgeBits_testBit_ge (cs : CompiledSpec State L) (hwf : cs.W
   simp only [Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq, scanOptionsAt_fst_testBit,
     scanOptionsAt_snd_testBit cs hwf]
   simp [Nat.one_shiftLeft, Nat.testBit_two_pow_sub_one]
+  intro h
+  omega
 
 omit [Hashable State] in
 /-- No edge carries a mark bit at or above `numOptMarks`: what makes the scan's early exit lossless. -/
@@ -375,7 +378,7 @@ private def InSccF (liveIndex : Std.HashMap State Nat) (lo : Nat) (t : State) : 
 private theorem sameBitsFrom_eq_true (os : Array Nat) (n b : Nat) :
     ∀ m k, n - k = m → (sameBitsFrom os n k b = true ↔ ∀ k', k ≤ k' → k' < n → os[k']! = b) := by
   intro m
-  induction m using Nat.strong_induction_on with
+  induction m using Nat.strongRecOn with
   | _ m ih =>
   intro k hm
   rw [sameBitsFrom]
@@ -400,7 +403,7 @@ private theorem scanEdgesF_fst_testBit (liveIndex : Std.HashMap State Nat) (lo s
         ra.testBit b = true ∧ ∀ k', k ≤ k' → (hk' : k' < ss.size) →
           InSccF liveIndex lo ss[k'] → (os[k']!).testBit b = true) := by
   intro n
-  induction n using Nat.strong_induction_on with
+  induction n using Nat.strongRecOn with
   | _ n ih =>
   intro k ra ms hn
   rw [scanEdgesF]
@@ -472,7 +475,7 @@ private theorem scanEdgesF_snd_testBit (liveIndex : Std.HashMap State Nat) (lo s
         ms.testBit b = true ∨ ∃ k', k ≤ k' ∧ ∃ hk' : k' < ss.size,
           InSccF liveIndex lo ss[k'] ∧ (os[k']!).testBit (shift + b) = true) := by
   intro n
-  induction n using Nat.strong_induction_on with
+  induction n using Nat.strongRecOn with
   | _ n ih =>
   intro k ra ms hn
   rw [scanEdgesF]
@@ -550,7 +553,7 @@ private theorem scanLiveF_fst_testBit (cs : CompiledSpec State L) (liveIndex : S
         ra.testBit b = true ∧ ∀ j, i ≤ j → (hj : j < lsuccs.size) → ∀ k, (hk : k < lsuccs[j].size) →
           InSccF liveIndex lo lsuccs[j][k] → (lopts[j]![k]!).testBit b = true) := by
   intro n
-  induction n using Nat.strong_induction_on with
+  induction n using Nat.strongRecOn with
   | _ n ih =>
   intro i ra ms hn
   rw [scanLiveF]
@@ -595,7 +598,7 @@ private theorem scanLiveF_snd_testBit (cs : CompiledSpec State L) (liveIndex : S
         ms.testBit b = true ∨ ∃ j, i ≤ j ∧ ∃ hj : j < lsuccs.size, ∃ k, ∃ hk : k < lsuccs[j].size,
           InSccF liveIndex lo lsuccs[j][k] ∧ (lopts[j]![k]!).testBit (cs.numOptions + b) = true) := by
   intro n
-  induction n using Nat.strong_induction_on with
+  induction n using Nat.strongRecOn with
   | _ n ih =>
   intro i ra ms hloi hn
   rw [scanLiveF]
@@ -837,7 +840,7 @@ private theorem markBitsAt_testBit (gs : Array (L → Bool)) (l : L) (base b : N
       ((markBitsAt gs l base j acc).testBit b = true ↔
         acc.testBit b = true ∨ ∃ k, j ≤ k ∧ k < gs.size ∧ base + k = b ∧ gs[k]! l = true) := by
   intro n
-  induction n using Nat.strong_induction_on with
+  induction n using Nat.strongRecOn with
   | _ n ih =>
   intro j acc hn
   rw [markBitsAt]
@@ -885,7 +888,7 @@ private theorem letterBitsFrom_testBit (cs : CompiledSpec State L) (l : L) (b : 
           ∃ k, k < (cs.letterOptions[p]!).marks.size ∧ cs.numOptions + cs.optMarkBase[p]! + k = b ∧
             ((cs.letterOptions[p]!).marks)[k]! l = true)) := by
   intro n
-  induction n using Nat.strong_induction_on with
+  induction n using Nat.strongRecOn with
   | _ n ih =>
   intro o acc hn
   rw [letterBitsFrom]

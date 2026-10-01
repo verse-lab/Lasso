@@ -82,6 +82,7 @@ import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
 import LTLLib.TGBABased.AbstractSpec.SCCTheory
 import LTLLib.TGBABased.SCC.GenericDFS
 import LTLLib.TGBABased.SCC.LiveStack
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
@@ -282,7 +283,7 @@ private theorem mem_foldl_insert [LawfulBEq State] (l : List State) (init : Std.
   | nil => simp
   | cons a l ih =>
     simp only [List.foldl_cons, ih, Std.HashSet.mem_insert, List.mem_cons, beq_iff_eq]
-    tauto
+    grind
 
 /-- `x` is in the range rooted at `roots[i]` iff `live` holds it between `rangeStart i` and `rangeEnd i`. -/
 theorem DijkstraAux.mem_range_iff [LawfulBEq State] [Inhabited State] (aux : DijkstraAux State) (i : Nat) (x : State) :
@@ -343,7 +344,7 @@ theorem dijkstraRootsWF_push (aux : DijkstraAux State) (q : State) (marks : Std.
   · intro i j hij h
     simp only [Array.size_push] at h
     rcases Nat.lt_succ_iff_lt_or_eq.mp h with hjlt | hjeq
-    · rw [Array.getElem!_push_lt (hij.trans hjlt), Array.getElem!_push_lt hjlt]
+    · rw [Array.getElem!_push_lt (Nat.lt_trans hij hjlt), Array.getElem!_push_lt hjlt]
       exact hmono i j hij hjlt
     · subst hjeq
       rw [Array.getElem!_push_lt hij, Array.getElem!_push_eq]
@@ -352,7 +353,7 @@ theorem dijkstraRootsWF_push (aux : DijkstraAux State) (q : State) (marks : Std.
     simp only [Array.size_push] at h
     simp only [Array.size_push]
     rcases Nat.lt_succ_iff_lt_or_eq.mp h with hilt | heq
-    · rw [Array.getElem!_push_lt hilt]; exact (hlt i hilt).trans (by omega)
+    · rw [Array.getElem!_push_lt hilt]; exact Nat.lt_trans (hlt i hilt) (by omega)
     · subst heq; rw [Array.getElem!_push_eq]; simp
   · intro _
     simp only
@@ -382,7 +383,7 @@ private theorem DijkstraRootsWF.chain_pop {aux : DijkstraAux State} (hwf : Dijks
     rwa [hys, Array.getElem!_push_lt hi, Array.getElem!_push_eq] at this
   · have hjb : j < aux.roots.size := by rw [hys]; simp; omega
     have := hmono i j hij hjb
-    rwa [hys, Array.getElem!_push_lt (hij.trans hj), Array.getElem!_push_lt hj] at this
+    rwa [hys, Array.getElem!_push_lt (Nat.lt_trans hij hj), Array.getElem!_push_lt hj] at this
   · have hb0 := hbase (show 0 < aux.roots.size from by rw [hys]; simp)
     rwa [hys, Array.getElem!_push_lt hpos] at hb0
   · have hb0 := hbase (show 0 < aux.roots.size from by rw [hys]; simp)
@@ -403,7 +404,7 @@ private theorem dijkstraMergeRoots_spec (dpos : Nat) :
     unfold dijkstraMergeRoots
     simp only [hcond, if_true]
     rw [hnone]
-    exact ⟨le_refl _, le_refl _, hchain, fun i _ => rfl⟩
+    exact ⟨Nat.le_refl _, Nat.le_refl _, hchain, fun i _ => rfl⟩
   | case2 roots r a e hcond r1 la e1 hb ih =>
     intro hchain
     obtain ⟨ys, hys⟩ := Array.back?_eq_some_iff.mp hb
@@ -417,8 +418,8 @@ private theorem dijkstraMergeRoots_spec (dpos : Nat) :
       refine ⟨fun i hi => ?_, fun i j hij hj => ?_, fun hpos => ?_, fun hempty => ?_⟩
       · have := hmono i ys.size hi (by simp)
         rwa [Array.getElem!_push_lt hi, Array.getElem!_push_eq] at this
-      · have := hmono i j hij (hj.trans (by simp))
-        rwa [Array.getElem!_push_lt (hij.trans hj), Array.getElem!_push_lt hj] at this
+      · have := hmono i j hij (Nat.lt_trans hj (by simp))
+        rwa [Array.getElem!_push_lt (Nat.lt_trans hij hj), Array.getElem!_push_lt hj] at this
       · have hb0 := hbase0 (show 0 < (ys.push ⟨r1, la, e1⟩).size from by simp)
         rwa [Array.getElem!_push_lt hpos] at hb0
       · have hb0 := hbase0 (show 0 < (ys.push ⟨r1, la, e1⟩).size from by simp)
@@ -433,13 +434,13 @@ private theorem dijkstraMergeRoots_spec (dpos : Nat) :
     dsimp only
     rw [hpop]
     refine ⟨by simp only [Array.size_push]; omega, by omega, h3, fun i hi => ?_⟩
-    have hilt : i < ys.size := lt_of_lt_of_le hi h1
+    have hilt : i < ys.size := Nat.lt_of_lt_of_le hi h1
     rw [h4 i hi, Array.getElem!_push_lt hilt]
   | case3 roots r a e hcond =>
     intro hchain
     unfold dijkstraMergeRoots
     simp only [hcond, if_false]
-    exact ⟨le_refl _, le_refl _, hchain, fun i _ => trivial⟩
+    exact ⟨Nat.le_refl _, Nat.le_refl _, hchain, fun i _ => trivial⟩
 
 private theorem dijkstraMergeRoots_bitmask_mono (dpos m : Nat) :
     ∀ (roots : Array RootEntry) (r a e : Nat), a.testBit m = true →
@@ -609,7 +610,7 @@ private theorem dijkstraMergeRoots_size_le (dpos : Nat) :
   | case1 roots r a e hcond hnone =>
     unfold dijkstraMergeRoots
     simp only [hcond, if_true]
-    rw [hnone]
+    rw [hnone]; exact Nat.le_refl _
   | case2 roots r a e hcond r1 la e1 hb ih =>
     obtain ⟨ys, hys⟩ := Array.back?_eq_some_iff.mp hb
     subst hys
@@ -653,7 +654,7 @@ private theorem dijkstraMergeRoots_bitmask_elim (dpos : Nat) (P : Nat → Prop) 
     simp only [hpop] at ih
     have hstep : dijkstraMergeRoots dpos (ys.push ⟨r1, la, e1⟩) r a e =
         dijkstraMergeRoots dpos ys r1 (a ||| e ||| la) e1 := by
-      conv_lhs => unfold dijkstraMergeRoots
+      conv => lhs; unfold dijkstraMergeRoots
       simp only [hcond, if_true]
       rw [hb]
       dsimp only
@@ -699,7 +700,7 @@ private theorem eq_allOnesMask_of_testBit_cover {a numMarks : Nat} (hbound : a <
   · simp only [hi, decide_true]
     exact hcov i hi
   · simp only [hi, decide_false]
-    exact Nat.testBit_lt_two_pow (lt_of_lt_of_le hbound (Nat.pow_le_pow_right (by omega) (by omega)))
+    exact Nat.testBit_lt_two_pow (Nat.lt_of_lt_of_le hbound (Nat.pow_le_pow_right (by omega) (by omega)))
 
 private theorem foldl_or_lt_two_pow {numMarks : Nat} :
     ∀ (l : List Nat), (∀ m ∈ l, m < numMarks) → ∀ init, init < 2 ^ numMarks →
@@ -854,8 +855,8 @@ private theorem dijkstraMergeRoots_locate (dpos : Nat) :
       refine ⟨fun i hi => ?_, fun i j hij hj => ?_, fun hpos => ?_, fun hempty => ?_⟩
       · have := hmono i ys.size hi (by simp)
         rwa [Array.getElem!_push_lt hi, Array.getElem!_push_eq] at this
-      · have := hmono i j hij (hj.trans (by simp))
-        rwa [Array.getElem!_push_lt (hij.trans hj), Array.getElem!_push_lt hj] at this
+      · have := hmono i j hij (Nat.lt_trans hj (by simp))
+        rwa [Array.getElem!_push_lt (Nat.lt_trans hij hj), Array.getElem!_push_lt hj] at this
       · have hb0 := hbase0 (show 0 < (ys.push ⟨r1, la, e1⟩).size from by simp)
         rwa [Array.getElem!_push_lt hpos] at hb0
       · have hb0 := hbase0 (show 0 < (ys.push ⟨r1, la, e1⟩).size from by simp)
@@ -925,7 +926,7 @@ theorem dijkstraRootsWF_update (numMarks : Nat) (aux : DijkstraAux State) (marks
       fun h => by simp only [Array.size_push] at h; omega⟩
     · simp only [Array.size_push] at hj
       rcases Nat.lt_succ_iff_lt_or_eq.mp hj with hjlt | hjeq
-      · rw [Array.getElem!_push_lt (hij.trans hjlt), Array.getElem!_push_lt hjlt]
+      · rw [Array.getElem!_push_lt (Nat.lt_trans hij hjlt), Array.getElem!_push_lt hjlt]
         exact hs3b i j hij hjlt
       · subst hjeq
         rw [Array.getElem!_push_lt hij, Array.getElem!_push_eq]
@@ -933,10 +934,10 @@ theorem dijkstraRootsWF_update (numMarks : Nat) (aux : DijkstraAux State) (marks
     · simp only [Array.size_push] at hi
       rcases Nat.lt_succ_iff_lt_or_eq.mp hi with hilt | heq
       · rw [Array.getElem!_push_lt hilt]
-        exact lt_of_lt_of_le (lt_of_lt_of_le (hs3a i hilt) hs2) hr0.le
+        exact Nat.lt_of_lt_of_le (Nat.lt_of_lt_of_le (hs3a i hilt) hs2) (Nat.le_of_lt hr0)
       · subst heq
         rw [Array.getElem!_push_eq]
-        exact lt_of_le_of_lt hs2 hr0
+        exact Nat.lt_of_le_of_lt hs2 hr0
     · -- new top-level `rootsBase`: either the merge survived (its own `roots0`) or fully collapsed (its `rZero`)
       by_cases hc : 0 < res.1.size
       · rw [Array.getElem!_push_lt hc]; exact hs3c hc
@@ -1004,7 +1005,7 @@ private theorem dijkstraUpdate_merge_locate [Inhabited State] [LawfulBEq State] 
           unfold DijkstraAux.rangeEnd
           rw [heq]
           simp only [show ¬ ys.size + 1 < aux.roots.size from by omega, if_false]
-        rw [hend, min_self]; exact hdpos_lt
+        rw [hend, Nat.min_self]; exact hdpos_lt
       · have hlo1 : lo + 1 < aux.roots.size := by omega
         have hend : aux.rangeEnd lo = aux.rangeStart (lo + 1) := by
           unfold DijkstraAux.rangeEnd
@@ -1324,12 +1325,12 @@ private theorem DijkstraPosChain.le_head [Inhabited State] {s : DFSStep State Na
     {rest : List (DFSStep State Nat)} (h : DijkstraPosChain (s :: rest)) :
     ∀ st ∈ s :: rest, st.pos ≤ s.pos := by
   induction rest generalizing s with
-  | nil => intro st hst; simp only [List.mem_singleton] at hst; rw [hst]
+  | nil => intro st hst; simp only [List.mem_singleton] at hst; rw [hst]; exact Nat.le_refl _
   | cons t rest' ih =>
     intro st hst
     rcases List.mem_cons.mp hst with rfl | hst
-    · exact le_refl _
-    · exact (ih h.2 st hst).trans h.1.le
+    · exact Nat.le_refl _
+    · exact Nat.le_trans (ih h.2 st hst) (Nat.le_of_lt h.1)
 
 omit [BEq State] [Hashable State] in
 omit [BEq State] [Hashable State] in
@@ -1339,7 +1340,7 @@ private theorem DijkstraPosChain.lt_head [Inhabited State] {s : DFSStep State Na
     ∀ st ∈ rest, st.pos < s.pos := by
   cases rest with
   | nil => intro st hst; simp at hst
-  | cons t rest' => intro st hst; exact lt_of_le_of_lt (h.2.le_head st hst) h.1
+  | cons t rest' => intro st hst; exact Nat.lt_of_le_of_lt (h.2.le_head st hst) h.1
 
 omit [BEq State] [Hashable State] in
 private theorem DijkstraPosChain.cons [Inhabited State] {s : DFSStep State Nat}
@@ -1451,8 +1452,8 @@ private theorem DijkstraStackRoots.pop [Inhabited State] [LawfulBEq State] [Lawf
   have hjle : ∀ j, j < aux.roots.size → (aux.roots[j]!).root ≤ r := by
     intro j hj
     rcases Nat.lt_or_eq_of_le (show j ≤ aux.roots.size - 1 from by omega) with hlt | heq
-    · exact le_of_lt (hrtop ▸ hwf.rootsMono j (aux.roots.size - 1) hlt (by omega))
-    · rw [heq, hrtop]
+    · exact Nat.le_of_lt (hrtop ▸ hwf.rootsMono j (aux.roots.size - 1) hlt (by omega))
+    · rw [heq, hrtop]; exact Nat.le_refl _
   have hrle : r ≤ step.pos := by
     obtain ⟨st, hst, hsteq⟩ := List.mem_map.mp (hroot (aux.roots.size - 1) (by omega))
     rw [← hrtop, ← hsteq]; exact hchain.le_head st hst
@@ -1539,7 +1540,7 @@ private theorem dijkstraStackRoots_head_mem_top [Inhabited State] [LawfulBEq Sta
   · have hend : aux.rangeEnd (aux.roots.size - 1) = aux.live.size := by
       unfold DijkstraAux.rangeEnd
       simp only [show ¬ aux.roots.size - 1 + 1 < aux.roots.size from by omega, if_false]
-    rw [hend, min_self]
+    rw [hend, Nat.min_self]
     exact (hlive step (by simp)).1
 
 private theorem DijkstraAux.rangeStart_mono {aux : DijkstraAux State} (hwf : DijkstraRootsWF aux)
@@ -1548,9 +1549,9 @@ private theorem DijkstraAux.rangeStart_mono {aux : DijkstraAux State} (hwf : Dij
 
 private theorem DijkstraAux.rangeStart_le {aux : DijkstraAux State} (hwf : DijkstraRootsWF aux)
     {i j : Nat} (hij : i ≤ j) (hj : j < aux.roots.size) : aux.rangeStart i ≤ aux.rangeStart j := by
-  rcases eq_or_lt_of_le hij with heq | hlt
-  · rw [heq]
-  · exact (DijkstraAux.rangeStart_mono hwf hlt hj).le
+  rcases Nat.eq_or_lt_of_le hij with heq | hlt
+  · rw [heq]; exact Nat.le_refl _
+  · exact Nat.le_of_lt (DijkstraAux.rangeStart_mono hwf hlt hj)
 
 private theorem DijkstraAux.exists_range_index {aux : DijkstraAux State} :
     ∀ k i, k = aux.roots.size - i → i < aux.roots.size → ∀ p, aux.rangeStart i ≤ p → p < aux.live.size →
@@ -1561,8 +1562,8 @@ private theorem DijkstraAux.exists_range_index {aux : DijkstraAux State} :
   | succ k ih =>
     intro i hk hi p hp1 hp2
     by_cases hlt : p < aux.rangeEnd i
-    · exact ⟨i, le_refl _, hi, hp1, hlt⟩
-    · push_neg at hlt
+    · exact ⟨i, Nat.le_refl _, hi, hp1, hlt⟩
+    · rw [Nat.not_lt] at hlt
       have hi1 : i + 1 < aux.roots.size := by
         by_contra hc
         have hend : aux.rangeEnd i = aux.live.size := by
@@ -1581,8 +1582,8 @@ private theorem DijkstraAux.range_mem_unique [Inhabited State] [LawfulBEq State]
   rw [DijkstraAux.mem_range_iff] at hxi hxj
   obtain ⟨p, hp1, hp2, hp3⟩ := hxi
   obtain ⟨q, hq1, hq2, hq3⟩ := hxj
-  have hpb : p < aux.live.size := lt_of_lt_of_le hp2 (min_le_right _ _)
-  have hqb : q < aux.live.size := lt_of_lt_of_le hq2 (min_le_right _ _)
+  have hpb : p < aux.live.size := Nat.lt_of_lt_of_le hp2 (Nat.min_le_right _ _)
+  have hqb : q < aux.live.size := Nat.lt_of_lt_of_le hq2 (Nat.min_le_right _ _)
   have h1 := hwf.fwd p hpb
   have h2 := hwf.fwd q hqb
   rw [getElem!_pos aux.live p hpb] at hp3
@@ -1597,13 +1598,13 @@ private theorem DijkstraAux.range_mem_unique [Inhabited State] [LawfulBEq State]
       unfold DijkstraAux.rangeEnd
       rw [if_pos (show i + 1 < aux.roots.size from by omega)]
       exact DijkstraAux.rangeStart_le hrwf (by omega) hj
-    have hp2' : p < aux.rangeEnd i := lt_of_lt_of_le hp2 (min_le_left _ _)
+    have hp2' : p < aux.rangeEnd i := Nat.lt_of_lt_of_le hp2 (Nat.min_le_left _ _)
     omega
   · have hend_le : aux.rangeEnd j ≤ aux.rangeStart i := by
       unfold DijkstraAux.rangeEnd
       rw [if_pos (show j + 1 < aux.roots.size from by omega)]
       exact DijkstraAux.rangeStart_le hrwf (by omega) hi
-    have hq2' : p < aux.rangeEnd j := lt_of_lt_of_le hq2 (min_le_left _ _)
+    have hq2' : p < aux.rangeEnd j := Nat.lt_of_lt_of_le hq2 (Nat.min_le_left _ _)
     omega
 
 private theorem DijkstraAux.mem_range_pos [Inhabited State] [LawfulBEq State] {aux : DijkstraAux State}
@@ -1612,7 +1613,7 @@ private theorem DijkstraAux.mem_range_pos [Inhabited State] [LawfulBEq State] {a
     aux.rangeStart i ≤ p ∧ p < aux.rangeEnd i := by
   rw [DijkstraAux.mem_range_iff] at hx
   obtain ⟨p', hp1, hp2, hp3⟩ := hx
-  have hp'b : p' < aux.live.size := lt_of_lt_of_le hp2 (min_le_right _ _)
+  have hp'b : p' < aux.live.size := Nat.lt_of_lt_of_le hp2 (Nat.min_le_right _ _)
   have h1 := hwf.fwd p' hp'b
   have h2 := hwf.fwd p hpb
   rw [getElem!_pos aux.live p' hp'b] at hp3
@@ -1621,13 +1622,13 @@ private theorem DijkstraAux.mem_range_pos [Inhabited State] [LawfulBEq State] {a
   rw [hp] at h2
   have hpp : p' = p := by rw [h1] at h2; exact Option.some.inj h2
   subst hpp
-  exact ⟨hp1, lt_of_lt_of_le hp2 (min_le_left _ _)⟩
+  exact ⟨hp1, Nat.lt_of_lt_of_le hp2 (Nat.min_le_left _ _)⟩
 
 private theorem DijkstraAux.range_le_of_pos_lt {aux : DijkstraAux State} (hrwf : DijkstraRootsWF aux)
     {i j p q : Nat} (hi : i < aux.roots.size) (hpi : aux.rangeStart i ≤ p) (hqj : q < aux.rangeEnd j)
     (hpq : p < q) : i ≤ j := by
   by_contra hc
-  push_neg at hc
+  rw [Nat.not_le] at hc
   have hend_le : aux.rangeEnd j ≤ aux.rangeStart i := by
     unfold DijkstraAux.rangeEnd
     rw [if_pos (show j + 1 < aux.roots.size from by omega)]
@@ -1647,15 +1648,15 @@ private theorem dijkstraMerge_range_union [Inhabited State] [LawfulBEq State] {a
   rw [DijkstraAux.mem_range_iff, hstart_eq, hend_eq, hlive]
   constructor
   · rintro ⟨p, hp1, hp2, hp3⟩
-    have hp2' : p < aux.live.size := lt_of_lt_of_le hp2 (min_le_right _ _)
+    have hp2' : p < aux.live.size := Nat.lt_of_lt_of_le hp2 (Nat.min_le_right _ _)
     obtain ⟨j, hj1, hj2, hj3, hj4⟩ :=
       DijkstraAux.exists_range_index (aux.roots.size - lo) lo rfl hlo p hp1 hp2'
     exact ⟨j, hj1, hj2, (DijkstraAux.mem_range_iff aux j x).mpr ⟨p, hj3, Nat.lt_min.mpr ⟨hj4, hp2'⟩, hp3⟩⟩
   · rintro ⟨i, hloi, hin, hxi⟩
     rw [DijkstraAux.mem_range_iff] at hxi
     obtain ⟨p, hp1, hp2, hp3⟩ := hxi
-    have hp2' : p < aux.live.size := lt_of_lt_of_le hp2 (min_le_right _ _)
-    refine ⟨p, (DijkstraAux.rangeStart_le hwf hloi hin).trans hp1, Nat.lt_min.mpr ⟨hp2', hp2'⟩, hp3⟩
+    have hp2' : p < aux.live.size := Nat.lt_of_lt_of_le hp2 (Nat.min_le_right _ _)
+    refine ⟨p, Nat.le_trans (DijkstraAux.rangeStart_le hwf hloi hin) hp1, Nat.lt_min.mpr ⟨hp2', hp2'⟩, hp3⟩
 
 private theorem dijkstraMerge_connected [Inhabited State] [LawfulBEq State]
     {succs : State → Array State} {aux aux' : DijkstraAux State} {lo : Nat}
@@ -1688,7 +1689,7 @@ private theorem dijkstraMerge_range_prefix_eq [Inhabited State] {aux aux' : Dijk
   have hstart_le : ∀ j, j ≤ lo → aux'.rangeStart j = aux.rangeStart j := by
     intro j hj
     unfold DijkstraAux.rangeStart
-    rcases lt_or_eq_of_le hj with hlt | heq
+    rcases Nat.lt_or_eq_of_le hj with hlt | heq
     · rw [hpre j hlt]
     · rw [heq, htop]
   have hend : aux'.rangeEnd i = aux.rangeEnd i := by
@@ -1696,7 +1697,7 @@ private theorem dijkstraMerge_range_prefix_eq [Inhabited State] {aux aux' : Dijk
     rw [if_pos (show i + 1 < aux'.roots.size from by omega), if_pos (show i + 1 < aux.roots.size from by omega),
       hstart_le (i + 1) (by omega)]
   unfold DijkstraAux.range
-  rw [hstart_le i hi.le, hend, hlive]
+  rw [hstart_le i (Nat.le_of_lt hi), hend, hlive]
 
 private theorem dijkstraRangeInv_update [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     {numMarks : Nat} {aux : DijkstraAux State} {succs : State → Array State}
@@ -1738,7 +1739,7 @@ private theorem dijkstraRangeInv_update [Inhabited State] [LawfulBEq State] [Law
       exact ⟨t, (hprefix_eq i hilt) ▸ ht, u, (hprefix_eq (i + 1) hi1) ▸ hu, htu⟩
     · have hieq : i + 1 = lo := by omega
       obtain ⟨t, ht, u, hu, htu⟩ := hinv.chained i (by omega)
-      exact ⟨t, (hprefix_eq i hilt) ▸ ht, u, hieq ▸ (hunion u).mpr ⟨lo, le_refl _, hlo_lt, hieq ▸ hu⟩, htu⟩
+      exact ⟨t, (hprefix_eq i hilt) ▸ ht, u, hieq ▸ (hunion u).mpr ⟨lo, Nat.le_refl _, hlo_lt, hieq ▸ hu⟩, htu⟩
   · obtain ⟨lo1, hlo1eq, helim⟩ :=
       dijkstraUpdate_merge_bitmask_elim numMarks aux (edgeMarks s d) d hroots_pos
     rw [← haux'def] at hlo1eq helim
@@ -1754,7 +1755,7 @@ private theorem dijkstraRangeInv_update [Inhabited State] [LawfulBEq State] [Law
         u ∈ succs t ∧ m' ∈ edgeMarks t u) ?_ ?_ ?_ m hm
       -- the closing back edge itself, both endpoints inside the merged range
       · exact fun m' hm' => ⟨s, (hunion s).mpr ⟨aux.roots.size - 1, by omega, by omega, hsmem⟩,
-          d, (hunion d).mpr ⟨lo, le_refl _, hlo_lt, hd_range⟩, hdSucc, marksToBitmask_mem hm'⟩
+          d, (hunion d).mpr ⟨lo, Nat.le_refl _, hlo_lt, hd_range⟩, hdSucc, marksToBitmask_mem hm'⟩
       -- an absorbed range's own bitmask already named an edge internal to it
       · intro k hk1 hk2 m' hm'
         obtain ⟨t, ht, u, hu, htu, hmk⟩ := hinv.bitSound k hk2 m' hm'
@@ -1763,7 +1764,7 @@ private theorem dijkstraRangeInv_update [Inhabited State] [LawfulBEq State] [Law
       · intro k hk1 hk2 m' hm'
         obtain ⟨hkpos, t, ht, u, hu, htu, hmk⟩ := hinv.entrySound k hk2 m' hm'
         exact ⟨t, (hunion t).mpr ⟨k - 1, by omega, by omega, ht⟩,
-          u, (hunion u).mpr ⟨k, hk1.le, hk2, hu⟩, htu, hmk⟩
+          u, (hunion u).mpr ⟨k, Nat.le_of_lt hk1, hk2, hu⟩, htu, hmk⟩
   -- the surviving root keeps its own entry marks, and the range just below it is untouched by the merge
   · intro i hi m hm
     rw [haux'size] at hi
@@ -1775,7 +1776,7 @@ private theorem dijkstraRangeInv_update [Inhabited State] [LawfulBEq State] [Law
       rw [haux'entry] at hm
       obtain ⟨hipos, t, ht, u, hu, htu, hmk⟩ := hinv.entrySound lo hlo_lt m hm
       exact ⟨hipos, t, (hprefix_eq (lo - 1) (by omega)) ▸ ht,
-        u, (hunion u).mpr ⟨lo, le_refl _, hlo_lt, hu⟩, htu, hmk⟩
+        u, (hunion u).mpr ⟨lo, Nat.le_refl _, hlo_lt, hu⟩, htu, hmk⟩
 
 private theorem dijkstraPush_rangeStart_eq [Inhabited State] (aux : DijkstraAux State) (q : State)
     (marks : Std.HashSet Nat) (i : Nat) (hi : i < aux.roots.size) :
@@ -1805,8 +1806,8 @@ private theorem dijkstraRangeEnd_le_live [Inhabited State] (aux : DijkstraAux St
   unfold DijkstraAux.rangeEnd
   by_cases h : i + 1 < aux.roots.size
   · simp only [h, if_true]
-    exact (hwf.rootsLt (i + 1) h).le
-  · simp only [h, if_false, le_refl]
+    exact Nat.le_of_lt (hwf.rootsLt (i + 1) h)
+  · simp only [h, if_false, Nat.le_refl]
 
 private theorem dijkstraPush_range_mem_iff [Inhabited State] [LawfulBEq State] (aux : DijkstraAux State)
     (q : State) (marks : Std.HashSet Nat) (hwf : DijkstraRootsWF aux) (i : Nat) (hi : i < aux.roots.size)
@@ -1819,11 +1820,11 @@ private theorem dijkstraPush_range_mem_iff [Inhabited State] [LawfulBEq State] (
   have hlive_eq : (dijkstraPush aux q marks).1.live = aux.live.push q := by unfold dijkstraPush; rfl
   constructor
   · rintro ⟨p, hp1, hp2, hp3⟩
-    have hp2' : p < aux.rangeEnd i := lt_of_lt_of_le hp2 (min_le_left _ _)
+    have hp2' : p < aux.rangeEnd i := Nat.lt_of_lt_of_le hp2 (Nat.min_le_left _ _)
     refine ⟨p, hp1, Nat.lt_min.mpr ⟨hp2', by omega⟩, ?_⟩
     rwa [hlive_eq, Array.getElem!_push_lt (by omega)] at hp3
   · rintro ⟨p, hp1, hp2, hp3⟩
-    have hp2' : p < aux.rangeEnd i := lt_of_lt_of_le hp2 (min_le_left _ _)
+    have hp2' : p < aux.rangeEnd i := Nat.lt_of_lt_of_le hp2 (Nat.min_le_left _ _)
     refine ⟨p, hp1, Nat.lt_min.mpr ⟨hp2', by omega⟩, ?_⟩
     rwa [hlive_eq, Array.getElem!_push_lt (by omega)]
 
@@ -1842,7 +1843,7 @@ private theorem dijkstraGetStatus_unknown_not_mem_range [Inhabited State] [Lawfu
   intro hmem
   rw [DijkstraAux.mem_range_iff] at hmem
   obtain ⟨p, hp1, hp2, hp3⟩ := hmem
-  have hpb : p < aux.live.size := lt_of_lt_of_le hp2 (min_le_right _ _)
+  have hpb : p < aux.live.size := Nat.lt_of_lt_of_le hp2 (Nat.min_le_right _ _)
   have hlk := hwf.fwd p hpb
   rw [getElem!_pos aux.live p hpb] at hp3
   rw [hp3] at hlk
@@ -1856,7 +1857,7 @@ private theorem dijkstraGetStatus_dead_not_mem_range [Inhabited State] [LawfulBE
   intro hmem
   rw [DijkstraAux.mem_range_iff] at hmem
   obtain ⟨p, hp1, hp2, hp3⟩ := hmem
-  have hpb : p < aux.live.size := lt_of_lt_of_le hp2 (min_le_right _ _)
+  have hpb : p < aux.live.size := Nat.lt_of_lt_of_le hp2 (Nat.min_le_right _ _)
   have hlk := hwf.fwd p hpb
   rw [getElem!_pos aux.live p hpb] at hp3
   rw [hp3] at hlk
@@ -1890,12 +1891,12 @@ private theorem dijkstraPush_new_range_mem_iff [Inhabited State] [LawfulBEq Stat
     unfold dijkstraPush; simp only [Array.size_push]
   constructor
   · rintro ⟨p, hp1, hp2, hp3⟩
-    have hp2' : p < aux.live.size + 1 := lt_of_lt_of_le hp2 (min_le_left _ _)
+    have hp2' : p < aux.live.size + 1 := Nat.lt_of_lt_of_le hp2 (Nat.min_le_left _ _)
     have hpeq : p = aux.live.size := by omega
     rw [hpeq, hlive_eq, Array.getElem!_push_eq] at hp3
     exact hp3.symm
   · rintro rfl
-    exact ⟨aux.live.size, le_refl _, Nat.lt_min.mpr ⟨by omega, by omega⟩,
+    exact ⟨aux.live.size, Nat.le_refl _, Nat.lt_min.mpr ⟨by omega, by omega⟩,
       by rw [hlive_eq, Array.getElem!_push_eq]⟩
 
 /-! ## Witness extraction and the `DFSOps` instance -/
@@ -2167,12 +2168,12 @@ private theorem dijkstraPop_range_mem_iff_of_flush [Inhabited State] [LawfulBEq 
   rw [DijkstraAux.mem_range_iff, DijkstraAux.mem_range_iff, hstartEq, hendEq, hlivesizeeq]
   constructor
   · rintro ⟨p, hp1, hp2, hp3⟩
-    have hple : p < pos := lt_of_lt_of_le (lt_of_lt_of_le hp2 (min_le_left _ _)) hendLe
-    exact ⟨p, hp1, Nat.lt_min.mpr ⟨lt_of_lt_of_le hp2 (min_le_left _ _), hple.trans_le hposle⟩,
+    have hple : p < pos := Nat.lt_of_lt_of_le (Nat.lt_of_lt_of_le hp2 (Nat.min_le_left _ _)) hendLe
+    exact ⟨p, hp1, Nat.lt_min.mpr ⟨Nat.lt_of_lt_of_le hp2 (Nat.min_le_left _ _), Nat.lt_of_lt_of_le hple hposle⟩,
       (haux'live p hple) ▸ hp3⟩
   · rintro ⟨p, hp1, hp2, hp3⟩
-    have hple : p < pos := lt_of_lt_of_le (lt_of_lt_of_le hp2 (min_le_left _ _)) hendLe
-    exact ⟨p, hp1, Nat.lt_min.mpr ⟨lt_of_lt_of_le hp2 (min_le_left _ _), hple⟩, (haux'live p hple).symm ▸ hp3⟩
+    have hple : p < pos := Nat.lt_of_lt_of_le (Nat.lt_of_lt_of_le hp2 (Nat.min_le_left _ _)) hendLe
+    exact ⟨p, hp1, Nat.lt_min.mpr ⟨Nat.lt_of_lt_of_le hp2 (Nat.min_le_left _ _), hple⟩, (haux'live p hple).symm ▸ hp3⟩
 
 private theorem DijkstraWellFormed.pos_inj [Inhabited State] [LawfulBEq State] {aux : DijkstraAux State}
     (hwf : DijkstraWellFormed aux) {p q : Nat} (hp : p < aux.live.size) (hq : q < aux.live.size)
@@ -2537,7 +2538,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         simp only [Option.some.injEq, Prod.mk.injEq] at heq
         rw [hhint, ← heq.1]
         exact ⟨hrangeinv'.connected lo (by omega),
-          ⟨⟨step.state, hstepLo, d, (hunion d).mpr ⟨lo, le_refl _, hlo_lt, hd_range⟩, hdSucc⟩, hcov⟩,
+          ⟨⟨step.state, hstepLo, d, (hunion d).mpr ⟨lo, Nat.le_refl _, hlo_lt, hd_range⟩, hdSucc⟩, hcov⟩,
           hstepLo⟩
       · simp only [hf] at hr
         have hwf' : DijkstraWellFormed aux' :=
@@ -3268,7 +3269,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
       unfold dijkstraPop
       rw [hback]
       dsimp only
-      split_ifs with hfl
+      split
       · exact Or.inr rfl
       · exact Or.inl rfl
     have hentryBound' : ∀ i : Nat, (aux'.roots[i]!).entry < 2 ^ numMarks := by
@@ -3303,7 +3304,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         simp only [show ¬ aux.roots.size - 1 + 1 < aux.roots.size from by omega, if_false]
       have hposle : Nat.le step.pos aux.live.size := by
         rw [hflush, show r0 = (aux.roots[aux.roots.size - 1]!).root from by rw [hrtop]]
-        exact (hrangeinv.rootsWF.rootsLt (aux.roots.size - 1) (by omega)).le
+        exact Nat.le_of_lt (hrangeinv.rootsWF.rootsLt (aux.roots.size - 1) (by omega))
       -- `t ∈ D`, `t ≠ step.state`, is already off the current stack
       have hDposNe : ∀ t ∈ aux.range (aux.roots.size - 1), t ≠ step.state → ∀ st ∈ step :: rest, st.state ≠ t := by
         intro t ht htne st hst hcontra
@@ -3311,7 +3312,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         · exact htne hcontra.symm
         · rw [DijkstraAux.mem_range_iff, htopStart] at ht
           obtain ⟨p, hp1, hp2, hp3⟩ := ht
-          have hpb : p < aux.live.size := lt_of_lt_of_le hp2 (min_le_right _ _)
+          have hpb : p < aux.live.size := Nat.lt_of_lt_of_le hp2 (Nat.min_le_right _ _)
           have hstb : Nat.lt st.pos aux.live.size :=
             (hliveCorr st (List.mem_cons_of_mem _ hst)).1
           have hstlive := (hliveCorr st (List.mem_cons_of_mem _ hst)).2
@@ -3495,7 +3496,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
             rw [← hpstate, haux'defF]
             dsimp only
             exact (liveFlush_getElem!_lt step.pos aux.live aux.liveIndex aux.dead p hplt').symm
-          have hpb : p < aux.live.size := lt_of_lt_of_le hplt' hposle
+          have hpb : p < aux.live.size := Nat.lt_of_lt_of_le hplt' hposle
           have hpeq : p = step.pos :=
             hwf.pos_inj hpb hstepposlt (hpstateOld.trans (hliveCorr step (by simp)).2.symm)
           omega
@@ -3693,7 +3694,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
                 · have hend : aux.rangeEnd (aux.roots.size - 1) = aux.live.size := by
                     unfold DijkstraAux.rangeEnd
                     simp only [show ¬ aux.roots.size - 1 + 1 < aux.roots.size from by omega, if_false]
-                  rw [hend, min_self]
+                  rw [hend, Nat.min_self]
                   exact htpos
               refine ⟨aux.roots.size - 1, by rw [haux'rootsNF]; omega, ?_, ?_⟩
               · rw [hrangeEqNF (aux.roots.size - 1) (by omega)]; exact htmem

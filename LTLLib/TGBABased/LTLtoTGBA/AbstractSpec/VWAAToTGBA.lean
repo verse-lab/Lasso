@@ -30,27 +30,27 @@
 -/
 import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.SetTGBA
 import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAARuns
-import Mathlib.Order.Interval.Finset.Basic
+import LTLLib.Data.FinSet
 
 namespace LTLLib
 
 universe u v
 
-variable {Q : Type v} {α : Type u} [DecidableEq Q]
+variable {Q : Type v} {α : Type u}
 variable {A : VWAA Q α} {T : SetTGBA Q α}
 
 /-! ## Soundness and completeness conditions -/
 
 /-- (S) for a transition `(g, e', m)` at `e`: at every letter `v` with `g v`, `e` has a product transition into `e'`,
 and every mark satisfies `T_f` at `v`. -/
-def SoundTrans (A : VWAA Q α) (e : Finset Q) (g : (α → Prop) → Prop) (e' : Finset Q)
-    (m : Finset Q) : Prop :=
+def SoundTrans (A : VWAA Q α) (e : FinSet Q) (g : (α → Prop) → Prop) (e' : FinSet Q)
+    (m : FinSet Q) : Prop :=
   ∀ v, g v → A.prodTrans e v e' ∧ ∀ f ∈ m, A.inTf v e' f
 
 /-- (C) at `e`: every product transition at letter `v` to `e'` is refined by an enabled TGBA transition with target inside
 `e'` that marks every final satisfying `T_f` at the product target `e'`, `[HOL4-ltl]`'s `D_GEN_HAS_MIN` plus `gba_trans`. -/
-def CompleteTrans (T : SetTGBA Q α) (A : VWAA Q α) (e : Finset Q) : Prop :=
-  ∀ (v : α → Prop) (e' : Finset Q), A.prodTrans e v e' →
+def CompleteTrans (T : SetTGBA Q α) (A : VWAA Q α) (e : FinSet Q) : Prop :=
+  ∀ (v : α → Prop) (e' : FinSet Q), A.prodTrans e v e' →
     ∃ g e'' m, (g, e'', m) ∈ T.trans e ∧ g v ∧ e'' ⊆ e' ∧
       ∀ f ∈ T.finals, A.inTf v e' f → f ∈ m
 
@@ -67,14 +67,14 @@ structure SoundComplete (T : SetTGBA Q α) (A : VWAA Q α) : Prop where
 /-! ## TGBA → VWAA direction -/
 
 -- Level sequence for the VWAA run built from a per-step successor choice.
-private def buildLevel (Of : Nat → Q → Finset Q) (e₀ : Finset Q) : Nat → Finset Q
+private def buildLevel (Of : Nat → Q → FinSet Q) (e₀ : FinSet Q) : Nat → FinSet Q
   | 0 => e₀
   | i + 1 => (buildLevel Of e₀ i).biUnion (Of i)
 
 -- `[HOL4-ltl]` `GBA_IN_WAA`, `[GO01]` Theorem 2 ⊆ direction.
 private theorem tgba_to_vwaa (hfinals : ∀ f, f ∈ T.finals ↔ A.final f)
     (hsound : ∀ e, T.IsReachable e → ∀ g e' m, (g, e', m) ∈ T.trans e → SoundTrans A e g e' m)
-    {e : Finset Q} {ξ : OmegaWord α} (hreach : T.IsReachable e) (hacc : T.AcceptsFrom e ξ) :
+    {e : FinSet Q} {ξ : OmegaWord α} (hreach : T.IsReachable e) (hacc : T.AcceptsFrom e ξ) :
     A.AcceptsFrom e ξ := by
   obtain ⟨r, hrv, hracc⟩ := hacc
   -- Reachability propagates along the run
@@ -95,7 +95,7 @@ private theorem tgba_to_vwaa (hfinals : ∀ f, f ∈ T.finals ↔ A.final f)
     intro i f _ hfm hfe
     exact ((hS i).2 f hfm).resolve_left (fun h => h hfe)
   -- Per-step choice of successors: non-looping for marked finals staying alive, default otherwise
-  have hchoice : ∀ i, ∃ (Of : Q → Finset Q),
+  have hchoice : ∀ i, ∃ (Of : Q → FinSet Q),
       (∀ q ∈ r.state i, ∃ g, (g, Of q) ∈ A.trans q ∧ g (ξ i)) ∧
       (∀ q ∈ r.state i, Of q ⊆ r.state (i + 1)) ∧
       (∀ f ∈ T.finals ∩ r.mark i, f ∈ r.state (i + 1) → f ∉ Of f) := by
@@ -103,10 +103,10 @@ private theorem tgba_to_vwaa (hfinals : ∀ f, f ∈ T.finals ↔ A.final f)
     obtain ⟨gf, Of, hcomp, hbU⟩ := (hS i).1
     -- For each q, pick a non-looping witness if q is a marked final staying alive
     have hoverride : ∀ q ∈ T.finals ∩ r.mark i, q ∈ r.state (i+1) →
-        ∃ Of_q : Finset Q, (∃ g, (g, Of_q) ∈ A.trans q ∧ g (ξ i)) ∧ Of_q ⊆ r.state (i+1) ∧ q ∉ Of_q := by
+        ∃ Of_q : FinSet Q, (∃ g, (g, Of_q) ∈ A.trans q ∧ g (ξ i)) ∧ Of_q ⊆ r.state (i+1) ∧ q ∉ Of_q := by
       intro q hq hq'
       obtain ⟨g, O, hmem, hg, hfO, hOe⟩ := hNL i q
-        (Finset.mem_of_mem_inter_left hq) (Finset.mem_of_mem_inter_right hq) hq'
+        (FinSet.mem_of_mem_inter_left hq) (FinSet.mem_of_mem_inter_right hq) hq'
       exact ⟨O, ⟨g, hmem, hg⟩, hOe, hfO⟩
     classical
     refine ⟨fun q =>
@@ -124,13 +124,13 @@ private theorem tgba_to_vwaa (hfinals : ∀ f, f ∈ T.finals ↔ A.final f)
       · simp only [dif_pos hcase]
         exact (Classical.choose_spec (hoverride q hcase.1 hcase.2)).2.1
       · simp only [dif_neg hcase]
-        exact (Finset.subset_biUnion_of_mem Of hq).trans hbU
+        exact (FinSet.subset_biUnion_of_mem Of hq).trans hbU
     · intro f hfm hfe
       have hcase : f ∈ T.finals ∩ r.mark i ∧ f ∈ r.state (i + 1) :=
         ⟨hfm, hfe⟩
       simp only [dif_pos hcase]
       exact (Classical.choose_spec (hoverride f hcase.1 hcase.2)).2.2
-  let Of : Nat → Q → Finset Q := fun i => Classical.choose (hchoice i)
+  let Of : Nat → Q → FinSet Q := fun i => Classical.choose (hchoice i)
   have hOf : ∀ i, (∀ q ∈ r.state i, ∃ g, (g, Of i q) ∈ A.trans q ∧ g (ξ i)) ∧
       (∀ q ∈ r.state i, Of i q ⊆ r.state (i + 1)) ∧
       (∀ f ∈ T.finals ∩ r.mark i, f ∈ r.state (i + 1) → f ∉ Of i f) :=
@@ -138,10 +138,10 @@ private theorem tgba_to_vwaa (hfinals : ∀ f, f ∈ T.finals ↔ A.final f)
   -- The VWAA run
   have hlev_sub : ∀ i, buildLevel Of (r.state 0) i ⊆ r.state i := by
     intro i; induction i with
-    | zero => exact Finset.Subset.refl _
+    | zero => exact FinSet.Subset.refl _
     | succ i ih =>
       intro q hq
-      simp only [buildLevel, Finset.mem_biUnion] at hq
+      simp only [buildLevel, FinSet.mem_biUnion] at hq
       obtain ⟨p, hp, hpq⟩ := hq
       exact (hOf i).2.1 p (ih hp) hpq
   let rv : VWAA.Run Q := { level := buildLevel Of (r.state 0), succ := Of }
@@ -156,11 +156,11 @@ private theorem tgba_to_vwaa (hfinals : ∀ f, f ∈ T.finals ↔ A.final f)
       intro i q hq
       show Of i q ⊆ buildLevel Of (r.state 0) (i + 1)
       simp only [buildLevel]
-      exact Finset.subset_biUnion_of_mem (Of i) hq
+      exact FinSet.subset_biUnion_of_mem (Of i) hq
     · -- no_orphan
       intro i q hq
       simp only [rv, buildLevel] at hq
-      exact Finset.mem_biUnion.mp hq
+      exact FinSet.mem_biUnion.mp hq
   refine ⟨rv, hrv_valid, ?_⟩
   -- Acceptance: no branch stabilises at a final
   rw [acceptingRun_iff hrv_valid]
@@ -168,7 +168,7 @@ private theorem tgba_to_vwaa (hfinals : ∀ f, f ∈ T.finals ↔ A.final f)
   have hqT : q ∈ T.finals := (hfinals q).mpr hfin
   obtain ⟨N, hstabN⟩ := hstab
   -- Some step n > N marks q, since the TGBA run is accepting
-  obtain ⟨n, hqmn, hn⟩ := (hracc q hqT).exists_gt N
+  obtain ⟨n, hqmn, hn⟩ := FinitePred.exists_gt_of_not (hracc q hqT) N
   have hbn : b n = q := hstabN n (by omega)
   have hbn1 : b (n + 1) = q := hstabN (n + 1) (by omega)
   -- b is a branch: q ∈ rv.level n
@@ -180,16 +180,16 @@ private theorem tgba_to_vwaa (hfinals : ∀ f, f ∈ T.finals ↔ A.final f)
   -- Of n q ⊆ r.state (n+1), so q ∈ r.state (n+1)
   have hqSub : q ∈ r.state (n + 1) := (hOf n).2.1 q (hlev_sub n hqln) hqIn
   -- Non-looping override: q ∉ Of n q
-  exact (hOf n).2.2 q (Finset.mem_inter.mpr ⟨hqT, hqmn⟩) hqSub hqIn
+  exact (hOf n).2.2 q (FinSet.mem_inter.mpr ⟨hqT, hqmn⟩) hqSub hqIn
 
 /-! ## VWAA → TGBA direction -/
 
 -- `[HOL4-ltl]` `WAA_IN_GBA`, `[GO01]` Theorem 2 ⊇ direction.
-private theorem vwaa_to_tgba (hsc : SoundComplete T A) {e : Finset Q} {ξ : OmegaWord α}
+private theorem vwaa_to_tgba (hsc : SoundComplete T A) {e : FinSet Q} {ξ : OmegaWord α}
     (hreach : T.IsReachable e) (hacc : A.AcceptsFrom e ξ) : T.AcceptsFrom e ξ := by
   obtain ⟨rv, hrv, hracc⟩ := hacc
   -- Step lemma: from any reachable ei ⊆ rv.level i, (C) yields the next TGBA step
-  have hstep : ∀ i (ei : Finset Q), ei ⊆ rv.level i → T.IsReachable ei →
+  have hstep : ∀ i (ei : FinSet Q), ei ⊆ rv.level i → T.IsReachable ei →
       ∃ g ei1 mi, (g, ei1, mi) ∈ T.trans ei ∧ g (ξ i) ∧ ei1 ⊆ rv.level (i + 1) ∧
         T.IsReachable ei1 ∧ ∀ f ∈ T.finals, A.inTf (ξ i) (rv.level (i + 1)) f → f ∈ mi := by
     intro i ei hei_sub hei_reach
@@ -200,15 +200,15 @@ private theorem vwaa_to_tgba (hsc : SoundComplete T A) {e : Finset Q} {ξ : Omeg
              rv.succ i,
              fun q hq => by simp only [dif_pos (hei_sub hq)];
                             exact Classical.choose_spec (hrv.step i q (hei_sub hq)),
-             Finset.biUnion_subset.mpr fun q hq => hrv.succ_sub i q (hei_sub hq)⟩
+             FinSet.biUnion_subset.mpr fun q hq => hrv.succ_sub i q (hei_sub hq)⟩
     obtain ⟨g, ei1, mi, htrans, hg, hsub, hmarks⟩ :=
       hsc.complete ei hei_reach (ξ i) (rv.level (i + 1)) hprod
     obtain ⟨e₀, he₀, hre₀⟩ := hei_reach
     exact ⟨g, ei1, mi, htrans, hg, hsub, ⟨e₀, he₀, hre₀.step ⟨g, mi, htrans⟩⟩, hmarks⟩
   -- The TGBA state sequence, each state inside its VWAA level and reachable
   classical
-  let S : ∀ n, {ei : Finset Q // ei ⊆ rv.level n ∧ T.IsReachable ei} := fun n =>
-    Nat.rec ⟨e, hrv.init ▸ Finset.Subset.refl _, hreach⟩
+  let S : ∀ n, {ei : FinSet Q // ei ⊆ rv.level n ∧ T.IsReachable ei} := fun n =>
+    Nat.rec ⟨e, hrv.init ▸ FinSet.Subset.refl _, hreach⟩
       (fun n prev =>
         ⟨Classical.choose (Classical.choose_spec
             (hstep n prev.val prev.property.1 prev.property.2)),
@@ -217,11 +217,11 @@ private theorem vwaa_to_tgba (hsc : SoundComplete T A) {e : Finset Q} {ξ : Omeg
          (Classical.choose_spec (Classical.choose_spec (Classical.choose_spec
             (hstep n prev.val prev.property.1 prev.property.2)))).2.2.2.1⟩)
       n
-  let eT : Nat → Finset Q := fun n => (S n).val
+  let eT : Nat → FinSet Q := fun n => (S n).val
   -- The witness `hstep` produces at step n
   let stepSpec := fun n => Classical.choose_spec (Classical.choose_spec (Classical.choose_spec
     (hstep n (S n).val (S n).property.1 (S n).property.2)))
-  let mT : Nat → Finset Q := fun n =>
+  let mT : Nat → FinSet Q := fun n =>
     Classical.choose (Classical.choose_spec (Classical.choose_spec
       (hstep n (S n).val (S n).property.1 (S n).property.2)))
   let r : SetTGBA.Run Q := { state := eT, mark := mT }
@@ -231,13 +231,11 @@ private theorem vwaa_to_tgba (hsc : SoundComplete T A) {e : Finset Q} {ξ : Omeg
   -- Acceptance: for each f ∈ T.finals, {i | f ∈ mT i} is infinite
   refine ⟨r, hrv_valid, fun f hfT => ?_⟩
   -- Suppose for contradiction that f is marked only finitely often
-  by_contra hfin_c
-  rw [Set.not_infinite] at hfin_c
+  intro hfin_c
   -- From some step N on, f is never marked
   have ⟨N, hN⟩ : ∃ N, ∀ i > N, f ∉ mT i := by
-    refine ⟨hfin_c.toFinset.sup id, fun i hi hfm => ?_⟩
-    exact absurd (Finset.le_sup (s := hfin_c.toFinset) (f := id)
-      (hfin_c.mem_toFinset.mpr hfm)) (by simpa using hi)
+    obtain ⟨N, hN⟩ := FinitePred.nat_iff.mp hfin_c
+    exact ⟨N, fun i hi hfm => absurd (hN i hfm) (by omega)⟩
   have hmarks_cond : ∀ i ff, ff ∈ T.finals → A.inTf (ξ i) (rv.level (i + 1)) ff → ff ∈ mT i :=
     fun i => (stepSpec i).2.2.2.2
   -- f ∈ rv.level (i+1) whenever i > N: else `inTf` would trivially hold and mark f
@@ -287,7 +285,7 @@ private theorem vwaa_to_tgba (hsc : SoundComplete T A) {e : Finset Q} {ξ : Omeg
 
 /-- `[GO01]` Theorem 2, generalised: a TGBA meeting (S) and (C) at every reachable state accepts from `e` exactly what the
 underlying VWAA accepts. -/
-theorem vwaaToTgba_correct (hsc : SoundComplete T A) {e : Finset Q} {ξ : OmegaWord α}
+theorem vwaaToTgba_correct (hsc : SoundComplete T A) {e : FinSet Q} {ξ : OmegaWord α}
     (hreach : T.IsReachable e) : T.AcceptsFrom e ξ ↔ A.AcceptsFrom e ξ :=
   ⟨tgba_to_vwaa hsc.finals_iff hsc.sound hreach, vwaa_to_tgba hsc hreach⟩
 
@@ -295,8 +293,8 @@ theorem vwaaToTgba_correct (hsc : SoundComplete T A) {e : Finset Q} {ξ : OmegaW
 
 /-- (C-tight) at `e`: every component choice `(gf, Of)` has an enabled TGBA transition refining `e.biUnion Of` that marks
 every final of `e` whose chosen component does not loop (`[BKŘS12]` §6's modified `T_f`) and every final its target drops. -/
-def CompleteTransTight (T : SetTGBA Q α) (A : VWAA Q α) (e : Finset Q) : Prop :=
-  ∀ (v : α → Prop) (gf : Q → (α → Prop) → Prop) (Of : Q → Finset Q),
+def CompleteTransTight (T : SetTGBA Q α) (A : VWAA Q α) (e : FinSet Q) : Prop :=
+  ∀ (v : α → Prop) (gf : Q → (α → Prop) → Prop) (Of : Q → FinSet Q),
     (∀ q ∈ e, (gf q, Of q) ∈ A.trans q ∧ gf q v) →
     ∃ g e'' m, (g, e'', m) ∈ T.trans e ∧ g v ∧ e'' ⊆ e.biUnion Of ∧
       (∀ f ∈ T.finals, f ∈ e → f ∉ Of f → f ∈ m) ∧ (∀ f ∈ T.finals, f ∉ e'' → f ∈ m)
@@ -308,10 +306,10 @@ structure SoundCompleteTight (T : SetTGBA Q α) (A : VWAA Q α) : Prop where
   completeTight : ∀ e, T.IsReachable e → CompleteTransTight T A e
 
 -- `[HOL4-ltl]` `WAA_IN_GBA`, `[GO01]` Theorem 2 ⊇ direction, under (C-tight).
-private theorem vwaa_to_tgba' (hsc : SoundCompleteTight T A) {e : Finset Q} {ξ : OmegaWord α}
+private theorem vwaa_to_tgba' (hsc : SoundCompleteTight T A) {e : FinSet Q} {ξ : OmegaWord α}
     (hreach : T.IsReachable e) (hacc : A.AcceptsFrom e ξ) : T.AcceptsFrom e ξ := by
   obtain ⟨rv, hrv, hracc⟩ := hacc
-  have hstep : ∀ i (ei : Finset Q), ei ⊆ rv.level i → T.IsReachable ei →
+  have hstep : ∀ i (ei : FinSet Q), ei ⊆ rv.level i → T.IsReachable ei →
       ∃ g ei1 mi, (g, ei1, mi) ∈ T.trans ei ∧ g (ξ i) ∧ ei1 ⊆ ei.biUnion (rv.succ i) ∧
         T.IsReachable ei1 ∧ (∀ f ∈ T.finals, f ∈ ei → f ∉ rv.succ i f → f ∈ mi) ∧
         (∀ f ∈ T.finals, f ∉ ei1 → f ∈ mi) := by
@@ -325,21 +323,21 @@ private theorem vwaa_to_tgba' (hsc : SoundCompleteTight T A) {e : Finset Q} {ξ 
     exact ⟨g, ei1, mi, htrans, hg, hsub, ⟨e₀, he₀, hre₀.step ⟨g, mi, htrans⟩⟩, hmarks, hmarks2⟩
   -- The TGBA state sequence, each state inside its VWAA level and reachable
   classical
-  let S : ∀ n, {ei : Finset Q // ei ⊆ rv.level n ∧ T.IsReachable ei} := fun n =>
-    Nat.rec ⟨e, hrv.init ▸ Finset.Subset.refl _, hreach⟩
+  let S : ∀ n, {ei : FinSet Q // ei ⊆ rv.level n ∧ T.IsReachable ei} := fun n =>
+    Nat.rec ⟨e, hrv.init ▸ FinSet.Subset.refl _, hreach⟩
       (fun n prev =>
         ⟨Classical.choose (Classical.choose_spec
             (hstep n prev.val prev.property.1 prev.property.2)),
          (Classical.choose_spec (Classical.choose_spec (Classical.choose_spec
             (hstep n prev.val prev.property.1 prev.property.2)))).2.2.1.trans
-          (Finset.biUnion_subset.mpr fun q hq => hrv.succ_sub n q (prev.property.1 hq)),
+          (FinSet.biUnion_subset.mpr fun q hq => hrv.succ_sub n q (prev.property.1 hq)),
          (Classical.choose_spec (Classical.choose_spec (Classical.choose_spec
             (hstep n prev.val prev.property.1 prev.property.2)))).2.2.2.1⟩)
       n
-  let eT : Nat → Finset Q := fun n => (S n).val
+  let eT : Nat → FinSet Q := fun n => (S n).val
   let stepSpec := fun n => Classical.choose_spec (Classical.choose_spec (Classical.choose_spec
     (hstep n (S n).val (S n).property.1 (S n).property.2)))
-  let mT : Nat → Finset Q := fun n =>
+  let mT : Nat → FinSet Q := fun n =>
     Classical.choose (Classical.choose_spec (Classical.choose_spec
       (hstep n (S n).val (S n).property.1 (S n).property.2)))
   let r : SetTGBA.Run Q := { state := eT, mark := mT }
@@ -348,12 +346,10 @@ private theorem vwaa_to_tgba' (hsc : SoundCompleteTight T A) {e : Finset Q} {ξ 
                      (stepSpec i).1, (stepSpec i).2.1⟩⟩
   refine ⟨r, hrv_valid, fun f hfT => ?_⟩
   -- Suppose for contradiction that f is marked only finitely often
-  by_contra hfin_c
-  rw [Set.not_infinite] at hfin_c
+  intro hfin_c
   have ⟨N, hN⟩ : ∃ N, ∀ i > N, f ∉ mT i := by
-    refine ⟨hfin_c.toFinset.sup id, fun i hi hfm => ?_⟩
-    exact absurd (Finset.le_sup (s := hfin_c.toFinset) (f := id)
-      (hfin_c.mem_toFinset.mpr hfm)) (by simpa using hi)
+    obtain ⟨N, hN⟩ := FinitePred.nat_iff.mp hfin_c
+    exact ⟨N, fun i hi hfm => absurd (hN i hfm) (by omega)⟩
   have hmarks_cond : ∀ i ff, ff ∈ T.finals → ff ∈ eT i → ff ∉ rv.succ i ff → ff ∈ mT i :=
     fun i => (stepSpec i).2.2.2.2.1
   have hmarks_cond2 : ∀ i ff, ff ∈ T.finals → ff ∉ eT (i + 1) → ff ∈ mT i :=
@@ -374,7 +370,7 @@ private theorem vwaa_to_tgba' (hsc : SoundCompleteTight T A) {e : Finset Q} {ξ 
     exact hN i (by omega) (hmarks_cond i f hfT (hf_all i hi) hloop)
   -- Path from level 0 to f at level N + 2, then a stuck constant tail: a VWAA branch stuck at final f
   obtain ⟨p, hp_end, hp_start, hp_step⟩ :=
-    exists_path_to hrv (N + 2) f ((S (N + 2)).property.1 (hf_all (N + 2) le_rfl))
+    exists_path_to hrv (N + 2) f ((S (N + 2)).property.1 (hf_all (N + 2) (Nat.le_refl _)))
   let branch : Nat → Q := fun i => if i ≤ N + 2 then p i else f
   have hbranch : rv.InfBranch branch := ⟨by simp [branch, hp_start], fun i => by
     simp only [branch]
@@ -383,7 +379,7 @@ private theorem vwaa_to_tgba' (hsc : SoundCompleteTight T A) {e : Finset Q} {ξ 
     · rw [if_neg hi]
       by_cases hi2 : i ≤ N + 2
       · have heqi : i = N + 2 := by omega
-        rw [if_pos hi2, heqi, hp_end]; exact hf_loop (N + 2) le_rfl
+        rw [if_pos hi2, heqi, hp_end]; exact hf_loop (N + 2) (Nat.le_refl _)
       · rw [if_neg hi2]; exact hf_loop i (by omega)⟩
   have hstab : VWAA.StabilizesAt branch f :=
     ⟨N + 3, fun m hm => if_neg (show ¬(m ≤ N + 2) from by omega)⟩
@@ -393,7 +389,7 @@ private theorem vwaa_to_tgba' (hsc : SoundCompleteTight T A) {e : Finset Q} {ξ 
 
 /-- `[GO01]` Theorem 2 under (C-tight): a TGBA meeting (S) and (C-tight) at every reachable state accepts from `e` exactly
 what the underlying VWAA accepts. -/
-theorem vwaaToTgba_correct' (hsc : SoundCompleteTight T A) {e : Finset Q} {ξ : OmegaWord α}
+theorem vwaaToTgba_correct' (hsc : SoundCompleteTight T A) {e : FinSet Q} {ξ : OmegaWord α}
     (hreach : T.IsReachable e) : T.AcceptsFrom e ξ ↔ A.AcceptsFrom e ξ :=
   ⟨tgba_to_vwaa hsc.finals_iff hsc.sound hreach, vwaa_to_tgba' hsc hreach⟩
 

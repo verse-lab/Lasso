@@ -266,7 +266,7 @@ private theorem outer_fold_successors
         rw [ih_inst.2.1 hni]
         exact inner.2.1 rfl hi
       · exact ih_inst.1 hmem_tl hi
-    · push_neg at hni
+    · simp only [_root_.not_or] at hni
       rw [ih_inst.2.1 hni.2, inner.1 hni.1]
     · rcases h with rfl | hmem_tl
       · have hni_tl : s.gbaState ∉ tl := fun h => absurd rfl (h_all s.gbaState h)

@@ -33,9 +33,7 @@
   - Acceptance
 -/
 import LTLLib.LTL.Semantics
-import Mathlib.Data.Finset.Basic
-import Mathlib.Data.Finset.Union
-import Mathlib.Data.Set.Finite.Basic
+import LTLLib.Data.FinSet
 
 namespace LTLLib
 
@@ -44,11 +42,11 @@ universe u v
 /-! ## The automaton -/
 
 /-- A very weak alternating co-Büchi automaton. -/
-structure VWAA (Q : Type v) (α : Type u) [DecidableEq Q] where
+structure VWAA (Q : Type v) (α : Type u) where
   -- guard/successor-set alternatives, the successor set of a taken transition is conjunctive
-  trans : Q → List (((α → Prop) → Prop) × Finset Q)
+  trans : Q → List (((α → Prop) → Prop) × FinSet Q)
   -- the alternatives for level 0, a run picks one
-  initial : List (Finset Q)
+  initial : List (FinSet Q)
   -- co-Büchi: a branch may meet these only finitely often
   final : Q → Prop
   -- the very weak rank, `[TV21]` Lemma 3's condition C2 in rank form
@@ -60,14 +58,14 @@ structure VWAA (Q : Type v) (α : Type u) [DecidableEq Q] where
 /-- A run: `level i` are the states alive at step `i`, and `succ i q` is the successor set that `q`'s chosen
 transition at step `i` committed to. -/
 structure VWAA.Run (Q : Type v) where
-  level : Nat → Finset Q
-  succ : Nat → Q → Finset Q
+  level : Nat → FinSet Q
+  succ : Nat → Q → FinSet Q
 
-variable {Q : Type v} {α : Type u} [DecidableEq Q]
+variable {Q : Type v} {α : Type u}
 
 /-- `r` is a run of `A` on `ξ` from `S`: every live state takes an enabled transition, its committed successors are alive
 on the next level, and nothing is alive without being spawned (`[HOL4-ltl]`'s no-orphan clause). -/
-structure VWAA.Run.ValidFrom (r : VWAA.Run Q) (A : VWAA Q α) (S : Finset Q) (ξ : OmegaWord α) : Prop where
+structure VWAA.Run.ValidFrom (r : VWAA.Run Q) (A : VWAA Q α) (S : FinSet Q) (ξ : OmegaWord α) : Prop where
   init : r.level 0 = S
   step : ∀ i q, q ∈ r.level i → ∃ g, (g, r.succ i q) ∈ A.trans q ∧ g (ξ i)
   succ_sub : ∀ i q, q ∈ r.level i → r.succ i q ⊆ r.level (i + 1)
@@ -84,28 +82,28 @@ def VWAA.StabilizesAt (b : Nat → Q) (q : Q) : Prop := ∃ i, ∀ m, i ≤ m �
 
 /-- The levels of `r` reachable from `S`: level 0 is `S`, and each later level keeps only what the surviving
 states committed to. -/
-def VWAA.Run.restrictLevel (r : VWAA.Run Q) (S : Finset Q) : Nat → Finset Q
+def VWAA.Run.restrictLevel (r : VWAA.Run Q) (S : FinSet Q) : Nat → FinSet Q
   | 0 => S
   | i + 1 => (r.restrictLevel S i).biUnion fun q => r.succ i q
 
 /-- `r` cut down to the part reachable from `S`, with `succ` unchanged, `[HOL4-ltl]`'s `run_restr`. -/
-def VWAA.Run.restrict (r : VWAA.Run Q) (S : Finset Q) : VWAA.Run Q where
+def VWAA.Run.restrict (r : VWAA.Run Q) (S : FinSet Q) : VWAA.Run Q where
   level := r.restrictLevel S
   succ := r.succ
 
 /-! ## Run union -/
 
 /-- The union's successor choice, the first run's wherever it claims the state, `[GO01]`'s node sharing. -/
-def VWAA.Run.conjSucc (x y : VWAA.Run Q) (i : Nat) (q : Q) : Finset Q :=
+noncomputable def VWAA.Run.conjSucc (x y : VWAA.Run Q) (i : Nat) (q : Q) : FinSet Q :=
   if q ∈ x.level i then x.succ i q else y.succ i q
 
 /-- The union's levels, generated from the two level-0 sets, since unioning level by level would leave orphans. -/
-def VWAA.Run.conjLevel (x y : VWAA.Run Q) : Nat → Finset Q
+noncomputable def VWAA.Run.conjLevel (x y : VWAA.Run Q) : Nat → FinSet Q
   | 0 => x.level 0 ∪ y.level 0
   | i + 1 => (x.conjLevel y i).biUnion (x.conjSucc y i)
 
 /-- `[HOL4-ltl]`'s `conj_run`: two runs on the same word merged into one, sharing a node wherever both reach it. -/
-def VWAA.Run.conj (x y : VWAA.Run Q) : VWAA.Run Q where
+noncomputable def VWAA.Run.conj (x y : VWAA.Run Q) : VWAA.Run Q where
   level := x.conjLevel y
   succ := x.conjSucc y
 
@@ -117,18 +115,18 @@ def VWAA.Run.shift (r : VWAA.Run Q) : VWAA.Run Q where
   succ i := r.succ (i + 1)
 
 /-- The levels of `r.prepend S succ0`: a fresh level `S` first, then `r`'s own levels. -/
-def VWAA.Run.prependLevel (r : VWAA.Run Q) (S : Finset Q) : Nat → Finset Q
+def VWAA.Run.prependLevel (r : VWAA.Run Q) (S : FinSet Q) : Nat → FinSet Q
   | 0 => S
   | i + 1 => r.level i
 
 /-- The successor sets of `r.prepend S succ0`: `succ0` at the fresh level, `r.succ` after. -/
-def VWAA.Run.prependSucc (r : VWAA.Run Q) (succ0 : Q → Finset Q) : Nat → Q → Finset Q
+def VWAA.Run.prependSucc (r : VWAA.Run Q) (succ0 : Q → FinSet Q) : Nat → Q → FinSet Q
   | 0 => succ0
   | i + 1 => r.succ i
 
 /-- `r` preceded by a fresh level `S` whose states commit to `succ0`, the run entered one letter earlier,
 `[HOL4-ltl]`'s `REPL_RUN_CONSTR_LEMM`. -/
-def VWAA.Run.prepend (r : VWAA.Run Q) (S : Finset Q) (succ0 : Q → Finset Q) : VWAA.Run Q where
+def VWAA.Run.prepend (r : VWAA.Run Q) (S : FinSet Q) (succ0 : Q → FinSet Q) : VWAA.Run Q where
   level := r.prependLevel S
   succ := r.prependSucc succ0
 
@@ -136,10 +134,10 @@ def VWAA.Run.prepend (r : VWAA.Run Q) (S : Finset Q) (succ0 : Q → Finset Q) : 
 
 /-- Co-Büchi acceptance: every infinite branch meets `final` only finitely often. -/
 def VWAA.AcceptingRun (A : VWAA Q α) (r : VWAA.Run Q) : Prop :=
-  ∀ b, r.InfBranch b → {i | A.final (b i)}.Finite
+  ∀ b, r.InfBranch b → FinitePred fun i => A.final (b i)
 
 /-- The language of `A` read from the level-0 set `S`. -/
-def VWAA.AcceptsFrom (A : VWAA Q α) (S : Finset Q) (ξ : OmegaWord α) : Prop :=
+def VWAA.AcceptsFrom (A : VWAA Q α) (S : FinSet Q) (ξ : OmegaWord α) : Prop :=
   ∃ r : VWAA.Run Q, r.ValidFrom A S ξ ∧ A.AcceptingRun r
 
 /-- The language of `A`: some initial alternative accepts. -/

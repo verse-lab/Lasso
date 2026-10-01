@@ -66,6 +66,7 @@
 import Std
 import LTLLib.AbstractSpec.EmptinessCheck
 import LTLLib.TGBABased.SCC.WitnessExtraction
+import LTLLib.Tactic.Set
 
 namespace LTLLib
 
@@ -155,7 +156,7 @@ private theorem testBit_foldl_or (l : List Nat) (init : Nat) (m : Nat) :
   | nil => simp
   | cons a l ih =>
     rw [List.foldl_cons, ih]
-    simp only [Nat.testBit_or, Bool.or_eq_true, Nat.shiftLeft_eq, one_mul,
+    simp only [Nat.testBit_or, Bool.or_eq_true, Nat.shiftLeft_eq, Nat.one_mul,
       Nat.testBit_two_pow, decide_eq_true_eq, List.mem_cons, or_assoc]
     constructor
     · rintro (h | h | h)
@@ -1667,38 +1668,29 @@ def SccHintSound [LawfulBEq State] (ops : DFSOps State) (succs : State → Array
 
 /-! ## Termination -/
 
-/-- The reachable states still unknown, finite by `FiniteReach`. -/
+/-- The reachable states still unknown. -/
 def unexploredSet (ops : DFSOps State) (succs : State → Array State) (initialStates : List State)
-    (aux : ops.Aux) : Set State :=
-  {s | Reachable initialStates succs s ∧ ops.getStatus aux s = .unknown}
-
-theorem unexploredSet_finite (ops : DFSOps State) (succs : State → Array State)
-    (initialStates : List State) (fr : FiniteReach initialStates succs) (aux : ops.Aux) :
-    (unexploredSet ops succs initialStates aux).Finite :=
-  fr.subset (fun _ hs => hs.1)
+    (aux : ops.Aux) : State → Prop :=
+  fun s => Reachable initialStates succs s ∧ ops.getStatus aux s = .unknown
 
 /-- First component of `dfsGo`'s lexicographic measure `(unexploredCard, stack.length, stackPending)`. -/
 noncomputable def unexploredCard (ops : DFSOps State) (succs : State → Array State)
-    (initialStates : List State) (fr : FiniteReach initialStates succs) (aux : ops.Aux) : Nat :=
-  (unexploredSet_finite ops succs initialStates fr aux).toFinset.card
+    (initialStates : List State) (aux : ops.Aux) : Nat :=
+  reachCount initialStates succs (unexploredSet ops succs initialStates aux)
 
 theorem unexploredCard_lt_of_subset (ops : DFSOps State) (succs : State → Array State)
     (initialStates : List State) (fr : FiniteReach initialStates succs) {aux aux' : ops.Aux}
-    (hsub : unexploredSet ops succs initialStates aux' ⊆ unexploredSet ops succs initialStates aux)
-    {d : State} (hd : d ∈ unexploredSet ops succs initialStates aux)
-    (hd' : d ∉ unexploredSet ops succs initialStates aux') :
-    unexploredCard ops succs initialStates fr aux' < unexploredCard ops succs initialStates fr aux :=
-  Finset.card_lt_card (by
-    rw [Finset.ssubset_iff_of_subset (Set.Finite.toFinset_subset_toFinset.mpr hsub)]
-    exact ⟨d, (Set.Finite.mem_toFinset _).mpr hd, fun hc => hd' ((Set.Finite.mem_toFinset _).mp hc)⟩)
+    (hsub : ∀ s, unexploredSet ops succs initialStates aux' s → unexploredSet ops succs initialStates aux s)
+    {d : State} (hd : unexploredSet ops succs initialStates aux d)
+    (hd' : ¬ unexploredSet ops succs initialStates aux' d) :
+    unexploredCard ops succs initialStates aux' < unexploredCard ops succs initialStates aux :=
+  reachCount_lt fr (fun s _ h => hsub s h) hd.1 hd' hd
 
 theorem unexploredCard_eq_of_eq (ops : DFSOps State) (succs : State → Array State)
-    (initialStates : List State) (fr : FiniteReach initialStates succs) {aux aux' : ops.Aux}
+    (initialStates : List State) {aux aux' : ops.Aux}
     (heq : unexploredSet ops succs initialStates aux' = unexploredSet ops succs initialStates aux) :
-    unexploredCard ops succs initialStates fr aux' = unexploredCard ops succs initialStates fr aux := by
-  unfold unexploredCard
-  congr 1
-  simp only [heq]
+    unexploredCard ops succs initialStates aux' = unexploredCard ops succs initialStates aux :=
+  congrArg (reachCount initialStates succs) heq
 
 /-- PUSH of a reachable, still unknown target strictly decreases the unexplored count. -/
 theorem unexploredCard_push [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
@@ -1707,8 +1699,8 @@ theorem unexploredCard_push [LawfulBEq State] (ops : DFSOps State) (succs : Stat
       if q' == q then .live else ops.getStatus aux q')
     (aux : ops.Aux) (q : State) (marks : Std.HashSet Nat)
     (hq : ops.getStatus aux q = .unknown) (hqreach : Reachable initialStates succs q) :
-    unexploredCard ops succs initialStates fr (ops.push aux q marks).1 <
-      unexploredCard ops succs initialStates fr aux := by
+    unexploredCard ops succs initialStates (ops.push aux q marks).1 <
+      unexploredCard ops succs initialStates aux := by
   refine unexploredCard_lt_of_subset ops succs initialStates fr (d := q) ?_ ⟨hqreach, hq⟩ ?_
   · rintro s ⟨hr, hs⟩
     refine ⟨hr, ?_⟩
@@ -1727,7 +1719,7 @@ theorem unexploredSet_update (ops : DFSOps State) (succs : State → Array State
     (aux : ops.Aux) (marks : Std.HashSet Nat) (d : State) :
     unexploredSet ops succs initialStates (ops.update aux marks d).1 =
       unexploredSet ops succs initialStates aux := by
-  ext s; simp only [unexploredSet, Set.mem_setOf_eq, hupdate]
+  funext s; simp only [unexploredSet, hupdate]
 
 /-- `pop` only ever moves states from live to dead, which leaves the unknown set alone. -/
 theorem unexploredSet_pop (ops : DFSOps State) (succs : State → Array State)
@@ -1739,8 +1731,8 @@ theorem unexploredSet_pop (ops : DFSOps State) (succs : State → Array State)
     (aux : ops.Aux) (step : DFSStep State ops.Position) (hwf : WellFormed aux) :
     unexploredSet ops succs initialStates (ops.pop succs edgeMarks aux step).1 =
       unexploredSet ops succs initialStates aux := by
-  ext s
-  simp only [unexploredSet, Set.mem_setOf_eq]
+  funext s
+  simp only [unexploredSet]
   rcases hpop succs edgeMarks aux step s hwf with h | ⟨h1, h2⟩
   · rw [h]
   · rw [h1, h2]; simp
@@ -1795,19 +1787,19 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
     (∀ st ∈ stack, Reachable initialStates succs st.state) →
     dfsGo ops succs edgeMarks expand aux stack ≠ none := by
   suffices H : ∀ n1 n2 n3 aux (stack : List (DFSStep State ops.Position)),
-      unexploredCard ops succs initialStates fr aux = n1 → stack.length = n2 → stackPending stack = n3 →
+      unexploredCard ops succs initialStates aux = n1 → stack.length = n2 → stackPending stack = n3 →
       L.WellFormed aux → (∀ st ∈ stack, st.succ = succs st.state) →
       (∀ st ∈ stack, Reachable initialStates succs st.state) →
       dfsGo ops succs edgeMarks expand aux stack ≠ none by
     exact fun aux stack hwf hs hr => H _ _ _ aux stack rfl rfl rfl hwf hs hr
   intro n1
-  induction n1 using Nat.strong_induction_on with
+  induction n1 using Nat.strongRecOn with
   | _ n1 ih1 =>
   intro n2
-  induction n2 using Nat.strong_induction_on with
+  induction n2 using Nat.strongRecOn with
   | _ n2 ih2 =>
   intro n3
-  induction n3 using Nat.strong_induction_on with
+  induction n3 using Nat.strongRecOn with
   | _ n3 ih3 =>
   intro aux stack h1 h2 h3 hwf hsucc hreach
   subst h1; subst h2; subst h3
@@ -1845,10 +1837,10 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
         by_cases hf : (ops.update aux (step.succMarks[step.idx]!) d).2 = true
         · rw [if_pos hf]; simp
         · rw [if_neg hf]
-          have hcard : unexploredCard ops succs initialStates fr
+          have hcard : unexploredCard ops succs initialStates
               (ops.update aux (step.succMarks[step.idx]!) d).1 =
-              unexploredCard ops succs initialStates fr aux :=
-            unexploredCard_eq_of_eq ops succs initialStates fr
+              unexploredCard ops succs initialStates aux :=
+            unexploredCard_eq_of_eq ops succs initialStates
               (unexploredSet_update ops succs initialStates L.update_status aux (step.succMarks[step.idx]!) d)
           exact ih3 _ (stackPending_bump step rest h) _ _ hcard hbumpLen rfl
             (L.wf_update aux (step.succMarks[step.idx]!) d hwf) hbumpSucc hbumpReach
@@ -1867,9 +1859,9 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
           · exact hbumpReach st hst
     -- backtracking: the stack shrinks, and `pop` never touches the unknown set
     · rw [dif_neg h]
-      have hcard : unexploredCard ops succs initialStates fr (ops.pop succs edgeMarks aux step).1 =
-          unexploredCard ops succs initialStates fr aux :=
-        unexploredCard_eq_of_eq ops succs initialStates fr
+      have hcard : unexploredCard ops succs initialStates (ops.pop succs edgeMarks aux step).1 =
+          unexploredCard ops succs initialStates aux :=
+        unexploredCard_eq_of_eq ops succs initialStates
           (unexploredSet_pop ops succs initialStates L.WellFormed L.pop_status edgeMarks aux step hwf)
       have hrec : dfsGo ops succs edgeMarks expand (ops.pop succs edgeMarks aux step).1 rest ≠ none :=
         ih2 _ (by simp) _ _ rest hcard rfl rfl (L.wf_pop succs edgeMarks aux step hwf)
