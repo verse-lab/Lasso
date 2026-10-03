@@ -1,3 +1,5 @@
+module
+
 /-
   Differential tests of the `DNF` labels of `Label.lean` against brute force, every property checked on random pairs
   of labels at every valuation of a four-atom universe.
@@ -10,6 +12,9 @@
 import LTLLib.TGBABased.LTLtoTGBA.Label
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.LTLtoTGBA.Label
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.LTLtoTGBA.Tests.LabelTests
 

@@ -1,3 +1,5 @@
+module
+
 /-
   Gabow's SCC-based emptiness check (Algorithm 4 of Renault et al.), an index-stack variant of Dijkstra's approach
   refining `GenericDFS.lean`'s abstract operations. Not implemented yet, the file only records the algorithm.
@@ -41,6 +43,8 @@
   - Renault, Duret-Lutz, Kordon, Poitrenaud. Three SCC-based Emptiness Checks for Generalized Büchi Automata. LPAR-19, 2013, §3.2.
 -/
 
+
+public section
 namespace LTLLib
 
 end LTLLib

@@ -1,3 +1,5 @@
+module
+
 /-
   Every subformula of a formula, indexed by a `Nat` id (`[HOL4-ltl]`'s `unique_node_formula` dedup, done once). Every
   VWAA and TGBA state built from it is a set of ids, canonically hashable and comparable, unlike a set of `NNF` trees.
@@ -17,7 +19,9 @@
   - The table
   - Invariants
 -/
-import LTLLib.LTL.Subformulas
+public import LTLLib.LTL.Subformulas
+
+public section
 
 namespace LTLLib
 
@@ -33,17 +37,17 @@ structure SubformulaTable (α : Type u) [BEq α] [Hashable α] where
 namespace SubformulaTable
 
 /-- Every subformula of `φ`, ids assigned in `subformulasDedup`'s root-first order. -/
-def build (φ : NNF α) : SubformulaTable α :=
+@[expose] def build (φ : NNF α) : SubformulaTable α :=
   let formulas := φ.subformulasDedup.toArray
   let index := (formulas.foldl (init := (Std.HashMap.emptyWithCapacity formulas.size, 0))
     fun (m, i) f => (m.insert f i, i + 1)).1
   { formulas, index }
 
 /-- The id of `φ`, `0` if `φ` is not in the table. -/
-def idOf (t : SubformulaTable α) (φ : NNF α) : Nat := t.index.getD φ 0
+@[expose] def idOf (t : SubformulaTable α) (φ : NNF α) : Nat := t.index.getD φ 0
 
 /-- The formula with id `i`, `default` if `i` is out of range. -/
-def formulaOf (t : SubformulaTable α) (i : Nat) : NNF α := t.formulas.getD i default
+@[expose] def formulaOf (t : SubformulaTable α) (i : Nat) : NNF α := t.formulas.getD i default
 
 /-! ## Invariants
 

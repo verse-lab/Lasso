@@ -1,3 +1,5 @@
+module
+
 /-
   Full, unconditional correctness of the LTL-to-GBA construction: `constructGBA` accepts exactly the ω-words satisfying `φ`.
 
@@ -5,8 +7,10 @@
   - `constructGBA_correct`: `constructGBA` accepts exactly the words satisfying `φ`. Unconditional, needs only `createGraph φ = some st`
 -/
 
-import LTLLib.LTLtoGBA.Completeness
-import LTLLib.LTLtoGBA.Soundness
+public import LTLLib.LTLtoGBA.Completeness
+public import LTLLib.LTLtoGBA.Soundness
+
+public section
 
 namespace LTLLib
 

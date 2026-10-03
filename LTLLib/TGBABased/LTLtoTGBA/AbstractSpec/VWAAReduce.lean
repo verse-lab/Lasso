@@ -1,3 +1,5 @@
+module
+
 /-
   VWAA reductions. One letterwise simulation theorem carries `AcceptsFrom` across any transition change meeting a local,
   per-letter condition, and the optimisations of `[BKŘS12]` §5 and `[GO01]` §6 are instances of it. It generalises
@@ -39,9 +41,11 @@
   - Restricting to reachable states
   - State relabeling
 -/
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAARuns
-import LTLLib.Data.FinSet
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAARuns
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 
@@ -57,7 +61,7 @@ structure VWAA.ListSim (B A : List (((α → Prop) → Prop) × FinSet Q)) : Pro
   complete : ∀ g O v, (g, O) ∈ A → g v → ∃ g' O', (g', O') ∈ B ∧ g' v ∧ O' ⊆ O
 
 /-- Every target of `B` already occurs as a target of `A`. -/
-def VWAA.TargetsIn (B A : List (((α → Prop) → Prop) × FinSet Q)) : Prop := ∀ p ∈ B, ∃ q ∈ A, q.2 = p.2
+@[expose] def VWAA.TargetsIn (B A : List (((α → Prop) → Prop) × FinSet Q)) : Prop := ∀ p ∈ B, ∃ q ∈ A, q.2 = p.2
 
 namespace VWAA.ListSim
 
@@ -114,7 +118,7 @@ theorem append {A1 A2 B1 B2 : List (((α → Prop) → Prop) × FinSet Q)} (h1 :
 end VWAA.TargetsIn
 
 /-- `[BKŘS12]` §5's `⊗`: every combination of an alternative from each side, guards conjoined and targets unioned. -/
-def VWAA.lprod (xs ys : List (((α → Prop) → Prop) × FinSet Q)) : List (((α → Prop) → Prop) × FinSet Q) :=
+@[expose] def VWAA.lprod (xs ys : List (((α → Prop) → Prop) × FinSet Q)) : List (((α → Prop) → Prop) × FinSet Q) :=
   xs.flatMap fun p => ys.map fun q => (fun v => p.1 v ∧ q.1 v, p.2 ∪ q.2)
 
 theorem VWAA.mem_lprod {xs ys : List (((α → Prop) → Prop) × FinSet Q)} {p : ((α → Prop) → Prop) × FinSet Q} :

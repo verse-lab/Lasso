@@ -1,3 +1,5 @@
+module
+
 /-
   The flush-enumeration contract shared by the lowlink-based refinements of `GenericDFS.lean`: the sets POP flushes as it
   closes frames are the maximal SCCs of the reachable subgraph, as `SCCEnumerationSound` asks.
@@ -51,11 +53,13 @@
   - The reporting run
   - Recorded flushes
 -/
-import LTLLib.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.AbstractSpec.SCCTheory
-import LTLLib.TGBABased.SCC.GenericDFS
-import LTLLib.TGBABased.SCC.LiveStack
-import LTLLib.Tactic.Set
+public import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.AbstractSpec.SCCTheory
+public import LTLLib.TGBABased.SCC.GenericDFS
+public import LTLLib.TGBABased.SCC.LiveStack
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -66,7 +70,7 @@ variable {State : Type u} [BEq State] [Hashable State]
 /-! ## The lowlink view -/
 
 /-- The states POP is about to flush, which are exactly the live states from the closing frame upwards. -/
-def flushedSet (live : Array State) (pos : Nat) : Std.HashSet State :=
+@[expose] def flushedSet (live : Array State) (pos : Nat) : Std.HashSet State :=
   (live.extract pos live.size).foldl (init := Std.HashSet.emptyWithCapacity 0) fun acc s => acc.insert s
 
 /-- What a lowlink-based refinement exposes of its own search state. -/
@@ -84,7 +88,7 @@ structure LowlinkView (ops : DFSOps State) where
   posNat : ops.Position → Nat
 
 /-- Does this POP close its frame? Its lowlink having stayed at its own position makes the frame an SCC root. -/
-def LowlinkView.closes {ops : DFSOps State} (V : LowlinkView ops) (aux : ops.Aux)
+@[expose] def LowlinkView.closes {ops : DFSOps State} (V : LowlinkView ops) (aux : ops.Aux)
     (step : DFSStep State ops.Position) : Bool :=
   (V.lowlinks aux).back? == some (V.posNat step.pos)
 
@@ -151,7 +155,7 @@ the state that flushed it. -/
 abbrev EnumAux (ops : DFSOps State) := ops.Aux × Array (Std.HashSet State × ops.Aux)
 
 /-- The refinement's operations, recording every closed frame and never reporting. -/
-def enumOps (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
+@[expose] def enumOps (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
   Aux := EnumAux ops
   Position := ops.Position
   initAux := (ops.initAux, #[])
@@ -179,7 +183,7 @@ def enumRun (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array 
   (genericDFS (enumOps ops V) succs edgeMarks expand initialStates (enumOps ops V).initAux).2.2
 
 /-- The sets that run flushed, in the order POP closed them. -/
-def enumSCCs (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
+@[expose] def enumSCCs (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State) :
     List (Std.HashSet State) :=
@@ -189,7 +193,7 @@ def enumSCCs (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array
 
 /-- The recording wrapper without the snapshot beside each set, which compiled code runs so that POP updates the
 refinement's state in place. -/
-def enumOpsFast (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
+@[expose] def enumOpsFast (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
   Aux := ops.Aux × Array (Std.HashSet State)
   Position := ops.Position
   initAux := (ops.initAux, #[])
@@ -211,7 +215,7 @@ def enumSCCsFast (ops : DFSOps State) (V : LowlinkView ops) (succs : State → A
   (genericDFS (enumOpsFast ops V) succs edgeMarks expand initialStates (enumOpsFast ops V).initAux).2.2.toList
 
 /-- A recording state with its snapshots dropped. -/
-def forgetSnapshots {ops : DFSOps State} {V : LowlinkView ops} (aux : (enumOps ops V).Aux) :
+@[expose] def forgetSnapshots {ops : DFSOps State} {V : LowlinkView ops} (aux : (enumOps ops V).Aux) :
     (enumOpsFast ops V).Aux :=
   (aux.1, aux.2.map (·.1))
 
@@ -409,16 +413,16 @@ def LowlinkView.grayOf {ops : DFSOps State} (V : LowlinkView ops)
 def revGetD (arr : Array Nat) (k : Nat) : Nat := arr.toList.reverse.getD k 0
 
 /-- Frame `k`'s own lowlink, innermost first. -/
-def LowlinkView.lowlinkAt {ops : DFSOps State} (V : LowlinkView ops) (aux : ops.Aux) (k : Nat) : Nat :=
+@[expose] def LowlinkView.lowlinkAt {ops : DFSOps State} (V : LowlinkView ops) (aux : ops.Aux) (k : Nat) : Nat :=
   revGetD (V.lowlinks aux) k
 
 /-- Frame `k`'s own accumulator, innermost first. -/
-def LowlinkView.accAt {ops : DFSOps State} (V : LowlinkView ops) (aux : ops.Aux) (k : Nat) : Nat :=
+@[expose] def LowlinkView.accAt {ops : DFSOps State} (V : LowlinkView ops) (aux : ops.Aux) (k : Nat) : Nat :=
   revGetD (V.accs aux) k
 
 /-- An edge the search has already taken, which is every edge out of a live state that is not an open frame,
 and out of one that is, the prefix its cursor has covered. -/
-def ExploredEdge (gray : List (GrayFrame State)) (succs : State → Array State) (s t : State) : Prop :=
+@[expose] def ExploredEdge (gray : List (GrayFrame State)) (succs : State → Array State) (s t : State) : Prop :=
   ∃ j, (succs s)[j]? = some t ∧ ∀ g ∈ gray, g.state = s → j < g.idx
 
 omit [BEq State] [Hashable State] [Inhabited State] in
@@ -737,7 +741,7 @@ theorem enumOps_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
     (fun q hq => Reachable.base hq) (enumOps ops V).initAux rw' ru hwf hw hu hnone).2
 
 /-- Every recorded entry is a closing POP's own flush, as an invariant on the recorded array alone. -/
-def RecordedWF (ops : DFSOps State) (V : LowlinkView ops)
+@[expose] def RecordedWF (ops : DFSOps State) (V : LowlinkView ops)
     (rec : Array (Std.HashSet State × ops.Aux)) : Prop :=
   ∀ p ∈ rec, ∃ step : DFSStep State ops.Position,
     V.closes p.2 step = true ∧ p.1 = flushedSet (V.live p.2) (V.posNat step.pos)
@@ -3065,7 +3069,7 @@ stops at the reporting UPDATE or POP, so what it leaves behind is the invariant 
 
 /-- The search state a report was made from, the invariant holding just before the reporting move at the frame
 the report names as its anchor. -/
-def ReportedFrom [Inhabited State] (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
+@[expose] def ReportedFrom [Inhabited State] (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) (aux' : ops.Aux)
     (anchor : State) : Prop :=
   ∃ (aux : ops.Aux) (step : DFSStep State ops.Position) (gray : List (GrayFrame State)),
@@ -3079,7 +3083,7 @@ def ReportedFrom [Inhabited State] (ops : DFSOps State) (V : LowlinkView ops) (s
         ops.update aux (step.succMarks[step.idx]!) d = (aux', true))
 
 /-- What a run of the refinement leaves behind, the invariant with no frame open when nothing is reported. -/
-def SearchOutcome [Inhabited State] (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
+@[expose] def SearchOutcome [Inhabited State] (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
     (r : Option (State × List State) × ops.Aux) : Prop :=
   (r.1 = none → SearchWF ops V succs edgeMarks initialStates r.2 []) ∧
@@ -3303,7 +3307,7 @@ structure MonotoneAlong (ops : DFSOps State) (R : ops.Aux → ops.Aux → Prop) 
 
 /-- Every recorded flush was made at a closing POP the search invariant held at and which did not report, and the
 run has since moved on from that POP along `R` to `cur`. -/
-def RecordedAt [Inhabited State] (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
+@[expose] def RecordedAt [Inhabited State] (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State)
     (R : ops.Aux → ops.Aux → Prop) (recorded : Array (Std.HashSet State × ops.Aux)) (cur : ops.Aux) : Prop :=
   ∀ p ∈ recorded, ∃ (step : DFSStep State ops.Position) (gray : List (GrayFrame State)),

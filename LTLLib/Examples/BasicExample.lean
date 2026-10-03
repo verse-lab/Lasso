@@ -1,9 +1,12 @@
+module
+
 /-
   Minimal end-to-end example: LTL formula → tableau → GBA → (degeneralized) BA
 
   Formula: □(a → ◇b)  ("whenever `a` holds, `b` eventually holds").
 -/
 import LTLLib.Examples.BuildPrint
+meta import LTLLib.Examples.BuildPrint
 
 namespace LTLLib.Examples
 

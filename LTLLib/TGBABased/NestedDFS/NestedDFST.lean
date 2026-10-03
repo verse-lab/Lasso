@@ -1,3 +1,5 @@
+module
+
 /-
   Edge-aware nested DFS, the executable algorithm with fuel. Acceptance lives on edges (the single mark 0 after
   degeneralization), so the CVWY/Schwoon-Esparza algorithm is retargeted at marked tree edges. When a stack frame's
@@ -14,14 +16,16 @@
   Sections:
   - Fuel-based outer DFS, edge-aware
 -/
-import LTLLib.NestedDFS.NestedDFSCorrectness
+public import LTLLib.NestedDFS.NestedDFSCorrectness
+
+public section
 
 namespace LTLLib
 
 /-! ## Fuel-based outer DFS, edge-aware -/
 
 /-- Edge-aware outer DFS loop with fuel. Each stack frame also records whether its incoming tree edge carries mark 0. -/
-def outerDFST_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
+@[expose] def outerDFST_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (fuel : Nat)
     (stack : List (State × List State × Bool))
@@ -86,7 +90,7 @@ def outerDFST_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
           outerDFST_fuel succs edgeMarks fuel stack'' (pathStack ++ [succ]) st
 
 /-- Edge-aware nested DFS with fuel over all initial states. Root frames have no incoming tree edge, so they start unmarked. -/
-def nestedDFST_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
+@[expose] def nestedDFST_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
     (initialStates : List State)
     (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)

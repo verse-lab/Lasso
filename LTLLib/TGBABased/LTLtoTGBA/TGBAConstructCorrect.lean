@@ -1,3 +1,5 @@
+module
+
 /-
   `buildTGBA`'s numbered output accepts exactly what the VWAA it is built from accepts. Runs of the exported TGBA and runs
   of `canonicalTGBA`, the `FinSet Nat`-indexed `SetTGBA` the construction denotes, determine each other whenever the
@@ -21,15 +23,19 @@
   - Canonical runs to numbered runs
   - Correctness of `buildTGBA`
 -/
-import LTLLib.TGBA
-import LTLLib.LTL.Semantics
-import LTLLib.TGBABased.AbstractSpec.Acceptance
-import LTLLib.TGBABased.LTLtoTGBA.Label
-import LTLLib.TGBABased.LTLtoTGBA.VWAA
-import LTLLib.TGBABased.LTLtoTGBA.TGBAConstruct
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.SetTGBA
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBA
-import LTLLib.Data.FinSet
+public import LTLLib.TGBA
+public import LTLLib.LTL.Semantics
+public import LTLLib.TGBABased.AbstractSpec.Acceptance
+public import LTLLib.TGBABased.LTLtoTGBA.Label
+public import LTLLib.TGBABased.LTLtoTGBA.VWAA
+public import LTLLib.TGBABased.LTLtoTGBA.TGBAConstruct
+-- The correctness bridge unfolds the concrete construction's private steps.
+import all LTLLib.TGBABased.LTLtoTGBA.TGBAConstruct
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.SetTGBA
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBA
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 

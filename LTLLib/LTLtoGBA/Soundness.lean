@@ -1,3 +1,5 @@
+module
+
 /-
   Soundness of the LTL-to-GBA construction: any valid accepting run through `ExpandSpec`-satisfying nodes labeled by an
   ω-word ξ implies ξ ⊨ φ.
@@ -18,12 +20,14 @@
   - Concrete soundness via expandOASpec
 -/
 
-import LTLLib.LTLtoGBA.Invariants
-import LTLLib.LTLtoGBA.ToGBA
-import LTLLib.LTLtoGBA.AbstractSpec.ExpansionSpec
-import LTLLib.LTL.Semantics
-import LTLLib.LTL.Subformulas
-import LTLLib.AbstractSpec.Acceptance
+public import LTLLib.LTLtoGBA.Invariants
+public import LTLLib.LTLtoGBA.ToGBA
+public import LTLLib.LTLtoGBA.AbstractSpec.ExpansionSpec
+public import LTLLib.LTL.Semantics
+public import LTLLib.LTL.Subformulas
+public import LTLLib.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 

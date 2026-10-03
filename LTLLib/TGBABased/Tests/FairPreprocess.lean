@@ -1,3 +1,5 @@
+module
+
 /-
   Differential tests of the fairness preprocessing against `Lasso.evalNNF`: `rehoist` exposing nested fairness conjuncts,
   the combinations of sides `branches` enumerates, and `modelCheckUnderFairnessDisjunctiveHoist` on random negated
@@ -16,6 +18,12 @@ import LTLLib.TGBABased.Fairness.Rehoist
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.Fairness.DisjunctiveHoist
+meta import LTLLib.TGBABased.Fairness.FairPipeline
+meta import LTLLib.TGBABased.Fairness.Rehoist
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.FairPreprocess
 

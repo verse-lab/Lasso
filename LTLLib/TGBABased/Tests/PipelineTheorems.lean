@@ -1,3 +1,5 @@
+module
+
 /-
   Proof-level tests, checked at elaboration time: the correctness theorems are usable on concrete inputs, and nothing in
   the pipeline leaks an axiom.
@@ -14,7 +16,8 @@
 import LTLLib.TGBABased.DijkstraCheck
 import LTLLib.TGBABased.ModelCheck
 import LTLLib.TGBABased.Satisfiability
-import LTLLib.TGBABased.Tests.ModelCheckCounterExample
+-- This proof test reuses the private traffic-light fixture.
+import all LTLLib.TGBABased.Tests.ModelCheckCounterExample
 
 namespace LTLLib.Tests.PipelineTheorems
 

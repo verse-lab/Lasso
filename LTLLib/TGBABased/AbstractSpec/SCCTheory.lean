@@ -1,3 +1,5 @@
+module
+
 /-
   Accepting-SCC sufficiency for transition-based acceptance: a `TAcceptingCycle` exists iff some reachable, internally
   strongly connected subset covers every acceptance mark on its internal edges. `AcceptingMarks` follows [RDKP13] §2, an
@@ -31,10 +33,12 @@
   - Cycle to SCC
   - Sufficiency
 -/
-import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
-import LTLLib.AbstractSpec.GraphPaths
-import LTLLib.Data.Nat
-import LTLLib.Tactic.Set
+public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+public import LTLLib.AbstractSpec.GraphPaths
+public import LTLLib.Data.Nat
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -43,12 +47,12 @@ variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 /-! ## Accepting SCC -/
 
 /-- The `succs` graph restricted to `scc`. -/
-def sccSuccs (succs : State → Array State) (scc : Std.HashSet State) : State → Array State :=
+@[expose] def sccSuccs (succs : State → Array State) (scc : Std.HashSet State) : State → Array State :=
   fun s => (succs s).filter scc.contains
 
 /-- Marks on `scc`'s internal edges (`(S×S)∩δ`, [RDKP13] §2) cover every mark `< numMarks`, and `scc` has at least
 one internal edge, so a trivial SCC without a self-loop cannot vacuously satisfy `numMarks = 0`. -/
-def AcceptingMarks (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+@[expose] def AcceptingMarks (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (numMarks : Nat) (scc : Std.HashSet State) : Prop :=
   (∃ s ∈ scc, ∃ t ∈ scc, t ∈ succs s) ∧
   ∀ m, m < numMarks → ∃ s ∈ scc, ∃ t ∈ scc, t ∈ succs s ∧ m ∈ edgeMarks s t
@@ -75,7 +79,7 @@ theorem AcceptingMarks.mono {succs : State → Array State} {edgeMarks : State �
   exact ⟨s, hsub s hs, t, hsub t ht, hedge, hmark⟩
 
 /-- Any two members of `scc` are connected by a path staying entirely inside `scc`. -/
-def InternallyConnected (succs : State → Array State) (scc : Std.HashSet State) : Prop :=
+@[expose] def InternallyConnected (succs : State → Array State) (scc : Std.HashSet State) : Prop :=
   ∀ s ∈ scc, ∀ t ∈ scc, s = t ∨ PathTo (sccSuccs succs scc) (fun _ => False) s t
 
 omit [LawfulBEq State] in
@@ -342,7 +346,7 @@ theorem chain_glue {succs : State → Array State} (l p : List State)
 
 /-- What an SCC enumeration has to deliver. Every listed set is reachable and internally connected, and every
 reachable internally connected set sits inside one of them, which is maximality in the form the prune needs. -/
-def SCCEnumerationSound (initialStates : List State) (succs : State → Array State)
+@[expose] def SCCEnumerationSound (initialStates : List State) (succs : State → Array State)
     (sccs : List (Std.HashSet State)) : Prop :=
   (∀ C ∈ sccs, ∀ s ∈ C, Reachable initialStates succs s) ∧
   (∀ C ∈ sccs, InternallyConnected succs C) ∧

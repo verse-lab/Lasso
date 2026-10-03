@@ -1,3 +1,5 @@
+module
+
 /-
   LTL semantics: denotation of NNF and Formula types into propositions
   over ω-words, built on Lentil's TLA temporal logic foundations.
@@ -23,8 +25,10 @@
   - Formula-level semantics
   - toNNF correctness
 -/
-import Lentil
-import LTLLib.LTL.Syntax
+public import Lentil
+public import LTLLib.LTL.Syntax
+
+public section
 
 namespace LTLLib
 
@@ -47,7 +51,7 @@ We define it here and prove the key properties. -/
 
 /-- Release operator: `p R q` holds iff for every `j`, `q` holds at suffix `j` or `p` held at some `i < j`.
     Dual of Until: `p R q ≡ ¬(¬p U ¬q)`. -/
-def tla_release {α : Type u} (p q : pred α) : pred α :=
+@[expose] def tla_release {α : Type u} (p q : pred α) : pred α :=
   fun σ n => ∀ j, q σ (n + j) ∨ ∃ i, i < j ∧ p σ (n + i)
 
 syntax:25 tlfml:26 " 𝑅 " tlfml:25 : tlfml
@@ -74,7 +78,7 @@ theorem always_eq_release_false {α : Type u} (p : pred α) :
 
 /-- Denotational semantics: map an NNF formula to a Lentil predicate over ω-words.
     Each ω-word position is a valuation `α → Prop`. -/
-def NNF.toPred {α} : NNF α → pred (α → Prop)
+@[expose] def NNF.toPred {α} : NNF α → pred (α → Prop)
   | .tt        => tl_true
   | .ff        => tl_false
   | .prop a    => state_pred (fun v => v a)
@@ -93,7 +97,7 @@ private theorem NNF.toPred_drop (φ : NNF α) (ξ : OmegaWord α) (k n : Nat) :
       Nat.add_left_comm]
 
 /-- An ω-word `ξ` satisfies an NNF formula `φ`. -/
-def NNF.satisfies {α} (ξ : OmegaWord α) (φ : NNF α) : Prop :=
+@[expose] def NNF.satisfies {α} (ξ : OmegaWord α) (φ : NNF α) : Prop :=
   φ.toPred ξ 0
 
 /-! ## Unfolding lemmas for NNF.satisfies -/
@@ -161,7 +165,7 @@ independent of the TLA layer so `toNNF_correct` is a genuine cross-check between
 semantics. -/
 
 /-- Direct semantics on the user-facing Formula type, independent of NNF. -/
-def Formula.directSatisfies {α} (ξ : OmegaWord α) : Formula α → Prop
+@[expose] def Formula.directSatisfies {α} (ξ : OmegaWord α) : Formula α → Prop
   | .tt => True
   | .ff => False
   | .atom a => ξ 0 a
@@ -179,7 +183,7 @@ def Formula.directSatisfies {α} (ξ : OmegaWord α) : Formula α → Prop
   | .always φ => ∀ j, φ.directSatisfies (ξ.drop j)
 
 /-- NNF-based satisfaction on the user-facing Formula type. -/
-def Formula.satisfies {α} (ξ : OmegaWord α) (φ : Formula α) : Prop :=
+@[expose] def Formula.satisfies {α} (ξ : OmegaWord α) (φ : Formula α) : Prop :=
   (φ.toNNF true).satisfies ξ
 
 /-- Splitting at the top-level conjunctions preserves meaning. -/

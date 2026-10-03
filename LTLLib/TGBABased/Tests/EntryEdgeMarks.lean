@@ -1,3 +1,5 @@
+module
+
 /-
   Tests that `dijkstraUpdate`'s merge (`SCC/DijkstraSCC.lean`) does not count a mark on the tree edge entering an SCC's
   root as a mark of that SCC. The merge folds `dfs[roots.top().pos].acc` for each root it pops
@@ -19,6 +21,8 @@
 -/
 import LTLLib.TGBABased.SCC.DijkstraSCC
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.SCC.DijkstraSCC
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.EntryEdgeMarks
 

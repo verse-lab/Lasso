@@ -1,3 +1,5 @@
+module
+
 /-
   The Streett prune's fast path: the scan reads option bits that the expansion carried, instead of
   asking the spec's region predicates once per (edge, option). `EdgeLabels.md` §13.20 (the executable),
@@ -30,8 +32,10 @@
   `Tests/StreettPruneFast.lean` keeps the 200-case differential test that stood in for this proof while
   the route was benchmarked; it is now a cross-check of the executable against the theorem.
 -/
-import LTLLib.TGBABased.SCC.StreettPrune
-import LTLLib.Tactic.Set
+public import LTLLib.TGBABased.SCC.StreettPrune
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -107,7 +111,7 @@ structure StreettAuxF (State : Type u) [BEq State] [Hashable State] where
   -- was one callback pair plus a region filter per witness state, 27 % of a `fails` row on `servers`.
   witnessSuccs : Array (Array State)
 
-def streettInitAuxF : StreettAuxF State where
+@[expose] def streettInitAuxF : StreettAuxF State where
   live := #[]
   liveIndex := Std.HashMap.emptyWithCapacity 0
   dead := Std.HashSet.emptyWithCapacity 0
@@ -178,14 +182,14 @@ def scanFrameF (cs : CompiledSpec State L) (liveIndex : Std.HashMap State Nat)
 Copies of the proved operations with the two retained arrays threaded through. Destructured rather than
 `{ aux with … }` for the same reason as there: in-place updates. -/
 
-def streettPushF (aux : StreettAuxF State) (q : State) (_marks : Std.HashSet Nat) :
+@[expose] def streettPushF (aux : StreettAuxF State) (q : State) (_marks : Std.HashSet Nat) :
     StreettAuxF State × Nat :=
   let ⟨live, liveIndex, dead, dstack, wit, wopts, pending, ls, lo, ws⟩ := aux
   let pos := live.size
   (⟨live.push q, liveIndex.insert q pos, dead, dstack.push (pos, 0), wit, wopts, pending,
     ls.push #[], lo.push #[], ws⟩, pos)
 
-def streettUpdateF (numMarks : Nat) (aux : StreettAuxF State) (marks : Std.HashSet Nat) (d : State) :
+@[expose] def streettUpdateF (numMarks : Nat) (aux : StreettAuxF State) (marks : Std.HashSet Nat) (d : State) :
     StreettAuxF State × Bool :=
   let ⟨live, liveIndex, dead, dstack, wit, wopts, pending, ls, lo, ws⟩ := aux
   match dstack.back? with
@@ -197,7 +201,7 @@ def streettUpdateF (numMarks : Nat) (aux : StreettAuxF State) (marks : Std.HashS
 /-- POP. The frame's expansion is stashed at its position first, so that when this frame closes an SCC
 the scan sees its own edges too; the stash is dropped with the states by `shrink` wherever the proved
 route calls `liveFlush`. -/
-def streettPopF [Inhabited State] (cs : CompiledSpec State L) (curRegions : Nat)
+@[expose] def streettPopF [Inhabited State] (cs : CompiledSpec State L) (curRegions : Nat)
     (aux : StreettAuxF State) (step : DFSStep State Nat) : StreettAuxF State × Bool :=
   let ⟨live, liveIndex, dead, dstack0, wit, wopts, pending, ls0, lo0, ws⟩ := aux
   let ls := ls0.setIfInBounds step.pos step.succ
@@ -239,7 +243,7 @@ def streettPopF [Inhabited State] (cs : CompiledSpec State L) (curRegions : Nat)
 
 /-! ## The `DFSOps` instance and the drivers -/
 
-def streettOpsF [Inhabited State] [LawfulBEq State] [LawfulHashable State]
+@[expose] def streettOpsF [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (curRegions : Nat) : DFSOps State where
   Aux := StreettAuxF State
   Position := Nat
@@ -258,7 +262,7 @@ variable [Inhabited State] [LawfulBEq State] [LawfulHashable State]
 
 /-- One search. `dfsGo` hands `succs`/`edgeMarks` to `ops.pop` and nowhere else, and this `pop` ignores
 them, so they are stubbed here: by construction the search expands through `expand` alone. -/
-def streettRunF (cs : CompiledSpec State L) (curRegions : Nat)
+@[expose] def streettRunF (cs : CompiledSpec State L) (curRegions : Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State) :
     Option (State × List State) × StreettAuxF State :=
   genericDFS (streettOpsF cs curRegions) (fun _ => #[]) (fun _ _ => Std.HashSet.emptyWithCapacity 0)
@@ -266,14 +270,14 @@ def streettRunF (cs : CompiledSpec State L) (curRegions : Nat)
 
 /-- A candidate's search: the region-restricted expansion *with bits*, filtered to its states in lockstep
 as `Candidate.expand` does. -/
-def candidateRunF (cs : CompiledSpec State L)
+@[expose] def candidateRunF (cs : CompiledSpec State L)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (c : Candidate State) : Option (State × List State) × StreettAuxF State :=
   streettRunF (cs.atBits c.regions) c.regions
     (fun s => filterExpand (regionExpand (c.region cs) s) c.states.contains) c.states.toList
 
 /-- `pruneLoop` for the fast path. -/
-def pruneLoopF (cs : CompiledSpec State L)
+@[expose] def pruneLoopF (cs : CompiledSpec State L)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     Nat → List (Candidate State) →
       Option (Option (State × Array State × Array (Array State) × Array Nat × Candidate State) × Nat)
@@ -288,14 +292,14 @@ def pruneLoopF (cs : CompiledSpec State L)
 partial_fixpoint -- terminating for the reason `pruneLoop` is
 
 /-- The retained witness successors as a lookup for the report. §13.26 -/
-def witnessMemo (wit : Array State) (ws : Array (Array State)) : Std.HashMap State (Array State) :=
+@[expose] def witnessMemo (wit : Array State) (ws : Array (Array State)) : Std.HashMap State (Array State) :=
   (List.range wit.size).foldl (init := Std.HashMap.emptyWithCapacity wit.size) fun m k =>
     m.insert wit[k]! ws[k]!
 
 /-- The report's graph: the memo, falling back to `g` off the witness. Equal to `g` as a function whenever
 the memo is correct (`memoGraph_eq`), which is all `streettCheckF_eq` needs; `witnessCycle` only asks
 about witness states, so the fallback is never taken. -/
-def memoGraph (memo : Std.HashMap State (Array State)) (g : State → Array State) : State → Array State :=
+@[expose] def memoGraph (memo : Std.HashMap State (Array State)) (g : State → Array State) : State → Array State :=
   fun s => match memo[s]? with
     | some ss => ss
     | none => g s
@@ -303,7 +307,7 @@ def memoGraph (memo : Std.HashMap State (Array State)) (g : State → Array Stat
 /-- `streettCheck` for the fast path. `succs` and `edgeMarks` are used only at report time — the stem's
 BFS, the cycle's rebuild and the lasso validation — never by a search. `regionExpand` is the spec's
 restricted expansion *with bits*, which the candidate searches walk. -/
-def streettCheckF (cs : CompiledSpec State L) (succs : State → Array State)
+@[expose] def streettCheckF (cs : CompiledSpec State L) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
@@ -336,7 +340,7 @@ section ScanProof
 
 /-- One edge's packed bits, defined *through* `scanOptionsAt` — from the full region mask and no marks,
 the marks shifted above the regions — so that the scan's own `testBit` lemmas apply to it unchanged. -/
-def CompiledSpec.edgeBits (cs : CompiledSpec State L) (lab : State × State) : Nat :=
+@[expose] def CompiledSpec.edgeBits (cs : CompiledSpec State L) (lab : State × State) : Nat :=
   (scanOptionsAt cs lab 0 ((1 <<< cs.numOptions) - 1) 0).1 |||
     ((scanOptionsAt cs lab 0 ((1 <<< cs.numOptions) - 1) 0).2 <<< cs.numOptions)
 
@@ -988,7 +992,7 @@ def StreettAuxF.proj (a : StreettAuxF State) : StreettAux State :=
 
 omit [BEq State] [Hashable State] in
 /-- Forget a frame's payload. Two stacks related by `strip` agree on what the proved route reads. -/
-def DFSStep.strip (st : DFSStep State Nat) : DFSStep State Nat := { st with succOpts := #[] }
+@[expose] def DFSStep.strip (st : DFSStep State Nat) : DFSStep State Nat := { st with succOpts := #[] }
 
 omit [BEq State] [Hashable State] in
 theorem DFSStep.strip_state (st : DFSStep State Nat) : st.strip.state = st.state := rfl
@@ -1014,7 +1018,7 @@ theorem DFSStep.eq_of_strip_eq {st st' : DFSStep State Nat} (h : st.strip = st'.
   rfl
 
 /-- The retained witness successors are the witness's successors in the graph the search ran on. §13.26 -/
-def WitOK [Inhabited State] (succs : State → Array State) (a : StreettAuxF State) : Prop :=
+@[expose] def WitOK [Inhabited State] (succs : State → Array State) (a : StreettAuxF State) : Prop :=
   a.witnessSuccs.size = a.witness.size ∧
     ∀ k, k < a.witness.size → a.witnessSuccs[k]! = succs a.witness[k]!
 
@@ -2044,7 +2048,7 @@ def dropWS (r : Option (State × Array State × Array (Array State) × Array Nat
 
 /-- The retained successors a fast prune result carries are its witness's successors in its candidate's
 graph, which is what the report's equality needs. -/
-def WSOK [Inhabited State] (cs : CompiledSpec State L) (rspec : RStreettSpec State L)
+@[expose] def WSOK [Inhabited State] (cs : CompiledSpec State L) (rspec : RStreettSpec State L)
     (r : Option (State × Array State × Array (Array State) × Array Nat × Candidate State) × Nat) : Prop :=
   ∀ a w ws wo C, r.1 = some (a, w, ws, wo, C) →
     ws.size = w.size ∧ ∀ k, k < w.size → ws[k]! = (C.graph cs rspec) w[k]!

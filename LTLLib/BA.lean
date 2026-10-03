@@ -1,3 +1,5 @@
+module
+
 /-
   Standard (non-generalized) Büchi Automaton and GBA degeneralization.
 
@@ -18,10 +20,12 @@
   - Every state on the cycle stays inside a well-formed BA's state set
 -/
 
-import LTLLib.GBA
-import LTLLib.AbstractSpec.Acceptance
-import LTLLib.AbstractSpec.EmptinessCheck
-import LTLLib.AbstractSpec.Lasso
+public import LTLLib.GBA
+public import LTLLib.AbstractSpec.Acceptance
+public import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.AbstractSpec.Lasso
+
+public section
 
 namespace LTLLib
 
@@ -69,18 +73,18 @@ variable {α} [BEq α] [Hashable α]
 
 /-- A state `(q, i)` is accepting iff `i = 0` and `q` is in the first GBA acceptance set
 (or there are none). -/
-def isAccepting (ba : BA α) (s : BAState) : Bool :=
+@[expose] def isAccepting (ba : BA α) (s : BAState) : Bool :=
   ba.acceptingStates.contains s
 
-def getSuccessors (ba : BA α) (s : BAState) : Array BAState :=
+@[expose] def getSuccessors (ba : BA α) (s : BAState) : Array BAState :=
   ba.successors[s]?.getD #[]
 
 /-- Get the labeling of a BA state (determined by its GBA component only). -/
-def getLabeling (ba : BA α) (s : BAState) : Std.HashSet α × Std.HashSet α :=
+@[expose] def getLabeling (ba : BA α) (s : BAState) : Std.HashSet α × Std.HashSet α :=
   ba.labeling[s.gbaState]?.getD (Std.HashSet.emptyWithCapacity 0, Std.HashSet.emptyWithCapacity 0)
 
 /-- Label-compatibility check: does `valuation` satisfy `s`'s propositional constraint? -/
-def compatible (ba : BA α) (s : BAState) (valuation : Std.HashSet α) : Bool :=
+@[expose] def compatible (ba : BA α) (s : BAState) (valuation : Std.HashSet α) : Bool :=
   let (pos, neg) := ba.getLabeling s
   pos.all valuation.contains && !neg.any valuation.contains
 
@@ -91,7 +95,7 @@ structure WellFormed (ba : BA α) : Prop where
     ba.states.contains s'
 
 /-- Convert a computational `BA` to an abstract `OASpec` with 1 acceptance set. -/
-def toSpec [BEq α] [Hashable α] (ba : BA α) : OASpec BAState α 1 where
+@[expose] def toSpec [BEq α] [Hashable α] (ba : BA α) : OASpec BAState α 1 where
   trans s s' := s' ∈ ba.getSuccessors s
   initial s := ba.initialStates.contains s
   labelCompat s v :=
@@ -116,7 +120,7 @@ variable {α} [BEq α] [Hashable α]
   `q ∈ acceptSets[i]`, else `i' = i`
 - Accepting: `{(q, 0) | q ∈ states, q ∈ acceptSets[0]}` (all `(q, 0)` when `k = 1` from no
   acceptance sets, since there are then no fairness obligations to track) -/
-def degeneralize (gba : GBA α) : BA α :=
+@[expose] def degeneralize (gba : GBA α) : BA α :=
   let k := if gba.acceptSets.size == 0 then 1 else gba.acceptSets.size
   let totalStates := gba.states.size * k
 
@@ -167,7 +171,7 @@ end GBA
 /-! ## Lasso witness -/
 
 /-- The `BA.toSpec` specialization of `toValidLassoOf`. -/
-def AcceptingCycle.toValidLasso {α} [BEq α] [Hashable α] {ba : BA α}
+theorem AcceptingCycle.toValidLasso {α} [BEq α] [Hashable α] {ba : BA α}
     (ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting) :
     ValidLasso ba.toSpec ac.stem ac.cycle :=
   ac.toValidLassoOf Iff.rfl (Std.HashSet.mem_toList.trans Std.HashSet.mem_iff_contains) Iff.rfl

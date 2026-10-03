@@ -1,3 +1,5 @@
+module
+
 /-
   Well-founded executable version of the edge-aware nested DFS, terminating by a `reachCount` measure, and the fuel bridge
   transporting the correctness theorems of `NestedDFSTCorrectness.lean` onto it.
@@ -21,8 +23,12 @@
   - Top-level `nestedDFST`, well-founded
   - Fuel ↔ well-founded bridge, top level
 -/
-import LTLLib.NestedDFS.NestedDFSTermination
-import LTLLib.TGBABased.NestedDFS.NestedDFSTCorrectness
+public import LTLLib.NestedDFS.NestedDFSTermination
+-- The TGBA termination proof reuses the private fuel bridge.
+import all LTLLib.NestedDFS.NestedDFSTermination
+public import LTLLib.TGBABased.NestedDFS.NestedDFSTCorrectness
+
+public section
 
 namespace LTLLib
 
@@ -712,7 +718,7 @@ section TopLevelWF
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- Well-founded top-level edge-aware nested DFS emptiness check. -/
-def nestedDFSTWF [LawfulHashable State] (succs : State → Array State)
+@[expose] def nestedDFSTWF [LawfulHashable State] (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State)
     (fr : FiniteReach initialStates succs) : EmptinessResult State :=

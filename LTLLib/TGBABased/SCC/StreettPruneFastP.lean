@@ -1,3 +1,5 @@
+module
+
 /-
   The fast Streett prune with the live position carried by `getStatus` (`EdgeLabels.md` §13.30).
 
@@ -17,7 +19,9 @@
   A second half — one status map for live and dead states — was built here the same way and measured at
   0.97–1.06x, noise (§13.32); it is archived on `archive/13.32-merged-status-map-measured` and not kept.
 -/
-import LTLLib.TGBABased.SCC.StreettPruneFast
+public import LTLLib.TGBABased.SCC.StreettPruneFast
+
+public section
 
 namespace LTLLib
 
@@ -51,7 +55,7 @@ structure DFSOpsP (State : Type u) [BEq State] [Hashable State] where
 
 /-! ## The driver, as `dfsGo` with the position threaded -/
 
-def dfsGoP (ops : DFSOpsP State) (succs : State → Array State)
+@[expose] def dfsGoP (ops : DFSOpsP State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     ops.Aux → List (DFSStep State ops.Position) → Option (Option (State × List State) × ops.Aux)
@@ -134,7 +138,7 @@ def streettUpdateP (numMarks : Nat) (aux : StreettAuxF State) (marks : Std.HashS
     let top := (min ll dpos, acc ||| marksToBitmask marks ||| (1 <<< numMarks))
     (⟨live, liveIndex, dead, dstack.pop.push top, wit, wopts, pending, ls, lo, ws⟩, false)
 
-def streettOpsP [Inhabited State] [LawfulBEq State] [LawfulHashable State]
+@[expose] def streettOpsP [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (curRegions : Nat) : DFSOpsP State where
   Aux := StreettAuxF State
   Position := Nat
@@ -217,7 +221,7 @@ def pruneLoopP (cs : CompiledSpec State L)
     | none => pruneLoopP cs regionExpand explored' (aux.pending.toList ++ rest)
 partial_fixpoint
 
-def streettCheckP (cs : CompiledSpec State L) (succs : State → Array State)
+@[expose] def streettCheckP (cs : CompiledSpec State L) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)

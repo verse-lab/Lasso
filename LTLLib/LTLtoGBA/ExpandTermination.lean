@@ -1,3 +1,5 @@
+module
+
 /-
   Termination of `expand`, the on-the-fly tableau-expansion worklist algorithm (Gerth et al. 1995) that turns an LTL
   formula into a `ExpansionNode` graph.
@@ -28,9 +30,11 @@
   - Main termination theorem.
 -/
 
-import LTLLib.LTLtoGBA.Invariants
-import LTLLib.Tactic.Set
-import LTLLib.Data.FinSet
+public import LTLLib.LTLtoGBA.Invariants
+meta import LTLLib.Tactic.Set
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 
@@ -141,7 +145,7 @@ section WeightedSize
 
 variable {α : Type u}
 
-noncomputable def weightedSize (l : List (NNF α)) : Nat := (l.map (fun x => 2 * sizeOf x + 1)).sum
+@[expose] noncomputable def weightedSize (l : List (NNF α)) : Nat := (l.map (fun x => 2 * sizeOf x + 1)).sum
 
 @[simp] theorem weightedSize_nil : weightedSize ([] : List (NNF α)) = 0 := rfl
 
@@ -173,7 +177,7 @@ structure NodeBounded (topFormula : NNF α) (n : ExpansionNode α S) : Prop wher
   next_sub : ∀ x, FSet.contains n.next x → NNF.IsSubformula x topFormula
 
 /-- Every already-finished node in `st.nodes` is bounded too. -/
-def NodesBounded (topFormula : NNF α) (st : ExpandState α S) : Prop :=
+@[expose] def NodesBounded (topFormula : NNF α) (st : ExpandState α S) : Prop :=
   ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n →
     (∀ x, FSet.contains n.old x → NNF.IsSubformula x topFormula) ∧
     (∀ x, FSet.contains n.next x → NNF.IsSubformula x topFormula)
@@ -192,7 +196,7 @@ section ExpandMeasure
 variable {α : Type u} {S : Type v} [FSet (NNF α) S]
 
 /-- A node's "signature": its (old, next) content as `FinSet`s, independent of the underlying `S` representation. -/
-noncomputable def nodeSignature (n : ExpansionNode α S) : FinSet (NNF α) × FinSet (NNF α) :=
+@[expose] noncomputable def nodeSignature (n : ExpansionNode α S) : FinSet (NNF α) × FinSet (NNF α) :=
   ((FSet.toList n.old).toFinSet, (FSet.toList n.next).toFinSet)
 
 /-- All possible signatures drawable from `subformulas topFormula`. -/

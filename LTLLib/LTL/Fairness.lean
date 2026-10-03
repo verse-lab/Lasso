@@ -1,3 +1,5 @@
+module
+
 /-
   Fairness combinators for LTL formulas: unconditional, weak (justice), and strong (compassion) fairness, plus
   helpers for combining and assuming multiple fairness constraints.
@@ -13,8 +15,10 @@
   - Weak fairness as a mark
 -/
 
-import LTLLib.LTL.Propositional
-import LTLLib.LTL.Syntax
+public import LTLLib.LTL.Propositional
+public import LTLLib.LTL.Syntax
+
+public section
 
 namespace LTLLib
 
@@ -24,7 +28,7 @@ namespace Formula
 
 /-- Unconditional fairness: □◇taken. `taken` happens infinitely often, unconditionally.
 Equivalent to `weakFairness ⊤ taken`. -/
-def unconditionalFairness (taken : Formula α) : Formula α :=
+@[expose] def unconditionalFairness (taken : Formula α) : Formula α :=
   .always (.eventually taken)
 
 /-- Weak fairness (justice): □(◇¬enabled ∨ ◇taken).
@@ -32,12 +36,12 @@ If `enabled` is continuously true, then `taken` must eventually become true.
 Equivalently `□(◇¬enabled ∨ ◇taken)`, or `◇□enabled → □◇taken`.
   (The `□◇` form used as it holds only on Until-subformula and fairness is usually an assumption,
   so it is positive in the negated formula). -/
-def weakFairness (enabled taken : Formula α) : Formula α :=
+@[expose] def weakFairness (enabled taken : Formula α) : Formula α :=
   .always (.eventually (.or enabled.not taken))
 
 /-- Strong fairness (compassion): □◇enabled → □◇taken.
 If `enabled` is true infinitely often, then `taken` must be true infinitely often. -/
-def strongFairness (enabled taken : Formula α) : Formula α :=
+@[expose] def strongFairness (enabled taken : Formula α) : Formula α :=
   .implies (.always (.eventually enabled)) (.always (.eventually taken))
 
 /-- Conjunction of multiple fairness constraints. -/
@@ -68,7 +72,7 @@ namespace BoolFormula
 /-- Weak fairness `◇□E → □◇T` for propositional `E` and `T`, as the single conjunct `¬E ∨ T` whose `□◇` form
 is the assumption. [SLDP09] Definition 1 for the notion, generalised from actions to predicates, with the
 collapse `◇□E → □◇T ≡ GF ¬E ∨ GF T ≡ GF(¬E ∨ T)` read off [LSFZ16] Theorem 1's distribution of `GF` over `∨`. -/
-def weakFairMark {α} (enabled taken : BoolFormula α) : BoolFormula α := .or enabled.neg taken
+@[expose] def weakFairMark {α} (enabled taken : BoolFormula α) : BoolFormula α := .or enabled.neg taken
 
 /-- `□◇(¬E ∨ T)` is exactly weak fairness, which is why one generalized Büchi mark suffices for it. -/
 theorem satisfies_weakFairMark {α} (ξ : OmegaWord α) (e t : BoolFormula α) :

@@ -1,3 +1,5 @@
+module
+
 /-
   Minimal end-to-end example of `modelCheck`: given an
   external system as a plain Kripke structure:
@@ -13,6 +15,7 @@
   Formula: `□◇green` ("the light turns green infinitely often"): Holds
 -/
 import LTLLib.Examples.MCPrint
+meta import LTLLib.Examples.MCPrint
 
 namespace LTLLib.Examples
 

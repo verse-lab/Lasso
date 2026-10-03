@@ -1,3 +1,5 @@
+module
+
 /-
   Illustrates a bug fixed by `Product.totalizeSucc` (`Product.lean`): a
   client system with a genuinely terminal state (no outgoing edges at all)
@@ -24,6 +26,7 @@
   Formula: `□◇on` ("the light turns on infinitely often"): Does not hold.
 -/
 import LTLLib.Examples.MCPrint
+meta import LTLLib.Examples.MCPrint
 
 namespace LTLLib.Examples
 

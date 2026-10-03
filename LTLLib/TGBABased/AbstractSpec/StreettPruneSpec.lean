@@ -1,3 +1,5 @@
+module
+
 /-
   The recursive fairness check of [SLDP09] as a specification, and the Emerson-Lei argument [EL87] that it misses
   nothing — with the hoisted regions restricting *steps* rather than states.
@@ -45,7 +47,9 @@
   - Correctness
   - The first pass
 -/
-import LTLLib.TGBABased.AbstractSpec.StreettSCCRegion
+public import LTLLib.TGBABased.AbstractSpec.StreettSCCRegion
+
+public section
 
 namespace LTLLib
 
@@ -56,7 +60,7 @@ variable {State : Type u} {L : Type w} [BEq State] [Hashable State] [LawfulBEq S
 
 /-- The subgraph a candidate induces: the spec's `r`-restricted steps, confined to `C`. This is exactly the
 graph the implementation's `Candidate.graph` builds. -/
-def RStreettSpec.candGraph (spec : RStreettSpec State L) (r : L → Bool) (C : Std.HashSet State) :
+@[expose] def RStreettSpec.candGraph (spec : RStreettSpec State L) (r : L → Bool) (C : Std.HashSet State) :
     State → Array State :=
   sccSuccs (spec.regionSuccs r) C
 
@@ -64,7 +68,7 @@ def RStreettSpec.candGraph (spec : RStreettSpec State L) (r : L → Bool) (C : S
 internal pair of `M` with a realization satisfying the candidate's region, the option's region **and** `g`
 at once. Conjoining `r` is what lets the implementation find the witness among the edges it actually
 scanned — those of the restricted graph. -/
-def RStreettSpec.OptMarksIn (spec : RStreettSpec State L) (r : L → Bool)
+@[expose] def RStreettSpec.OptMarksIn (spec : RStreettSpec State L) (r : L → Bool)
     (opt : StreettOption L) (M : Std.HashSet State) : Prop :=
   ∀ g ∈ opt.marks, ∃ s ∈ M, ∃ t ∈ M,
     t ∈ spec.regionSuccs (fun l => r l && opt.region l && g l) s
@@ -152,7 +156,7 @@ theorem RRefuted.no_fairSCC (hcompat : spec.Compat succs edgeMarks) {r : L → B
 
 /-- The same refusal for the search's first pass, which runs on the whole graph at the top region rather
 than on a candidate. -/
-def RRefutedFrom (spec : RStreettSpec State L) (succs : State → Array State)
+@[expose] def RRefutedFrom (spec : RStreettSpec State L) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (initialStates : List State) : Prop :=
   ∃ (sccs : List (Std.HashSet State)) (pick : Std.HashSet State → Array (StreettOption L)),
     SCCEnumerationSound initialStates succs sccs ∧

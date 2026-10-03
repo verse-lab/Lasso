@@ -1,3 +1,5 @@
+module
+
 /-
   Correctness of the edge-aware nested DFS `nestedDFST_fuel` against `TAcceptingCycle` with a single mark.
   The inner-DFS lemmas of `NestedDFSCorrectness.lean` are reused unchanged, the outer-DFS invariants are re-derived for
@@ -25,11 +27,13 @@
   - Top-level composition across roots
   - Top-level correctness theorem
 -/
-import LTLLib.AbstractSpec.GraphPaths
-import LTLLib.NestedDFS.NestedDFSCorrectness
-import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.NestedDFS.NestedDFST
-import LTLLib.Tactic.Set
+public import LTLLib.AbstractSpec.GraphPaths
+public import LTLLib.NestedDFS.NestedDFSCorrectness
+public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.NestedDFS.NestedDFST
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -40,7 +44,7 @@ section OuterCorrectness
 variable {State} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- Every stack frame's `marked` bit is set iff the tree edge from the frame below it carries mark 0. -/
-def TStackMarked (edgeMarks : State → State → Std.HashSet Nat) (stack : List (State × List State × Bool)) : Prop :=
+@[expose] def TStackMarked (edgeMarks : State → State → Std.HashSet Nat) (stack : List (State × List State × Bool)) : Prop :=
   ∀ i, (hi : i + 1 < stack.length) →
     ((stack[i]'(by omega)).2.2 = true ↔ 0 ∈ edgeMarks (stack[i + 1]'hi).1 (stack[i]'(by omega)).1)
 
@@ -92,7 +96,7 @@ structure TOuterReachClosed
   stack_remaining_subset : ∀ p ∈ stack, ∀ t ∈ p.2.1, t ∈ succs p.1
 
 /-- `TOuterReachClosed` only depends on `st.outerVisited`. -/
-def TOuterReachClosed.of_outerVisited_eq {succs : State → Array State} {st st'' : FNDFSState State}
+theorem TOuterReachClosed.of_outerVisited_eq {succs : State → Array State} {st st'' : FNDFSState State}
     {stack : List (State × List State × Bool)}
     (heq : st''.outerVisited = st.outerVisited) (h : TOuterReachClosed succs st stack) :
     TOuterReachClosed succs st'' stack where

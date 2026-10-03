@@ -1,3 +1,5 @@
+module
+
 /-
   Tests `nestedDFST_fuel` against `dijkstraCheck` on the degeneralized `ltl3ba` automaton of each negated formula:
   the emptiness verdicts must agree, and every `.nonEmpty` witness must pass `checkWitness`.
@@ -14,6 +16,11 @@ import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 import LTLLib.TGBABased.NestedDFS.NestedDFST
 import LTLLib.TGBABased.SCC.DijkstraSCC
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.Degeneralization.DegeneralBridge
+meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+meta import LTLLib.TGBABased.NestedDFS.NestedDFST
+meta import LTLLib.TGBABased.SCC.DijkstraSCC
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.NestedDFST
 

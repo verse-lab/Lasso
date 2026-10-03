@@ -1,3 +1,5 @@
+module
+
 /-
   Generic run theory for `VWAA`, mirroring `[HOL4-ltl]`'s `alterAScript`. Along a branch the rank never rises and drops at
   every change of state, so every branch is eventually constant without any finiteness assumption, and co-Büchi acceptance
@@ -37,9 +39,11 @@
   - Run union
   - Level shift
 -/
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
-import LTLLib.Data.Nat
-import LTLLib.Data.FinSet
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
+public import LTLLib.Data.Nat
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 

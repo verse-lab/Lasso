@@ -1,3 +1,5 @@
+module
+
 /-
   `Nat` helpers that core Lean does not provide.
 
@@ -7,6 +9,8 @@
   - `Nat.le_induction`: induction on `n` starting from `m ≤ n`
 -/
 
+
+public section
 namespace LTLLib.Nat
 
 /-- Induction on `n` for `m ≤ n`: prove `P m`, then `P n → P (n + 1)` for every `n ≥ m`. -/

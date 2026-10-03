@@ -1,3 +1,5 @@
+module
+
 /-
   Every test under `LTLtoTGBA/Tests/`, so `lake build LTLLib.TGBABased.LTLtoTGBA.Tests` runs the whole suite at once.
   Not imported by `LTLLib.lean`, the tests check this folder and are not part of the library.

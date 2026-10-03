@@ -1,3 +1,5 @@
+module
+
 /-
   Building blocks for the paper rewrite rules. `collectAndFairness`/`collectOrFairness` walk a whole `∧`/`∨`-chain in
   one call, collecting every alternating (`[BKŘS12]` ξ-grammar, `NNF.isFairness`) leaf and what is left over, so the
@@ -25,7 +27,9 @@
   - Collecting alternating leaves of a chain
   - Semantics
 -/
-import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Implication
+public import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Implication
+
+public section
 
 namespace LTLLib
 
@@ -34,13 +38,13 @@ variable {α : Type u}
 /-! ## Folding a list of formulas -/
 
 /-- The conjunction of `fs`, `⊤` on the empty list, `x` itself rather than `x ∧ ⊤` on a singleton. -/
-def andAll : List (NNF α) → NNF α
+@[expose] def andAll : List (NNF α) → NNF α
   | [] => .tt
   | [x] => x
   | x :: rest => .and x (andAll rest)
 
 /-- The disjunction of `fs`, `⊥` on the empty list, `x` itself rather than `x ∨ ⊥` on a singleton. -/
-def orAll : List (NNF α) → NNF α
+@[expose] def orAll : List (NNF α) → NNF α
   | [] => .ff
   | [x] => x
   | x :: rest => .or x (orAll rest)
@@ -48,7 +52,7 @@ def orAll : List (NNF α) → NNF α
 /-! ## Collecting alternating leaves of a chain -/
 
 /-- Every alternating leaf reachable through a chain of `∧`, and what is left over once they are removed. -/
-def collectAndFairness : NNF α → List (NNF α) × Option (NNF α)
+@[expose] def collectAndFairness : NNF α → List (NNF α) × Option (NNF α)
   | .and a b =>
     let (fa, ra) := collectAndFairness a
     let (fb, rb) := collectAndFairness b
@@ -60,7 +64,7 @@ def collectAndFairness : NNF α → List (NNF α) × Option (NNF α)
   | φ => if φ.isFairness then ([φ], none) else ([], some φ)
 
 /-- Every alternating leaf reachable through a chain of `∨`, and what is left over once they are removed. -/
-def collectOrFairness : NNF α → List (NNF α) × Option (NNF α)
+@[expose] def collectOrFairness : NNF α → List (NNF α) × Option (NNF α)
   | .or a b =>
     let (fa, ra) := collectOrFairness a
     let (fb, rb) := collectOrFairness b

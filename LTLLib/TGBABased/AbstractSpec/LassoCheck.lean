@@ -1,3 +1,5 @@
+module
+
 /-
   Deciding `TAcceptingCycle` on a concrete stem and cycle. Every field of `TAcceptingCycle` is a decidable statement
   about two lists, so a reported witness can be checked rather than trusted, and an emptiness checker that validates
@@ -18,7 +20,9 @@
   - Soundness of the validator
   - Completeness of the validator
 -/
-import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+
+public section
 
 namespace LTLLib
 
@@ -61,7 +65,7 @@ def cycleCarries [Hashable State] (edgeMarks : State → State → Std.HashSet N
     | _, _ => false
 
 /-- All nine `TAcceptingCycle` fields, decided. -/
-def validLasso [Hashable State] [Inhabited State] (succs : State → Array State)
+@[expose] def validLasso [Hashable State] [Inhabited State] (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat)
     (initialStates : List State) (stem cycle : List State) : Bool :=
   !stem.isEmpty && !cycle.isEmpty &&
@@ -132,13 +136,13 @@ def TAcceptingCycle.ofValid [Hashable State] [Inhabited State] {succs : State �
     {succs : State → Array State} {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat}
     {initialStates stem cycle : List State}
     (h : validLasso succs edgeMarks numMarks initialStates stem cycle = true) :
-    (TAcceptingCycle.ofValid h).stem = stem := rfl
+    (TAcceptingCycle.ofValid h).stem = stem := by rfl
 
 @[simp] theorem TAcceptingCycle.ofValid_cycle [Hashable State] [Inhabited State]
     {succs : State → Array State} {edgeMarks : State → State → Std.HashSet Nat} {numMarks : Nat}
     {initialStates stem cycle : List State}
     (h : validLasso succs edgeMarks numMarks initialStates stem cycle = true) :
-    (TAcceptingCycle.ofValid h).cycle = cycle := rfl
+    (TAcceptingCycle.ofValid h).cycle = cycle := by rfl
 
 /-! ## Completeness of the validator -/
 

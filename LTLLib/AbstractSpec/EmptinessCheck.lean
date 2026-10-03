@@ -1,3 +1,5 @@
+module
+
 /-
   Abstract contract any concrete emptiness-check algorithm must satisfy.
 
@@ -20,11 +22,13 @@
   - Finite-reachability hypothesis
   - Algorithm-agnostic emptiness-check contract
 -/
-import Std
-import LTLLib.Data.FinitePred
-import LTLLib.Data.List
-import LTLLib.AbstractSpec.Lasso
-import LTLLib.AbstractSpec.GraphPaths
+public import Std
+public import LTLLib.Data.FinitePred
+public import LTLLib.Data.List
+public import LTLLib.AbstractSpec.Lasso
+public import LTLLib.AbstractSpec.GraphPaths
+
+public section
 
 namespace LTLLib
 
@@ -65,7 +69,7 @@ structure AcceptingCycle {State}
 
 /-- An `AcceptingCycle` over any graph is exactly a `ValidLasso` for any `OASpec` whose
 `trans`/`initial`/`acceptSet` agree with that graph's `succs`/`initialStates`/`isAccepting`. -/
-def AcceptingCycle.toValidLassoOf {State : Type u} {α : Type v}
+theorem AcceptingCycle.toValidLassoOf {State : Type u} {α : Type v}
     {succs : State → Array State} {initialStates : List State}
     {isAccepting : State → Bool} {A : OASpec State α 1}
     (htrans : ∀ {s t : State}, t ∈ succs s ↔ A.trans s t)
@@ -136,7 +140,7 @@ theorem Reachable.of_run {State : Type u} {initialStates : List State} {succs : 
 the marks of each. Fusing them is what lets `dfsGo` pay the caller's per-source cost once per pushed frame
 instead of once per outgoing edge — see `DFSStep.succMarks`. Every theorem that reads a frame's cache back
 as `succs`/`edgeMarks` takes this as a hypothesis. -/
-def ExpandCoherent {State : Type u} (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+@[expose] def ExpandCoherent {State : Type u} (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) : Prop :=
   ∀ s, ((expand s).1, (expand s).2.1) = (succs s, (succs s).map (edgeMarks s))
 
@@ -152,7 +156,7 @@ operand, so an empty payload takes *every successor with it* and the restricted 
 The searches that walk it then report `.empty` — no counterexample — on a graph that has no edges to find
 one in. Caught by a probe, not by the bench: the benched properties leave `aux.pending` empty (§13.14), so
 neither caller runs on them. -/
-def filterExpand {State : Type u} (e : Array State × Array (Std.HashSet Nat) × Array Nat)
+@[expose] def filterExpand {State : Type u} (e : Array State × Array (Std.HashSet Nat) × Array Nat)
     (p : State → Bool) : Array State × Array (Std.HashSet Nat) × Array Nat :=
   let z := (e.1.zip e.2.1).filter fun x => p x.1
   (z.map Prod.fst, z.map Prod.snd,
@@ -195,7 +199,7 @@ theorem filterExpand_fst_snd {State : Type u}
 per-source work once per *edge*, so it is only for callers whose `succs`/`edgeMarks` are cheap — a table
 lookup, a hand-written test graph, an automaton walked on its own. A caller that pays real per-source cost
 (Veil, via `TGBAProduct.expand`) supplies a genuinely fused one instead. -/
-def derivedExpand {State : Type u} (succs : State → Array State)
+@[expose] def derivedExpand {State : Type u} (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (optBits : Option (State → State → Nat) := none) :
     State → Array State × Array (Std.HashSet Nat) × Array Nat :=
@@ -238,7 +242,7 @@ theorem ExpandCoherent.getElem {State : Type u} {succs : State → Array State}
 
 /-- Bare existence certificate: only finitely many states are canonically reachable (some list contains all of
     them). No witness must be provided. -/
-def FiniteReach {State : Type u} (initialStates : List State)
+@[expose] def FiniteReach {State : Type u} (initialStates : List State)
     (succs : State → Array State) : Prop :=
   FinitePred (Reachable initialStates succs)
 
@@ -258,7 +262,7 @@ theorem FiniteReach.exists_lt_sample_eq {State : Type u} {initialStates : List S
 /-- Termination measure: the reachable states satisfying `q`, counted along a fixed list covering the reachable
 states (a state may count more than once, only monotonicity matters). `0` without `FiniteReach`, like the
 cardinality of an infinite set. -/
-noncomputable def reachCount {State : Type u} (initialStates : List State) (succs : State → Array State)
+@[expose] noncomputable def reachCount {State : Type u} (initialStates : List State) (succs : State → Array State)
     (q : State → Prop) : Nat :=
   open Classical in
   if h : FiniteReach initialStates succs then

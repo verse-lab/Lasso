@@ -1,3 +1,5 @@
+module
+
 /-
   Rebuilding an explicit accepting cycle from a known-valid SCC candidate, shared by every `DFSOps` refinement. A
   refinement's own stack is no witness, a state can sit in e.g. Dijkstra's `live` stack without lying on a path to the
@@ -25,12 +27,14 @@
   - Level-order BFS
   - Adaptive edge search and cycle stitching
 -/
-import Std
+public import Std
 import Batteries.Data.List.Perm
-import LTLLib.AbstractSpec.EmptinessCheck
-import LTLLib.AbstractSpec.GraphPaths
-import LTLLib.TGBABased.AbstractSpec.SCCTheory
-import LTLLib.Tactic.Set
+public import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.AbstractSpec.GraphPaths
+public import LTLLib.TGBABased.AbstractSpec.SCCTheory
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -684,12 +688,12 @@ theorem pickMarkedNext_complete (succs : State → Array State)
     ((Std.HashSet.mem_iff_contains).mpr hmark), hm⟩
 
 /-- A `succs`-path from `src` to `tgt` inclusive, confined to `domain`, or the fallback `[src]` if there is none. -/
-def connector [LawfulBEq State] [LawfulHashable State] (domain : Std.HashSet State)
+@[expose] def connector [LawfulBEq State] [LawfulHashable State] (domain : Std.HashSet State)
     (succs : State → Array State) (src tgt : State) : List State :=
   (bfsFindPath domain succs [src] (· == tgt)).getD [src]
 
 /-- Whenever `tgt` is reachable from `src` via a `domain`-confined `succs`-path, `connector` returns a genuine one. -/
-theorem connector_valid [LawfulBEq State] [LawfulHashable State] (domain : Std.HashSet State)
+private theorem connector_valid [LawfulBEq State] [LawfulHashable State] (domain : Std.HashSet State)
     (succs : State → Array State) (src tgt : State) (hsrc : domain.contains src)
     (htgt : domain.contains tgt)
     (hreach : src = tgt ∨ PathTo succs (fun x => ¬ domain.contains x) src tgt) :
@@ -752,7 +756,7 @@ decreasing_by
 
 /-- An accepting cycle anchored at `anchor`, covering every mark `< numMarks`, through a `findAnyEdge` edge when
 `numMarks = 0` and chained by `buildCycleFrom` otherwise. It is not minimized. -/
-def stitchCycleAt [LawfulBEq State] [LawfulHashable State] (scc : Std.HashSet State)
+@[expose] def stitchCycleAt [LawfulBEq State] [LawfulHashable State] (scc : Std.HashSet State)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat)
     (anchor : State) : List State :=
   if numMarks = 0 then

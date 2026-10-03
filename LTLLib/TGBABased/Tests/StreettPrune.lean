@@ -1,3 +1,5 @@
+module
+
 /-
   Differential test of `modelCheckUnderFairnessPrune` against `modelCheckUnderFairness` on generated models, crossed with
   formulas exercising strong, weak and nested fairness and a property whose own fair half hoists.
@@ -17,6 +19,8 @@
 -/
 import LTLLib.TGBABased.Fairness.FairRouter
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.Fairness.FairRouter
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.StreettPruneTest
 

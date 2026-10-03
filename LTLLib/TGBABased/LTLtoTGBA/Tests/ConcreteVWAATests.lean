@@ -1,3 +1,5 @@
+module
+
 /-
   Differential tests of `ConcreteVWAA.build` against `Lasso.evalNNF`, checking the id bookkeeping (`SubformulaTable`,
   mask targets, the renumbering to reachable states) rather than `NNF.rtrans` itself.
@@ -10,6 +12,10 @@ import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
 import LTLLib.TGBABased.LTLtoTGBA.VWAA
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
+meta import LTLLib.TGBABased.LTLtoTGBA.VWAA
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.LTLtoTGBA.Tests.ConcreteVWAATests
 

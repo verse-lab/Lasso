@@ -1,3 +1,5 @@
+module
+
 /-
   Transition labels in disjunctive normal form, a disjunction of cubes of literals. LTL3BA's VWAA splitting and its
   `determinize` produce labels that are no longer a single cube, which is why LTL3BA uses BDDs (`[BKŘS12]` §5, §8).
@@ -46,18 +48,20 @@
   - DNF labels
   - Semantic laws
 -/
-import Std
+public import Std
+
+public section
 
 namespace LTLLib
 
 /-! ## Hash set comparisons -/
 
 /-- `s1 = s2` by mutual containment. -/
-def hashSetEq {β : Type w} [BEq β] [Hashable β] (s1 s2 : Std.HashSet β) : Bool :=
+@[expose] def hashSetEq {β : Type w} [BEq β] [Hashable β] (s1 s2 : Std.HashSet β) : Bool :=
   s1.all s2.contains && s2.all s1.contains
 
 /-- `s1 ⊆ s2` by containment check. -/
-def hashSetSubset {β : Type w} [BEq β] [Hashable β] (s1 s2 : Std.HashSet β) : Bool :=
+@[expose] def hashSetSubset {β : Type w} [BEq β] [Hashable β] (s1 s2 : Std.HashSet β) : Bool :=
   s1.all s2.contains
 
 theorem hashSetEq_iff {β} [BEq β] [Hashable β] [LawfulBEq β] [LawfulHashable β] (s1 s2 : Std.HashSet β) :
@@ -97,32 +101,32 @@ namespace Cube
 variable {α : Type u} [BEq α] [Hashable α]
 
 /-- Every positive atom holds and every negative atom fails. -/
-def sat (c : Cube α) (v : α → Prop) : Prop :=
+@[expose] def sat (c : Cube α) (v : α → Prop) : Prop :=
   (∀ a, c.pos.contains a → v a) ∧ (∀ a, c.neg.contains a → ¬ v a)
 
 /-- Executable denotation, the valuation given as the set of atoms that hold. -/
-def eval (c : Cube α) (v : Std.HashSet α) : Bool :=
+@[expose] def eval (c : Cube α) (v : Std.HashSet α) : Bool :=
   c.pos.toList.all v.contains && c.neg.toList.all fun a => !v.contains a
 
 /-- Some atom is asserted both positively and negatively, so the cube denotes the empty set. -/
-def isContradictory (c : Cube α) : Bool :=
+@[expose] def isContradictory (c : Cube α) : Bool :=
   c.pos.any c.neg.contains
 
 /-- The cube with no constraints, denoting every valuation. -/
-def top : Cube α := { pos := Std.HashSet.emptyWithCapacity 0, neg := Std.HashSet.emptyWithCapacity 0 }
+@[expose] def top : Cube α := { pos := Std.HashSet.emptyWithCapacity 0, neg := Std.HashSet.emptyWithCapacity 0 }
 
 /-- The single positive or negative literal on `a`. -/
-def lit (a : α) (b : Bool) : Cube α :=
+@[expose] def lit (a : α) (b : Bool) : Cube α :=
   if b then { pos := Std.HashSet.emptyWithCapacity 1 |>.insert a, neg := Std.HashSet.emptyWithCapacity 0 }
   else { pos := Std.HashSet.emptyWithCapacity 0, neg := Std.HashSet.emptyWithCapacity 1 |>.insert a }
 
 /-! ## Cube conjunction and complement -/
 
 /-- Conjoin two cubes by union of their literal sets. -/
-def and (c d : Cube α) : Cube α := { pos := c.pos ∪ d.pos, neg := c.neg ∪ d.neg }
+@[expose] def and (c d : Cube α) : Cube α := { pos := c.pos ∪ d.pos, neg := c.neg ∪ d.neg }
 
 /-- `c ⇒ d` by literal inclusion, `d`'s literals are all `c`'s. Exact whenever `c` is not contradictory. -/
-def litImplies (c d : Cube α) : Bool := hashSetSubset d.pos c.pos && hashSetSubset d.neg c.neg
+@[expose] def litImplies (c d : Cube α) : Bool := hashSetSubset d.pos c.pos && hashSetSubset d.neg c.neg
 
 /-- Add one literal to a cube, `none` when it contradicts a literal already there. -/
 def addLit (c : Cube α) (a : α) (b : Bool) : Option (Cube α) :=
@@ -130,7 +134,7 @@ def addLit (c : Cube α) (a : α) (b : Bool) : Option (Cube α) :=
   else (if c.pos.contains a then none else some { c with neg := c.neg.insert a })
 
 /-- `c`'s literals as `(atom, isPositive)` pairs. -/
-def literals (c : Cube α) : List (α × Bool) :=
+@[expose] def literals (c : Cube α) : List (α × Bool) :=
   c.pos.toList.map (·, true) ++ c.neg.toList.map (·, false)
 
 /-- `e \ d`, split into disjoint sub-cubes of `e`, one per literal of `d`: the sub-cube where every earlier
@@ -156,29 +160,29 @@ namespace DNF
 variable {α : Type u} [BEq α] [Hashable α]
 
 /-- Some cube of the disjunction is satisfied. -/
-def sat (x : DNF α) (v : α → Prop) : Prop := ∃ c ∈ x, Cube.sat c v
+@[expose] def sat (x : DNF α) (v : α → Prop) : Prop := ∃ c ∈ x, Cube.sat c v
 
 /-- Executable denotation, `Cube.eval` disjoined over the cubes. -/
-def eval (x : DNF α) (v : Std.HashSet α) : Bool := x.any (Cube.eval · v)
+@[expose] def eval (x : DNF α) (v : Std.HashSet α) : Bool := x.any (Cube.eval · v)
 
 /-- The label denoting every valuation. -/
-def top : DNF α := [Cube.top]
+@[expose] def top : DNF α := [Cube.top]
 
 /-- The label denoting no valuation. -/
-def bot : DNF α := []
+@[expose] def bot : DNF α := []
 
 /-- The single positive or negative literal on `a`. -/
-def lit (a : α) (b : Bool) : DNF α := [Cube.lit a b]
+@[expose] def lit (a : α) (b : Bool) : DNF α := [Cube.lit a b]
 
 /-- Disjunction, list concatenation. -/
-def or (x y : DNF α) : DNF α := x ++ y
+@[expose] def or (x y : DNF α) : DNF α := x ++ y
 
 /-- Absorption, `c ∨ (c ∧ d) ≡ c`: drop every cube that implies (by `Cube.litImplies`) another kept cube. -/
 def absorb (x : DNF α) : DNF α :=
   x.foldl (fun acc c => if acc.any c.litImplies then acc else (acc.filter fun d => !d.litImplies c) ++ [c]) []
 
 /-- Conjunction, the pairwise cube conjunction of the disjuncts, contradictory products dropped and the rest absorbed. -/
-def and (x y : DNF α) : DNF α :=
+@[expose] def and (x y : DNF α) : DNF α :=
   absorb (x.flatMap fun c => (y.map (Cube.and c)).filter fun d => !d.isContradictory)
 
 /-- `c \ (⋃ y)`, folding `Cube.diffCube` over every cube of `y` in turn. -/
@@ -186,23 +190,23 @@ def diffCubeList (c : Cube α) (y : DNF α) : DNF α :=
   y.foldl (fun acc d => acc.flatMap (Cube.diffCube · d)) [c]
 
 /-- Sharp difference, denoting `x ∧ ¬y`. -/
-def diff (x y : DNF α) : DNF α := x.flatMap fun c => diffCubeList c y
+@[expose] def diff (x y : DNF α) : DNF α := x.flatMap fun c => diffCubeList c y
 
 /-- Every cube is contradictory, which holds exactly when the label denotes no valuation. -/
-def isEmpty (x : DNF α) : Bool := x.all Cube.isContradictory
+@[expose] def isEmpty (x : DNF α) : Bool := x.all Cube.isContradictory
 
 /-- `x` semantically implies `y`, `x ∧ ¬y` unsatisfiable, checked one cube of `x` at a time with an early exit. -/
-def implies (x y : DNF α) : Bool := x.all fun c => isEmpty (diffCubeList c y)
+@[expose] def implies (x y : DNF α) : Bool := x.all fun c => isEmpty (diffCubeList c y)
 
 /-- `implies` without allocating on two single cubes, where a cube implies another exactly when it is contradictory or
 asserts every literal of the other. -/
-def impliesFast (x y : DNF α) : Bool :=
+@[expose] def impliesFast (x y : DNF α) : Bool :=
   match x, y with
   | [c], [d] => c.isContradictory || c.litImplies d
   | x, y => implies x y
 
 /-- The non-contradictory cubes of `x`, one per emitted `TGBA.Transition`. -/
-def cubes (x : DNF α) : List (Cube α) := x.filter fun c => !c.isContradictory
+@[expose] def cubes (x : DNF α) : List (Cube α) := x.filter fun c => !c.isContradictory
 
 end DNF
 
@@ -311,7 +315,7 @@ theorem sat_lit (a : α) (b : Bool) (v : α → Prop) :
   unfold Cube.lit sat; cases b <;> grind
 
 /-- `diffCube.go acc rest` denotes `acc` with some literal of `rest` failing. -/
-theorem sat_go (acc : Cube α) (rest : List (α × Bool)) (v : α → Prop) :
+private theorem sat_go (acc : Cube α) (rest : List (α × Bool)) (v : α → Prop) :
     (∃ c' ∈ diffCube.go acc rest, c'.sat v) ↔
       acc.sat v ∧ ¬ (∀ p ∈ rest, (if p.2 then v p.1 else ¬ v p.1)) := by
   induction rest generalizing acc with

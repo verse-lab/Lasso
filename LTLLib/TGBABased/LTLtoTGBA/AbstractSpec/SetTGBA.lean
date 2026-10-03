@@ -1,3 +1,5 @@
+module
+
 /-
   Transition-based generalised Büchi automata (TGBA) whose states are `FinSet Q` for a VWAA state type `Q`. Each transition
   carries a guard, a target and a mark set, and acceptance requires every final to be marked infinitely often.
@@ -25,8 +27,10 @@
   - T_f condition
   - Product transitions
 -/
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
-import LTLLib.Data.FinSet
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 
@@ -62,15 +66,15 @@ structure SetTGBA.Run.ValidFrom (r : SetTGBA.Run Q) (T : SetTGBA Q α) (e : FinS
 /-! ## Acceptance -/
 
 /-- Generalised Büchi acceptance: for each final f, the mark set contains f on infinitely many steps. -/
-def SetTGBA.AcceptingRun (T : SetTGBA Q α) (r : SetTGBA.Run Q) : Prop :=
+@[expose] def SetTGBA.AcceptingRun (T : SetTGBA Q α) (r : SetTGBA.Run Q) : Prop :=
   ∀ f ∈ T.finals, ¬ FinitePred fun i => f ∈ r.mark i
 
 /-- `T` accepts `ξ` from state `e`: some valid run from `e` is accepting. -/
-def SetTGBA.AcceptsFrom (T : SetTGBA Q α) (e : FinSet Q) (ξ : OmegaWord α) : Prop :=
+@[expose] def SetTGBA.AcceptsFrom (T : SetTGBA Q α) (e : FinSet Q) (ξ : OmegaWord α) : Prop :=
   ∃ r : SetTGBA.Run Q, r.ValidFrom T e ξ ∧ T.AcceptingRun r
 
 /-- The language of `T`: some initial alternative accepts. -/
-def SetTGBA.Accepts (T : SetTGBA Q α) (ξ : OmegaWord α) : Prop :=
+@[expose] def SetTGBA.Accepts (T : SetTGBA Q α) (ξ : OmegaWord α) : Prop :=
   ∃ e ∈ T.initial, T.AcceptsFrom e ξ
 
 /-! ## Reachability -/
@@ -82,14 +86,14 @@ inductive SetTGBA.Reachable (T : SetTGBA Q α) : FinSet Q → FinSet Q → Prop 
       (htrans : ∃ g m, (g, e', m) ∈ T.trans e) : Reachable T e₀ e'
 
 /-- `e` is reachable in `T` from some initial state. -/
-def SetTGBA.IsReachable (T : SetTGBA Q α) (e : FinSet Q) : Prop :=
+@[expose] def SetTGBA.IsReachable (T : SetTGBA Q α) (e : FinSet Q) : Prop :=
   ∃ e₀ ∈ T.initial, T.Reachable e₀ e
 
 /-! ## T_f condition -/
 
 /-- `[GO01]` Definition 5's `T_f`, `[HOL4-ltl]`'s `acc_cond`: final `f` may be marked at letter `v` and target `e'` when
 `f ∉ e'`, or some non-looping transition of `f` enabled at `v` has its target inside `e'`. -/
-def VWAA.inTf (A : VWAA Q α) (v : α → Prop) (e' : FinSet Q) (f : Q) : Prop :=
+@[expose] def VWAA.inTf (A : VWAA Q α) (v : α → Prop) (e' : FinSet Q) (f : Q) : Prop :=
   f ∉ e' ∨ ∃ g O, (g, O) ∈ A.trans f ∧ g v ∧ f ∉ O ∧ O ⊆ e'
 
 theorem VWAA.inTf_of_not_mem {A : VWAA Q α} {v : α → Prop} {e' : FinSet Q} {f : Q}
@@ -100,7 +104,7 @@ theorem VWAA.inTf_of_not_mem {A : VWAA Q α} {v : α → Prop} {e' : FinSet Q} {
 
 /-- Pointwise form of `[HOL4-ltl]`'s `d_gen`: every `q ∈ e` has a component transition enabled at letter `v`, and the
 union of their targets lies inside `e'`. -/
-def VWAA.prodTrans (A : VWAA Q α) (e : FinSet Q) (v : α → Prop) (e' : FinSet Q) : Prop :=
+@[expose] def VWAA.prodTrans (A : VWAA Q α) (e : FinSet Q) (v : α → Prop) (e' : FinSet Q) : Prop :=
   ∃ (gf : Q → (α → Prop) → Prop) (Of : Q → FinSet Q),
     (∀ q ∈ e, (gf q, Of q) ∈ A.trans q ∧ gf q v) ∧
     e.biUnion Of ⊆ e'

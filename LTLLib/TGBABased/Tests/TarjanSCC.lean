@@ -1,3 +1,5 @@
+module
+
 /-
   Differential test of `tarjanCheck` against `dijkstraCheck` on 240 generated graphs crossed with mark counts: the verdicts
   must agree, and every Tarjan witness must pass `checkWitness`. The graphs are deterministic pseudo-random digraphs over
@@ -15,6 +17,9 @@
 import LTLLib.TGBABased.SCC.DijkstraSCC
 import LTLLib.TGBABased.SCC.TarjanSCC
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.SCC.DijkstraSCC
+meta import LTLLib.TGBABased.SCC.TarjanSCC
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.TarjanSCC
 

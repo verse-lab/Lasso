@@ -1,3 +1,5 @@
+module
+
 /-
   `List` lemmas that core Lean does not provide.
 
@@ -9,7 +11,9 @@
   - `List.flatten_splitBy`: the groups of `List.splitBy` flatten back to the original list
     (proof from Mathlib's `Mathlib/Data/List/SplitBy.lean`)
 -/
-import Batteries.Data.List.Basic
+public import Batteries.Data.List.Basic
+
+public section
 
 namespace LTLLib.List
 

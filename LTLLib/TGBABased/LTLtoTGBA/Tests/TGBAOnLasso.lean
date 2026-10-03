@@ -1,3 +1,5 @@
+module
+
 /-
   TGBA acceptance of a lasso word, decided on the finite product of the TGBA with the lasso's cycle, independent of
   `ltl3ba` and of the tableau route, the second referee next to `Lasso.evalNNF`. A word is accepted iff some reachable
@@ -12,9 +14,11 @@
   - The product graph
   - Strongly connected components and acceptance
 -/
-import LTLLib.TGBA
-import LTLLib.TGBABased.LTLtoTGBA.Label
-import LTLLib.TGBABased.LTLtoTGBA.Tests.Lasso
+public import LTLLib.TGBA
+public import LTLLib.TGBABased.LTLtoTGBA.Label
+public import LTLLib.TGBABased.LTLtoTGBA.Tests.Lasso
+
+public section
 
 namespace LTLLib.LTLtoTGBA.Tests
 

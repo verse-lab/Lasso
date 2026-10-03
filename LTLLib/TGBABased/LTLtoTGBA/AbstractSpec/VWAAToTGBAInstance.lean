@@ -1,3 +1,5 @@
+module
+
 /-
   Three instances of `SoundComplete`, following `[GO01]` Step 2 and Remark 3: the plain product `δ''` with `T_f` marks,
   on-the-fly dominance, and OR-merging transitions with equal target and marks.
@@ -32,9 +34,11 @@
   - On-the-fly dominance
   - OR-merging equal transitions
 -/
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBA
-import LTLLib.Data.FinSet
-import LTLLib.Tactic.Set
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBA
+public import LTLLib.Data.FinSet
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -174,7 +178,7 @@ private theorem biUnion_eq_foldr_toList (e : FinSet Q) (Of : Q → FinSet Q) :
 
 /-- Every non-looping alternative of a final state `f`, with its guard and target, `[GO01]`'s `T_f` witnesses. Ranges
 over every final in `AF`, so a final pulled into a target by another final's witness still has a candidate. -/
-noncomputable def candidates (A : VWAA Q α) (AF : FinSet Q) : List (Q × ((α → Prop) → Prop) × FinSet Q) :=
+@[expose] noncomputable def candidates (A : VWAA Q α) (AF : FinSet Q) : List (Q × ((α → Prop) → Prop) × FinSet Q) :=
   AF.toList.flatMap fun f => ((A.trans f).filter fun p => decide (f ∉ p.2)).map fun p => (f, p.1, p.2)
 
 theorem mem_candidates_iff {A : VWAA Q α} {AF : FinSet Q} {f : Q} {g : (α → Prop) → Prop} {O : FinSet Q} :
@@ -201,7 +205,7 @@ private def escTarget (S : List (Q × ((α → Prop) → Prop) × FinSet Q)) : F
 private def escMarks (S : List (Q × ((α → Prop) → Prop) × FinSet Q)) : FinSet Q :=
   (S.map Prod.fst).toFinSet
 
-theorem mem_escTarget_iff {S : List (Q × ((α → Prop) → Prop) × FinSet Q)} {x : Q} :
+private theorem mem_escTarget_iff {S : List (Q × ((α → Prop) → Prop) × FinSet Q)} {x : Q} :
     x ∈ escTarget S ↔ ∃ p ∈ S, x ∈ p.2.2 := by
   unfold escTarget
   induction S with
@@ -216,7 +220,7 @@ theorem mem_escTarget_iff {S : List (Q × ((α → Prop) → Prop) × FinSet Q)}
       · exact Or.inl hxq
       · exact Or.inr ⟨q, hq, hxq⟩
 
-theorem mem_escMarks_iff {S : List (Q × ((α → Prop) → Prop) × FinSet Q)} {f : Q} :
+private theorem mem_escMarks_iff {S : List (Q × ((α → Prop) → Prop) × FinSet Q)} {f : Q} :
     f ∈ escMarks S ↔ ∃ p ∈ S, p.1 = f := by
   unfold escMarks; simp [List.mem_toFinSet, List.mem_map, eq_comm]
 
@@ -227,7 +231,7 @@ noncomputable def productSetTrans (A : VWAA Q α) (AF : FinSet Q) (e : FinSet Q)
     (candidates A AF).sublists.map fun S =>
       (fun v => p.1 v ∧ escGuard S v, p.2 ∪ escTarget S, (AF \ (p.2 ∪ escTarget S)) ∪ escMarks S)
 
-theorem mem_productSetTrans_iff {A : VWAA Q α} {AF : FinSet Q} {e : FinSet Q}
+private theorem mem_productSetTrans_iff {A : VWAA Q α} {AF : FinSet Q} {e : FinSet Q}
     {g : (α → Prop) → Prop} {e' m : FinSet Q} :
     (g, e', m) ∈ productSetTrans A AF e ↔
       ∃ g0 B, (g0, B) ∈ combos A e.toList ∧ ∃ S ∈ (candidates A AF).sublists,
@@ -353,7 +357,7 @@ theorem productSetTGBA_soundCompleteEverywhere (A : VWAA Q α) (AF : FinSet Q) (
 /-! ## On-the-fly dominance -/
 
 /-- `[GO01]` Step 2's `≼`: `t1`'s guard is at least as broad, its target no larger, and its marks no fewer. -/
-def Dominates (t1 t2 : ((α → Prop) → Prop) × FinSet Q × FinSet Q) : Prop :=
+@[expose] def Dominates (t1 t2 : ((α → Prop) → Prop) × FinSet Q × FinSet Q) : Prop :=
   (∀ v, t2.1 v → t1.1 v) ∧ t1.2.1 ⊆ t2.2.1 ∧ t2.2.2 ⊆ t1.2.2
 
 /-- Dropping transitions that each have a surviving dominator preserves correctness. -/

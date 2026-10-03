@@ -1,3 +1,5 @@
+module
+
 /-
   Slightly more complicated example that exercises a generalized Büchi
   acceptance condition with two acceptance sets.
@@ -13,6 +15,7 @@
   the GBA.
 -/
 import LTLLib.Examples.BuildPrint
+meta import LTLLib.Examples.BuildPrint
 
 namespace LTLLib.Examples
 

@@ -1,3 +1,5 @@
+module
+
 /-
   Tests the shape of a mixed fairness assumption after the split. `hoistFairness` returns one list of options per
   conjunct of the negated property, an option being a region and a list of marks, and `crossAllDNF` multiplies them out.
@@ -15,6 +17,10 @@ import LTLLib.LTL.FairNormalForm
 import LTLLib.TGBABased.Fairness.FairRouter
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.LTL.FairNormalForm
+meta import LTLLib.TGBABased.Fairness.FairRouter
+meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.FairOptions
 

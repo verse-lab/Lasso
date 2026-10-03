@@ -1,3 +1,5 @@
+module
+
 /-
   Seeded random generators for NNF formulas and lasso words, for the differential tests of this folder.
   Every generator threads a `StdGen` explicitly, so a failing case is reproducible from its seed alone.
@@ -10,8 +12,10 @@
   - Formula generation
   - Lasso generation
 -/
-import LTLLib.LTL.Syntax
-import LTLLib.TGBABased.LTLtoTGBA.Tests.Lasso
+public import LTLLib.LTL.Syntax
+public import LTLLib.TGBABased.LTLtoTGBA.Tests.Lasso
+
+public section
 
 namespace LTLLib.LTLtoTGBA.Tests
 

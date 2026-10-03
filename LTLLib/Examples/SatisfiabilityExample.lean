@@ -1,3 +1,5 @@
+module
+
 /-
   Minimal end-to-end example of `fullPipeline` (`Satisfiability.lean`):
   decide satisfiability of an LTL formula directly, no external system
@@ -7,6 +9,7 @@
   `φUnsat = □◇(a ∧ ¬a)`:  Unsatisfiable, `a`/`¬a` can't hold together.
 -/
 import LTLLib.Examples.BuildPrint
+meta import LTLLib.Examples.BuildPrint
 
 namespace LTLLib.Examples
 

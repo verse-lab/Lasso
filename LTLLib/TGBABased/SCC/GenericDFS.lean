@@ -1,3 +1,5 @@
+module
+
 /-
   Algorithm 1 of [RDKP13], a generic DFS skeleton parameterized by abstract PUSH, POP, GET_STATUS and UPDATE operations,
   which each SCC-based emptiness check refines. Also defines the witness extraction `checkWithWitness` they share.
@@ -63,10 +65,12 @@
   - Witness-check correctness
 -/
 
-import Std
-import LTLLib.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.SCC.WitnessExtraction
-import LTLLib.Tactic.Set
+public import Std
+public import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.SCC.WitnessExtraction
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -146,7 +150,7 @@ structure DFSOps (State : Type u) [BEq State] [Hashable State] where
   numExplored : Aux → Nat -- only for reporting to the user
 
 /-- A mark set as a bitmask. -/
-def marksToBitmask (marks : Std.HashSet Nat) : Nat :=
+@[expose] def marksToBitmask (marks : Std.HashSet Nat) : Nat :=
   marks.toList.foldl (init := 0) fun mask m => mask ||| (1 <<< m)
 
 private theorem testBit_foldl_or (l : List Nat) (init : Nat) (m : Nat) :
@@ -188,14 +192,14 @@ theorem marksToBitmask_congr {a b : Std.HashSet Nat} (h : ∀ m, m ∈ a ↔ m �
   exact h i
 
 /-- A state list running backwards: each entry is a successor of the next, and the last is initial. -/
-def RevPathFrom {State : Type u} (initialStates : List State) (succs : State → Array State)
+@[expose] def RevPathFrom {State : Type u} (initialStates : List State) (succs : State → Array State)
     (l : List State) : Prop :=
   (∀ i, (hi : i + 1 < l.length) → l[i] ∈ succs l[i + 1]) ∧
   ∀ (h : l ≠ []), l.getLast h ∈ initialStates
 
 /-- The driver stack read top-down, each frame's state a successor of the one below it and the outermost an initial
 state. -/
-def DFSStackChain {State : Type u} {P : Type w} (initialStates : List State)
+@[expose] def DFSStackChain {State : Type u} {P : Type w} (initialStates : List State)
     (succs : State → Array State) (stack : List (DFSStep State P)) : Prop :=
   RevPathFrom initialStates succs (stack.map (·.state))
 
@@ -259,7 +263,7 @@ root to `anchor`, the closing back-edge's source or the frame POP closed when PO
 
 The marks of an outgoing edge are read as `step.succMarks[step.idx]!`, not `edgeMarks step.state d`: the source half of
 that call is done once per pushed frame (see `DFSStep.marks`), not once per edge. -/
-def dfsGo (ops : DFSOps State) (succs : State → Array State)
+@[expose] def dfsGo (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     ops.Aux → List (DFSStep State ops.Position) → Option (Option (State × List State) × ops.Aux)
@@ -298,7 +302,7 @@ def dfsGo (ops : DFSOps State) (succs : State → Array State)
 partial_fixpoint -- never `none`, by `dfsGo_ne_none`
 
 /-- Run the generic DFS from a single fresh root, per Algorithm 1's lines 5-6. -/
-def dfsFromRoot (ops : DFSOps State) (succs : State → Array State)
+@[expose] def dfsFromRoot (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (aux : ops.Aux) (q0 : State) :
     Option (State × List State) × ops.Aux :=
@@ -312,7 +316,7 @@ def dfsFromRoot (ops : DFSOps State) (succs : State → Array State)
   (dfsGo ops succs edgeMarks expand aux' [step]).getD (none, aux')
 
 /-- Outer loop over initial states, sharing search state across roots. -/
-def genericDFSGo (ops : DFSOps State) (succs : State → Array State)
+@[expose] def genericDFSGo (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     List State → ops.Aux → Option (Option (State × List State) × ops.Aux)
@@ -327,7 +331,7 @@ def genericDFSGo (ops : DFSOps State) (succs : State → Array State)
     | .dead | .live => genericDFSGo ops succs edgeMarks expand rest aux -- skipped, earlier root's search already touched it
 partial_fixpoint -- never `none`, by `genericDFSGo_ne_none`
 
-def genericDFS (ops : DFSOps State) (succs : State → Array State)
+@[expose] def genericDFS (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (roots : List State) (aux : ops.Aux) :
     Option (State × List State) × ops.Aux :=
@@ -1630,7 +1634,7 @@ theorem genericDFS_returns_none_fully_explored [LawfulBEq State] (ops : DFSOps S
 
 /-- Run `ops`'s search to decide emptiness, then on `.nonEmpty` rebuild the cycle by graph BFS restricted to the
 accepting SCC `ops.sccHint` hands back. The stem comes from the search's own stack. -/
-def checkWithWitness [LawfulBEq State] [LawfulHashable State] (ops : DFSOps State)
+@[expose] def checkWithWitness [LawfulBEq State] [LawfulHashable State] (ops : DFSOps State)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (numMarks : Nat)
     (initialStates : List State) : EmptinessResult State :=
@@ -1653,7 +1657,7 @@ def checkWithWitness [LawfulBEq State] [LawfulHashable State] (ops : DFSOps Stat
 
 /-- A reported `(anchor, stem)` comes with an `sccHint` that is an internally connected accepting set containing `anchor`,
 and `stem` is a path from an initial state to `anchor`. -/
-def SccHintSound [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
+@[expose] def SccHintSound [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (numMarks : Nat) (initialStates : List State) : Prop :=
   ∀ anchor stem,

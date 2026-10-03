@@ -1,3 +1,5 @@
+module
+
 /-
   Tests that `modelCheckTGBA` answers a violated property with a counterexample whose stem and loop are a real run.
 
@@ -6,6 +8,8 @@
 -/
 import LTLLib.TGBABased.DijkstraCheck
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.DijkstraCheck
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.ModelCheckCounterExample
 

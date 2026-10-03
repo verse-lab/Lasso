@@ -1,3 +1,5 @@
+module
+
 /-
   Subformula operations for NNF formulas.
 
@@ -12,8 +14,10 @@
   - untilSubformulasDedup completeness
 -/
 
-import Std
-import LTLLib.LTL.Syntax
+public import Std
+public import LTLLib.LTL.Syntax
+
+public section
 
 namespace LTLLib
 
@@ -58,7 +62,7 @@ end IsSubformula
 /-! ## Subformula folding -/
 
 /-- Fold `f` over `φ` and all its subformulas (pre-order, root first). -/
-def fold {β α} (f : β → NNF α → β) (init : β) : NNF α → β
+@[expose] def fold {β α} (f : β → NNF α → β) (init : β) : NNF α → β
   | φ@(.tt)
   | φ@(.ff)
   | φ@(.prop _)
@@ -70,7 +74,7 @@ def fold {β α} (f : β → NNF α → β) (init : β) : NNF α → β
   | φ@(.release ψ₁ ψ₂) => ψ₂.fold f (ψ₁.fold f (f init φ))
 
 /-- Compute the list of all subformulas (pre-order). -/
-def subformulas {α} (φ : NNF α) : List (NNF α) :=
+@[expose] def subformulas {α} (φ : NNF α) : List (NNF α) :=
   φ.fold (fun acc f => f :: acc) []
 
 private abbrev dedupState (α : Type u) [BEq α] [Hashable α] : Type u :=

@@ -1,3 +1,5 @@
+module
+
 /-
   Tests `Lasso.holdsNNF` against hand-computed answers, pinning the until/release fixpoint before the other tests of
   this folder trust it as ground truth.
@@ -8,6 +10,8 @@
 -/
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.LTLtoTGBA.Tests.EvalTests
 

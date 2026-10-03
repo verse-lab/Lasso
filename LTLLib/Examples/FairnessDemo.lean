@@ -1,3 +1,5 @@
+module
+
 /-
   This file demonstrates the state-space blowup caused by introducing fairness hypothesis.
 
@@ -18,6 +20,7 @@
   - Strong fairness: Philosopher 0 must eventually eat.
 -/
 import LTLLib.Examples.BuildPrint
+meta import LTLLib.Examples.BuildPrint
 
 namespace LTLLib.Examples
 

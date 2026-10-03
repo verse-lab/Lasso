@@ -1,3 +1,5 @@
+module
+
 /-
   Tests the recogniser and classifier of `LTL/FairClass.lean` on formulas of known membership, several from [LSFZ16].
 
@@ -8,6 +10,8 @@
 -/
 import LTLLib.LTL.FairClass
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.LTL.FairClass
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.FairClass
 

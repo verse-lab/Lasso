@@ -1,3 +1,5 @@
+module
+
 /-
   Abstract lasso theory: a valid lasso (stem + cycle) witnesses non-emptiness
   of a Büchi automaton.
@@ -23,20 +25,22 @@
   - The run is accepting
   - Connecting lasso to non-emptiness
 -/
-import LTLLib.AbstractSpec.Acceptance
+public import LTLLib.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 
 open Lentil
 
-private theorem List.ne_nil_of_length_ge_one {l : List α} (h : l.length ≥ 1) : l ≠ [] :=
+theorem List.ne_nil_of_length_ge_one {l : List α} (h : l.length ≥ 1) : l ≠ [] :=
   List.ne_nil_of_length_pos (by omega)
 
 /-! ## Lasso run construction -/
 
 /-- Infinite run built from a stem and a cycle overlapping at one state (`stem.getLast = cycle.head`).
 Positions `0` to `stem.length - 2` come from the stem, the rest cycle through `cycle`. -/
-noncomputable def lassoRun {State : Type u}
+@[expose] noncomputable def lassoRun {State : Type u}
     (stem cycle : List State) (default : State) : Nat → State :=
   fun i =>
     if h : i + 1 < stem.length then
@@ -96,7 +100,7 @@ variable {State : Type u} {α : Type v} {A : OASpec State α 1}
   (hv : ValidLasso A stem cycle)
 
 /-- The constructed run (uses `cycle.head` as default, which is always valid). -/
-noncomputable def run : Nat → State :=
+@[expose] noncomputable def run : Nat → State :=
   lassoRun stem cycle (cycle.head (List.ne_nil_of_length_ge_one hv.cycle_nonempty))
 
 /-! ## The run is valid (initial + transitions) -/

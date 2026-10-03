@@ -1,3 +1,5 @@
+module
+
 /-
   Tests the `numMarks = 0` case of `modelCheckTGBA`. The automaton for the negated property carries one mark per Until
   subformula, so reachability properties such as `◇p`, whose negation `□¬p` has no Until, are the common zero-mark case.
@@ -15,6 +17,9 @@
 import LTLLib.TGBABased.DijkstraCheck
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.DijkstraCheck
+meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.ZeroMarks
 

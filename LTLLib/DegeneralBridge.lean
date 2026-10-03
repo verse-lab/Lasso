@@ -1,3 +1,5 @@
+module
+
 /-
   Bridge between computational `GBA.degeneralize` and abstract `OASpec.degeneralize`.
 
@@ -23,9 +25,11 @@
   - Unconditional wrappers
 -/
 
-import LTLLib.AbstractSpec.Acceptance
-import LTLLib.GBA
-import LTLLib.BA
+public import LTLLib.AbstractSpec.Acceptance
+public import LTLLib.GBA
+public import LTLLib.BA
+
+public section
 
 namespace LTLLib
 

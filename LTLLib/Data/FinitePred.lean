@@ -1,3 +1,5 @@
+module
+
 /-
   Finiteness of a predicate, witnessed by a list covering it.
 
@@ -14,10 +16,12 @@
 -/
 import Batteries.Data.List.Perm
 
+public section
+
 namespace LTLLib
 
 /-- Only finitely many values satisfy `p`: some list contains all of them. -/
-def FinitePred {α : Type u} (p : α → Prop) : Prop :=
+@[expose] def FinitePred {α : Type u} (p : α → Prop) : Prop :=
   ∃ l : List α, ∀ a, p a → a ∈ l
 
 namespace FinitePred

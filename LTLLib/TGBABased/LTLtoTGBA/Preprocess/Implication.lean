@@ -1,3 +1,5 @@
+module
+
 /-
   Syntactic implication between NNF formulas: `[SB00]` §3's relation with duals, case for case `[LTL2BA-1.3]`'s
   `implies`, plus `[BKŘS12]` §4's three `X`-rules. The equality test is plain structural equality rather than
@@ -22,7 +24,9 @@
   - Syntactic implication
   - Soundness
 -/
-import LTLLib.LTL.FairClass
+public import LTLLib.LTL.FairClass
+
+public section
 
 namespace LTLLib
 
@@ -31,7 +35,7 @@ variable {α : Type u}
 /-! ## Node count -/
 
 /-- Node count, `synImpl`'s termination measure (`sizeOf` is proof-only, not compiled). -/
-def NNF.size : NNF α → Nat
+@[expose] def NNF.size : NNF α → Nat
   | .tt | .ff | .prop _ | .nprop _ => 1
   | .next φ => φ.size + 1
   | .and φ ψ | .or φ ψ | .until φ ψ | .release φ ψ => φ.size + ψ.size + 1
@@ -65,7 +69,7 @@ theorem NNF.eq_of_isF {φ : NNF α} (h : φ.isF = true) : ∃ ψ, φ = .until .t
 variable [BEq α]
 
 /-- `a` syntactically implies `b`. -/
-def synImpl (a b : NNF α) : Bool :=
+@[expose] def synImpl (a b : NNF α) : Bool :=
   a == b ||
   NNF.isTop b ||
   NNF.isBot a ||

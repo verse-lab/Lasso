@@ -1,3 +1,5 @@
+module
+
 /-
   The abstract LTL to VWAA construction, `[BKŘS12]` §5's δ without suspension, stated directly in `Prop` and `FinSet`.
   States are all `NNF α` nodes rather than only `[TV21]`'s elementary subformulae, `rank` is formula size, and `until` and
@@ -36,13 +38,15 @@
   - Completeness
   - Soundness
 -/
-import LTLLib.LTL.Semantics
-import LTLLib.LTL.Subformulas
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAARuns
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAReduce
-import LTLLib.Tactic.Set
-import LTLLib.Data.FinSet
+public import LTLLib.LTL.Semantics
+public import LTLLib.LTL.Subformulas
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAARuns
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAReduce
+meta import LTLLib.Tactic.Set
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 
@@ -51,7 +55,7 @@ variable {α : Type u}
 /-! ## Rank -/
 
 /-- Formula size, the very weak rank (`[TV21]` Lemma 3's C2, in rank form). -/
-def NNF.rank : NNF α → Nat
+@[expose] def NNF.rank : NNF α → Nat
   | .tt | .ff | .prop _ | .nprop _ => 1
   | .next φ => φ.rank + 1
   | .and φ ψ | .or φ ψ | .until φ ψ | .release φ ψ => φ.rank + ψ.rank + 1
@@ -59,13 +63,13 @@ def NNF.rank : NNF α → Nat
 /-! ## The transition function -/
 
 /-- Whether `q` is an `until` node, the co-Büchi final condition of `[BKŘS12]` §5. -/
-def NNF.isUntil : NNF α → Prop
+@[expose] def NNF.isUntil : NNF α → Prop
   | .until _ _ => True
   | _ => False
 
 /-- `[BKŘS12]` §5's δ without suspension: `next ψ` targets `{ψ}`, and `until`/`release`'s self-loop targets the formula
 itself. -/
-def NNF.vwaaTrans : NNF α → List (((α → Prop) → Prop) × FinSet (NNF α))
+@[expose] def NNF.vwaaTrans : NNF α → List (((α → Prop) → Prop) × FinSet (NNF α))
   | .tt => [(fun _ => True, ∅)]
   | .ff => []
   | .prop a => [(fun v => v a, ∅)]
@@ -189,7 +193,7 @@ theorem NNF.vwaaTrans_veryWeak (q : NNF α) (g : (α → Prop) → Prop) (O : Fi
 /-! ## The automaton -/
 
 /-- The VWAA of `φ`, with the single initial level `{φ}`. -/
-def ltlVWAA (φ : NNF α) : VWAA (NNF α) α where
+@[expose] def ltlVWAA (φ : NNF α) : VWAA (NNF α) α where
   trans := NNF.vwaaTrans
   initial := [{φ}]
   final := NNF.isUntil
@@ -441,7 +445,7 @@ noncomputable def NNF.satLevel (ξ : OmegaWord α) (ψ : NNF α) : Nat → FinSe
 
 /-- The run built by iterating `satTrans`'s choice from `{ψ}`, `[TV21]` Lemma 5's expansion congruence turned
 into a run. -/
-noncomputable def NNF.satRun (ξ : OmegaWord α) (ψ : NNF α) : VWAA.Run (NNF α) where
+@[expose] noncomputable def NNF.satRun (ξ : OmegaWord α) (ψ : NNF α) : VWAA.Run (NNF α) where
   level := NNF.satLevel ξ ψ
   succ i q := (NNF.satTrans (ξ.drop i) q).2
 

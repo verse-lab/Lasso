@@ -1,3 +1,5 @@
+module
+
 /-
   Tests `dijkstraCheck`'s witness extraction (`checkWithWitness` in `SCC/GenericDFS.lean`) on a graph where the marks of
   the accepting cycle are spread over a DFS branch abandoned before the back edge that closes the cycle.
@@ -8,6 +10,8 @@
 -/
 import LTLLib.TGBABased.SCC.DijkstraSCC
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.SCC.DijkstraSCC
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.WitnessStress
 

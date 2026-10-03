@@ -1,3 +1,5 @@
+module
+
 /-
   Transition-based generalized Büchi automata (TGBA), with labels and acceptance marks attached to transitions rather
   than states. A GBA converts to a TGBA by pushing its acceptance marks onto all outgoing transitions. `consistentPart`
@@ -27,12 +29,14 @@
   - Transitions some valuation takes
 -/
 
-import Std
-import LTLLib.TGBABased.AbstractSpec.Acceptance
-import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.AbstractSpec.Lasso
-import LTLLib.TGBABased.AbstractSpec.Pumping
-import LTLLib.AbstractSpec.GraphPaths
+public import Std
+public import LTLLib.TGBABased.AbstractSpec.Acceptance
+public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.AbstractSpec.Lasso
+public import LTLLib.TGBABased.AbstractSpec.Pumping
+public import LTLLib.AbstractSpec.GraphPaths
+
+public section
 
 namespace LTLLib
 
@@ -57,35 +61,35 @@ namespace TGBA
 variable {α} [BEq α] [Hashable α]
 
 /-- Number of states in the TGBA. -/
-def numStates (tgba : TGBA α) : Nat := tgba.states.size
+@[expose] def numStates (tgba : TGBA α) : Nat := tgba.states.size
 
 /-- Outgoing transitions of a state. -/
-def getSuccessors (tgba : TGBA α) (state : Nat) : Array (Transition α) :=
+@[expose] def getSuccessors (tgba : TGBA α) (state : Nat) : Array (Transition α) :=
   tgba.successors[state]?.getD #[]
 
 /-- Check if a state is initial. -/
-def isInitial (tgba : TGBA α) (state : Nat) : Bool :=
+@[expose] def isInitial (tgba : TGBA α) (state : Nat) : Bool :=
   tgba.initialStates.contains state
 
 /-- Check if a transition carries a given acceptance mark. -/
-def Transition.isAccepting (t : Transition α) (setIdx : Nat) : Bool :=
+@[expose] def Transition.isAccepting (t : Transition α) (setIdx : Nat) : Bool :=
   t.acceptMarks.contains setIdx
 
-def succStates (tgba : TGBA α) (q : Nat) : Array Nat :=
+@[expose] def succStates (tgba : TGBA α) (q : Nat) : Array Nat :=
   (tgba.getSuccessors q).map (·.target)
 
 /-- Union of marks over every `q → q'` transition (there may be several parallel ones). -/
-def edgeMarks (tgba : TGBA α) (q q' : Nat) : Std.HashSet Nat :=
+@[expose] def edgeMarks (tgba : TGBA α) (q q' : Nat) : Std.HashSet Nat :=
   ((tgba.getSuccessors q).filter (·.target == q')).foldl
     (init := Std.HashSet.emptyWithCapacity 0) fun acc t => acc.union t.acceptMarks
 
 /-- Precomputed `(source, target) → marks` lookup, one pass over every transition. -/
-def edgeMarksTable (tgba : TGBA α) : Std.HashMap (Nat × Nat) (Std.HashSet Nat) :=
+@[expose] def edgeMarksTable (tgba : TGBA α) : Std.HashMap (Nat × Nat) (Std.HashSet Nat) :=
   (tgba.successors.toList.flatMap fun qts => qts.2.toList.map fun t => ((qts.1, t.target), t.acceptMarks)).foldl
     (init := {}) fun m kv => m.insert kv.1 ((m.getD kv.1 (Std.HashSet.emptyWithCapacity 0)).union kv.2)
 
 /-- `edgeMarks` as a constant-time lookup in `edgeMarksTable`. -/
-def cachedEdgeMarks (tgba : TGBA α) (q q' : Nat) : Std.HashSet Nat :=
+@[expose] def cachedEdgeMarks (tgba : TGBA α) (q q' : Nat) : Std.HashSet Nat :=
   tgba.edgeMarksTable.getD (q, q') (Std.HashSet.emptyWithCapacity 0)
 
 structure WellFormed (tgba : TGBA α) : Prop where
@@ -97,7 +101,7 @@ structure WellFormed (tgba : TGBA α) : Prop where
     ∀ m ∈ t.acceptMarks, m < tgba.numAcceptSets
 
 /-- The `FiniteReach` witness of a well-formed `TGBA`, its state set bounding the reachable set. -/
-def finiteReach (tgba : TGBA α) (hwf : tgba.WellFormed) :
+theorem finiteReach (tgba : TGBA α) (hwf : tgba.WellFormed) :
     FiniteReach tgba.initialStates.toList tgba.succStates := by
   refine ⟨tgba.states.toList, fun q hq => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr ?_)⟩
   induction hq with
@@ -117,7 +121,7 @@ abbrev Edge (α : Type u) [BEq α] [Hashable α] := (_q : Nat) × TGBA.Transitio
 
 /-- Convert a computational `TGBA` to an abstract `TOASpec`. Edges are source-state/transition pairs,
 label and acceptance marks are read directly off the one transition committed to. -/
-def toSpec (tgba : TGBA α) : TOASpec Nat (Edge α) α tgba.numAcceptSets where
+@[expose] def toSpec (tgba : TGBA α) : TOASpec Nat (Edge α) α tgba.numAcceptSets where
   src e := e.1
   dst e := e.2.target
   valid e := e.2 ∈ tgba.getSuccessors e.1
@@ -257,7 +261,7 @@ def TGBA.edgeWitness (tgba : TGBA α) : TEdgeWitness tgba.toSpec tgba.succStates
       first | exact hmem | exact hp.1 | exact hp.2
 
 /-- The `TGBA.toSpec` specialization of `TAcceptingCycle.toTValidLassoOf`. -/
-def TAcceptingCycle.toTValidLasso {tgba : TGBA α}
+theorem TAcceptingCycle.toTValidLasso {tgba : TGBA α}
     (ac : TAcceptingCycle tgba.initialStates.toList tgba.succStates tgba.edgeMarks tgba.numAcceptSets) :
     TValidLasso tgba.toSpec (stemEdges tgba.edgeWitness.stepEdge ac.stem) (ac.cycleE tgba.edgeWitness) :=
   ac.toTValidLassoOf tgba.edgeWitness
@@ -374,7 +378,7 @@ def Transition.isConsistent (t : Transition α) : Bool :=
   !t.positiveProps.any t.negativeProps.contains
 
 /-- The same automaton without the transitions no valuation takes. -/
-def consistentPart (tgba : TGBA α) : TGBA α :=
+@[expose] def consistentPart (tgba : TGBA α) : TGBA α :=
   { tgba with successors := tgba.successors.map fun _ ts => ts.filter (·.isConsistent) }
 
 theorem getSuccessors_consistentPart (tgba : TGBA α) (q : Nat) :

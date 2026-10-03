@@ -1,3 +1,5 @@
+module
+
 /-
   Real world example of how limiting fairness can be.
   Here we model an LTL formula from "SimpleAllocator" in the TLA+ examples: "ClientsWillObtain"
@@ -16,6 +18,7 @@
 
 -/
 import LTLLib.Examples.BuildPrint
+meta import LTLLib.Examples.BuildPrint
 
 namespace LTLLib.Examples
 

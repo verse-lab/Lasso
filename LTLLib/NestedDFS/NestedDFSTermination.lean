@@ -1,3 +1,5 @@
+module
+
 /-
   Executable nested DFS: well-founded definitions and the fuel bridge.
 
@@ -35,8 +37,10 @@
   - Packaging a `FiniteReach` witness from `BA.WellFormed`
   - From an accepting run to an `AcceptingCycle`
 -/
-import LTLLib.NestedDFS.NestedDFSCorrectness
-import LTLLib.BA
+public import LTLLib.NestedDFS.NestedDFSCorrectness
+public import LTLLib.BA
+
+public section
 
 namespace LTLLib
 
@@ -95,7 +99,7 @@ structure RFrame (initialStates : List State) (succs : State → Array State) wh
   hsuffix : remaining <:+ (succs state).toList
 
 /-- Consume the head of a frame's `remaining` list, updating `hsuffix` accordingly. -/
-def RFrame.consumeOne {initialStates : List State} {succs : State → Array State}
+@[expose] def RFrame.consumeOne {initialStates : List State} {succs : State → Array State}
     (frame : RFrame initialStates succs) (succ : State) (tl : List State)
     (heq : frame.remaining = succ :: tl) : RFrame initialStates succs where
   state := frame.state
@@ -104,7 +108,7 @@ def RFrame.consumeOne {initialStates : List State} {succs : State → Array Stat
   hsuffix := (List.suffix_cons succ tl).trans (heq ▸ frame.hsuffix)
 
 /-- Push a fresh successor as a new active frame on top. -/
-def RFrame.push {initialStates : List State} {succs : State → Array State}
+@[expose] def RFrame.push {initialStates : List State} {succs : State → Array State}
     (frame : RFrame initialStates succs) (succ : State) (hmem : succ ∈ succs frame.state) :
     RFrame initialStates succs where
   state := succ
@@ -113,7 +117,7 @@ def RFrame.push {initialStates : List State} {succs : State → Array State}
   hsuffix := List.suffix_refl _
 
 /-- Total pending-successor count across every stack frame. -/
-def pendingSum {initialStates : List State} {succs : State → Array State}
+@[expose] def pendingSum {initialStates : List State} {succs : State → Array State}
     (stack : List (RFrame initialStates succs)) : Nat :=
   (stack.map (fun f => f.remaining.length)).sum
 
@@ -208,7 +212,7 @@ decreasing_by
 
 /-- Well-founded inner DFS from `current`, short-circuiting on an already-finished or
 already-visited start state. -/
-def innerDFSWF [LawfulHashable State] (succs : State → Array State)
+@[expose] def innerDFSWF [LawfulHashable State] (succs : State → Array State)
     {initialStates : List State} (fr : FiniteReach initialStates succs) (seed : State)
     (cyan : List State) (current : State) (hcurrent_reach : Reachable initialStates succs current)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -302,7 +306,7 @@ private noncomputable def innerFuelMeasure (succs : State → Array State)
   reachCount initialStates succs (fun x => iv.contains x = false)
 
 /-- Chains `innerDFS_fuel_fold` calls across an explicit stack of pending frames. -/
-def innerDFS_fuel_chain [BEq State] [Hashable State] [LawfulBEq State]
+@[expose] def innerDFS_fuel_chain [BEq State] [Hashable State] [LawfulBEq State]
     (succs : State → Array State) (seed : State) (cyan : List State) (fuel : Nat)
     (stack : List (State × List State)) (pathStack : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -484,7 +488,7 @@ private theorem innerDFS_fuel_fold_exists_aux (succs : State → Array State)
           omega
         exact ih_rem iv1 st1 hiv1 (fun x hx => hremaining x (List.mem_cons_of_mem _ hx)) hfuel1
 
-theorem innerDFS_fuel_exists (succs : State → Array State) (fr : FiniteReach initialStates succs)
+private theorem innerDFS_fuel_exists (succs : State → Array State) (fr : FiniteReach initialStates succs)
     (seed : State)
     (cyan : List State) (fuel : Nat) (current : State) (iv : Std.HashSet State) (st : FNDFSState State)
     (hiv : ∀ x, iv.contains x → Reachable initialStates succs x)
@@ -521,7 +525,7 @@ theorem innerDFS_fuel_exists (succs : State → Array State) (fr : FiniteReach i
         (fun curr iv₀ st₀ hiv₀ hcurr hf => ih curr iv₀ st₀ hiv₀ hcurr hf) hmeasure
 
 /-- The main bridge: `innerDFS_fuel_chain` equals `innerDFSCore` for sufficient fuel. -/
-theorem innerDFS_fuel_chain_eq_innerDFSCore
+private theorem innerDFS_fuel_chain_eq_innerDFSCore
     (fuel : Nat) (stack : List (RFrame initialStates succs)) (pathStack : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (hiv : ∀ x, iv.contains x → Reachable initialStates succs x)
@@ -714,7 +718,7 @@ theorem innerDFS_fuel_chain_singleton (fuel : Nat) (current : State) (remaining 
         rfl
 
 /-- Top-level bridge: for sufficient fuel, `innerDFS_fuel` equals `innerDFSWF`. -/
-theorem innerDFS_fuel_eq_innerDFSWF
+private theorem innerDFS_fuel_eq_innerDFSWF
     (fuel : Nat) (current : State) (hcurrent_reach : Reachable initialStates succs current)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (hiv : ∀ x, iv.contains x → Reachable initialStates succs x)
@@ -771,7 +775,7 @@ variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 **Holzmann-Peled-Yannakakis shortcut** (accepting-leaf branch, `target` may be any state on
 `pathStack`, not just `current`) and the **Schwoon-Esparza back-edge shortcut**
 (`pathStack.contains succ` detects a cycle directly, no inner DFS launched). -/
-def outerDFSLoopWF [LawfulHashable State] {initialStates : List State}
+@[expose] def outerDFSLoopWF [LawfulHashable State] {initialStates : List State}
     (succs : State → Array State) (isAccepting : State → Bool)
     (fr : FiniteReach initialStates succs)
     (stack : List (RFrame initialStates succs))
@@ -1230,7 +1234,7 @@ section TopLevelWF
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- Well-founded top-level nested DFS emptiness check. -/
-def nestedDFSWF [LawfulHashable State] (succs : State → Array State) (initialStates : List State)
+@[expose] def nestedDFSWF [LawfulHashable State] (succs : State → Array State) (initialStates : List State)
     (fr : FiniteReach initialStates succs) (isAccepting : State → Bool) : EmptinessResult State :=
   let st : FNDFSState State := {
     outerVisited := Std.HashSet.emptyWithCapacity 1024
@@ -1481,7 +1485,7 @@ section EmptinessCheckerInterface
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- `nestedDFSWF` packaged as an `EmptinessChecker` instance. -/
-def nestedDFSChecker [LawfulHashable State] : EmptinessChecker State where
+@[expose] def nestedDFSChecker [LawfulHashable State] : EmptinessChecker State where
   check := nestedDFSWF
   nonEmpty_valid := fun {succs initialStates fr isAccepting stem loop} h =>
     nestedDFSWF_nonEmpty_valid succs fr isAccepting stem loop h
@@ -1497,7 +1501,7 @@ section BAFiniteReach
 variable {α : Type u} [BEq α] [Hashable α]
 
 /-- A well-formed `BA`'s own state set is a `FiniteReach` witness for its `getSuccessors` function. -/
-def BA.finiteReach (ba : BA α) (hwf : ba.WellFormed) :
+theorem BA.finiteReach (ba : BA α) (hwf : ba.WellFormed) :
     FiniteReach ba.initialStates.toList ba.getSuccessors := by
   refine ⟨ba.states.toList, fun s hs => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr ?_)⟩
   induction hs with

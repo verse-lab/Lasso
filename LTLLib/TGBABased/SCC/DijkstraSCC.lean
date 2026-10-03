@@ -1,3 +1,5 @@
+module
+
 /-
   Dijkstra's SCC-based emptiness check (Algorithm 3 of [RDKP13]), refining `GenericDFS.lean`'s abstract operations with
   two stacks, the live states and the open SCC candidates among them.
@@ -75,14 +77,16 @@
   - The `TEmptinessChecker` contract
 -/
 
-import Std
-import LTLLib.AbstractSpec.EmptinessCheck
-import LTLLib.AbstractSpec.GraphPaths
-import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.AbstractSpec.SCCTheory
-import LTLLib.TGBABased.SCC.GenericDFS
-import LTLLib.TGBABased.SCC.LiveStack
-import LTLLib.Tactic.Set
+public import Std
+public import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.AbstractSpec.GraphPaths
+public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.AbstractSpec.SCCTheory
+public import LTLLib.TGBABased.SCC.GenericDFS
+public import LTLLib.TGBABased.SCC.LiveStack
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -106,7 +110,7 @@ structure DijkstraAux (State : Type u) [BEq State] [Hashable State] where
   dead : Std.HashSet State
   roots : Array RootEntry
 
-def dijkstraInitAux : DijkstraAux State where
+@[expose] def dijkstraInitAux : DijkstraAux State where
   live := #[]
   liveIndex := Std.HashMap.emptyWithCapacity 0
   dead := Std.HashSet.emptyWithCapacity 0
@@ -119,7 +123,7 @@ def dijkstraGetStatus (aux : DijkstraAux State) (q : State) : DFSStatus :=
 
 /-- `PUSH`, line 24: a newly visited state starts as a trivial SCC candidate, non-trivial ones only arise by merging on a
 back-edge. -/
-def dijkstraPush (aux : DijkstraAux State) (q : State) (marks : Std.HashSet Nat) :
+@[expose] def dijkstraPush (aux : DijkstraAux State) (q : State) (marks : Std.HashSet Nat) :
     DijkstraAux State × Nat :=
   let pos := aux.live.size
   ({ aux with
@@ -273,7 +277,7 @@ def DijkstraAux.rangeEnd (aux : DijkstraAux State) (i : Nat) : Nat :=
   if i + 1 < aux.roots.size then aux.rangeStart (i + 1) else aux.live.size
 
 /-- The states currently in the range rooted at `roots[i]`. -/
-def DijkstraAux.range (aux : DijkstraAux State) (i : Nat) : Std.HashSet State :=
+@[expose] def DijkstraAux.range (aux : DijkstraAux State) (i : Nat) : Std.HashSet State :=
   (aux.live.extract (aux.rangeStart i) (aux.rangeEnd i)).foldl
     (init := Std.HashSet.emptyWithCapacity 0) fun acc s => acc.insert s
 
@@ -1244,14 +1248,14 @@ structure DijkstraRangeInv [Inhabited State] (succs : State → Array State)
     0 < i ∧ ∃ s ∈ aux.range (i - 1), ∃ t ∈ aux.range i, t ∈ succs s ∧ m ∈ edgeMarks s t
 
 /-- Frame positions decrease from the top of the driver stack downward. -/
-def DijkstraPosChain [Inhabited State] : List (DFSStep State Nat) → Prop
+@[expose] def DijkstraPosChain [Inhabited State] : List (DFSStep State Nat) → Prop
   | [] => True
   | [_] => True
   | s :: t :: rest => t.pos < s.pos ∧ DijkstraPosChain (t :: rest)
 
 /-- Driver stack and `roots` in lockstep: each frame owns its own `live` slot, and every open candidate is rooted at a
 frame still on the stack. -/
-def DijkstraStackRoots [Inhabited State] (aux : DijkstraAux State) (stack : List (DFSStep State Nat)) : Prop :=
+@[expose] def DijkstraStackRoots [Inhabited State] (aux : DijkstraAux State) (stack : List (DFSStep State Nat)) : Prop :=
   (∀ st ∈ stack, st.pos < aux.live.size ∧ aux.live[st.pos]! = st.state) ∧
   DijkstraPosChain stack ∧
   (∀ j, j < aux.roots.size → (aux.roots[j]!).root ∈ stack.map (·.pos)) ∧
@@ -1259,7 +1263,7 @@ def DijkstraStackRoots [Inhabited State] (aux : DijkstraAux State) (stack : List
 
 /-- No edge with both endpoints inside range `i` discovered yet, retired members and dispatched prefixes alike, the
 `numMarks = 0` counterpart of the bitmask. -/
-def DijkstraNoInternalEdge [Inhabited State] (succs : State → Array State) (aux : DijkstraAux State)
+@[expose] def DijkstraNoInternalEdge [Inhabited State] (succs : State → Array State) (aux : DijkstraAux State)
     (stack : List (DFSStep State Nat)) (i : Nat) : Prop :=
   (∀ t ∈ aux.range i, (∀ st ∈ stack, st.state ≠ t) → ∀ x ∈ succs t, x ∉ aux.range i) ∧
   ∀ st ∈ stack, st.state ∈ aux.range i → ∀ x ∈ (st.succ.toList.take st.idx), x ∉ aux.range i
@@ -1902,7 +1906,7 @@ private theorem dijkstraPush_new_range_mem_iff [Inhabited State] [LawfulBEq Stat
 /-! ## Witness extraction and the `DFSOps` instance -/
 
 /-- `sccHint`: the top open range, which after a report is an accepting, not necessarily maximal, SCC. -/
-def dijkstraSccHint (aux : DijkstraAux State) : Std.HashSet State :=
+@[expose] def dijkstraSccHint (aux : DijkstraAux State) : Std.HashSet State :=
   match aux.roots.back? with
   | none => Std.HashSet.emptyWithCapacity 0
   | some ⟨startPos, _, _⟩ =>
@@ -1927,7 +1931,7 @@ theorem dijkstraSccHint_eq_top_range [Inhabited State] (aux : DijkstraAux State)
     unfold DijkstraAux.rangeStart
     rw [hr]
 
-def dijkstraOps (numMarks : Nat) : DFSOps State where
+@[expose] def dijkstraOps (numMarks : Nat) : DFSOps State where
   Aux := DijkstraAux State
   Position := Nat
   initAux := dijkstraInitAux
@@ -4068,7 +4072,7 @@ theorem dijkstra_no_acceptingSCC_of_none [LawfulBEq State] [LawfulHashable State
   exact hdead s (dijkstraGetStatus_dead_mem hsdead) A hs
 
 /-- Dijkstra's SCC-based emptiness check. -/
-def dijkstraCheck [LawfulBEq State] [LawfulHashable State] (succs : State → Array State)
+@[expose] def dijkstraCheck [LawfulBEq State] [LawfulHashable State] (succs : State → Array State)
     (initialStates : List State) (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (numMarks : Nat) :
     EmptinessResult State :=
@@ -4109,7 +4113,7 @@ theorem dijkstraCheck_empty_no_cycle [LawfulBEq State] [LawfulHashable State] [I
     fr hnone A
 
 /-- `dijkstraCheck` as a `TEmptinessChecker`. -/
-def dijkstraTChecker [LawfulBEq State] [LawfulHashable State] [Inhabited State] :
+@[expose] def dijkstraTChecker [LawfulBEq State] [LawfulHashable State] [Inhabited State] :
     TEmptinessChecker State where
   check := dijkstraCheck
   nonEmpty_valid := fun {succs initialStates edgeMarks expand numMarks _stem _loop} fr hexp hmarksBound h =>

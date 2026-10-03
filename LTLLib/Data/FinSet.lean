@@ -1,3 +1,5 @@
+module
+
 /-
   Finite sets as predicates enumerated by a list.
 
@@ -18,13 +20,15 @@
   - `FinSet.finite`: the members of a `FinSet` form a `FinitePred`
 -/
 import Batteries.Data.List.Perm
-import LTLLib.Data.List
-import LTLLib.Data.FinitePred
+public import LTLLib.Data.List
+public import LTLLib.Data.FinitePred
+
+public section
 
 namespace LTLLib
 
 /-- A finite set: a predicate together with the fact that some list enumerates exactly its members. -/
-def FinSet (α : Type u) : Type u :=
+@[expose] def FinSet (α : Type u) : Type u :=
   { s : α → Prop // ∃ l : List α, ∀ a, s a ↔ a ∈ l }
 
 namespace FinSet
@@ -41,7 +45,7 @@ end FinSet
 end LTLLib
 
 /-- The members of a list, as a `FinSet`. -/
-def List.toFinSet {α : Type u} (l : List α) : LTLLib.FinSet α :=
+@[expose] def List.toFinSet {α : Type u} (l : List α) : LTLLib.FinSet α :=
   ⟨fun a => a ∈ l, l, fun _ => Iff.rfl⟩
 
 @[simp] theorem List.mem_toFinSet {α : Type u} {l : List α} {a : α} : a ∈ l.toFinSet ↔ a ∈ l :=
@@ -59,13 +63,13 @@ variable {α : Type u} {β : Type v} {γ : Type w}
   Subtype.ext (funext fun a => propext (h a))
 
 /-- `s ⊆ t`: every member of `s` is a member of `t`. -/
-protected def Subset (s t : FinSet α) : Prop :=
+@[expose] protected def Subset (s t : FinSet α) : Prop :=
   ∀ ⦃a⦄, a ∈ s → a ∈ t
 
 instance : HasSubset (FinSet α) := ⟨FinSet.Subset⟩
 
 /-- `s ⊂ t`: `s ⊆ t` but not the other way. -/
-protected def SSubset (s t : FinSet α) : Prop :=
+@[expose] protected def SSubset (s t : FinSet α) : Prop :=
   s ⊆ t ∧ ¬ t ⊆ s
 
 instance : HasSSubset (FinSet α) := ⟨FinSet.SSubset⟩
@@ -180,7 +184,7 @@ theorem mem_of_mem_inter_right {a : α} {s₁ s₂ : FinSet α} (h : a ∈ s₁ 
 /-! ## Filter, erase and range -/
 
 /-- The members of `s` satisfying `p`. -/
-def filter (p : α → Prop) (s : FinSet α) : FinSet α := ⟨fun x => x ∈ s ∧ p x, by
+@[expose] def filter (p : α → Prop) (s : FinSet α) : FinSet α := ⟨fun x => x ∈ s ∧ p x, by
   classical
   obtain ⟨l, hl⟩ := s.exists_list
   exact ⟨l.filter fun x => decide (p x), fun x => by simp [hl]⟩⟩
@@ -192,7 +196,7 @@ theorem filter_subset (p : α → Prop) (s : FinSet α) : s.filter p ⊆ s :=
   fun _ h => h.1
 
 /-- `s` without `a`. -/
-def erase (s : FinSet α) (a : α) : FinSet α := ⟨fun x => x ≠ a ∧ x ∈ s, by
+@[expose] def erase (s : FinSet α) (a : α) : FinSet α := ⟨fun x => x ≠ a ∧ x ∈ s, by
   classical
   obtain ⟨l, hl⟩ := s.exists_list
   exact ⟨l.filter fun x => decide (x ≠ a), fun x => by simp [hl, and_comm]⟩⟩
@@ -201,7 +205,7 @@ def erase (s : FinSet α) (a : α) : FinSet α := ⟨fun x => x ≠ a ∧ x ∈ 
   Iff.rfl
 
 /-- The numbers below `n`. -/
-def range (n : Nat) : FinSet Nat :=
+@[expose] def range (n : Nat) : FinSet Nat :=
   ⟨fun m => m < n, List.range n, fun _ => by simp⟩
 
 @[simp] theorem mem_range {n m : Nat} : m ∈ range n ↔ m < n :=
@@ -210,7 +214,7 @@ def range (n : Nat) : FinSet Nat :=
 /-! ## Image and indexed union -/
 
 /-- The image of `s` under `f`. -/
-def image (f : α → β) (s : FinSet α) : FinSet β := ⟨fun b => ∃ a ∈ s, f a = b, by
+@[expose] def image (f : α → β) (s : FinSet α) : FinSet β := ⟨fun b => ∃ a ∈ s, f a = b, by
   obtain ⟨l, hl⟩ := s.exists_list
   exact ⟨l.map f, fun b => by simp [hl]⟩⟩
 
@@ -247,7 +251,7 @@ theorem image_union {f : α → β} (s₁ s₂ : FinSet α) : (s₁ ∪ s₂).im
     fun h => h.elim (fun ⟨a, ha, e⟩ => ⟨a, Or.inl ha, e⟩) (fun ⟨a, ha, e⟩ => ⟨a, Or.inr ha, e⟩)⟩
 
 /-- The union of `t a` over the members `a` of `s`. -/
-def biUnion (s : FinSet α) (t : α → FinSet β) : FinSet β := ⟨fun b => ∃ a ∈ s, b ∈ t a, by
+@[expose] def biUnion (s : FinSet α) (t : α → FinSet β) : FinSet β := ⟨fun b => ∃ a ∈ s, b ∈ t a, by
   obtain ⟨l, hl⟩ := s.exists_list
   refine ⟨l.flatMap fun a => Classical.choose (t a).exists_list, fun b => ⟨fun ⟨a, ha, hb⟩ => ?_, fun h => ?_⟩⟩
   · exact List.mem_flatMap.mpr ⟨a, (hl a).mp ha, (Classical.choose_spec (t a).exists_list b).mp hb⟩
@@ -304,7 +308,7 @@ private theorem subset_of_mem_sublistsOf : ∀ {l m : List α}, m ∈ sublistsOf
     · exact List.mem_cons_of_mem _ (subset_of_mem_sublistsOf h x hx)
 
 /-- The subsets of `s`. -/
-def powerset (s : FinSet α) : FinSet (FinSet α) := ⟨fun t => t ⊆ s, by
+@[expose] def powerset (s : FinSet α) : FinSet (FinSet α) := ⟨fun t => t ⊆ s, by
   obtain ⟨l, hl⟩ := s.exists_list
   refine ⟨(sublistsOf l).map List.toFinSet, fun t => ⟨fun ht => ?_, fun h => ?_⟩⟩
   · refine List.mem_map.mpr ⟨l.filter fun x => decide (x ∈ t), filter_mem_sublistsOf _ l, ext fun x => ?_⟩
@@ -317,7 +321,7 @@ def powerset (s : FinSet α) : FinSet (FinSet α) := ⟨fun t => t ⊆ s, by
   Iff.rfl
 
 /-- The pairs with first component in `s` and second in `t`. -/
-def product (s : FinSet α) (t : FinSet β) : FinSet (α × β) := ⟨fun p => p.1 ∈ s ∧ p.2 ∈ t, by
+@[expose] def product (s : FinSet α) (t : FinSet β) : FinSet (α × β) := ⟨fun p => p.1 ∈ s ∧ p.2 ∈ t, by
   obtain ⟨l₁, h₁⟩ := s.exists_list
   obtain ⟨l₂, h₂⟩ := t.exists_list
   exact ⟨l₁.flatMap fun a => l₂.map fun b => (a, b), fun p => by simp [h₁, h₂, Prod.ext_iff]⟩⟩
@@ -344,7 +348,7 @@ theorem exists_nodup_list (s : FinSet α) : ∃ l : List α, l.Nodup ∧ ∀ a, 
   ⟨m, hm, fun a => (hl a).trans (hml a)⟩
 
 /-- The members of `s`, without repetition, in some order. -/
-noncomputable def toList (s : FinSet α) : List α :=
+@[expose] noncomputable def toList (s : FinSet α) : List α :=
   Classical.choose s.exists_nodup_list
 
 theorem nodup_toList (s : FinSet α) : s.toList.Nodup :=
@@ -354,7 +358,7 @@ theorem nodup_toList (s : FinSet α) : s.toList.Nodup :=
   ((Classical.choose_spec s.exists_nodup_list).2 a).symm
 
 /-- The number of members of `s`. -/
-noncomputable def card (s : FinSet α) : Nat :=
+@[expose] noncomputable def card (s : FinSet α) : Nat :=
   s.toList.length
 
 theorem card_eq_length {s : FinSet α} {l : List α} (hl : l.Nodup) (h : ∀ a, a ∈ s ↔ a ∈ l) :
@@ -386,7 +390,7 @@ theorem card_erase_lt_of_mem {s : FinSet α} {a : α} (h : a ∈ s) : (s.erase a
   card_lt_card ⟨fun _ hx => hx.2, fun hsub => (hsub h).1 rfl⟩
 
 /-- The sum of `f` over the members of `s`. -/
-noncomputable def sum (s : FinSet α) (f : α → Nat) : Nat :=
+@[expose] noncomputable def sum (s : FinSet α) (f : α → Nat) : Nat :=
   (s.toList.map f).sum
 
 /-- `∑ x ∈ s, f x` is `s.sum fun x => f x`. -/

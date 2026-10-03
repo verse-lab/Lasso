@@ -1,3 +1,5 @@
+module
+
 /-
   Reusable "build and print" pipeline for the examples: given a surface `Formula α`, compile it to NNF, run it
   through `createGraph → constructGBA`, and render the tableau, the GBA, and both ways of resolving the GBA's
@@ -6,7 +8,9 @@
   The two are worth seeing side by side: degeneralization multiplies the state space by the number of
   acceptance sets, whereas `toTGBA` is a pure edge relabeling and leaves the states alone.
 -/
-import LTLLib
+public import LTLLib
+
+public section
 
 namespace LTLLib.Examples
 

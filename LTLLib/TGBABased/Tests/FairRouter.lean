@@ -1,3 +1,5 @@
+module
+
 /-
   Tests `modelCheckUnderFairness` end to end on an assumption split between both halves of the router.
 
@@ -14,6 +16,10 @@ import LTLLib.LTL.FairNormalForm
 import LTLLib.LTL.Syntax
 import LTLLib.TGBABased.Fairness.FairRouter
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.LTL.FairNormalForm
+meta import LTLLib.LTL.Syntax
+meta import LTLLib.TGBABased.Fairness.FairRouter
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.FairRouter
 

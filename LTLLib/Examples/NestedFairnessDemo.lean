@@ -1,3 +1,5 @@
+module
+
 /-
   This file demonstrates a fairness assumption that our pipeline hoists but TLC's classifier does not.
 
@@ -26,6 +28,7 @@
 -/
 import LTLLib
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 
 namespace LTLLib.Examples.NestedFairness
 

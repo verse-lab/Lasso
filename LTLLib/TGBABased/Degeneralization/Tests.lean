@@ -1,3 +1,5 @@
+module
+
 /-
   Tests `TGBA.degeneralize` against the original `TGBA`: `dijkstraCheck` on the bare graphs, without a system product,
   must report the same emptiness for the `ltl3ba` automaton of each negated formula and its degeneralization.
@@ -8,6 +10,10 @@ import LTLLib.TGBABased.Degeneralization.DegeneralBridge
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 import LTLLib.TGBABased.SCC.DijkstraSCC
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.Degeneralization.DegeneralBridge
+meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+meta import LTLLib.TGBABased.SCC.DijkstraSCC
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.Degeneralization
 

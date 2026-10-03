@@ -1,3 +1,5 @@
+module
+
 /-
   Edge-indexed abstract automaton specification, and its relationship to the state-indexed `OASpec`
   (`AbstractSpec/Acceptance.lean`), whose states' marks and labels are pushed onto their outgoing edges.
@@ -14,7 +16,9 @@
   - State-to-edge pushdown
   - Pushdown correctness
 -/
-import LTLLib.AbstractSpec.Acceptance
+public import LTLLib.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 
@@ -36,19 +40,19 @@ namespace TOASpec
 variable {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat} (A : TOASpec State Edge α k)
 
 /-- An infinite edge-run: starts at an initial state, every edge is valid, and consecutive edges share a state. -/
-def isRun (σ : exec Edge) : Prop :=
+@[expose] def isRun (σ : exec Edge) : Prop :=
   A.initial (A.src (σ 0)) ∧ ∀ n, A.valid (σ n) ∧ A.dst (σ n) = A.src (σ (n + 1))
 
 /-- A run is compatible with an ω-word if each edge is label-compatible with the corresponding position. -/
-def runCompatible (σ : exec Edge) (ξ : OmegaWord α) : Prop :=
+@[expose] def runCompatible (σ : exec Edge) (ξ : OmegaWord α) : Prop :=
   ∀ n, A.labelCompat (σ n) (ξ n)
 
 /-- A run is accepting if every mark is carried by some edge infinitely often. -/
-def isAcceptingRun (σ : exec Edge) : Prop :=
+@[expose] def isAcceptingRun (σ : exec Edge) : Prop :=
   ∀ i : Fin k, ∀ n, ∃ j, A.acceptMark i (σ (n + j))
 
 /-- The automaton accepts an ω-word if there exists a run that is valid, compatible, and accepting. -/
-def accepts (ξ : OmegaWord α) : Prop :=
+@[expose] def accepts (ξ : OmegaWord α) : Prop :=
   ∃ σ : exec Edge, A.isRun σ ∧ A.runCompatible σ ξ ∧ A.isAcceptingRun σ
 
 end TOASpec
@@ -57,7 +61,7 @@ end TOASpec
 
 /-- Push a state-indexed automaton's acceptance and label onto its outgoing edges. Edges are related state
 pairs `(q, q')`, and both label and acceptance are read off the source `q`. -/
-def OASpec.toTOASpec {State : Type u} {α : Type v} {k : Nat} (A : OASpec State α k) :
+@[expose] def OASpec.toTOASpec {State : Type u} {α : Type v} {k : Nat} (A : OASpec State α k) :
     TOASpec State (State × State) α k where
   src e := e.1
   dst e := e.2

@@ -1,3 +1,5 @@
+module
+
 /-
   Spec-level (computation-independent) description of a valid LTL-to-GBA expansion result, and the abstract automaton it induces.
 
@@ -11,8 +13,10 @@
   - Abstract automaton from ExpandSpec
 -/
 
-import LTLLib.LTL.Subformulas
-import LTLLib.AbstractSpec.Acceptance
+public import LTLLib.LTL.Subformulas
+public import LTLLib.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 
@@ -26,7 +30,7 @@ variable {α : Type u}
 satisfy, stated abstractly over spec-level node data. -/
 
 /-- The special "init" node name, used as the incoming marker for initial states. -/
-def expandInit : Nat := 0
+@[expose] def expandInit : Nat := 0
 
 /-- Spec-level representation of a finished node. -/
 structure NodeData (α : Type u) where
@@ -86,7 +90,7 @@ representation. The acceptance condition indexes over until-subformulas of φ vi
 /-- Abstract automaton induced by ExpandSpec nodes: transitions via `incoming`, label compatibility from `old`'s
 atoms, and acceptance sets indexed by until-subformulas of φ (accepting for `μ U η` iff absent from `old` or `old η`
 already holds). -/
-def expandOASpec (_φ : NNF α) (nodes : NodeData α → Prop)
+@[expose] def expandOASpec (_φ : NNF α) (nodes : NodeData α → Prop)
     (untils : List (NNF α × NNF α)) :
     OASpec (NodeData α) α untils.length where
   trans q q' := nodes q ∧ nodes q' ∧ q'.incoming q.name

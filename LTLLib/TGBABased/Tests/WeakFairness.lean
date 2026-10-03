@@ -1,3 +1,5 @@
+module
+
 /-
   Tests `modelCheckTGBAFair` end to end: a property fails without fairness and holds under a weak fairness assumption
   carried as one generalized Büchi mark rather than translated.
@@ -9,6 +11,9 @@
 import LTLLib.LTL.Fairness
 import LTLLib.TGBABased.DijkstraCheck
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.LTL.Fairness
+meta import LTLLib.TGBABased.DijkstraCheck
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.WeakFairness
 

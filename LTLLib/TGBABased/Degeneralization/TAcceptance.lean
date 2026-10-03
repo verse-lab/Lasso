@@ -1,3 +1,5 @@
+module
+
 /-
   Abstract degeneralization of edge-indexed automata, the transition-based analogue of `OASpec.degeneralize`.
   The `k` acceptance marks of a `TOASpec` collapse into one by pairing states and edges with a counter `c : Fin k`,
@@ -16,7 +18,9 @@
   - Abstract degeneralization
   - Degeneralization correctness
 -/
-import LTLLib.TGBABased.AbstractSpec.Acceptance
+public import LTLLib.TGBABased.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 
@@ -25,19 +29,19 @@ open Lentil Classical
 /-! ## Abstract degeneralization -/
 
 /-- One-step counter update, advances when the edge taken carries the currently awaited mark. -/
-noncomputable def TOASpec.counterStep {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
+@[expose] noncomputable def TOASpec.counterStep {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
     (A : TOASpec State Edge α k) (hk : k > 0) (e : Edge) (c : Fin k) : Fin k :=
   if A.acceptMark c e then ⟨(c.val + 1) % k, Nat.mod_lt _ hk⟩ else c
 
 /-- Counter sequence along an edge-run, starting at 0. -/
-noncomputable def TOASpec.mkCounter {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
+@[expose] noncomputable def TOASpec.mkCounter {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
     (A : TOASpec State Edge α k) (hk : k > 0) (σ : exec Edge) : Nat → Fin k
   | 0 => ⟨0, hk⟩
   | n + 1 => A.counterStep hk (σ n) (A.mkCounter hk σ n)
 
 /-- Degeneralize a `k`-mark edge-indexed automaton into a single-mark one by pairing states and edges with a counter.
 The single mark requires counter 0 and the edge carrying mark 0. -/
-noncomputable def TOASpec.degeneralize {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
+@[expose] noncomputable def TOASpec.degeneralize {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
     (A : TOASpec State Edge α k) (hk : k > 0) :
     TOASpec (State × Fin k) (Edge × Fin k) α 1 where
   src := fun (e, c) => (A.src e, c)

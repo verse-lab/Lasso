@@ -1,3 +1,5 @@
+module
+
 /-
   On-the-fly product of an external system and a `TGBA`. Both sides are transition-based: a `TGBA.Transition`
   carries its own label, and a system step carries its own letter (`TGBABased/LabelledSys.lean`), so the
@@ -27,10 +29,12 @@
   - From an accepting run to a lasso
   - Lasso witness
 -/
-import LTLLib.Product
-import LTLLib.TGBA
-import LTLLib.TGBABased.AbstractSpec.Pumping
-import LTLLib.TGBABased.LabelledSys
+public import LTLLib.Product
+public import LTLLib.TGBA
+public import LTLLib.TGBABased.AbstractSpec.Pumping
+public import LTLLib.TGBABased.LabelledSys
+
+public section
 
 namespace LTLLib
 
@@ -40,17 +44,17 @@ variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
 
 /-! ## Product construction -/
 
-def initialStates (tgba : TGBA α) (sysInit : List SysState) :
+@[expose] def initialStates (tgba : TGBA α) (sysInit : List SysState) :
     List (SysState × Nat) :=
   sysInit.flatMap fun s => tgba.initialStates.toList.map fun q => (s, q)
 
 /-- Does `valuation` satisfy `t`'s own positive/negative propositional constraint? -/
-def transCompatible (t : TGBA.Transition α) (valuation : Std.HashSet α) : Bool :=
+@[expose] def transCompatible (t : TGBA.Transition α) (valuation : Std.HashSet α) : Bool :=
   t.positiveProps.all valuation.contains && !t.negativeProps.any valuation.contains
 
 /-- The product successors a given set of system steps out of `s` generates. Both the whole product and the
 restriction an `FG` part carves out are this, differing only in which steps they are handed. -/
-def succsFrom (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
+@[expose] def succsFrom (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) : Array (SysState × Nat) :=
   let ts := tgba.getSuccessors q
   if steps.all (·.1.isEmpty) then
@@ -71,7 +75,7 @@ def succsFrom (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
 /-- From `(s, q)`, every system step out of `s` paired with every `q`-transition compatible with the letter
 *that step* reads. The system step is chosen first because it is what fixes the letter; in a state-labelled
 product the two loops are nested the other way round. -/
-def getSuccessors (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def getSuccessors (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) :
     (SysState × Nat) → Array (SysState × Nat) :=
   fun (s, q) => succsFrom tgba q (sysLabel s) (LSys.totalize sysSucc s)
@@ -83,7 +87,7 @@ compatible with that step's letter. Parallel system steps make several pairs rea
 which is why the marks are collected over all of them and why `edgeWitness` has to name one. -/
 
 /-- Every realization of a product step out of a source whose letter and steps are already in hand. -/
-def realizationsFrom [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
+@[expose] def realizationsFrom [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) (p' : SysState × Nat) :
     Array (LStep α SysState × TGBA.Transition α) :=
   (steps.filter fun st => st.2 == p'.1).flatMap fun st =>
@@ -95,7 +99,7 @@ def realizationsFrom [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Na
       t.target == p'.2 && transCompatible t lbl).map (st, ·)
 
 /-- Every (system step, automaton transition) pair realizing the product step `p → p'`. -/
-def realizations [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def realizations [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p p' : SysState × Nat) :
     Array (LStep α SysState × TGBA.Transition α) :=
   realizationsFrom tgba p.2 (sysLabel p.1) (LSys.totalize sysSucc p.1) p'
@@ -155,7 +159,7 @@ PERF: in the `some` branch an edge's marks are a lookup on a `Nat` key. The gene
 "which steps land on `p'.1`?" per successor, and that is a **deep `SysState` comparison** — `EdgeLabels.md`
 §13.3 profiled it at 24.5 % of the Dijkstra route. Here the only state work left is the short-circuiting
 `any` that decides whether the edge exists at all. -/
-def edgeMarksFromShared [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
+@[expose] def edgeMarksFromShared [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState))
     (byTgt? : Option (Std.HashMap Nat (Std.HashSet Nat) × Std.HashSet SysState))
     (p' : SysState × Nat) : Std.HashSet Nat :=
@@ -176,7 +180,7 @@ def stepTargets [BEq SysState] [Hashable SysState]
   steps.foldl (init := ∅) fun acc st => acc.insert st.2
 
 /-- The grouped table and the source's step targets, or `none` when some step carries its own letter. -/
-def marksTable [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
+@[expose] def marksTable [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) :
     Option (Std.HashMap Nat (Std.HashSet Nat) × Std.HashSet SysState) :=
   if steps.all (·.1.isEmpty) then some (marksByTarget tgba q base, stepTargets steps) else none
@@ -186,7 +190,7 @@ has a step target by construction, so the membership half of `marksTable` — `s
 step to build and one hash plus one deep state equality per successor to consult — answers a question
 whose answer is known. On a model whose states are cheap to produce and expensive to compare that test
 was 14 % of the default route and three quarters of a crossing row (`EdgeLabels.md` §13.23). -/
-def marksTableGen (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
+@[expose] def marksTableGen (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) : Option (Std.HashMap Nat (Std.HashSet Nat)) :=
   if steps.all (·.1.isEmpty) then some (marksByTarget tgba q base) else none
 
@@ -194,7 +198,7 @@ def marksTableGen (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
 `Nat`-keyed lookup and nothing else. It agrees with `edgeMarksFrom` on every such successor
 (`genMarksFromShared_eq`), which is what the fused expansions' coherence rests on; the spec form keeps
 its guard, since it has to be total on an arbitrary `p'`. -/
-def genMarksFromShared [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
+@[expose] def genMarksFromShared [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) (byTgt? : Option (Std.HashMap Nat (Std.HashSet Nat)))
     (p' : SysState × Nat) : Std.HashSet Nat :=
   match byTgt? with
@@ -207,7 +211,7 @@ def genMarksFromShared [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : 
 across realizations over-approximates a single step; it is sound because TGBA acceptance asks for each mark
 infinitely often and `edgeWitness.markEdge` names a realization carrying the mark, so pumping the cycle
 realizes them one at a time. A *region* may not be over-approximated this way — see `EdgeLabels.md` §6.3. -/
-def edgeMarksFrom [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
+@[expose] def edgeMarksFrom [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) (p' : SysState × Nat) : Std.HashSet Nat :=
   edgeMarksFromShared tgba q base steps (marksTable tgba q base steps) p'
 
@@ -217,7 +221,7 @@ def edgeMarksFrom [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) 
 -- eta-expands a function-returning definition into its full arity, so `edgeMarks tgba sysSucc sysLabel p` is
 -- a partial application whose body never runs. That was measured. `expand` returns a pair of arrays, which
 -- is not a function and so is saturated at `p`. See `EdgeLabels.md` §9.
-def edgeMarks [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def edgeMarks [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p : SysState × Nat) :
     (SysState × Nat) → Std.HashSet Nat :=
   let base := sysLabel p.1
@@ -227,7 +231,7 @@ def edgeMarks [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : Sys
 /-- Successors of a product state together with the marks of each, from one pass over the source. The
 result type is a *pair of arrays*, not a function, so the compiler cannot eta-expand it: the body runs once
 per call and `sysLabel`/`sysSucc` are entered once per product state. -/
-def expand [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def expand [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p : SysState × Nat) :
     Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
   let base := sysLabel p.1
@@ -252,7 +256,7 @@ project back. See `EdgeLabels.md` §6. -/
 deadlocked state's stutter reads the state's own atoms, so it survives exactly when `keep` holds there. A
 `keep` that ignores the step's own atoms keeps all of a state's steps or none, which is the state region the
 latch used to take. -/
-def keptStepsFrom (base : Std.HashSet α) (steps : Array (LStep α SysState))
+@[expose] def keptStepsFrom (base : Std.HashSet α) (steps : Array (LStep α SysState))
     (keep : Std.HashSet α → Bool) : Array (LStep α SysState) :=
   steps.filter fun st => keep (LSys.letter base st.1)
 
@@ -262,7 +266,7 @@ PERF: every caller that already holds the source's label and steps uses `keptSte
 `sysLabel` and `sysSucc` are entered once per *source* rather than once per use. Spelling this one out as
 `succsFrom … (sysLabel p.1) (keptSteps … p.1)` — which is what it was — enters `sysLabel` twice, once for
 the letter base and once inside `keptSteps`. On the Veil side each entry is a `tr` call. -/
-def keptSteps (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def keptSteps (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) (s : SysState) :
     Array (LStep α SysState) :=
   keptStepsFrom (sysLabel s) (LSys.totalize sysSucc s) keep
@@ -277,12 +281,12 @@ theorem mem_keptSteps {sysSucc : SysState → Array (LStep α SysState)}
 /-- The restricted product from a source whose label and steps are already in hand. The fairness
 expansions build one of these per conjunct, so sharing `base` and `steps` across them is what keeps those
 at one `sysLabel`/`sysSucc` per product state rather than one per conjunct. -/
-def keptSuccsFrom (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
+@[expose] def keptSuccsFrom (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) (keep : Std.HashSet α → Bool) : Array (SysState × Nat) :=
   succsFrom tgba q base (keptStepsFrom base steps keep)
 
 /-- The product restricted to those steps. -/
-def keptSuccs (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def keptSuccs (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) :
     (SysState × Nat) → Array (SysState × Nat) :=
   fun p => keptSuccsFrom tgba p.2 (sysLabel p.1) (LSys.totalize sysSucc p.1) keep
@@ -295,7 +299,7 @@ theorem keptSuccs_eq (tgba : TGBA α) (sysSucc : SysState → Array (LStep α Sy
       = succsFrom tgba p.2 (sysLabel p.1) (keptSteps sysSucc sysLabel keep p.1) := rfl
 
 /-- Marks of the restricted product: only the restricted steps may realize them. -/
-def keptEdgeMarks [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def keptEdgeMarks [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) :
     (SysState × Nat) → (SysState × Nat) → Std.HashSet Nat :=
   -- left pointwise on purpose: a `let` before `fun p'` would be re-entered per call anyway (§9's
@@ -305,7 +309,7 @@ def keptEdgeMarks [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc :
   fun p p' => edgeMarksFrom tgba p.2 (sysLabel p.1) (keptSteps sysSucc sysLabel keep p.1) p'
 
 /-- The fused expansion for the restricted product. -/
-def keptExpand [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def keptExpand [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) (p : SysState × Nat) :
     Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
   let base := sysLabel p.1
@@ -332,23 +336,23 @@ section OfStep
 
 variable (tgba : TGBA α) (sysStep : LSys.StepFn α SysState)
 
-def getSuccessorsOfStep : (SysState × Nat) → Array (SysState × Nat) :=
+@[expose] def getSuccessorsOfStep : (SysState × Nat) → Array (SysState × Nat) :=
   fun p => let r := sysStep p.1; succsFrom tgba p.2 r.2 (LSys.totalizeAt r.1 p.1)
 
-def keptStepsOfStep (keep : Std.HashSet α → Bool) (s : SysState) : Array (LStep α SysState) :=
+@[expose] def keptStepsOfStep (keep : Std.HashSet α → Bool) (s : SysState) : Array (LStep α SysState) :=
   let r := sysStep s; keptStepsFrom r.2 (LSys.totalizeAt r.1 s) keep
 
-def keptSuccsOfStep (keep : Std.HashSet α → Bool) :
+@[expose] def keptSuccsOfStep (keep : Std.HashSet α → Bool) :
     (SysState × Nat) → Array (SysState × Nat) :=
   fun p => let r := sysStep p.1; keptSuccsFrom tgba p.2 r.2 (LSys.totalizeAt r.1 p.1) keep
 
 variable [BEq SysState] [Hashable SysState]
 
-def edgeMarksOfStep (p : SysState × Nat) : (SysState × Nat) → Std.HashSet Nat :=
+@[expose] def edgeMarksOfStep (p : SysState × Nat) : (SysState × Nat) → Std.HashSet Nat :=
   let r := sysStep p.1
   fun p' => edgeMarksFrom tgba p.2 r.2 (LSys.totalizeAt r.1 p.1) p'
 
-def expandOfStep (p : SysState × Nat) :
+@[expose] def expandOfStep (p : SysState × Nat) :
     Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
   let r := sysStep p.1
   let base := r.2
@@ -357,11 +361,11 @@ def expandOfStep (p : SysState × Nat) :
   let out := succsFrom tgba p.2 base steps
   (out, out.map fun p' => genMarksFromShared tgba p.2 base steps byTgt? p', #[])
 
-def keptEdgeMarksOfStep (keep : Std.HashSet α → Bool) :
+@[expose] def keptEdgeMarksOfStep (keep : Std.HashSet α → Bool) :
     (SysState × Nat) → (SysState × Nat) → Std.HashSet Nat :=
   fun p p' => edgeMarksFrom tgba p.2 (sysStep p.1).2 (keptStepsOfStep sysStep keep p.1) p'
 
-def keptExpandOfStep (keep : Std.HashSet α → Bool) (p : SysState × Nat) :
+@[expose] def keptExpandOfStep (keep : Std.HashSet α → Bool) (p : SysState × Nat) :
     Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
   let r := sysStep p.1
   let base := r.2
@@ -377,32 +381,30 @@ section OfStepEq
 variable (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
   (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool)
 
-private abbrev pair : LSys.StepFn α SysState := fun s => (sysSucc s, sysLabel s)
-
 theorem getSuccessorsOfStep_eq :
-    getSuccessorsOfStep tgba (pair sysSucc sysLabel) = getSuccessors tgba sysSucc sysLabel := by
+    getSuccessorsOfStep tgba (fun s => (sysSucc s, sysLabel s)) = getSuccessors tgba sysSucc sysLabel := by
   funext p; obtain ⟨s, q⟩ := p; rfl
 
 theorem keptStepsOfStep_eq :
-    keptStepsOfStep (pair sysSucc sysLabel) keep = keptSteps sysSucc sysLabel keep := rfl
+    keptStepsOfStep (fun s => (sysSucc s, sysLabel s)) keep = keptSteps sysSucc sysLabel keep := rfl
 
 theorem keptSuccsOfStep_eq :
-    keptSuccsOfStep tgba (pair sysSucc sysLabel) keep = keptSuccs tgba sysSucc sysLabel keep := rfl
+    keptSuccsOfStep tgba (fun s => (sysSucc s, sysLabel s)) keep = keptSuccs tgba sysSucc sysLabel keep := rfl
 
 variable [BEq SysState] [Hashable SysState]
 
 theorem edgeMarksOfStep_eq :
-    edgeMarksOfStep tgba (pair sysSucc sysLabel) = edgeMarks tgba sysSucc sysLabel := rfl
+    edgeMarksOfStep tgba (fun s => (sysSucc s, sysLabel s)) = edgeMarks tgba sysSucc sysLabel := rfl
 
 theorem expandOfStep_eq :
-    expandOfStep tgba (pair sysSucc sysLabel) = expand tgba sysSucc sysLabel := rfl
+    expandOfStep tgba (fun s => (sysSucc s, sysLabel s)) = expand tgba sysSucc sysLabel := rfl
 
 theorem keptEdgeMarksOfStep_eq :
-    keptEdgeMarksOfStep tgba (pair sysSucc sysLabel) keep
+    keptEdgeMarksOfStep tgba (fun s => (sysSucc s, sysLabel s)) keep
       = keptEdgeMarks tgba sysSucc sysLabel keep := rfl
 
 theorem keptExpandOfStep_eq :
-    keptExpandOfStep tgba (pair sysSucc sysLabel) keep = keptExpand tgba sysSucc sysLabel keep := rfl
+    keptExpandOfStep tgba (fun s => (sysSucc s, sysLabel s)) keep = keptExpand tgba sysSucc sysLabel keep := rfl
 
 end OfStepEq
 
@@ -486,7 +488,7 @@ abbrev Edge (SysState : Type v) (α : Type u) [BEq α] [Hashable α] :=
   SysState × LStep α SysState × TGBA.Edge α
 
 /-- Convert the computational product to an abstract `TOASpec`. -/
-def toSpec (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def toSpec (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) :
     TOASpec (SysState × Nat) (Edge SysState α) α tgba.numAcceptSets where
   src e := (e.1, e.2.2.1)
@@ -1179,7 +1181,7 @@ def keptEdgeWitness (tgba : TGBA α) (sysSucc : SysState → Array (LStep α Sys
 
 /-- Every edge the restricted witness emits on a real restricted step reads a letter the restriction
 admits. This is what `cycleE_forall` turns into `◇□` on the run. -/
-theorem keptEdgeWitness_letter (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+private theorem keptEdgeWitness_letter (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) (sysInit : List SysState)
     (p p' : SysState × Nat) (hp' : p' ∈ keptSuccs tgba sysSucc sysLabel keep p)
     (extra : LStep α SysState × TGBA.Transition α → Bool)
@@ -1269,7 +1271,7 @@ end TGBAProduct
 /-! ## Lasso witness -/
 
 /-- The `TGBAProduct.toSpec` specialization of `TAcceptingCycle.toTValidLassoOf`. -/
-def TAcceptingCycle.toTValidLassoProduct {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
+@[expose] def TAcceptingCycle.toTValidLassoProduct {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
     [BEq SysState] [Hashable SysState] [LawfulBEq SysState] {tgba : TGBA α}
     {sysSucc : SysState → Array (LStep α SysState)} {sysLabel : SysState → Std.HashSet α}
     {sysInit : List SysState}

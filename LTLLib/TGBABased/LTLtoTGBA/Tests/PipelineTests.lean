@@ -1,3 +1,5 @@
+module
+
 /-
   The end-to-end differential test: does `ltl3ba φ` accept exactly the lassos `Lasso.evalNNF` says satisfy
   `φ`, for `φ` and for `¬φ`, plus well-formedness of the exported `TGBA`.
@@ -12,6 +14,11 @@ import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
 import LTLLib.TGBABased.LTLtoTGBA.Tests.TGBAOnLasso
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.TGBAOnLasso
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.LTLtoTGBA.Tests.PipelineTests
 

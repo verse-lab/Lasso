@@ -1,3 +1,5 @@
+module
+
 /-
   Superseded: `StrongGraphComplete` is never discharged for `createGraph`'s actual output (see `LTLtoGBA/Completeness.lean`
   for the property `createGraph` really establishes and the live proof chain). Kept for reference, nothing outside this
@@ -18,11 +20,13 @@
   - Top-level completeness
 -/
 
-import LTLLib.LTLtoGBA.Soundness
-import LTLLib.LTL.Semantics
-import LTLLib.LTLtoGBA.Invariants
-import LTLLib.LTLtoGBA.ToGBA
-import LTLLib.AbstractSpec.Acceptance
+public import LTLLib.LTLtoGBA.Soundness
+public import LTLLib.LTL.Semantics
+public import LTLLib.LTLtoGBA.Invariants
+public import LTLLib.LTLtoGBA.ToGBA
+public import LTLLib.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 
@@ -36,7 +40,7 @@ variable {α : Type u}
 expand algorithm explores all consistent branches of formula decomposition. -/
 
 /-- Graph completeness: every ξ ⊨ φ has a matching run through the node graph. -/
-def StrongGraphComplete (φ : NNF α) (nodes : NodeData α → Prop) : Prop :=
+@[expose] def StrongGraphComplete (φ : NNF α) (nodes : NodeData α → Prop) : Prop :=
   ∀ ξ : OmegaWord α, NNF.satisfies ξ φ →
     ∃ σ : Nat → NodeData α,
       (∀ n, nodes (σ n)) ∧ -- σ stays within the node graph
@@ -123,6 +127,7 @@ theorem expandOASpec_completeness_strong
 
 /-- Top-level completeness, instantiated with `createGraph`'s node set and `untilSubformulas`. -/
 theorem gba_abstract_completeness_strong
+    [BEq α] [Hashable α]
     {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
     {φ : NNF α} {st : ExpandState α S}
     (h_complete : StrongGraphComplete φ st.toNodes)

@@ -1,3 +1,5 @@
+module
+
 /-
   Tests the flattening of `LTL/FairNormalForm.lean` against [LSFZ16]'s worked examples.
 
@@ -7,6 +9,8 @@
 -/
 import LTLLib.LTL.FairNormalForm
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.LTL.FairNormalForm
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.FairNormalForm
 

@@ -1,3 +1,5 @@
+module
+
 /-
   The GPVW95 (Gerth et al. 1995) `expand`/`createGraph` tableau construction: a recursive worklist algorithm converting
   an LTL formula into a graph of `ExpansionNode`s, later assembled into a GBA by `ToGBA.lean`.
@@ -20,8 +22,10 @@
   - Expand State and Algorithm
 -/
 
-import LTLLib.LTLtoGBA.ExpansionNode
-import LTLLib.LTLtoGBA.AbstractSpec.ExpansionSpec
+public import LTLLib.LTLtoGBA.ExpansionNode
+public import LTLLib.LTLtoGBA.AbstractSpec.ExpansionSpec
+
+public section
 
 namespace LTLLib
 
@@ -30,7 +34,7 @@ open NNF
 /-! ## Expansion helper functions -/
 
 /-- First set of new formulas when expanding a formula. -/
-def new1 {α} : NNF α → List (NNF α)
+@[expose] def new1 {α} : NNF α → List (NNF α)
   | .and μ ψ => [μ, ψ]
   | .until μ _ => [μ]  -- take the "continue" branch
   | .release _ ψ => [ψ]  -- take the "continue" branch
@@ -38,14 +42,14 @@ def new1 {α} : NNF α → List (NNF α)
   | _ => []
 
 /-- Next-state formulas when expanding a formula. -/
-def next1 {α} : NNF α → List (NNF α)
+@[expose] def next1 {α} : NNF α → List (NNF α)
   | .next ψ => [ψ]
   | f@(.until _ _) => [f]  -- Until obligation carries to next state
   | f@(.release _ _) => [f]  -- Release obligation carries to next state
   | _ => []
 
 /-- Second set of new formulas for non-deterministic expansion. -/
-def new2 {α} : NNF α → List (NNF α)
+@[expose] def new2 {α} : NNF α → List (NNF α)
   | .until _ ψ => [ψ]  -- take the "satisfy now" branch
   | .release μ ψ => [μ, ψ]  -- take the "release now" branch
   | .or _ ψ => [ψ]  -- take the second disjunct
@@ -64,11 +68,11 @@ deriving Inhabited
 variable {α} {S : Type v} [FSet (NNF α) S]
 
 /-- Generate a fresh node name and advance the counter. -/
-def freshName (st : ExpandState α S) : Nat × ExpandState α S :=
+@[expose] def freshName (st : ExpandState α S) : Nat × ExpandState α S :=
   (st.nextName, { st with nextName := st.nextName + 1 })
 
 /-- A successor node's initial `new` list: its predecessor's `next` obligations, in reverse iteration order. -/
-def nextToNew (s : S) : List (NNF α) :=
+@[expose] def nextToNew (s : S) : List (NNF α) :=
   FSet.foldl (fun acc f => f :: acc) [] s
 
 /-- `nextToNew` lists exactly the set's elements. -/
@@ -85,26 +89,26 @@ theorem mem_nextToNew (s : S) (ψ : NNF α) : ψ ∈ nextToNew s ↔ FSet.contai
 variable [Hashable (NNF α)]
 
 /-- Record a finished node in the node map and its signature bucket together. -/
-def ExpandState.addNode (st : ExpandState α S) (node : ExpansionNode α S) : ExpandState α S :=
+@[expose] def ExpandState.addNode (st : ExpandState α S) (node : ExpansionNode α S) : ExpandState α S :=
   { st with nodes := st.nodes.insert node.name node,
             index := st.index.insert node.sigHash (node.name :: st.index[node.sigHash]?.getD []) }
 
 /-- Every finished node is listed in its own `sigHash` bucket. Needed for `findDuplicate_spec_none`, and
 through it for termination: a missed duplicate would let the expansion keep minting nodes with a signature it
 failed to find. -/
-def IndexValid (st : ExpandState α S) : Prop :=
+@[expose] def IndexValid (st : ExpandState α S) : Prop :=
   ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n → k ∈ st.index[n.sigHash]?.getD []
 
 /-- Find an existing node with the same (old, next) signature. Returns the node name if found.
 Only the `sigHash` bucket is searched, which is exact by `sigHash_eq_of_sameSignature` given `IndexValid`. -/
-def findDuplicate (st : ExpandState α S) (node : ExpansionNode α S) : Option Nat :=
+@[expose] def findDuplicate (st : ExpandState α S) (node : ExpansionNode α S) : Option Nat :=
   (st.index[node.sigHash]?.getD []).find? fun name =>
     match st.nodes[name]? with
     | some n => n.sameSignature node
     | none => false
 
 /-- Merge incoming edges of `node` into an existing node with matching signature. -/
-def mergeIncoming (st : ExpandState α S) (node : ExpansionNode α S) (targetName : Nat)
+@[expose] def mergeIncoming (st : ExpandState α S) (node : ExpansionNode α S) (targetName : Nat)
     : ExpandState α S :=
   match st.nodes[targetName]? with
   | some target =>
@@ -113,33 +117,33 @@ def mergeIncoming (st : ExpandState α S) (node : ExpansionNode α S) (targetNam
   | none => st  -- should not happen if findDuplicate returned this name
 
 /-- Check if a formula is a proposition (prop or nprop). -/
-def isLiteral : NNF α → Bool
+@[expose] def isLiteral : NNF α → Bool
   | .prop _ | .nprop _ => true
   | _ => false
 
 /-- Get the negation of a literal for contradiction checking. -/
-def negateLiteral : NNF α → NNF α
+@[expose] def negateLiteral : NNF α → NNF α
   | .prop a => .nprop a
   | .nprop a => .prop a
   | f => f  -- should not be called on non-literals
 
 /-- Check if a formula is deterministic (And or Next). -/
-def isDeterministic : NNF α → Bool
+@[expose] def isDeterministic : NNF α → Bool
   | .and _ _ | .next _ => true
   | _ => false
 
 /-- Add formulas to a node's `new` set, skipping those already present in `old`. -/
-def addToNew (node : ExpansionNode α S) (formulas : List (NNF α)) : List (NNF α) :=
+@[expose] def addToNew (node : ExpansionNode α S) (formulas : List (NNF α)) : List (NNF α) :=
   let existing := node.old
   formulas.foldl (init := node.new) fun acc f =>
     if FSet.contains existing f then acc else f :: acc
 
 /-- Add formulas to a set. -/
-def addAllToSet (s : S) (fs : List (NNF α)) : S :=
+@[expose] def addAllToSet (s : S) (fs : List (NNF α)) : S :=
   fs.foldl FSet.insert s
 
 /-- The recursive worklist expansion algorithm (GPVW95 tableau construction). -/
-def expand (node : ExpansionNode α S) (st : ExpandState α S)
+@[expose] def expand (node : ExpansionNode α S) (st : ExpandState α S)
     : Option (Nat × ExpandState α S) := do
   if node.new.isEmpty then
     -- node fully expanded: merge with a duplicate, or finish it and spawn a successor from `next`
@@ -194,7 +198,7 @@ def expand (node : ExpansionNode α S) (st : ExpandState α S)
 partial_fixpoint
 
 /-- Create the full node graph from an LTL formula. -/
-def createGraph (φ : NNF α) : Option (ExpandState α S) :=
+@[expose] def createGraph (φ : NNF α) : Option (ExpandState α S) :=
   let initNode : ExpansionNode α S := {
     name := 1  -- first fresh name after expandInit = 0
     incoming := Std.HashSet.emptyWithCapacity 4 |>.insert expandInit
@@ -213,7 +217,7 @@ def createGraph (φ : NNF α) : Option (ExpandState α S) :=
 
 
 /-- Convert `ExpandState` into abstract spec: a `NodeData` is in the predicate iff it matches some finished node. -/
-def ExpandState.toNodes (st : ExpandState α S) : NodeData α → Prop :=
+@[expose] def ExpandState.toNodes (st : ExpandState α S) : NodeData α → Prop :=
   fun nd => ∃ n, st.nodes[nd.name]? = some n ∧
     (∀ k, nd.incoming k ↔ n.incoming.contains k) ∧
     (∀ ψ, nd.old ψ ↔ FSet.contains n.old ψ) ∧

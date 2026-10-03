@@ -1,3 +1,5 @@
+module
+
 /-
   Abstract automata acceptance definitions.
 
@@ -19,8 +21,10 @@
   - Degeneralization correctness
   - Canonical labeling
 -/
-import Lentil
-import LTLLib.LTL.Semantics
+public import Lentil
+public import LTLLib.LTL.Semantics
+
+public section
 
 namespace LTLLib
 
@@ -47,21 +51,21 @@ namespace OASpec
 variable {State : Type u} {α : Type v} {k : Nat} (A : OASpec State α k)
 
 /-- An infinite run: initial state and valid transitions. -/
-def isRun (σ : exec State) : Prop :=
+@[expose] def isRun (σ : exec State) : Prop :=
   A.initial (σ 0) ∧ ∀ n, A.trans (σ n) (σ (n + 1))
 
 /-- A run is compatible with an ω-word if each state is label-compatible
     with the corresponding position. -/
-def runCompatible (σ : exec State) (ξ : OmegaWord α) : Prop :=
+@[expose] def runCompatible (σ : exec State) (ξ : OmegaWord α) : Prop :=
   ∀ n, A.labelCompat (σ n) (ξ n)
 
 /-- A run is accepting if it visits each acceptance set infinitely often. -/
-def isAcceptingRun (σ : exec State) : Prop :=
+@[expose] def isAcceptingRun (σ : exec State) : Prop :=
   ∀ i : Fin k, ∀ n, ∃ j, A.acceptSet i (σ (n + j))
 
 /-- The automaton accepts an ω-word if there exists a run that is valid,
     compatible, and accepting. -/
-def accepts (ξ : OmegaWord α) : Prop :=
+@[expose] def accepts (ξ : OmegaWord α) : Prop :=
   ∃ σ : exec State, A.isRun σ ∧ A.runCompatible σ ξ ∧ A.isAcceptingRun σ
 
 end OASpec
@@ -70,7 +74,7 @@ end OASpec
 
 /-- One-step counter update for degeneralization.
     Advances the counter when the current acceptance set is visited. -/
-noncomputable def OASpec.counterStep {State : Type u} {α : Type v} {k : Nat}
+@[expose] noncomputable def OASpec.counterStep {State : Type u} {α : Type v} {k : Nat}
     (A : OASpec State α k) (hk : k > 0) (q : State) (c : Fin k) :
     Fin k :=
   if A.acceptSet c q
@@ -78,7 +82,7 @@ noncomputable def OASpec.counterStep {State : Type u} {α : Type v} {k : Nat}
   else c
 
 /-- Counter sequence for the degeneralized run, starting at 0. -/
-noncomputable def OASpec.mkCounter {State : Type u} {α : Type v} {k : Nat}
+@[expose] noncomputable def OASpec.mkCounter {State : Type u} {α : Type v} {k : Nat}
     (A : OASpec State α k) (hk : k > 0) (σ : exec State) : Nat → Fin k
   | 0 => ⟨0, hk⟩
   | n + 1 => A.counterStep hk (σ n) (A.mkCounter hk σ n)
@@ -87,7 +91,7 @@ noncomputable def OASpec.mkCounter {State : Type u} {α : Type v} {k : Nat}
     are pairs `(q, c)` where `q` is the original state and `c : Fin k` is a counter that advances
     (mod k) when the current acceptance set is visited. The single acceptance set requires
     counter = 0 and the state in acceptance set 0. -/
-noncomputable def OASpec.degeneralize {State : Type u} {α : Type v} {k : Nat}
+@[expose] noncomputable def OASpec.degeneralize {State : Type u} {α : Type v} {k : Nat}
     (A : OASpec State α k) (hk : k > 0) :
     OASpec (State × Fin k) α 1 where
   trans := fun (q, c) (q', c') =>
@@ -331,7 +335,7 @@ end DegeneralizationCorrectness
 
 /-- The canonical valuation at state `q`: true exactly on `q`'s positive
 atoms (per `labeling`), `False` everywhere if `q` isn't in `labeling`'s domain. -/
-def canonicalLabel {α : Type u} [BEq α] [Hashable α]
+@[expose] def canonicalLabel {α : Type u} [BEq α] [Hashable α]
     (labeling : Std.HashMap Nat (Std.HashSet α × Std.HashSet α)) (q : Nat) :
     α → Prop :=
   fun a => (labeling[q]?).elim False (fun p => p.1.contains a)

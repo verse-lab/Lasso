@@ -1,3 +1,5 @@
+module
+
 /-
   One-off edge-case sweep against `Lasso.evalNNF`, end to end through `ltl3ba` and separately through `simplify`:
   heavier random trials, and `tt`/`ff`-heavy formulas the generator rarely produces. Not part of the aggregated suite.
@@ -12,6 +14,12 @@ import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
 import LTLLib.TGBABased.LTLtoTGBA.Tests.TGBAOnLasso
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+meta import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Simplify
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.TGBAOnLasso
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.LTLtoTGBA.Tests.EdgeCaseCheck
 

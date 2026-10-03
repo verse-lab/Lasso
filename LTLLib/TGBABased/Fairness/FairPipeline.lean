@@ -1,3 +1,5 @@
+module
+
 /-
   The fairness routes built on `FairRouter.lean`'s split-level searches (`modelCheckCrossSplit`, `modelCheckPruneSplit`)
   with re-hoisting and disjunctive hoisting. The negated property is split and hoisted as `FairRouter.lean` does, `rehoist`
@@ -20,19 +22,21 @@
   - Re-hoisting routes
   - Crossing the sides of mixed conjuncts
 -/
-import LTLLib.AbstractSpec.EmptinessCheck
-import LTLLib.LTL.FairNormalForm
-import LTLLib.LTL.Propositional
-import LTLLib.LTL.Semantics
-import LTLLib.Product
-import LTLLib.TGBABased.AbstractSpec.StreettSCC
-import LTLLib.TGBABased.Fairness.DisjunctiveHoist
-import LTLLib.TGBABased.Fairness.FairProduct
-import LTLLib.TGBABased.Fairness.FairRouter
-import LTLLib.TGBABased.Fairness.Rehoist
-import LTLLib.TGBABased.LTLtoTGBA.Pipeline
-import LTLLib.TGBABased.Product
-import LTLLib.TGBABased.SCC.StreettPrune
+public import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.LTL.FairNormalForm
+public import LTLLib.LTL.Propositional
+public import LTLLib.LTL.Semantics
+public import LTLLib.Product
+public import LTLLib.TGBABased.AbstractSpec.StreettSCC
+public import LTLLib.TGBABased.Fairness.DisjunctiveHoist
+public import LTLLib.TGBABased.Fairness.FairProduct
+public import LTLLib.TGBABased.Fairness.FairRouter
+public import LTLLib.TGBABased.Fairness.Rehoist
+public import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+public import LTLLib.TGBABased.Product
+public import LTLLib.TGBABased.SCC.StreettPrune
+
+public section
 
 namespace LTLLib
 
@@ -103,7 +107,7 @@ variable [DecidableEq α]
 
 /-- Does `sys` satisfy `φ` on every run? The negated property is split and hoisted exactly as
 `modelCheckUnderFairnessPrune`, `rehoist` runs on what is left before it reaches `ltl3ba`. -/
-def modelCheckUnderFairnessRehoistPrune (φ : Formula α)
+@[expose] def modelCheckUnderFairnessRehoistPrune (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) : EmptinessResult (SysState × Nat) :=
   let split := hoistFairness (φ.toNNF false).splitConj
@@ -158,7 +162,7 @@ latched check per crossed disjunct instead of the prune.
 
 Reads a *labelled* system, so a hoisted fairness may mention an edge atom. A system with no edge atoms is
 passed as `LSys.unlabelled sysSucc`. -/
-def modelCheckUnderFairnessRehoistCross (φ : Formula α)
+@[expose] def modelCheckUnderFairnessRehoistCross (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
@@ -170,7 +174,7 @@ def modelCheckUnderFairnessRehoistCross (φ : Formula α)
     sysChecker
 
 /-- `modelCheckUnderFairnessRehoistCross` over one system callback. -/
-def modelCheckUnderFairnessRehoistCrossOfStep (φ : Formula α)
+@[expose] def modelCheckUnderFairnessRehoistCrossOfStep (φ : Formula α)
     (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
     (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
@@ -234,7 +238,7 @@ end Correctness
 
 /-- `modelCheckUnderFairnessRehoistPrune` with disjunctive hoisting: every combination of sides of the kept mixed
 conjuncts (`branches`) is one prune run, and the first counterexample of any run is the answer. -/
-def modelCheckUnderFairnessDisjunctiveHoist (φ : Formula α)
+@[expose] def modelCheckUnderFairnessDisjunctiveHoist (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) : EmptinessResult (SysState × Nat) :=
   let split := hoistFairness (φ.toNNF false).splitConj
@@ -303,7 +307,7 @@ once. Each body is the two-callback one with the pair replaced, so each bridge i
 theorem above is restated — the fused entry points in `ModelCheck.lean` derive theirs by rewriting.
 `EdgeLabels.md` §15. -/
 
-def modelCheckUnderFairnessRehoistPruneOfStep (φ : Formula α)
+@[expose] def modelCheckUnderFairnessRehoistPruneOfStep (φ : Formula α)
     (sysInit : List SysState) (sysStep : LSys.StepFn α SysState) :
     EmptinessResult (SysState × Nat) :=
   let split := hoistFairness (φ.toNNF false).splitConj
@@ -315,7 +319,7 @@ theorem modelCheckUnderFairnessRehoistPruneOfStep_eq (φ : Formula α) (sysInit 
     modelCheckUnderFairnessRehoistPruneOfStep φ sysInit (fun s => (sysSucc s, sysLabel s))
       = modelCheckUnderFairnessRehoistPrune φ sysInit sysSucc sysLabel := rfl
 
-def modelCheckUnderFairnessDisjunctiveHoistOfStep (φ : Formula α)
+@[expose] def modelCheckUnderFairnessDisjunctiveHoistOfStep (φ : Formula α)
     (sysInit : List SysState) (sysStep : LSys.StepFn α SysState) :
     EmptinessResult (SysState × Nat) :=
   let split := hoistFairness (φ.toNNF false).splitConj

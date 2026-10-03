@@ -1,3 +1,5 @@
+module
+
 /-
   Proof-level tests, checked at elaboration time, that the flush-enumeration interface `LowlinkView` fits both
   refinements that instantiate it. UPDATE and the merging POP rewrite the innermost lowlink only when the frame stack

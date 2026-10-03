@@ -1,3 +1,5 @@
+module
+
 /-
   Shared helpers for the tests in this folder. Every test prints one line per property plus a final `PASS`/`FAIL`.
   The witness helpers re-check a `.nonEmpty` answer against its graph, every step a real edge, the cycle closing,
@@ -8,7 +10,9 @@
   - Witness checking
   - Counterexample rendering
 -/
-import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.AbstractSpec.EmptinessCheck
+
+public section
 
 namespace LTLLib.Tests
 

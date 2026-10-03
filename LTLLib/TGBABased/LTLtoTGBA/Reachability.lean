@@ -1,3 +1,5 @@
+module
+
 /-
   Well-founded DFS reachability over `Nat`-keyed adjacency. `closure` processes one frontier node at a time, and
   `remaining`, the hash set of candidate ids not yet discovered, gives the lexicographic measure
@@ -27,7 +29,9 @@
   - Closure
   - Reachability semantics
 -/
-import Std
+public import Std
+
+public section
 
 namespace LTLLib
 
@@ -79,7 +83,7 @@ theorem mem_dedupFilter {l : List Nat} {p : Nat → Bool} {x : Nat} : x ∈ dedu
   rw [List.mem_filter, Std.HashSet.mem_toList, Std.HashSet.mem_ofList, List.contains_iff_mem]
 
 /-- The ids reachable from `frontier` through `succ`, added to `seen`, restricted to the candidate pool `remaining`. -/
-def closure (succ : Nat → List Nat) (seen : Std.HashSet Nat) (frontier : List Nat) (remaining : Std.HashSet Nat) :
+@[expose] def closure (succ : Nat → List Nat) (seen : Std.HashSet Nat) (frontier : List Nat) (remaining : Std.HashSet Nat) :
     Std.HashSet Nat :=
   match frontier with
   | [] => seen
@@ -96,7 +100,7 @@ decreasing_by
     exact size_foldl_erase_lt _ remaining x hxmem (mem_dedupFilter.mp hxmem).2
 
 /-- The closure of `starts` under `succ`, restricted to `candidates`. -/
-def reachableFrom (succ : Nat → List Nat) (starts candidates : List Nat) : Std.HashSet Nat :=
+@[expose] def reachableFrom (succ : Nat → List Nat) (starts candidates : List Nat) : Std.HashSet Nat :=
   closure succ (Std.HashSet.ofList starts) starts (starts.foldl (·.erase ·) (Std.HashSet.ofList candidates))
 
 /-! ## Reachability semantics -/

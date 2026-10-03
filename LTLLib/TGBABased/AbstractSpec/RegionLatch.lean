@@ -1,3 +1,5 @@
+module
+
 /-
   The region latch: checking a static `FG l` restriction with one call to an unmodified emptiness checker. `FG l`
   constrains only the tail of a run, so the accepting cycle must lie inside the `l`-region while the stem need not, and
@@ -24,8 +26,10 @@
   - Soundness
   - Completeness
 -/
-import LTLLib.TGBABased.AbstractSpec.Lasso
-import LTLLib.TGBABased.AbstractSpec.Pumping
+public import LTLLib.TGBABased.AbstractSpec.Lasso
+public import LTLLib.TGBABased.AbstractSpec.Pumping
+
+public section
 
 namespace LTLLib
 
@@ -72,7 +76,7 @@ accepting cycle may traverse, and two parallel steps out of one state can differ
 
 /-- Successors of the doubled graph. The stem copy moves freely along `succs` and may commit at any step;
 the committed copy moves only along `succsR` and never returns. -/
-def latchSuccs (succs succsR : State → Array State) :
+@[expose] def latchSuccs (succs succsR : State → Array State) :
     State × Bool → Array (State × Bool) :=
   fun p =>
     let committed := (succsR p.1).map (·, true)
@@ -97,7 +101,7 @@ theorem latchSuccs_fst {succs succsR : State → Array State}
 form this needs no filter — commitment constrains the *outgoing* step, which `succsR` already governs, so a
 state with no restricted step out of it is simply a dead end in the committed copy. Under `total` every run
 starts committed, sound exactly when the restriction is the whole graph. -/
-def latchInit (initialStates : List State) (total : Bool) : List (State × Bool) :=
+@[expose] def latchInit (initialStates : List State) (total : Bool) : List (State × Bool) :=
   if total then initialStates.map (·, true)
   else initialStates.map (·, false) ++ initialStates.map (·, true)
 
@@ -121,7 +125,7 @@ theorem latchInit_fst_mem {initialStates : List State} {total : Bool} {p : State
 there has to be realizable by a restricted step; `numMarks` is added when the source is committed too, which
 is what forces the accepting cycle inside. Keying on `p.2 && q.2`, as the state-region form did, would give
 the commit edge ambient marks — harmless while the two mark functions agree, wrong once they differ. -/
-def latchMarks (edgeMarks edgeMarksR : State → State → Std.HashSet Nat) (numMarks : Nat) :
+@[expose] def latchMarks (edgeMarks edgeMarksR : State → State → Std.HashSet Nat) (numMarks : Nat) :
     State × Bool → State × Bool → Std.HashSet Nat :=
   fun p q =>
     if q.2 then (if p.2 then (edgeMarksR p.1 q.1).insert numMarks else edgeMarksR p.1 q.1)
@@ -164,7 +168,7 @@ theorem latch_finiteReach {initialStates : List State} {succs succsR : State →
     fun _ hp => ⟨latch_reachable_fst hsub hp, trivial⟩
 
 /-- The fused expansion for the doubled graph: one call to each side's `expand` per latched state. -/
-def latchExpand (expand expandR : State → Array State × Array (Std.HashSet Nat) × Array Nat) (numMarks : Nat) :
+@[expose] def latchExpand (expand expandR : State → Array State × Array (Std.HashSet Nat) × Array Nat) (numMarks : Nat) :
     State × Bool → Array (State × Bool) × Array (Std.HashSet Nat) × Array Nat :=
   fun p =>
     let r := expandR p.1
@@ -221,7 +225,7 @@ theorem latch_cycle_committed {initialStates : List State} {succs succsR : State
 
 /-- A latched accepting cycle projects to a region cycle, by dropping the Bool: the stem walks `succs`, and
 the cycle — being entirely committed — walks `succsR` and carries `edgeMarksR`'s marks. -/
-def latch_sound {initialStates : List State} {succs succsR : State → Array State}
+@[expose] def latch_sound {initialStates : List State} {succs succsR : State → Array State}
     {edgeMarks edgeMarksR : State → State → Std.HashSet Nat} {numMarks : Nat} {total : Bool}
     (hsub : ∀ s t, t ∈ succsR s → t ∈ succs s)
     (hbound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)

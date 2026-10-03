@@ -1,3 +1,5 @@
+module
+
 /-
   Model checking against one fair-normal-form disjunct `FG l ∧ ⋀ⱼ GF lⱼ` with propositional `l` and `lⱼ`. The `GF` parts
   are marks on the product (`FairProduct.lean`) and the `FG` part is a region restriction applied by the latch
@@ -26,9 +28,11 @@
   - Feasibility fail-fast
   - The same crossing, from one system callback
 -/
-import LTLLib.TGBABased.AbstractSpec.RegionLatch
-import LTLLib.TGBABased.DijkstraCheck
-import LTLLib.TGBABased.Fairness.FairProduct
+public import LTLLib.TGBABased.AbstractSpec.RegionLatch
+public import LTLLib.TGBABased.DijkstraCheck
+public import LTLLib.TGBABased.Fairness.FairProduct
+
+public section
 
 namespace LTLLib
 
@@ -46,7 +50,7 @@ become marks and `fg` becomes the latch's region, so neither reaches the transla
 The system is *labelled* (`TGBABased/LabelledSys.lean`): both the marks and the region are read off the
 letter each step contributes, so a hoisted `◇□ψ` or `□◇ψ` may mention an edge atom such as `taken(a)`. A
 system with no edge atoms is passed as `LSys.unlabelled sysSucc`. -/
-def modelCheckTGBADisjunct (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
+@[expose] def modelCheckTGBADisjunct (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker) :
@@ -67,7 +71,7 @@ def modelCheckTGBADisjunct (φ : Formula α) (fg : BoolFormula α) (gfs : List (
   | none => .empty 0
 
 /-- `modelCheckTGBADisjunct` over one system callback. -/
-def modelCheckTGBADisjunctOfStep (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
+@[expose] def modelCheckTGBADisjunctOfStep (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
     (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker) :
     EmptinessResult ((SysState × Nat) × Bool) :=
@@ -271,7 +275,7 @@ be exact and over-approximating a region is unsound. -/
 step out of `s` reads a letter satisfying it. Depending only on the source is what keeps `sysFairExpand`
 at one computation per state, and over-approximating across an edge's realizations is sound here (see the
 section note). -/
-def sysFairMarks (gfs : List (BoolFormula α)) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def sysFairMarks (gfs : List (BoolFormula α)) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) : SysState → SysState → Std.HashSet Nat :=
   fun s _ =>
     -- PERF: `steps` and `base` are hoisted out of the conjunct loop deliberately. Written inline they are
@@ -315,7 +319,7 @@ and on the Veil side each derivation is a `tr` call — the dominant cost. Shari
 fail-fast close to what the state-labelled one cost; the price is that `ExpandCoherent` no longer holds by
 `rfl`, since `LSys.targets (LSys.totalize …)` and `Product.totalizeSucc (LSys.targets …)` agree only
 propositionally (`LSys.targets_totalize`). -/
-def sysFairExpand (gfs : List (BoolFormula α)) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def sysFairExpand (gfs : List (BoolFormula α)) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) : SysState → Array SysState × Array (Std.HashSet Nat) × Array Nat :=
   fun s =>
     let steps := LSys.totalize sysSucc s
@@ -341,7 +345,7 @@ theorem sysFairExpand_coherent (gfs : List (BoolFormula α))
 /-- The system graph restricted to the edges some step realizes with a letter satisfying the `FG` conjunct:
 `keptSteps`' shadow on the system graph. For a state-labelled system every step out of `s` reads `sysLabel s`,
 so this keeps all of `s`'s steps or none, which is the state region the latch used to take. -/
-def sysKeptSuccs (fg : BoolFormula α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def sysKeptSuccs (fg : BoolFormula α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) : SysState → Array SysState :=
   LSys.targets (TGBAProduct.keptSteps sysSucc sysLabel fg.eval)
 
@@ -367,7 +371,7 @@ theorem sysKeptSuccs_sub (fg : BoolFormula α) (sysSucc : SysState → Array (LS
 
 /-- The fused expansion for the restricted system graph, sharing one step array the same way. Here the
 restricted targets *are* `keptSteps`' projection, so this one is still `rfl`. -/
-def sysFairExpandR (fg : BoolFormula α) (gfs : List (BoolFormula α))
+@[expose] def sysFairExpandR (fg : BoolFormula α) (gfs : List (BoolFormula α))
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α) :
     SysState → Array SysState × Array (Std.HashSet Nat) × Array Nat :=
   fun s =>
@@ -385,7 +389,7 @@ theorem sysFairExpandR_coherent (fg : BoolFormula α) (gfs : List (BoolFormula �
 
 /-- Does the system alone admit a run satisfying the disjunct? The same latch as the full check on the system graph,
 the region and the `GF` parts read off the letters the system's steps contribute. -/
-def disjunctFeasible (fg : BoolFormula α) (gfs : List (BoolFormula α)) (sysInit : List SysState)
+@[expose] def disjunctFeasible (fg : BoolFormula α) (gfs : List (BoolFormula α)) (sysInit : List SysState)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) : Bool :=
   match sysChecker.check
@@ -399,7 +403,7 @@ def disjunctFeasible (fg : BoolFormula α) (gfs : List (BoolFormula α)) (sysIni
 
 /-- One disjunct behind the fail-fast, which answers `.empty` without touching the product when the disjunct is
 infeasible. -/
-def modelCheckTGBADisjunctFast (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
+@[expose] def modelCheckTGBADisjunctFast (φ : Formula α) (fg : BoolFormula α) (gfs : List (BoolFormula α))
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
@@ -522,7 +526,7 @@ section OfStep
 
 variable (sysStep : LSys.StepFn α SysState)
 
-def sysFairMarksOfStep (gfs : List (BoolFormula α)) : SysState → SysState → Std.HashSet Nat :=
+@[expose] def sysFairMarksOfStep (gfs : List (BoolFormula α)) : SysState → SysState → Std.HashSet Nat :=
   fun s _ =>
     let r := sysStep s
     let steps := LSys.totalizeAt r.1 s
@@ -530,7 +534,7 @@ def sysFairMarksOfStep (gfs : List (BoolFormula α)) : SysState → SysState →
     Std.HashSet.ofList ((List.range gfs.length).filter fun i =>
       steps.any fun st => (TGBAProduct.fairConj gfs i).eval (LSys.letter base st.1))
 
-def sysFairExpandOfStep (gfs : List (BoolFormula α)) :
+@[expose] def sysFairExpandOfStep (gfs : List (BoolFormula α)) :
     SysState → Array SysState × Array (Std.HashSet Nat) × Array Nat :=
   fun s =>
     let r := sysStep s
@@ -541,10 +545,10 @@ def sysFairExpandOfStep (gfs : List (BoolFormula α)) :
       steps.any fun st => (TGBAProduct.fairConj gfs i).eval (LSys.letter base st.1))
     (ss, ss.map fun _ => m, #[])
 
-def sysKeptSuccsOfStep (fg : BoolFormula α) : SysState → Array SysState :=
+@[expose] def sysKeptSuccsOfStep (fg : BoolFormula α) : SysState → Array SysState :=
   LSys.targets (TGBAProduct.keptStepsOfStep sysStep fg.eval)
 
-def sysFairExpandROfStep (fg : BoolFormula α) (gfs : List (BoolFormula α)) :
+@[expose] def sysFairExpandROfStep (fg : BoolFormula α) (gfs : List (BoolFormula α)) :
     SysState → Array SysState × Array (Std.HashSet Nat) × Array Nat :=
   fun s =>
     let r := sysStep s
@@ -574,7 +578,7 @@ theorem sysFairExpandROfStep_eq' (fg : BoolFormula α) (gfs : List (BoolFormula 
 end OfStep
 
 /-- `disjunctFeasible` over one system callback. -/
-def disjunctFeasibleOfStep (fg : BoolFormula α) (gfs : List (BoolFormula α))
+@[expose] def disjunctFeasibleOfStep (fg : BoolFormula α) (gfs : List (BoolFormula α))
     (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
     (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) : Bool :=
   match sysChecker.check
@@ -595,7 +599,7 @@ theorem disjunctFeasibleOfStep_eq (fg : BoolFormula α) (gfs : List (BoolFormula
       = disjunctFeasible fg gfs sysInit sysSucc sysLabel sysChecker := rfl
 
 /-- `modelCheckTGBADisjunctFast` over one system callback. -/
-def modelCheckTGBADisjunctFastOfStep (φ : Formula α) (fg : BoolFormula α)
+@[expose] def modelCheckTGBADisjunctFastOfStep (φ : Formula α) (fg : BoolFormula α)
     (gfs : List (BoolFormula α)) (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
     (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :

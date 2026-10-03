@@ -1,3 +1,5 @@
+module
+
 /-
   A posteriori TGBA simplification, generic over how the TGBA was built. SCCs come from Tarjan's enumeration, and the
   proofs only need it to be sound (`SCCEnumerationSound`). A round runs, in order:
@@ -49,18 +51,22 @@
   - The fixpoint loop
   - Correctness of the simplification loop
 -/
-import LTLLib.TGBA
-import LTLLib.TGBABased.LTLtoTGBA.Label
-import LTLLib.TGBABased.LTLtoTGBA.Reachability
-import LTLLib.TGBABased.LTLtoTGBA.VWAA
-import LTLLib.AbstractSpec.GraphPaths
-import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.AbstractSpec.SCCTheory
-import LTLLib.TGBABased.SCC.TarjanSCC
-import LTLLib.Data.Nat
-import LTLLib.Data.List
-import LTLLib.Tactic.Set
-import LTLLib.Data.FinSet
+public import LTLLib.TGBA
+public import LTLLib.TGBABased.LTLtoTGBA.Label
+public import LTLLib.TGBABased.LTLtoTGBA.Reachability
+public import LTLLib.TGBABased.LTLtoTGBA.VWAA
+public import LTLLib.AbstractSpec.GraphPaths
+public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.AbstractSpec.SCCTheory
+public import LTLLib.TGBABased.SCC.TarjanSCC
+public import LTLLib.Data.Nat
+public import LTLLib.Data.List
+meta import LTLLib.Tactic.Set
+public import LTLLib.Data.FinSet
+
+import Batteries.Data.List.Lemmas
+
+public section
 
 namespace LTLLib
 
@@ -201,7 +207,7 @@ theorem foldl_add_weight {β : Type w} (w : β → Nat) :
 
 /-- Mark erasure: a transition that leaves every enumerated SCC of its source, or whose enumerated SCCs are all bad, is
 used by an accepting run only finitely often, so its marks can be replaced by `∅`. -/
-def eraseMarks (tgba : TGBA α) (sccs : Array (Std.HashSet Nat)) : TGBA α :=
+@[expose] def eraseMarks (tgba : TGBA α) (sccs : Array (Std.HashSet Nat)) : TGBA α :=
   let bad := sccs.map (sccIsBad tgba)
   let idx := sccIndex sccs
   { tgba with
@@ -760,7 +766,7 @@ def sameTrans (t1 t2 : TGBA.Transition α) : Bool :=
   hashSetEq t1.positiveProps t2.positiveProps && hashSetEq t1.negativeProps t2.negativeProps
 
 /-- Fold exact duplicates into one, so implication is never checked against a transition's own copy. -/
-def dedupExactTrans (ts : Array (TGBA.Transition α)) : Array (TGBA.Transition α) :=
+@[expose] def dedupExactTrans (ts : Array (TGBA.Transition α)) : Array (TGBA.Transition α) :=
   ts.foldl (fun acc t => if acc.any (sameTrans · t) then acc else acc.push t) #[]
 
 /-- Deduplicating never increases the weight. -/
@@ -774,7 +780,7 @@ theorem dedupExactTrans_weight_le (ts : Array (TGBA.Transition α)) :
 
 /-- Implied-transition removal on one array: drop a transition implied by another to the same target with marks no
 fewer, `[GO01]` §6 rule 2. -/
-def dropImpliedWithin (ts : Array (TGBA.Transition α)) : Array (TGBA.Transition α) :=
+@[expose] def dropImpliedWithin (ts : Array (TGBA.Transition α)) : Array (TGBA.Transition α) :=
   let ts := dedupExactTrans ts
   ts.filter fun t2 =>
     !ts.any fun t1 =>
@@ -833,7 +839,7 @@ theorem sameTrans_iff (t1 t2 : TGBA.Transition α) :
   · rintro ⟨h1, h2, h3, h4⟩; simp [h1, h2, h3, h4]
 
 -- `t1` dominates `t2`, exactly `dropImpliedTrans`'s own per-pair check.
-def beatsPred (t1 t2 : TGBA.Transition α) : Bool :=
+@[expose] def beatsPred (t1 t2 : TGBA.Transition α) : Bool :=
   t1.target == t2.target && hashSetSubset t2.acceptMarks t1.acceptMarks && Cube.litImplies (cubeOf t2) (cubeOf t1) &&
     !sameTrans t1 t2
 
@@ -1261,7 +1267,7 @@ def redirectStep (key : Nat → Nat) (cands : Nat → List Nat) (cond : Nat → 
   | none => acc
 
 /-- `tgba` with every state of `ids` replaced by its representative `redirect.getD q q`. -/
-def redirectTGBA (tgba : TGBA α) (ids : List Nat) (redirect : Std.HashMap Nat Nat) : TGBA α :=
+@[expose] def redirectTGBA (tgba : TGBA α) (ids : List Nat) (redirect : Std.HashMap Nat Nat) : TGBA α :=
   let kept := ids.filter fun q => !redirect.contains q
   { states := Std.HashSet.ofList kept
     initialStates := Std.HashSet.ofList (tgba.initialStates.toList.map fun q => redirect.getD q q)
@@ -1994,7 +2000,7 @@ theorem measureTGBA_reduceRound_le (tgba : TGBA α) : measureTGBA (reduceRound t
 
 /-- Mark erasure then `reduceRound`, repeated until `reduceRound` changes nothing. Mark erasure is idempotent on an
 unchanged graph and `reduceRound` does not depend on the order of transitions, so a further round would change nothing. -/
-def simplifyTGBA (tgba : TGBA α) : TGBA α :=
+@[expose] def simplifyTGBA (tgba : TGBA α) : TGBA α :=
   let erased := eraseMarks tgba (tgbaSCCs tgba)
   let next := reduceRound erased
   if _h : measureTGBA next = measureTGBA erased then next else simplifyTGBA next

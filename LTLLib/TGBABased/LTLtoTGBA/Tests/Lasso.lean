@@ -1,3 +1,5 @@
+module
+
 /-
   Finite ultimately periodic words over a set of atoms, the words every translator in this folder is tested on.
 
@@ -9,8 +11,10 @@
   Sections:
   - Lasso words
 -/
-import Std
-import LTLLib.LTL.Semantics
+public import Std
+public import LTLLib.LTL.Semantics
+
+public section
 
 namespace LTLLib.LTLtoTGBA.Tests
 

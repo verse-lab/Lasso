@@ -1,3 +1,5 @@
+module
+
 /-
   The end-to-end LTL to TGBA translator, and a `Formula α` wrapper that translates the negation of its argument,
   following the model-checking convention.
@@ -17,14 +19,16 @@
   - Pipeline
   - Correctness
 -/
-import LTLLib.LTL.Syntax
-import LTLLib.LTL.Semantics
-import LTLLib.TGBA
-import LTLLib.TGBABased.LTLtoTGBA.VWAA
-import LTLLib.TGBABased.LTLtoTGBA.TGBAConstruct
-import LTLLib.TGBABased.LTLtoTGBA.TGBAConstructCorrect
-import LTLLib.TGBABased.LTLtoTGBA.TGBASimplify
-import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Simplify
+public import LTLLib.LTL.Syntax
+public import LTLLib.LTL.Semantics
+public import LTLLib.TGBA
+public import LTLLib.TGBABased.LTLtoTGBA.VWAA
+public import LTLLib.TGBABased.LTLtoTGBA.TGBAConstruct
+public import LTLLib.TGBABased.LTLtoTGBA.TGBAConstructCorrect
+public import LTLLib.TGBABased.LTLtoTGBA.TGBASimplify
+public import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Simplify
+
+public section
 
 namespace LTLLib
 
@@ -34,7 +38,7 @@ variable {α : Type u} [BEq α] [Hashable α]
 
 /-- Translate an NNF formula to a `TGBA α` accepting exactly its models, rewriting the formula first (as LTL3BA does
 while parsing) and simplifying the TGBA last. -/
-def ltl3ba (φ : NNF α) : Option (TGBA α) :=
+@[expose] def ltl3ba (φ : NNF α) : Option (TGBA α) :=
   (buildTGBA (ConcreteVWAA.build (simplify φ))).map simplifyTGBA
 
 /-- Translate the negation of a surface `Formula α` to a `TGBA α`. -/

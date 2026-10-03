@@ -1,3 +1,5 @@
+module
+
 /-
   End-to-end satisfiability of an LTL formula. Translates with `ltl3ba` (`LTLtoTGBA/Pipeline.lean`) and runs
   `dijkstraCheck` on the automaton's consistent part, with no degeneralization and no product. The check reads only the
@@ -17,10 +19,12 @@
   - Satisfiability
   - Unsatisfiability
 -/
-import LTLLib.LTL.Semantics
-import LTLLib.TGBA
-import LTLLib.TGBABased.LTLtoTGBA.Pipeline
-import LTLLib.TGBABased.SCC.DijkstraSCC
+public import LTLLib.LTL.Semantics
+public import LTLLib.TGBA
+public import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+public import LTLLib.TGBABased.SCC.DijkstraSCC
+
+public section
 
 namespace LTLLib
 
@@ -29,7 +33,7 @@ variable {α : Type u} [BEq α] [Hashable α]
 /-! ## The pipeline -/
 
 /-- Decide `φ`'s satisfiability. The `none` branch is unreachable by `ltl3ba_isSome`. -/
-def tgbaPipeline (φ : NNF α) : EmptinessResult Nat :=
+@[expose] def tgbaPipeline (φ : NNF α) : EmptinessResult Nat :=
   match ltl3ba φ with
   | some tgba =>
     let c := tgba.consistentPart

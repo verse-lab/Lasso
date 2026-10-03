@@ -1,3 +1,5 @@
+module
+
 /-
   This file demonstrates a property that is itself a fairness, so the router hoists the property too and the
   translator is left with nothing to build.
@@ -30,6 +32,7 @@
 -/
 import LTLLib
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 
 namespace LTLLib.Examples.FairProperty
 

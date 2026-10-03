@@ -1,3 +1,5 @@
+module
+
 /-
   The product satisfies the region-indexed Streett interface of `AbstractSpec/StreettSCCRegion.lean`.
 
@@ -18,8 +20,10 @@
     ambient step and the top region restricts nothing
   - `acceptingRRun_marks`: the `RRun` meets the property automaton's marks infinitely often
 -/
-import LTLLib.TGBABased.AbstractSpec.StreettSCCRegion
-import LTLLib.TGBABased.Product
+public import LTLLib.TGBABased.AbstractSpec.StreettSCCRegion
+public import LTLLib.TGBABased.Product
+
+public section
 
 namespace LTLLib
 
@@ -30,7 +34,7 @@ variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
 
 /-- The hoisted conjuncts as a region-indexed Streett spec over the product. The regions restrict steps by
 their letter, so a conjunct's `FG ψ` may mention an edge atom. -/
-def streettRSpecOf (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def streettRSpecOf (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (numMarks : Nat)
     (conjuncts : Array (Array (StreettOption (Std.HashSet α)))) :
     RStreettSpec (SysState × Nat) (Std.HashSet α) where
@@ -44,7 +48,7 @@ def streettRSpecOf (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysS
 
 /-- `streettRSpecOf` over one system callback. The three region functions are the `OfStep` forms, so the
 spec a fused route compiles computes a source's transitions once. `EdgeLabels.md` §15. -/
-def streettRSpecOfStep (tgba : TGBA α) (sysStep : LSys.StepFn α SysState) (numMarks : Nat)
+@[expose] def streettRSpecOfStep (tgba : TGBA α) (sysStep : LSys.StepFn α SysState) (numMarks : Nat)
     (conjuncts : Array (Array (StreettOption (Std.HashSet α)))) :
     RStreettSpec (SysState × Nat) (Std.HashSet α) where
   numMarks := numMarks
@@ -137,7 +141,7 @@ private theorem rrun_mark (tgba : TGBA α) (sysSucc : SysState → Array (LStep 
 
 /-- The `RRun` a product run walks: its product states, the letter each step reads, and the marks the
 automaton transition it takes carries. -/
-def acceptingRRun (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def acceptingRRun (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) (numMarks : Nat)
     (conjuncts : Array (Array (StreettOption (Std.HashSet α))))
     {σ : Lentil.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ) :
@@ -146,8 +150,8 @@ def acceptingRRun (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysSt
   lets := fun n => LSys.letter (sysLabel (σ n).1) (σ n).2.1.1
   rmarks := fun n => (σ n).2.2.2.acceptMarks
   init := hrun.1
-  step := rrun_step tgba sysSucc sysLabel sysInit hrun
-  mark := rrun_mark tgba sysSucc sysLabel sysInit hrun
+  step := by exact rrun_step tgba sysSucc sysLabel sysInit hrun
+  mark := by exact rrun_mark tgba sysSucc sysLabel sysInit hrun
 
 /-- The run meets every mark of the property automaton infinitely often, read on the realization it takes. -/
 theorem acceptingRRun_marks (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))

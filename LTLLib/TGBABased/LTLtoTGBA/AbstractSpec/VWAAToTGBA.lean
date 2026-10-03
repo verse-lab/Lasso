@@ -1,3 +1,5 @@
+module
+
 /-
   Generalised `[GO01]` Theorem 2, `[HOL4-ltl]`'s `GBA_CORRECT`: a TGBA `T` built from a VWAA `A` over the same states
   accepts exactly what `A` accepts, provided every reachable state of `T` meets soundness (S) and completeness (C).
@@ -28,9 +30,11 @@
   - Main equivalence
   - VWAA → TGBA direction, tight completeness
 -/
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.SetTGBA
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAARuns
-import LTLLib.Data.FinSet
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.SetTGBA
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAARuns
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 
@@ -43,13 +47,13 @@ variable {A : VWAA Q α} {T : SetTGBA Q α}
 
 /-- (S) for a transition `(g, e', m)` at `e`: at every letter `v` with `g v`, `e` has a product transition into `e'`,
 and every mark satisfies `T_f` at `v`. -/
-def SoundTrans (A : VWAA Q α) (e : FinSet Q) (g : (α → Prop) → Prop) (e' : FinSet Q)
+@[expose] def SoundTrans (A : VWAA Q α) (e : FinSet Q) (g : (α → Prop) → Prop) (e' : FinSet Q)
     (m : FinSet Q) : Prop :=
   ∀ v, g v → A.prodTrans e v e' ∧ ∀ f ∈ m, A.inTf v e' f
 
 /-- (C) at `e`: every product transition at letter `v` to `e'` is refined by an enabled TGBA transition with target inside
 `e'` that marks every final satisfying `T_f` at the product target `e'`, `[HOL4-ltl]`'s `D_GEN_HAS_MIN` plus `gba_trans`. -/
-def CompleteTrans (T : SetTGBA Q α) (A : VWAA Q α) (e : FinSet Q) : Prop :=
+@[expose] def CompleteTrans (T : SetTGBA Q α) (A : VWAA Q α) (e : FinSet Q) : Prop :=
   ∀ (v : α → Prop) (e' : FinSet Q), A.prodTrans e v e' →
     ∃ g e'' m, (g, e'', m) ∈ T.trans e ∧ g v ∧ e'' ⊆ e' ∧
       ∀ f ∈ T.finals, A.inTf v e' f → f ∈ m
@@ -293,7 +297,7 @@ theorem vwaaToTgba_correct (hsc : SoundComplete T A) {e : FinSet Q} {ξ : OmegaW
 
 /-- (C-tight) at `e`: every component choice `(gf, Of)` has an enabled TGBA transition refining `e.biUnion Of` that marks
 every final of `e` whose chosen component does not loop (`[BKŘS12]` §6's modified `T_f`) and every final its target drops. -/
-def CompleteTransTight (T : SetTGBA Q α) (A : VWAA Q α) (e : FinSet Q) : Prop :=
+@[expose] def CompleteTransTight (T : SetTGBA Q α) (A : VWAA Q α) (e : FinSet Q) : Prop :=
   ∀ (v : α → Prop) (gf : Q → (α → Prop) → Prop) (Of : Q → FinSet Q),
     (∀ q ∈ e, (gf q, Of q) ∈ A.trans q ∧ gf q v) →
     ∃ g e'' m, (g, e'', m) ∈ T.trans e ∧ g v ∧ e'' ⊆ e.biUnion Of ∧

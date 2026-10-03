@@ -1,3 +1,5 @@
+module
+
 /-
   Completeness of the LTL-to-GBA construction: proves that the graph produced by `createGraph` satisfies
   `GraphComplete` (GPVW95, Gerth et al. 1995) — every node's `old` set implies satisfaction (the forward direction
@@ -43,8 +45,10 @@
   - Completeness from GraphComplete
 -/
 
-import LTLLib.LTLtoGBA.Invariants
-import LTLLib.LTLtoGBA.Bridge
+public import LTLLib.LTLtoGBA.Invariants
+public import LTLLib.LTLtoGBA.Bridge
+
+public section
 
 namespace LTLLib
 
@@ -145,7 +149,7 @@ private theorem satisfies_prop_neg (ξ : OmegaWord α) (a : α) :
 Extends `NodesPreserved` to also track that incoming sets grow monotonically. -/
 
 /-- Nodes are preserved with possibly enlarged incoming sets. -/
-def NodesPreservedInc (st st' : ExpandState α S) : Prop :=
+@[expose] def NodesPreservedInc (st st' : ExpandState α S) : Prop :=
   ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n →
     ∃ n' : ExpansionNode α S, st'.nodes[k]? = some n' ∧
       (∀ ψ, FSet.contains n'.old ψ ↔ FSet.contains n.old ψ) ∧
@@ -1419,7 +1423,7 @@ theorem createGraph_all (φ : NNF α) {st : ExpandState α S}
 
 /-- Completeness property that `createGraph` actually establishes.
     Combined with `ExpandSpec`, it suffices to prove GBA acceptance. -/
-def GraphComplete (φ : NNF α) (nodes : NodeData α → Prop) : Prop :=
+@[expose] def GraphComplete (φ : NNF α) (nodes : NodeData α → Prop) : Prop :=
   ∀ ξ : OmegaWord α, NNF.satisfies ξ φ →
     ∃ σ : Nat → NodeData α,
       (∀ n, nodes (σ n)) ∧

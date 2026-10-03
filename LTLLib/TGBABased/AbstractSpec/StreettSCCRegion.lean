@@ -1,3 +1,5 @@
+module
+
 /-
   Streett acceptance on an SCC when the hoisted regions restrict *steps* rather than states.
 
@@ -48,10 +50,12 @@
   - Runs that carry their letters
   - From a fair run to a fair SCC
 -/
-import LTLLib.TGBABased.AbstractSpec.Pumping
-import LTLLib.TGBABased.AbstractSpec.SCCTheory
-import LTLLib.TGBABased.AbstractSpec.StreettSCC
-import LTLLib.Tactic.Set
+public import LTLLib.TGBABased.AbstractSpec.Pumping
+public import LTLLib.TGBABased.AbstractSpec.SCCTheory
+public import LTLLib.TGBABased.AbstractSpec.StreettSCC
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -85,7 +89,7 @@ structure RStreettSpec (State : Type u) (L : Type w) where
   regionExpand_coherent : ∀ r, ExpandCoherent (regionSuccs r) (regionMarks r) (regionExpand r)
 
 /-- A predicate entailing another, pointwise. -/
-def LePred (r' r : L → Bool) : Prop := ∀ l, r' l = true → r l = true
+@[expose] def LePred (r' r : L → Bool) : Prop := ∀ l, r' l = true → r l = true
 
 theorem LePred.refl (r : L → Bool) : LePred r r := fun _ h => h
 
@@ -137,7 +141,7 @@ theorem RStreettSpec.Compat.toMono (h : spec.Compat succs edgeMarks) : spec.Mono
 
 /-- The conjunction of the regions of one option per conjunct. A cycle witnessing a selection must satisfy
 every selected region at *every* step, so this — not the individual regions — is what restricts its graph. -/
-def selRegion (sel : List (StreettOption L)) : L → Bool :=
+@[expose] def selRegion (sel : List (StreettOption L)) : L → Bool :=
   fun l => sel.all fun opt => opt.region l
 
 theorem selRegion_le {sel : List (StreettOption L)} {opt : StreettOption L} (h : opt ∈ sel) :
@@ -162,7 +166,7 @@ structure RStreettSpec.AvailableWith (spec : RStreettSpec State L) (sel : List (
     t ∈ spec.regionSuccs (fun l => selRegion sel l && g l) s
 
 /-- Some selection picking one option per conjunct is available on `B`. -/
-def RStreettSpec.Accepting (spec : RStreettSpec State L) (B : Std.HashSet State) : Prop :=
+@[expose] def RStreettSpec.Accepting (spec : RStreettSpec State L) (B : Std.HashSet State) : Prop :=
   ∃ sel : List (StreettOption L),
     (∀ c ∈ spec.conjuncts, ∃ opt ∈ sel, opt ∈ c) ∧ spec.AvailableWith sel B
 
@@ -180,7 +184,7 @@ structure RFairSCC (initialStates : List State) (succs : State → Array State)
 /-- The ambient `AcceptingSCC` underneath, obtained by relaxing the restricted graph and marks to the
 ambient ones. The selection is recovered classically; `fair` is a `Prop`, and only its existence matters
 here. -/
-noncomputable def RFairSCC.toAcceptingSCC {initialStates : List State}
+@[expose] noncomputable def RFairSCC.toAcceptingSCC {initialStates : List State}
     (hcompat : spec.Compat succs edgeMarks) (A : RFairSCC initialStates succs spec) :
     AcceptingSCC initialStates succs edgeMarks spec.numMarks :=
   let sel := A.fair.choose
@@ -205,7 +209,7 @@ answered on one realization — §6.3's failure mode is excluded by construction
 condition. -/
 
 /-- An option read on edges. -/
-def StreettOption.onEdges (spec : RStreettSpec State L) (opt : StreettOption L) :
+@[expose] def StreettOption.onEdges (spec : RStreettSpec State L) (opt : StreettOption L) :
     StreettOption (State × State) where
   region := fun e => (spec.regionSuccs opt.region e.1).contains e.2
   marks := opt.marks.map fun g e =>
@@ -220,7 +224,7 @@ option at `r ∧ opt.region` rather than at `opt.region` alone is what makes the
 those commitments. Without it two conjuncts can each be witnessed by a *different* realization of the
 same edge, which is `EdgeLabels.md` §6.3 one level up and exactly what `AvailableWith` forbids by
 evaluating everything at `selRegion sel`. `onEdges` is the case `r = ⊤`, which is the top-level search. -/
-def StreettOption.onEdgesIn (spec : RStreettSpec State L) (r : L → Bool) (opt : StreettOption L) :
+@[expose] def StreettOption.onEdgesIn (spec : RStreettSpec State L) (r : L → Bool) (opt : StreettOption L) :
     StreettOption (State × State) where
   region := fun e => (spec.regionSuccs (fun l => r l && opt.region l) e.1).contains e.2
   marks := opt.marks.map fun g e =>
@@ -237,7 +241,7 @@ def StreettOption.onEdgesIn (spec : RStreettSpec State L) (r : L → Bool) (opt 
 
 /-- The spec the prune compiles: the same conjuncts, read on edges. Its `label` is never consulted — the
 edge scan is pointed at an explicit edge list — so it is pinned to the diagonal. -/
-def RStreettSpec.edgeSpec (spec : RStreettSpec State L) : StreettSpec State (State × State) where
+@[expose] def RStreettSpec.edgeSpec (spec : RStreettSpec State L) : StreettSpec State (State × State) where
   numMarks := spec.numMarks
   label := fun s => (s, s)
   conjuncts := spec.conjuncts.map fun c => c.map fun opt => opt.onEdges spec

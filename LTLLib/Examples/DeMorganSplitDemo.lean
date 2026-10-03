@@ -1,3 +1,5 @@
+module
+
 /-
   This file demonstrates why the router splits after `toNNF` rather than on the surface syntax.
 
@@ -31,6 +33,7 @@
 -/
 import LTLLib
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 
 namespace LTLLib.Examples.DeMorganSplit
 

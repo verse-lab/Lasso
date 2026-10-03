@@ -1,3 +1,5 @@
+module
+
 /-
   Bridge between the computational `TGBA.degeneralize` and the abstract `TOASpec.degeneralize`, the transition-based
   analogue of `LTLLib/DegeneralBridge.lean`, giving `TBA.toSpec accepts ξ ↔ TGBA.toSpec accepts ξ`.
@@ -24,8 +26,10 @@
   - The `numAcceptSets = 0` case
   - Unconditional wrappers
 -/
-import LTLLib.TGBABased.Degeneralization.TAcceptance
-import LTLLib.TGBABased.Degeneralization.TBA
+public import LTLLib.TGBABased.Degeneralization.TAcceptance
+public import LTLLib.TGBABased.Degeneralization.TBA
+
+public section
 
 namespace LTLLib
 
@@ -97,7 +101,7 @@ private theorem HashMap_foldl_insert_of_mem
 /-! ## The clamped mark count -/
 
 /-- The mark count `max(1, numAcceptSets)` that `TGBA.degeneralize` clamps to. -/
-private def degK (tgba : TGBA α) : Nat := if tgba.numAcceptSets == 0 then 1 else tgba.numAcceptSets
+def degK (tgba : TGBA α) : Nat := if tgba.numAcceptSets == 0 then 1 else tgba.numAcceptSets
 
 private theorem degK_pos (tgba : TGBA α) : 0 < degK tgba := by
   unfold degK

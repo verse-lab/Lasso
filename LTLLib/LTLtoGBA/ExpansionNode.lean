@@ -1,3 +1,5 @@
+module
+
 /-
   Concrete node type for the GPVW95 tableau construction (Gerth et al. 1995).
 
@@ -14,10 +16,12 @@
   - Abstract bridge
 -/
 
-import Std
-import LTLLib.LTL
-import LTLLib.LTLtoGBA.FSet
-import LTLLib.LTLtoGBA.AbstractSpec.ExpansionSpec
+public import Std
+public import LTLLib.LTL
+public import LTLLib.LTLtoGBA.FSet
+public import LTLLib.LTLtoGBA.AbstractSpec.ExpansionSpec
+
+public section
 
 namespace LTLLib
 
@@ -43,7 +47,7 @@ variable {α} {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
 /-! ## Node signatures -/
 
 /-- Check if two nodes have the same (old, next) signature. -/
-def sameSignature (n₁ n₂ : ExpansionNode α S) : Bool :=
+@[expose] def sameSignature (n₁ n₂ : ExpansionNode α S) : Bool :=
   FSet.setEq n₁.old n₂.old && FSet.setEq n₁.next n₂.next
 
 omit [BEq (NNF α)] [LawfulBEq (NNF α)] in
@@ -69,7 +73,7 @@ theorem sameSignature_old_right (n₁ n₂ : ExpansionNode α S)
 /-- Order-independent hash of a node's `(old, next)` signature, the bucket key `findDuplicate` indexes on.
 Summing element hashes is commutative and associative, so this is a function of the two sets and not of
 `FSet.toList`'s implementation-defined order. -/
-def sigHash [Hashable (NNF α)] (n : ExpansionNode α S) : UInt64 :=
+@[expose] def sigHash [Hashable (NNF α)] (n : ExpansionNode α S) : UInt64 :=
   mixHash ((FSet.toList n.old).foldl (fun acc f => acc + hash f) 0)
     (mixHash ((FSet.toList n.next).foldl (fun acc f => acc + hash f) 0) 0x9e3779b97f4a7c15)
 
@@ -95,7 +99,7 @@ abbrev oldHas (n : ExpansionNode α S) (ψ : NNF α) : Prop := FSet.contains n.o
 abbrev nextHas (n : ExpansionNode α S) (ψ : NNF α) : Prop := FSet.contains n.next ψ
 
 /-- A formula is "reachable": Either already processed (old) or pending (new). -/
-def reachable (n : ExpansionNode α S) (ψ : NNF α) : Prop :=
+@[expose] def reachable (n : ExpansionNode α S) (ψ : NNF α) : Prop :=
   FSet.contains n.old ψ ∨ ψ ∈ n.new
 
 /-- Convert a computational node to its abstract representation. -/

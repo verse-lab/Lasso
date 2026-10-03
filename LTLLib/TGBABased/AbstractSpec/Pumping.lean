@@ -1,3 +1,5 @@
+module
+
 /-
   From an accepting run to a `TAcceptingCycle` lasso witness. Pigeonholing on marked positions is not enough, a cycle
   spanning two marked positions need not carry every mark. The run is instead cut into rounds, each containing an
@@ -17,8 +19,10 @@
   - Round boundaries
   - The pumping lemma
 -/
-import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
-import LTLLib.Tactic.Set
+public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 

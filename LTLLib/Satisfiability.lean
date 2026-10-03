@@ -1,12 +1,16 @@
+module
+
 /-
   End-to-end pipeline for satisfiability:
   LTL formula φ → satisfiability decision.
 -/
-import LTLLib.LTLtoGBA.Correctness
-import LTLLib.DegeneralBridge
-import LTLLib.LTLtoGBA.ExpandTermination
-import LTLLib.NestedDFS.NestedDFSTermination
-import LTLLib.Tactic.Set
+public import LTLLib.LTLtoGBA.Correctness
+public import LTLLib.DegeneralBridge
+public import LTLLib.LTLtoGBA.ExpandTermination
+public import LTLLib.NestedDFS.NestedDFSTermination
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -14,7 +18,7 @@ variable {α : Type u} {S : Type v} [FSet (NNF α) S]
   [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
 
 /-- Chain `createGraph → constructGBA → GBA.degeneralize → nestedDFSWF` -/
-def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
+@[expose] def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
   match hcg : createGraph (S := S) φ with
   | some st =>
     let gba := constructGBA φ st

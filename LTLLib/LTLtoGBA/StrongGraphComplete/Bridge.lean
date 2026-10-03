@@ -1,3 +1,5 @@
+module
+
 /-
   Superseded: `constructGBA_correct_strong` depends on `StrongGraphComplete`, which is never discharged for
   `createGraph`'s actual output. See `LTLtoGBA/Bridge.lean` (`constructGBA_iff_expandOASpec`) and
@@ -8,8 +10,10 @@
   - `constructGBA_correct_strong`: `constructGBA` accepts exactly the words satisfying φ, given `StrongGraphComplete`
 -/
 
-import LTLLib.LTLtoGBA.Bridge
-import LTLLib.LTLtoGBA.StrongGraphComplete.Correctness
+public import LTLLib.LTLtoGBA.Bridge
+public import LTLLib.LTLtoGBA.StrongGraphComplete.Correctness
+
+public section
 
 namespace LTLLib
 

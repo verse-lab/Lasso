@@ -1,3 +1,5 @@
+module
+
 /-
   End-to-end model checking: system × LTL formula φ → does the system satisfy φ?
 
@@ -16,11 +18,13 @@
   - Soundness
   - Completeness
 -/
-import LTLLib.LTLtoGBA.Correctness
-import LTLLib.DegeneralBridge
-import LTLLib.LTLtoGBA.ExpandTermination
-import LTLLib.Product
-import LTLLib.Tactic.Set
+public import LTLLib.LTLtoGBA.Correctness
+public import LTLLib.DegeneralBridge
+public import LTLLib.LTLtoGBA.ExpandTermination
+public import LTLLib.Product
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -39,7 +43,7 @@ check itself is supplied via an algorithm-agnostic `checker : EmptinessChecker` 
 
 `.empty` means `sys ⊨ φ` whereas `.nonEmpty stem loop` witnesses a run of `sys` violating `φ`, given by
 `(system state, ¬φ-automaton state)` pairs along `stem`/`loop`. -/
-def modelCheck (φ : Formula α) (sysInit : List SysState)
+@[expose] def modelCheck (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc)
     (checker : EmptinessChecker (SysState × BAState) := nestedDFSChecker) :

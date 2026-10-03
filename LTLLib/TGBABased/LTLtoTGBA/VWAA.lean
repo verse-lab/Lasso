@@ -1,3 +1,5 @@
+module
+
 /-
   The very weak alternating co-Büchi automaton (VWAA) of an NNF formula, `[BKŘS12]` §5's modified construction without
   suspension, reduced by the paper's generalised VWAA optimisation and restricted to the states reachable from the input
@@ -50,31 +52,33 @@
   - The raw stage
   - Final composition
 -/
-import LTLLib.LTL.Syntax
-import LTLLib.TGBABased.LTLtoTGBA.Label
-import LTLLib.TGBABased.LTLtoTGBA.Reachability
-import LTLLib.TGBABased.LTLtoTGBA.SubformulaTable
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAReduce
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.LTLToVWAA
-import LTLLib.Tactic.Set
-import LTLLib.Data.FinSet
+public import LTLLib.LTL.Syntax
+public import LTLLib.TGBABased.LTLtoTGBA.Label
+public import LTLLib.TGBABased.LTLtoTGBA.Reachability
+public import LTLLib.TGBABased.LTLtoTGBA.SubformulaTable
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAReduce
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.LTLToVWAA
+meta import LTLLib.Tactic.Set
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 
 /-! ## Target masks -/
 
 /-- The singleton target `{i}`. -/
-def bit (i : Nat) : Nat := 1 <<< i
+@[expose] def bit (i : Nat) : Nat := 1 <<< i
 
 /-- `a ⊆ b` on masks. -/
-def maskSub (a b : Nat) : Bool := a &&& b == a
+@[expose] def maskSub (a b : Nat) : Bool := a &&& b == a
 
 /-- The ids of `m`, increasing. -/
-def maskMembers (m : Nat) : List Nat := (List.range (m.log2 + 1)).filter m.testBit
+@[expose] def maskMembers (m : Nat) : List Nat := (List.range (m.log2 + 1)).filter m.testBit
 
 /-- The ids of `m` as a `FinSet`. -/
-def maskSet (m : Nat) : FinSet Nat := (maskMembers m).toFinSet
+@[expose] def maskSet (m : Nat) : FinSet Nat := (maskMembers m).toFinSet
 
 theorem mem_maskMembers {m j : Nat} : j ∈ maskMembers m ↔ m.testBit j = true := by
   unfold maskMembers
@@ -155,7 +159,7 @@ theorem maskSet_remapMask (f : Nat → Nat) (m : Nat) : maskSet (remapMask f m) 
   simp [mem_maskSet]
 
 /-- A `FinSet` of ids as a mask. -/
-noncomputable def maskOf (e : FinSet Nat) : Nat := e.toList.foldl (fun acc j => acc ||| bit j) 0
+@[expose] noncomputable def maskOf (e : FinSet Nat) : Nat := e.toList.foldl (fun acc j => acc ||| bit j) 0
 
 theorem testBit_maskOf {e : FinSet Nat} {j : Nat} : (maskOf e).testBit j = true ↔ j ∈ e := by
   unfold maskOf
@@ -198,7 +202,7 @@ theorem lt_two_pow_of_testBit {t n : Nat} (h : ∀ j, t.testBit j = true → j <
     · exact absurd (h i hb) (by omega)
 
 /-- Every sub-mask of `m`, built one id of `m` at a time. -/
-def submasks (m : Nat) : List Nat := (maskMembers m).foldl (fun acc j => acc ++ acc.map (· ||| bit j)) [0]
+@[expose] def submasks (m : Nat) : List Nat := (maskMembers m).foldl (fun acc j => acc ++ acc.map (· ||| bit j)) [0]
 
 private theorem mem_foldl_submasks (P : Nat → Prop) :
     ∀ (l acc : List Nat), (∀ s, (∀ j, s.testBit j = true → P j) → s ∈ acc) →
@@ -294,11 +298,11 @@ def mergeStep {K : Type v} [BEq K] [Hashable K] (m : Std.HashMap K (DNF α)) (p 
   m.insert p.2 (DNF.or (m.getD p.2 DNF.bot) p.1)
 
 /-- Merge transitions sharing a key into one, guards OR-ed together, keyed like LTL3BA's `transition[i]`. -/
-def mergeByTarget {K : Type v} [BEq K] [Hashable K] (l : List (DNF α × K)) : List (DNF α × K) :=
+@[expose] def mergeByTarget {K : Type v} [BEq K] [Hashable K] (l : List (DNF α × K)) : List (DNF α × K) :=
   (l.foldl mergeStep (Std.HashMap.emptyWithCapacity 8)).toList.map fun p => (p.2, p.1)
 
 /-- `l` grouped by `key`, each group in `l`'s order. -/
-def groupByKey {β : Type w} {K : Type v} [BEq K] [Hashable K] (key : β → K) (l : List β) : Std.HashMap K (List β) :=
+@[expose] def groupByKey {β : Type w} {K : Type v} [BEq K] [Hashable K] (key : β → K) (l : List β) : Std.HashMap K (List β) :=
   l.foldr (fun x m => m.insert (key x) (x :: m.getD (key x) [])) (Std.HashMap.emptyWithCapacity l.length)
 
 private theorem mem_foldr_groupByKey {β : Type w} {K : Type v} [BEq K] [Hashable K] [LawfulBEq K] [LawfulHashable K]
@@ -331,7 +335,7 @@ def splitGuard (l : List (DNF α × Nat)) (g : DNF α) (t : Nat) : DNF α :=
 
 /-- Narrow every transition's guard against every transition with a strictly smaller target, `[BKŘS12]` §5's
 generalised VWAA optimisation `α2 := α2 ∧ ¬α1` when `O1 ⊊ O2`, dropped once it becomes unsatisfiable. -/
-def splitByTarget (l : List (DNF α × Nat)) : List (DNF α × Nat) :=
+@[expose] def splitByTarget (l : List (DNF α × Nat)) : List (DNF α × Nat) :=
   l.filterMap fun p =>
     let g := splitGuard l p.1 p.2
     if DNF.isEmpty g then none else some (g, p.2)
@@ -343,7 +347,7 @@ def reduceTrans (l : List (DNF α × Nat)) : List (DNF α × Nat) := splitByTarg
 
 /-- `[BKŘS12]` §5's modified δ without suspension, targets as bitmasks of `idx` ids, `next ψ` targeting `{ψ}` alone.
 Every node's δ is reduced before its parent combines it, LTL3BA's `build_alternating` with `det_m`. -/
-def NNF.rtrans (idx : NNF α → Nat) : NNF α → List (DNF α × Nat)
+@[expose] def NNF.rtrans (idx : NNF α → Nat) : NNF α → List (DNF α × Nat)
   | .tt => [(DNF.top, 0)]
   | .ff => []
   | .prop a => [(DNF.lit a true, 0)]
@@ -366,12 +370,12 @@ structure ConcreteVWAA (α : Type u) [BEq α] [Hashable α] where
   initial : Nat
 
 /-- Every target of `cv`'s transitions at id `i` is `i` itself or a strictly lower-ranked id. -/
-def ConcreteVWAA.VeryWeak (cv : ConcreteVWAA α) : Prop :=
+@[expose] def ConcreteVWAA.VeryWeak (cv : ConcreteVWAA α) : Prop :=
   ∀ i g t, (g, t) ∈ cv.trans.getD i [] → ∀ j, t.testBit j = true →
     j = i ∨ (cv.table.formulaOf j).rank < (cv.table.formulaOf i).rank
 
 /-- A concrete transition list read as abstract alternatives, guards through `DNF.sat`, targets through `maskSet`. -/
-def encTrans (l : List (DNF α × Nat)) : List (((α → Prop) → Prop) × FinSet Nat) :=
+@[expose] def encTrans (l : List (DNF α × Nat)) : List (((α → Prop) → Prop) × FinSet Nat) :=
   l.map fun p => (DNF.sat p.1, maskSet p.2)
 
 /-! ## Reachability restriction -/
@@ -433,14 +437,14 @@ def rawStage (φ : NNF α) : ConcreteVWAA α :=
     initial := table.idOf φ }
 
 /-- The reduced δ of every id reachable from `φ`, renumbered densely, `final` the `until` ids. -/
-def ConcreteVWAA.build (φ : NNF α) : ConcreteVWAA α :=
+@[expose] def ConcreteVWAA.build (φ : NNF α) : ConcreteVWAA α :=
   restrictReachable (rawStage φ)
 
 /-! ## The abstract automaton a `ConcreteVWAA` denotes -/
 
 /-- The `VWAA Nat α` a `ConcreteVWAA` denotes: guards through `DNF.sat`, targets through `maskSet`, finality and rank
 read off the table. -/
-def abstractOf (cv : ConcreteVWAA α) (hveryWeak : cv.VeryWeak) : VWAA Nat α where
+@[expose] def abstractOf (cv : ConcreteVWAA α) (hveryWeak : cv.VeryWeak) : VWAA Nat α where
   trans i := encTrans (cv.trans.getD i [])
   initial := [{cv.initial}]
   final i := cv.final.getD i false = true
@@ -599,18 +603,18 @@ private theorem getElem?_keptIds_eq_keptAt (cv : ConcreteVWAA α) (i : Nat) (hi 
   simp [List.getD_eq_getElem?_getD, List.getElem?_eq_getElem hi]
 
 /-- `keptAt` always names a kept id. -/
-theorem keptAt_mem (cv : ConcreteVWAA α) (i : Nat) (hi : i < (keptIds cv).length) :
+private theorem keptAt_mem (cv : ConcreteVWAA α) (i : Nat) (hi : i < (keptIds cv).length) :
     keptAt cv i ∈ keptIds cv := by
   have h := getElem?_keptIds_eq_keptAt cv i hi
   exact List.mem_of_getElem? h
 
 /-- Relabeling `keptAt cv i` gives back the dense id `i`. -/
-theorem remap_keptAt (cv : ConcreteVWAA α) (i : Nat) (hi : i < (keptIds cv).length) :
+private theorem remap_keptAt (cv : ConcreteVWAA α) (i : Nat) (hi : i < (keptIds cv).length) :
     (remapIds cv).getD (keptAt cv i) 0 = i :=
   remapIds_eq_of_getElem? cv (keptAt cv i) i (getElem?_keptIds_eq_keptAt cv i hi)
 
 /-- `restrictReachable`'s table reads a dense id's formula off `keptAt`'s original one. -/
-theorem restrictReachable_formulaOf (cv : ConcreteVWAA α) (i : Nat) (hi : i < (keptIds cv).length) :
+private theorem restrictReachable_formulaOf (cv : ConcreteVWAA α) (i : Nat) (hi : i < (keptIds cv).length) :
     (restrictReachable cv).table.formulaOf i = cv.table.formulaOf (keptAt cv i) := by
   unfold SubformulaTable.formulaOf
   rw [restrictReachable_formulas, Array.getD_eq_getD_getElem?, Array.getElem?_map,
@@ -710,7 +714,7 @@ theorem restrictReachable_initial_lt_size [LawfulBEq α] [LawfulHashable α] (cv
 
 /-- `restrictReachable` relabels the reachable states of `abstractOf cv hveryWeak` along `remapIds`, with left inverse
 `keptAt`, `[JN18]`'s `concr2AbstrAA`. -/
-theorem relabelsFrom_restrictReachable [LawfulBEq α] [LawfulHashable α] (cv : ConcreteVWAA α)
+private theorem relabelsFrom_restrictReachable [LawfulBEq α] [LawfulHashable α] (cv : ConcreteVWAA α)
     (hveryWeak : cv.VeryWeak)
     (hinit : cv.initial < cv.table.formulas.size)
     (hbound : ∀ p, p < cv.table.formulas.size → ∀ q ∈ transSucc cv.trans p, q < cv.table.formulas.size) :

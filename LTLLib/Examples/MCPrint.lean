@@ -1,8 +1,12 @@
+module
+
 /-
   Shared "print a `modelCheck`/`modelCheckTGBA` result" infrastructure
   for the `Examples/` directory.
 -/
-import LTLLib
+public import LTLLib
+
+public section
 
 namespace LTLLib.Examples
 

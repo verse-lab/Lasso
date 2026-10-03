@@ -1,3 +1,5 @@
+module
+
 /-
   VWAA to TGBA on the fly, `[GO01]` Step 2 with on-the-fly dominance `≼` and OR-merging of candidates sharing a target
   and marks. A TGBA state is a set of VWAA ids as a bitmask, explored by a worklist from the singleton of the initial id.
@@ -50,12 +52,14 @@
   - OR-merging and dominance preservation
   - The canonical `SetTGBA`
 -/
-import LTLLib.TGBA
-import LTLLib.TGBABased.LTLtoTGBA.Label
-import LTLLib.TGBABased.LTLtoTGBA.VWAA
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBA
-import LTLLib.Tactic.Set
-import LTLLib.Data.FinSet
+public import LTLLib.TGBA
+public import LTLLib.TGBABased.LTLtoTGBA.Label
+public import LTLLib.TGBABased.LTLtoTGBA.VWAA
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBA
+meta import LTLLib.Tactic.Set
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 
@@ -80,7 +84,7 @@ def productTrans (cv : ConcreteVWAA α) (e : Nat) : List (DNF α × Nat × Nat) 
 
 /-- `[GO01]` Definition 5's `T_f`: `f ∉ e'`, or `g` is covered by the disjunction of every transition of `f` that does
 not loop in `f` and whose target lies inside `e'`, as distinct letters of `g` may escape through distinct alternatives. -/
-def inTf (cv : ConcreteVWAA α) (f : Nat) (g : DNF α) (e' : Nat) : Bool :=
+@[expose] def inTf (cv : ConcreteVWAA α) (f : Nat) (g : DNF α) (e' : Nat) : Bool :=
   !e'.testBit f || DNF.impliesFast g
     ((cv.trans.getD f []).flatMap fun p => if !p.2.testBit f && maskSub p.2 e' then p.1 else [])
 
@@ -94,7 +98,7 @@ def computeMarks (cv : ConcreteVWAA α) (finals : Array Nat) (g : DNF α) (e' es
   (List.range finals.size).foldl (fun acc i => if marksCond cv finals g e' escOwn i then acc ||| bit i else acc) 0
 
 /-- Every product transition of `e` with its marks attached. -/
-def markedProduct (cv : ConcreteVWAA α) (finals : Array Nat) (e : Nat) : List (DNF α × Nat × Nat) :=
+@[expose] def markedProduct (cv : ConcreteVWAA α) (finals : Array Nat) (e : Nat) : List (DNF α × Nat × Nat) :=
   (productTrans cv e).map fun c => (c.1, c.2.1, computeMarks cv finals c.1 c.2.1 c.2.2)
 
 /-! ## Reducing candidate transitions -/
@@ -122,7 +126,7 @@ def dominanceFilterFast (l : List (DNF α × Nat × Nat)) : List (DNF α × Nat 
   l.filter fun c2 => !beatenIn l byTarget n c2
 
 /-- OR-merge the candidates sharing a target and marks, then drop the dominated ones. -/
-def reduceCandidates (l : List (DNF α × Nat × Nat)) : List (DNF α × Nat × Nat) :=
+@[expose] def reduceCandidates (l : List (DNF α × Nat × Nat)) : List (DNF α × Nat × Nat) :=
   dominanceFilter (mergeByTarget l)
 
 /-! ## Worklist exploration -/
@@ -154,7 +158,7 @@ partial_fixpoint
 /-! ## Export -/
 
 /-- The VWAA ids of `cv`'s final states, in increasing order, acceptance set `i` standing for `finalsOf cv`'s `i`-th. -/
-def finalsOf (cv : ConcreteVWAA α) : Array Nat :=
+@[expose] def finalsOf (cv : ConcreteVWAA α) : Array Nat :=
   ((List.range cv.table.formulas.size).filter fun i => cv.final.getD i false).toArray
 
 /-- The empty worklist state `buildTGBA` starts from. -/
@@ -163,7 +167,7 @@ def initConstructState : TGBAConstructState α :=
 
 /-- The numbered `TGBA α` a finished worklist state denotes, one `TGBA.Transition` per non-contradictory cube of a
 recorded transition's guard. -/
-def exportTGBA (finals : Array Nat) (st : TGBAConstructState α) (initId : Nat) : TGBA α where
+@[expose] def exportTGBA (finals : Array Nat) (st : TGBAConstructState α) (initId : Nat) : TGBA α where
   states := Std.HashSet.ofList (st.visited.toList.map (·.2))
   initialStates := Std.HashSet.emptyWithCapacity 1 |>.insert initId
   successors := st.transitions.map fun _ arr =>
@@ -175,7 +179,7 @@ def exportTGBA (finals : Array Nat) (st : TGBAConstructState α) (initId : Nat) 
 
 /-- Explore from the singleton state of `cv`'s initial id and export, `none` only if the worklist does not terminate,
 which never happens on a finite VWAA. -/
-def buildTGBA (cv : ConcreteVWAA α) : Option (TGBA α) := do
+@[expose] def buildTGBA (cv : ConcreteVWAA α) : Option (TGBA α) := do
   let (initId, st) ← exploreState cv (finalsOf cv) (bit cv.initial) initConstructState
   pure (exportTGBA (finalsOf cv) st initId)
 
@@ -373,7 +377,7 @@ private theorem getD_eq_getElem_of_lt {finals : Array Nat} {i : Nat} (h : i < fi
   simp [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem h]
 
 /-- The VWAA ids the mark mask `m` stands for, through `finals`'s indexing. -/
-def idMarksOf (finals : Array Nat) (m : Nat) : FinSet Nat :=
+@[expose] def idMarksOf (finals : Array Nat) (m : Nat) : FinSet Nat :=
   ((maskMembers m).map (finals.getD · 0)).toFinSet
 
 /-- Read through a duplicate-free `finals`, an in-range mark mask marks `finals[i]` exactly when it has bit `i`. -/
@@ -429,7 +433,7 @@ theorem idMarksOf_computeMarks {cv : ConcreteVWAA α} {finals : Array Nat} {g : 
     rw [hival]; exact hcond
 
 /-- `st'` extends `st`: every id `st` has already assigned persists unchanged in `st'`. -/
-def Extends (st st' : TGBAConstructState α) : Prop :=
+@[expose] def Extends (st st' : TGBAConstructState α) : Prop :=
   ∀ (e : Nat) (id : Nat), st.visited[e]? = some id → st'.visited[e]? = some id
 
 theorem Extends.refl (st : TGBAConstructState α) : Extends st st := fun _ _ h => h
@@ -439,7 +443,7 @@ theorem Extends.trans {a b c : TGBAConstructState α} (h1 : Extends a b) (h2 : E
   fun e id h => h2 e id (h1 e id h)
 
 /-- Every transition `st` has recorded targets an id `st` has itself assigned, with marks in range. -/
-def TransitionsWF (finals : Array Nat) (st : TGBAConstructState α) : Prop :=
+@[expose] def TransitionsWF (finals : Array Nat) (st : TGBAConstructState α) : Prop :=
   ∀ (id0 : Nat) (arr : Array (DNF α × Nat × Nat)), st.transitions[id0]? = some arr →
     ∀ p ∈ arr.toList, (∃ e' : Nat, st.visited[e']? = some p.2.1) ∧ ∀ i, p.2.2.testBit i = true → i < finals.size
 
@@ -552,11 +556,11 @@ theorem exploreState_wf (cv : ConcreteVWAA α) (finals : Array Nat) :
 /-! ## Id-renumbering -/
 
 /-- Every id `visited` assigns is strictly below the fresh-id counter. -/
-def NextIdBound (st : TGBAConstructState α) : Prop :=
+@[expose] def NextIdBound (st : TGBAConstructState α) : Prop :=
   ∀ (e : Nat) (id : Nat), st.visited[e]? = some id → id < st.nextId
 
 /-- `visited` never maps two different states to the same id. -/
-def VisitedInjective (st : TGBAConstructState α) : Prop :=
+@[expose] def VisitedInjective (st : TGBAConstructState α) : Prop :=
   ∀ (e1 e2 : Nat) (id : Nat), st.visited[e1]? = some id → st.visited[e2]? = some id → e1 = e2
 
 private theorem visited_insert_bound {st : TGBAConstructState α} {e : Nat} (hbnd : NextIdBound st)
@@ -670,7 +674,7 @@ theorem exploreState_injective (cv : ConcreteVWAA α) (finals : Array Nat) :
 
 /-- Every finished id records exactly its state's reduced candidates, every target explored and translated to its id
 through `visited`. -/
-def Denotes (finals : Array Nat) (cv : ConcreteVWAA α) (st : TGBAConstructState α) : Prop :=
+@[expose] def Denotes (finals : Array Nat) (cv : ConcreteVWAA α) (st : TGBAConstructState α) : Prop :=
   ∀ id arr, st.transitions[id]? = some arr → ∃ e, st.visited[e]? = some id ∧
     (∀ g e' m, (g, e', m) ∈ reduceCandidates (markedProduct cv finals e) → ∃ tid, st.visited[e']? = some tid) ∧
     arr.toList = (reduceCandidates (markedProduct cv finals e)).map fun (g, e', m) => (g, st.visited.getD e' 0, m)
@@ -826,7 +830,7 @@ private theorem mem_states_of_visited {visited : Std.HashMap Nat Nat} {e0 : Nat}
 
 /-- Every id `visited` assigns has its transitions recorded, except those `pending` allows, the ids of the
 states whose exploration is still in progress. -/
-def FinishedExcept (st : TGBAConstructState α) (pending : Nat → Prop) : Prop :=
+@[expose] def FinishedExcept (st : TGBAConstructState α) (pending : Nat → Prop) : Prop :=
   ∀ (e : Nat) (id : Nat), st.visited[e]? = some id → (∃ arr, st.transitions[id]? = some arr) ∨ pending id
 
 /-- `exploreState` records the transitions of every state it assigns an id to before returning. -/
@@ -1342,7 +1346,7 @@ noncomputable def canonicalTrans (cv : ConcreteVWAA α) (finals : Array Nat) (e 
   (reduceCandidates (rawCandidates cv finals e)).map fun c => (DNF.sat c.1, maskSet c.2.1, idMarksOf finals c.2.2)
 
 /-- The canonical `SetTGBA`, `Q := Nat`, one transition per surviving reduced candidate. -/
-noncomputable def canonicalTGBA (cv : ConcreteVWAA α) (finals : Array Nat) : SetTGBA Nat α where
+@[expose] noncomputable def canonicalTGBA (cv : ConcreteVWAA α) (finals : Array Nat) : SetTGBA Nat α where
   trans := canonicalTrans cv finals
   initial := [{cv.initial}]
   finals := finals.toList.toFinSet

@@ -1,3 +1,5 @@
+module
+
 /-
   A ground-truth NNF evaluator on lasso words, independent of every translator in this folder, one `Bool` per lasso
   position for each subformula, bottom-up. `until` is the least fixpoint of `U[i] = ψ[i] ∨ (φ[i] ∧ U[next i])`, reached
@@ -11,8 +13,10 @@
   - Least fixpoint until
   - Evaluation
 -/
-import LTLLib.LTL.Syntax
-import LTLLib.TGBABased.LTLtoTGBA.Tests.Lasso
+public import LTLLib.LTL.Syntax
+public import LTLLib.TGBABased.LTLtoTGBA.Tests.Lasso
+
+public section
 
 namespace LTLLib.LTLtoTGBA.Tests
 

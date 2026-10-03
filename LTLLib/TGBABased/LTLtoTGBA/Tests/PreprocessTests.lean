@@ -1,3 +1,5 @@
+module
+
 /-
   Differential tests of the preprocessing pass against `Lasso.evalNNF`: `synImpl`'s soundness, and `simplify`'s semantic
   preservation including the X/F/G shape rules and the left-operand rewrites.
@@ -14,6 +16,11 @@ import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Simplify
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Implication
+meta import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Simplify
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.LTLtoTGBA.Tests.PreprocessTests
 

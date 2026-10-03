@@ -1,3 +1,5 @@
+module
+
 /-
   The bottom-up rewrite pass: constant folding and idempotence, absorption under syntactic implication (`[SB00]` §3),
   `φ U e ≡ e` and `φ R u ≡ u` for a pure eventuality `e` and a purely universal `u` (`[EH00]` Lemma 3.4-3.5), `X γ ≡ γ`
@@ -46,7 +48,9 @@
   - Correctness of the rules
   - Correctness of the pass
 -/
-import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Rules
+public import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Rules
+
+public section
 
 namespace LTLLib
 
@@ -174,7 +178,7 @@ def simplifyRelease [BEq α] (a b : NNF α) : NNF α :=
 /-! ## The pass -/
 
 /-- One bottom-up pass of the rules. -/
-def simplify [BEq α] : NNF α → NNF α
+@[expose] def simplify [BEq α] : NNF α → NNF α
   | .and a b => simplifyAnd (simplify a) (simplify b)
   | .or a b => simplifyOr (simplify a) (simplify b)
   | .next a => simplifyNext (simplify a)

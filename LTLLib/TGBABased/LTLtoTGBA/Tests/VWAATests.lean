@@ -1,3 +1,5 @@
+module
+
 /-
   Differential tests of `NNF.rtrans` against `Lasso.evalNNF`: the one-step expansion `φ.rtrans` encodes must agree with
   the evaluator at every lasso position, also after merging equal targets (`mergeByTarget`) or splitting away subsumed
@@ -13,6 +15,11 @@ import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
 import LTLLib.TGBABased.LTLtoTGBA.VWAA
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.LTL.Subformulas
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Eval
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
+meta import LTLLib.TGBABased.LTLtoTGBA.VWAA
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.LTLtoTGBA.Tests.VWAATests
 

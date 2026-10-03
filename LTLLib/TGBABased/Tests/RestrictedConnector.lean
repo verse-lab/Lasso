@@ -1,3 +1,5 @@
+module
+
 /-
   Tests `checkWithWitness`'s connector search (`SCC/GenericDFS.lean`), where `stitchCycleAt`'s connectors are restricted
   to the accepting subset `ops.sccHint` returns. Dijkstra reports as soon as marks are covered, so the subset need not be
@@ -9,6 +11,8 @@
 -/
 import LTLLib.TGBABased.SCC.DijkstraSCC
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.SCC.DijkstraSCC
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.RestrictedConnector
 

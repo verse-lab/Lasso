@@ -1,3 +1,5 @@
+module
+
 /-
   Tests `modelCheckTGBADisjunct` on the case the latch exists for, an accepting cycle inside the `FG` region whose every
   path from an initial state leaves the region.
@@ -11,6 +13,8 @@
 -/
 import LTLLib.TGBABased.Fairness.FairCheck
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.Fairness.FairCheck
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.Tests.RegionLatch
 

@@ -1,3 +1,5 @@
+module
+
 /-
   Sanity checks on the random generators of `Gen.lean`: generated lassos respect their bounds, and a batch
   of generated formulas is visibly varied rather than degenerating to a handful of shapes.
@@ -8,6 +10,8 @@
 -/
 import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
 import LTLLib.TGBABased.Tests.TestUtil
+meta import LTLLib.TGBABased.LTLtoTGBA.Tests.Gen
+meta import LTLLib.TGBABased.Tests.TestUtil
 
 namespace LTLLib.LTLtoTGBA.Tests.GenTests
 
