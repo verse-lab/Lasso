@@ -26,9 +26,10 @@ open LTLLib LTLLib.Tests LTLLib.Tests.ModelCheckCounterExample
 /-! ## The checker instance -/
 
 example {State : Type u} [BEq State] [Hashable State] [LawfulBEq State] [LawfulHashable State]
-    [Inhabited State] (succs : State → Array State) (init : List State) (fr : FiniteReach init succs)
+    [Inhabited State] (succs : State → Array State) (init : List State)
     (em : State → State → Std.HashSet Nat) (nm : Nat) :
-    (dijkstraTChecker (State := State)).check succs init fr em nm = dijkstraCheck succs init em nm := rfl
+    (dijkstraTChecker (State := State)).check succs init em (derivedExpand succs em) nm =
+      dijkstraCheck succs init em (derivedExpand succs em) nm := rfl
 
 /-! ## Applying the top-level theorems -/
 
@@ -38,10 +39,18 @@ theorem light_checked :
       Formula.directSatisfies (fun i a => a ∈ lightLabel (τ i)) ψ) ∨
     (∃ τ : Nat → Light, (Sys.toSpec lightSucc lightInit lightLabel).isRun τ ∧
       ¬ Formula.directSatisfies (fun i a => a ∈ lightLabel (τ i)) ψ) := by
-  cases h : modelCheckTGBA ψ lightInit lightSucc lightLabel lightFR with
-  | empty n => exact Or.inl (modelCheckTGBA_empty_unsat ψ lightInit lightSucc lightLabel lightFR _ h)
+  cases h : modelCheckTGBA ψ lightInit (LSys.unlabelled lightSucc) lightLabel with
+  | empty n =>
+    refine Or.inl (fun τ hτ => ?_)
+    simpa only [LSys.valuation_ofRun] using
+      modelCheckTGBA_empty_unsat ψ lightInit (LSys.unlabelled lightSucc) lightLabel
+        (LSys.finiteReach_unlabelled lightFR) _ h (LSys.ofRun τ) (LSys.toSpec_isRun_ofRun hτ)
   | nonEmpty stem loop =>
-    exact Or.inr (modelCheckTGBA_nonEmpty_sat ψ lightInit lightSucc lightLabel lightFR _ h)
+    obtain ⟨ρ, hρ, hviolates⟩ :=
+      modelCheckTGBA_nonEmpty_sat ψ lightInit (LSys.unlabelled lightSucc) lightLabel
+        (LSys.finiteReach_unlabelled lightFR) _ h
+    refine Or.inr ⟨fun n => (ρ n).1, LSys.isRun_of_toSpec_unlabelled hρ, ?_⟩
+    simpa only [LSys.valuation_unlabelled hρ] using hviolates
 
 /-- Satisfiability of any formula yields a verified answer either way, with nothing to supply. -/
 theorem pipeline_checked (φ : NNF String) :
@@ -80,5 +89,6 @@ example {State : Type u} {succs : State → Array State} {edgeMarks : State → 
 #print axioms dijkstraTChecker
 #print axioms exists_TAcceptingCycle_of_run
 #print axioms light_checked
+#print axioms pipeline_checked
 
 end LTLLib.Tests.PipelineTheorems
