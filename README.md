@@ -38,16 +38,25 @@ Install [Elan](https://github.com/leanprover/elan) and use the toolchain pinned 
 python3 scripts/verify.py
 ```
 
-This checks source coverage, then builds the main library, tests, examples and retained
-historical proofs. Any coverage, compilation, test assertion or axiom-guard failure, warning,
-or Lean panic produces a nonzero exit status, including panics replayed from Lake's build cache.
-Run this command locally when you want full verification.
+Use this command for full verification. It checks source coverage, then builds the main library,
+tests, examples and retained historical proofs. By default it prints coverage and the final result;
+build and test logs are shown on failure. Any coverage, compilation, test assertion or axiom-guard
+failure, warning, or Lean panic produces a nonzero exit status, including panics replayed from
+Lake's build cache. Add `--verbose` to stream all build and test output. A successful run reports:
+
+```text
+Source coverage: PASS (150/150 Lean files)
+Building library and tests...
+Library build: PASS
+Tests, examples and historical proofs: PASS
+Axiom checks: PASS
+Warnings: 0; panics: 0
+```
 
 | Command | Scope |
 |---|---|
 | `lake build` | Main library and proofs imported by `LTLLib.lean` |
-| `lake test` | All tests, Lean examples and helpers under `LTLLibTests/`, including historical proof checks |
-| `python3 scripts/verify.py --coverage-only` | Source coverage without compiling |
+| `python3 scripts/verify.py` | Full verification of all Lean sources, tests, examples and historical proofs |
 
 ## LTL to BA translation
 

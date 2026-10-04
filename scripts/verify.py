@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check source coverage, then build every verification target (Python 3.9+)."""
+"""Check all Lean sources and tests; use --verbose for full build output (Python 3.9+)."""
 
 import argparse
 import json
@@ -40,7 +40,7 @@ def source_files():
     }
 
 
-def check_coverage():
+def check_coverage(verbose=False):
     groups = query([f"{target}:modules" for target in TARGETS])
     selected = sorted({name for group in groups for name in group})
     if not selected:
@@ -53,9 +53,11 @@ def check_coverage():
     covered = {Path(path).resolve() for path in paths}
     sources = source_files()
     missing = sorted(sources - covered)
-    for target, group in zip(TARGETS, groups):
-        print(f"{target}: {len(group)} selected modules (including local imports)", flush=True)
-    print(f"Source coverage: {len(sources & covered)}/{len(sources)} Lean files", flush=True)
+    if verbose:
+        for target, group in zip(TARGETS, groups):
+            print(f"{target}: {len(group)} selected modules (including local imports)", flush=True)
+    status = "FAIL" if missing else "PASS"
+    print(f"Source coverage: {status} ({len(sources & covered)}/{len(sources)} Lean files)", flush=True)
     if missing:
         print("Uncovered Lean sources; add a build target/glob or import:", file=sys.stderr)
         for path in missing:
@@ -64,19 +66,48 @@ def check_coverage():
     return True
 
 
+def build(verbose=False):
+    command = [*LAKE, "--wfail", "build", *TARGETS]
+    print("Running: " + " ".join(command) if verbose else "Building library and tests...", flush=True)
+    # Lean can print a native panic to stderr yet exit successfully; Lake then
+    # records (and replays) it as info. --wfail alone cannot detect that case.
+    saw_panic = False
+    output = []
+    with subprocess.Popen(
+        command, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+    ) as process:
+        for line in process.stdout:
+            if verbose:
+                print(line, end="", flush=True)
+            else:
+                output.append(line)
+            saw_panic |= line.startswith("PANIC at ")
+        returncode = process.wait()
+    if (returncode or saw_panic) and not verbose:
+        print("".join(output), end="", flush=True)
+    if saw_panic:
+        print("Verification failed: Lean reported a panic", file=sys.stderr)
+    elif returncode:
+        print(f"Verification failed: Lake exited with code {returncode}", file=sys.stderr)
+    else:
+        print("Library build: PASS", flush=True)
+        print("Tests, examples and historical proofs: PASS", flush=True)
+        print("Axiom checks: PASS", flush=True)
+        print("Warnings: 0; panics: 0", flush=True)
+    return returncode or int(saw_panic)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--coverage-only", action="store_true", help="audit sources without compiling")
+    parser.add_argument("--verbose", "-v", action="store_true", help="stream all build and test output")
     args = parser.parse_args()
     try:
-        if not check_coverage():
+        if not check_coverage(verbose=args.verbose):
             return 1
         if args.coverage_only:
             return 0
-        command = [*LAKE, "build", *TARGETS]
-        print("Running: " + " ".join(command), flush=True)
-        # Inherit output and propagate Lean elaboration, #eval and axiom-guard failures.
-        return subprocess.run(command, cwd=ROOT).returncode
+        return build(verbose=args.verbose)
     except subprocess.CalledProcessError as error:
         return error.returncode
     except (OSError, ValueError) as error:
