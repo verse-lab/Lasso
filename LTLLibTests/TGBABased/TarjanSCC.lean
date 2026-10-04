@@ -41,7 +41,8 @@ def genMarks (seed k : Nat) (s t : Nat) : Std.HashSet Nat :=
 def agrees (n seed k : Nat) : Bool :=
   let succs := genSucc n seed
   let marks := genMarks seed k
-  isEmptyResult (dijkstraCheck succs [0] marks k) == isEmptyResult (tarjanCheck succs [0] marks k)
+  isEmptyResult (dijkstraCheck succs [0] marks (derivedExpand succs marks) k) ==
+    isEmptyResult (tarjanCheck succs [0] marks (derivedExpand succs marks) k)
 
 def sizes : List Nat := [3, 5, 8, 13, 21]
 def seeds : List Nat := [1, 2, 3, 4, 5, 6, 7, 8]
@@ -54,7 +55,8 @@ def cases : List (Nat × Nat × Nat) :=
 pass by accident. -/
 def nonEmptyCount : Nat :=
   (cases.filter fun (n, seed, k) =>
-    ! isEmptyResult (tarjanCheck (genSucc n seed) [0] (genMarks seed k) k)).length
+    ! isEmptyResult (tarjanCheck (genSucc n seed) [0] (genMarks seed k)
+      (derivedExpand (genSucc n seed) (genMarks seed k)) k)).length
 
 /-! ## SCC enumeration against brute force -/
 
@@ -122,23 +124,26 @@ def report : IO Unit :=
     let a ← check "every generated case gets the same verdict from both"
       (cases.all fun (n, seed, k) => agrees n seed k)
     let b ← check "the ring's single mark is found"
-      (! isEmptyResult (tarjanCheck ringSucc [0] ringMarks 1))
+      (! isEmptyResult (tarjanCheck ringSucc [0] ringMarks (derivedExpand ringSucc ringMarks) 1))
     let c ← check "a mark reachable only outside every cycle is not accepting"
-      (isEmptyResult (tarjanCheck sinkSucc [0] sinkMarks 1))
+      (isEmptyResult (tarjanCheck sinkSucc [0] sinkMarks (derivedExpand sinkSucc sinkMarks) 1))
     let d ← check "at zero marks any cycle is accepting"
-      (! isEmptyResult (tarjanCheck pairSucc [0] (fun _ _ => ∅) 0))
+      (! isEmptyResult (tarjanCheck pairSucc [0] (fun _ _ => ∅) (derivedExpand pairSucc (fun _ _ => ∅)) 0))
     let e ← check "a mark index no edge carries leaves the ring empty"
-      (isEmptyResult (tarjanCheck ringSucc [0] ringMarks 2))
+      (isEmptyResult (tarjanCheck ringSucc [0] ringMarks (derivedExpand ringSucc ringMarks) 2))
     IO.println "  the ring witness, re-validated against the graph:"
-    let ws ← checkWitness ringSucc ringMarks 1 (tarjanCheck ringSucc [0] ringMarks 1)
+    let ws ← checkWitness ringSucc ringMarks 1
+      (tarjanCheck ringSucc [0] ringMarks (derivedExpand ringSucc ringMarks) 1)
       -- one generated non-empty case, re-validated the same way
     let ws2 ← match cases.find? (fun (n, seed, k) =>
-        k > 1 && ! isEmptyResult (tarjanCheck (genSucc n seed) [0] (genMarks seed k) k)) with
+        k > 1 && ! isEmptyResult (tarjanCheck (genSucc n seed) [0] (genMarks seed k)
+          (derivedExpand (genSucc n seed) (genMarks seed k)) k)) with
       | none => check "a generated case is non-empty" false >>= (pure [·])
       | some (n, seed, k) => do
         IO.println s!"  a generated witness at n={n} seed={seed} marks={k}:"
         checkWitness (genSucc n seed) (genMarks seed k) k
-          (tarjanCheck (genSucc n seed) [0] (genMarks seed k) k)
+          (tarjanCheck (genSucc n seed) [0] (genMarks seed k)
+            (derivedExpand (genSucc n seed) (genMarks seed k)) k)
     let j ← check "the enumeration matches brute-force mutual reachability on every generated graph"
       ((sizes.flatMap fun n => seeds.map fun seed => (n, seed)).all fun (n, seed) => enumAgrees n seed)
     let k ← check "the enumeration partitions the reachable states"

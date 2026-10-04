@@ -86,13 +86,14 @@ def report : IO Unit :=
     let a ← check "UPDATE reports no counterexample for a mark-free SCC" (closing.2 == false)
     let b ← check "the hint range is the SCC itself" ((dijkstraSccHint closing.1).toList.mergeSort (· < ·) == [1, 2])
     let c ← check "entry-edge mark alone is not accepting"
-      (isEmptyResult (dijkstraCheck entrySuccs [0] entryMarks 1))
+      (isEmptyResult (dijkstraCheck entrySuccs [0] entryMarks (derivedExpand entrySuccs entryMarks) 1))
     let d ← check "real accepting SCC behind it is found"
-      (!isEmptyResult (dijkstraCheck behindSuccs [0] behindMarks 1))
+      (!isEmptyResult (dijkstraCheck behindSuccs [0] behindMarks (derivedExpand behindSuccs behindMarks) 1))
     let e ← check "same answer with successors reordered"
-      (!isEmptyResult (dijkstraCheck behindSuccsSwapped [0] behindMarks 1))
+      (!isEmptyResult (dijkstraCheck behindSuccsSwapped [0] behindMarks
+        (derivedExpand behindSuccsSwapped behindMarks) 1))
     let f ← check "internal tree-edge mark still accepting"
-      (!isEmptyResult (dijkstraCheck loopSuccs [0] loopMarks 1))
+      (!isEmptyResult (dijkstraCheck loopSuccs [0] loopMarks (derivedExpand loopSuccs loopMarks) 1))
     return [a, b, c, d, e, f]
 
 #eval report

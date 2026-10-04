@@ -22,11 +22,13 @@ open LTLLib LTLLib.Tests
 def tgbaOf (φ : Formula String) : Option (TGBA String) := ltl3ba (φ.toNNF false)
 
 def bareEmpty (tgba : TGBA String) : Bool :=
-  isEmptyResult (dijkstraCheck tgba.succStates tgba.initialStates.toList tgba.edgeMarks tgba.numAcceptSets)
+  isEmptyResult (dijkstraCheck tgba.succStates tgba.initialStates.toList tgba.edgeMarks
+    (derivedExpand tgba.succStates tgba.edgeMarks) tgba.numAcceptSets)
 
 def degenEmpty (tgba : TGBA String) : Bool :=
   let tba := tgba.degeneralize
-  isEmptyResult (dijkstraCheck tba.succStates tba.initialStates.toList tba.edgeMarks tba.numAcceptSets)
+  isEmptyResult (dijkstraCheck tba.succStates tba.initialStates.toList tba.edgeMarks
+    (derivedExpand tba.succStates tba.edgeMarks) tba.numAcceptSets)
 
 /-- The formula's automaton and its degeneralization agree on emptiness, and the degeneralization has a single mark. -/
 def agrees (φ : Formula String) : Bool :=

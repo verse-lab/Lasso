@@ -35,7 +35,7 @@ def marks (a b : Nat) : Std.HashSet Nat :=
 
 def report : IO Unit :=
   verdict "connectors stay inside a non-maximal hint range" do
-    checkWitness succs marks 2 (dijkstraCheck succs [0] marks 2)
+    checkWitness succs marks 2 (dijkstraCheck succs [0] marks (derivedExpand succs marks) 2)
 
 #eval report
 
