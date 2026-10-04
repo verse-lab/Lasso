@@ -29,11 +29,14 @@ def check (name : String) (ok : Bool) : IO Bool := do
   IO.println s!"  {if ok then "ok  " else "FAIL"}  {name}"
   return ok
 
-/-- Print a test's header and its final verdict. -/
+/-- Print a test's header and its final verdict, then throw if any check failed. -/
 def verdict (title : String) (body : IO (List Bool)) : IO Unit := do
   IO.println s!"{title}:"
   let results ← body
-  IO.println (if results.all id then "PASS" else "FAIL")
+  let passed := results.all id
+  IO.println (if passed then "PASS" else "FAIL")
+  unless passed do
+    throw (IO.userError s!"Test failed: {title}")
 
 /-! ## Witness checking -/
 
