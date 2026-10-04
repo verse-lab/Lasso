@@ -105,10 +105,16 @@ def validWitness (seed : Nat) (φ : Formula String) : EmptinessResult (St × Nat
 /-! ## Agreement -/
 
 def crossOf (seed : Nat) (φ : Formula String) : EmptinessResult ((St × Nat) × Bool) :=
-  modelCheckUnderFairness φ genInit (genSucc seed) (genLabel seed) (genFR seed)
+  modelCheckUnderFairness φ genInit (LSys.unlabelled (genSucc seed)) (genLabel seed)
 
 def pruneOf (seed : Nat) (φ : Formula String) : EmptinessResult (St × Nat) :=
-  modelCheckUnderFairnessPrune φ genInit (genSucc seed) (genLabel seed)
+  modelCheckUnderFairnessPrune φ genInit (LSys.unlabelled (genSucc seed)) (genLabel seed)
+
+/-- Every generated case meets the prune counterexample theorem's region hypothesis. -/
+theorem genRegions_stateOnly (seed : Nat) (φ : Formula String) :
+    ∀ ds ∈ (hoistFairness (φ.toNNF false).splitConj).1, ∀ d ∈ ds,
+      LSys.StateOnly (LSys.unlabelled (genSucc seed)) (genLabel seed) d.1.eval :=
+  fun _ _ d _ => LSys.stateOnly_of_unlabelled (genSucc seed) (genLabel seed) d.1.eval
 
 def cases : List (Nat × String × Formula String) :=
   seeds.flatMap fun seed => formulas.map fun (name, φ) => (seed, name, φ)
@@ -136,17 +142,23 @@ def pfFR : FiniteReach pfInit pfSucc :=
 def pfStrong : Formula String := .implies (gf atomA) (gf atomB)
 
 def pfCross (φ : Formula String) : EmptinessResult ((Two × Nat) × Bool) :=
-  modelCheckUnderFairness φ pfInit pfSucc pfLabel pfFR
+  modelCheckUnderFairness φ pfInit (LSys.unlabelled pfSucc) pfLabel
 
 def pfPrune (φ : Formula String) : EmptinessResult (Two × Nat) :=
-  modelCheckUnderFairnessPrune φ pfInit pfSucc pfLabel
+  modelCheckUnderFairnessPrune φ pfInit (LSys.unlabelled pfSucc) pfLabel
+
+/-- The hand-built model also has only state labels, including after totalization. -/
+theorem pfRegions_stateOnly (φ : Formula String) :
+    ∀ ds ∈ (hoistFairness (φ.toNNF false).splitConj).1, ∀ d ∈ ds,
+      LSys.StateOnly (LSys.unlabelled pfSucc) pfLabel d.1.eval :=
+  fun _ _ d _ => LSys.stateOnly_of_unlabelled pfSucc pfLabel d.1.eval
 
 /-! ## Explored counts
 
 `0 → 1 → 2 → 0` with a second edge `2 → 1`, the only acceptance mark on `2 → 0`, and one conjunct whose single
-option is the region "not state 0". The maximal SCC covers the mark but violates the region, so it prunes to
-`{1, 2}`, which is an SCC that no longer carries the mark and is discarded. Both searches run, so the reported
-count has to be their sum. -/
+option is the region "not state 0". The maximal SCC covers the mark but violates the region. The pruned search
+keeps the candidate's states but removes the outgoing edges of `0`, leaving a dead end at `0` and an SCC `{1, 2}`
+whose internal edges no longer carry the mark. Both searches run, so the reported count has to be their sum. -/
 
 def accSuccs : Nat → Array Nat
   | 0 => #[1]
@@ -155,23 +167,26 @@ def accSuccs : Nat → Array Nat
 
 def accMarks (s t : Nat) : Std.HashSet Nat := if s == 2 && t == 0 then {0} else ∅
 
-def accSpec : StreettSpec Nat Nat where
+/-- A step reads its source state; restricting it removes both its successor and its marks together. -/
+def accSpec : RStreettSpec Nat Nat where
   numMarks := 1
-  label := id
+  regionSuccs := fun r s => if r s then accSuccs s else #[]
+  regionMarks := fun r s t => if r s then accMarks s t else ∅
   conjuncts := #[#[{ region := fun s => s != 0, marks := #[] }]]
+  regionExpand_coherent := fun _ => derivedExpand_coherent _ _
 
 def accCompiled : CompiledSpec Nat Nat := CompiledSpec.of accSpec
 
 /-- The count each search contributes on its own. -/
 def accParts : Nat × Nat :=
-  let (_, aux) := streettRun accCompiled accSuccs accMarks [0]
+  let (_, aux) := streettRun accCompiled 0 accSuccs accMarks (accSpec.regionExpand (fun _ => true)) [0]
   let top := aux.live.size + aux.dead.size
-  match pruneLoop accCompiled accSuccs accMarks 0 aux.pending.toList with
+  match pruneLoop accCompiled accSpec 0 aux.pending.toList with
   | some (_, n) => (top, n)
   | none => (top, 0)
 
 def accTotal : Nat :=
-  match streettCheck accCompiled accSuccs accMarks [0] with
+  match streettCheck accCompiled accSuccs accMarks (accSpec.regionExpand (fun _ => true)) [0] with
   | .empty n => n
   | .nonEmpty _ _ => 0
 

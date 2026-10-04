@@ -25,9 +25,9 @@ variable {State : Type u} {L : Type w} [BEq State] [Hashable State]
 
 /-! ## Status -/
 
-example (cs : CompiledSpec State L) (aux) (q : State) :
-    (streettOps cs).getStatus aux q =
-      liveStatusOf ((streettView cs).liveIndex aux) ((streettView cs).dead aux) q := rfl
+example (cs : CompiledSpec State L) (curRegions : Nat) (aux) (q : State) :
+    (streettOps cs curRegions).getStatus aux q =
+      liveStatusOf ((streettView cs curRegions).liveIndex aux) ((streettView cs curRegions).dead aux) q := rfl
 
 example (numMarks : Nat) (aux : TarjanAux State) (q : State) :
     (tarjanOps numMarks).getStatus aux q =
@@ -35,15 +35,17 @@ example (numMarks : Nat) (aux : TarjanAux State) (q : State) :
 
 /-! ## PUSH -/
 
-example (cs : CompiledSpec State L) (aux) (q : State) (m) :
-    (streettView cs).live ((streettOps cs).push aux q m).1 = ((streettView cs).live aux).push q := rfl
+example (cs : CompiledSpec State L) (curRegions : Nat) (aux) (q : State) (m) :
+    (streettView cs curRegions).live ((streettOps cs curRegions).push aux q m).1 =
+      ((streettView cs curRegions).live aux).push q := rfl
 
-example (cs : CompiledSpec State L) (aux) (q : State) (m) :
-    (streettView cs).posNat ((streettOps cs).push aux q m).2 = ((streettView cs).live aux).size := rfl
+example (cs : CompiledSpec State L) (curRegions : Nat) (aux) (q : State) (m) :
+    (streettView cs curRegions).posNat ((streettOps cs curRegions).push aux q m).2 =
+      ((streettView cs curRegions).live aux).size := rfl
 
-example (cs : CompiledSpec State L) (aux) (q : State) (m) :
-    (streettView cs).lowlinks ((streettOps cs).push aux q m).1 =
-      ((streettView cs).lowlinks aux).push ((streettView cs).live aux).size := by
+example (cs : CompiledSpec State L) (curRegions : Nat) (aux) (q : State) (m) :
+    (streettView cs curRegions).lowlinks ((streettOps cs curRegions).push aux q m).1 =
+      ((streettView cs curRegions).lowlinks aux).push ((streettView cs curRegions).live aux).size := by
   obtain ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
   simp [streettView, streettOps, streettPush]
 
@@ -54,11 +56,11 @@ example (numMarks : Nat) (aux : TarjanAux State) (q : State) (m) :
 
 /-! ## UPDATE -/
 
-example (cs : CompiledSpec State L) (aux) (m) (d : State) (ll)
-    (h : ((streettView cs).lowlinks aux).back? = some ll) :
-    (streettView cs).lowlinks ((streettOps cs).update aux m d).1 =
-      ((streettView cs).lowlinks aux).pop.push
-        (min ll (((streettView cs).liveIndex aux).getD d 0)) := by
+example (cs : CompiledSpec State L) (curRegions : Nat) (aux) (m) (d : State) (ll)
+    (h : ((streettView cs curRegions).lowlinks aux).back? = some ll) :
+    (streettView cs curRegions).lowlinks ((streettOps cs curRegions).update aux m d).1 =
+      ((streettView cs curRegions).lowlinks aux).pop.push
+        (min ll (((streettView cs curRegions).liveIndex aux).getD d 0)) := by
   obtain ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
   simp only [streettView, Array.back?_map, Option.map_eq_some_iff] at h
   obtain ⟨⟨ll', acc⟩, hb, rfl⟩ := h
@@ -74,19 +76,20 @@ example (numMarks : Nat) (aux : TarjanAux State) (m) (d : State) (ll)
   simp [tarjanView, tarjanOps, tarjanUpdate, hb, Array.map_pop]
 
 -- An empty frame stack is the case the guard exists for, both refinements leaving the state untouched.
-example (cs : CompiledSpec State L) (aux) (m) (d : State)
-    (h : ((streettView cs).lowlinks aux).back? = none) :
-    (streettView cs).lowlinks ((streettOps cs).update aux m d).1 = (streettView cs).lowlinks aux := by
+example (cs : CompiledSpec State L) (curRegions : Nat) (aux) (m) (d : State)
+    (h : ((streettView cs curRegions).lowlinks aux).back? = none) :
+    (streettView cs curRegions).lowlinks ((streettOps cs curRegions).update aux m d).1 =
+      (streettView cs curRegions).lowlinks aux := by
   obtain ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
   simp only [streettView, Array.back?_map, Option.map_eq_none_iff] at h
   simp [streettView, streettOps, streettUpdate, h]
 
 /-! ## POP -/
 
-example (cs : CompiledSpec State L) (succs edgeMarks) (aux) (step)
-    (h : (streettView cs).closes aux step) :
-    (streettView cs).lowlinks ((streettOps cs).pop succs edgeMarks aux step).1 =
-      ((streettView cs).lowlinks aux).pop := by
+example (cs : CompiledSpec State L) (curRegions : Nat) (succs edgeMarks) (aux) (step)
+    (h : (streettView cs curRegions).closes aux step) :
+    (streettView cs curRegions).lowlinks ((streettOps cs curRegions).pop succs edgeMarks aux step).1 =
+      ((streettView cs curRegions).lowlinks aux).pop := by
   obtain ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
   simp only [LowlinkView.closes, streettView, Array.back?_map, beq_iff_eq,
     Option.map_eq_some_iff] at h
@@ -95,14 +98,14 @@ example (cs : CompiledSpec State L) (succs edgeMarks) (aux) (step)
   subst hll'
   grind [streettPop, Array.map_pop, streettView, streettOps]
 
--- The triple is flushed at the closing position, whichever of POP's six branches ran.
-example (cs : CompiledSpec State L) (succs edgeMarks) (aux) (step)
-    (h : (streettView cs).closes aux step) :
-    ((streettView cs).live ((streettOps cs).pop succs edgeMarks aux step).1,
-        (streettView cs).liveIndex ((streettOps cs).pop succs edgeMarks aux step).1,
-        (streettView cs).dead ((streettOps cs).pop succs edgeMarks aux step).1) =
-      liveFlush ((streettView cs).live aux) ((streettView cs).liveIndex aux)
-        ((streettView cs).dead aux) ((streettView cs).posNat step.pos) := by
+-- A closing SCC is flushed whether discarded, accepted, or queued for pruning.
+example (cs : CompiledSpec State L) (curRegions : Nat) (succs edgeMarks) (aux) (step)
+    (h : (streettView cs curRegions).closes aux step) :
+    ((streettView cs curRegions).live ((streettOps cs curRegions).pop succs edgeMarks aux step).1,
+        (streettView cs curRegions).liveIndex ((streettOps cs curRegions).pop succs edgeMarks aux step).1,
+        (streettView cs curRegions).dead ((streettOps cs curRegions).pop succs edgeMarks aux step).1) =
+      liveFlush ((streettView cs curRegions).live aux) ((streettView cs curRegions).liveIndex aux)
+        ((streettView cs curRegions).dead aux) ((streettView cs curRegions).posNat step.pos) := by
   obtain ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
   simp only [LowlinkView.closes, streettView, Array.back?_map, beq_iff_eq,
     Option.map_eq_some_iff] at h
@@ -110,19 +113,19 @@ example (cs : CompiledSpec State L) (succs edgeMarks) (aux) (step)
   have hll' : ll = step.pos := by simpa using hll
   by_cases hacc : acc != fullAccMask cs.numMarks
   · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_pos hacc]; rfl
-  · rcases hfu : firstUnsatisfied cs (scanOptions cs live step.pos).1
-        (scanOptions cs live step.pos).2 with _ | opts
+  · rcases hfu : firstUnsatisfied cs (scanFrame cs succs live step.pos).1
+        (scanFrame cs succs live step.pos).2 with _ | opts
     · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_neg hacc, hfu]; rfl
     · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_neg hacc, hfu]; rfl
 
 -- The merging POP, both branches. With no parent frame the closing lowlink is dropped rather than folded.
-example (cs : CompiledSpec State L) (succs edgeMarks) (aux) (step) (ll)
-    (hclose : (streettView cs).closes aux step = false)
-    (hb : ((streettView cs).lowlinks aux).back? = some ll) :
-    (streettView cs).lowlinks ((streettOps cs).pop succs edgeMarks aux step).1 =
-      match ((streettView cs).lowlinks aux).pop.back? with
-      | none => ((streettView cs).lowlinks aux).pop
-      | some pll => ((streettView cs).lowlinks aux).pop.pop.push (min pll ll) := by
+example (cs : CompiledSpec State L) (curRegions : Nat) (succs edgeMarks) (aux) (step) (ll)
+    (hclose : (streettView cs curRegions).closes aux step = false)
+    (hb : ((streettView cs curRegions).lowlinks aux).back? = some ll) :
+    (streettView cs curRegions).lowlinks ((streettOps cs curRegions).pop succs edgeMarks aux step).1 =
+      match ((streettView cs curRegions).lowlinks aux).pop.back? with
+      | none => ((streettView cs curRegions).lowlinks aux).pop
+      | some pll => ((streettView cs curRegions).lowlinks aux).pop.pop.push (min pll ll) := by
   obtain ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
   simp only [streettView, Array.back?_map, Option.map_eq_some_iff] at hb
   obtain ⟨⟨ll', acc⟩, hbk, hll⟩ := hb
@@ -143,11 +146,11 @@ example (cs : CompiledSpec State L) (succs edgeMarks) (aux) (step) (ll)
 /-! ## Initial state -/
 
 -- `init_status` is what makes every state start `.unknown`, so it is pinned at both.
-example (cs : CompiledSpec State L) :
-    (streettView cs).live (streettOps cs).initAux = #[] ∧
-      (∀ s, s ∉ (streettView cs).dead (streettOps cs).initAux) ∧
-      (streettView cs).lowlinks (streettOps cs).initAux = #[] ∧
-      (∀ q, (streettOps cs).getStatus (streettOps cs).initAux q = .unknown) :=
+example (cs : CompiledSpec State L) (curRegions : Nat) :
+    (streettView cs curRegions).live (streettOps cs curRegions).initAux = #[] ∧
+      (∀ s, s ∉ (streettView cs curRegions).dead (streettOps cs curRegions).initAux) ∧
+      (streettView cs curRegions).lowlinks (streettOps cs curRegions).initAux = #[] ∧
+      (∀ q, (streettOps cs curRegions).getStatus (streettOps cs curRegions).initAux q = .unknown) :=
   ⟨rfl, by simp [streettView, streettOps, streettInitAux],
    by simp [streettView, streettOps, streettInitAux],
    by simp [streettOps, streettGetStatus, liveStatusOf, streettInitAux]⟩
