@@ -308,7 +308,6 @@ about witness states, so the fallback is never taken. -/
 BFS, the cycle's rebuild and the lasso validation — never by a search. `regionExpand` is the spec's
 restricted expansion *with bits*, which the candidate searches walk. -/
 @[expose] def streettCheckF (cs : CompiledSpec State L) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (initialStates : List State) : EmptinessResult State :=
@@ -344,7 +343,7 @@ the marks shifted above the regions — so that the scan's own `testBit` lemmas 
   (scanOptionsAt cs lab 0 ((1 <<< cs.numOptions) - 1) 0).1 |||
     ((scanOptionsAt cs lab 0 ((1 <<< cs.numOptions) - 1) 0).2 <<< cs.numOptions)
 
-omit [Hashable State] in
+omit [Hashable State] [BEq State] in
 theorem CompiledSpec.edgeBits_testBit_lt (cs : CompiledSpec State L) (lab : State × State)
     {b : Nat} (hb : b < cs.numOptions) :
     (cs.edgeBits lab).testBit b = true ↔ cs.regions[b]! lab = true := by
@@ -961,6 +960,7 @@ theorem CompiledSpec.letterBits_testBit (cs : CompiledSpec State L) (hwf : cs.WF
   · rw [if_neg hr]
     simp [Nat.zero_testBit, hr]
 
+omit [Hashable State] in
 /-- A letter inside a candidate's region contributes the same bits there as at the spec it was derived
 from: `letterBitsFrom` reads only the options' own regions and marks, which recompiling does not touch,
 and the hoisted test passes on both sides. -/
@@ -2069,7 +2069,7 @@ theorem pruneLoopF_le [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     rw [pruneLoop]
     simp only [Option.some.injEq] at hr
     rw [← hr]
-    exact ⟨rfl, fun a w ws wo C h => by simp [dropWS] at h⟩
+    exact ⟨rfl, fun a w ws wo C h => by simp at h⟩
   | cons c rest =>
     rw [pruneLoop]
     have hc := candidateRunF_eq cs hwf rspec regionExpandOpts hregO hbitsR c
@@ -2197,7 +2197,7 @@ theorem streettCheckF_eq [Inhabited State] [LawfulBEq State] [LawfulHashable Sta
     (hbitsR : cs.numOptions ≠ 0 → ∀ bits s, (regionExpandOpts (regionOf cs bits) s).2.2 =
       (cs.spec.regionSuccs (regionOf cs bits) s).map fun t => (cs.atBits bits).edgeBits (s, t))
     (initialStates : List State) :
-    streettCheckF cs succs edgeMarks expandOpts regionExpandOpts initialStates =
+    streettCheckF cs succs expandOpts regionExpandOpts initialStates =
       streettCheck cs succs edgeMarks expand initialStates := by
   unfold streettCheckF streettCheck
   have hrun := streettRunF_eq cs hwf 0 succs edgeMarks expand expandOpts hexp hexpO hbits initialStates

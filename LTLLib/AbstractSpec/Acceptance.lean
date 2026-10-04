@@ -264,10 +264,10 @@ private theorem degeneralize_forward {ξ : OmegaWord α}
         exact Fin.ext (Nat.mod_eq_of_lt h1k)
       obtain ⟨j₂, hm2_c0, _⟩ := hacc' (m₁ + 1)
       let m₂ := m₁ + 1 + j₂
-      suffices hsuff : ∀ w : Nat, (hw1 : 1 ≤ w) → (hwi : w ≤ i.val) →
+      suffices hsuff : ∀ w : Nat, 1 ≤ w → w ≤ i.val →
           (hwk : w < k) →
           ∃ p, m₁ + 1 ≤ p ∧ p < m₂ ∧
-            A.acceptSet ⟨w, by omega⟩ (σ_gba p) ∧
+            A.acceptSet ⟨w, hwk⟩ (σ_gba p) ∧
             A.mkCounter hk σ_gba (p + 1) =
               ⟨(w + 1) % k, Nat.mod_lt _ hk⟩ by
         obtain ⟨p, hp1, _, hpacc, _⟩ := hsuff i.val (by omega) (Nat.le_refl _) i.isLt

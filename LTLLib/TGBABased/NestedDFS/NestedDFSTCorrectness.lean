@@ -95,6 +95,7 @@ structure TOuterReachClosed
   -- Every frame's `remaining` list only ever holds genuine successors of that frame's state.
   stack_remaining_subset : ∀ p ∈ stack, ∀ t ∈ p.2.1, t ∈ succs p.1
 
+omit [LawfulBEq State] in
 /-- `TOuterReachClosed` only depends on `st.outerVisited`. -/
 theorem TOuterReachClosed.of_outerVisited_eq {succs : State → Array State} {st st'' : FNDFSState State}
     {stack : List (State × List State × Bool)}

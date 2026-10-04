@@ -39,8 +39,9 @@ python3 scripts/verify.py
 ```
 
 This checks source coverage, then builds the main library, tests, examples and retained
-historical proofs. Any coverage, compilation, test assertion or axiom-guard failure produces
-a nonzero exit status. Run this command locally when you want full verification.
+historical proofs. Any coverage, compilation, test assertion or axiom-guard failure, warning,
+or Lean panic produces a nonzero exit status, including panics replayed from Lake's build cache.
+Run this command locally when you want full verification.
 
 | Command | Scope |
 |---|---|

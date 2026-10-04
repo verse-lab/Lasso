@@ -54,7 +54,7 @@ def nodeLabel : Node → Std.HashSet String
 
 def nodeInit : List Node := [.start]
 
-def nodeFR : FiniteReach nodeInit nodeSucc :=
+theorem nodeFR : FiniteReach nodeInit nodeSucc :=
   .of_forall_mem [.start, .spin, .wait, .go] fun s => by cases s <;> simp
 
 /-- `◇g`. -/

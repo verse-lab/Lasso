@@ -42,7 +42,7 @@ def lightLabel : Light → Std.HashSet String
 def lightInit : List Light := [.red]
 
 /-- Finitely many states, so the reachable set is trivially finite. -/
-def lightFR : FiniteReach lightInit lightSucc :=
+theorem lightFR : FiniteReach lightInit lightSucc :=
   .of_forall_mem [.red, .yellow, .green] fun s => by cases s <;> simp
 
 /-- `□◇(red ∧ green)`, which no run of this system satisfies. -/

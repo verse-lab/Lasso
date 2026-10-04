@@ -88,6 +88,7 @@ inductive RRefuted (spec : RStreettSpec State L) : (L → Bool) → Std.HashSet 
           RRefuted spec (fun l => r l && opt.region l) M) :
       RRefuted spec r C
 
+omit [LawfulHashable State] in
 /-- A refusal depends only on the members of the candidate. -/
 theorem RRefuted.congr {spec : RStreettSpec State L} {r : L → Bool} {C C' : Std.HashSet State}
     (h : RRefuted spec r C) (hmem : ∀ s, s ∈ C ↔ s ∈ C') : RRefuted spec r C' := by
@@ -97,6 +98,7 @@ theorem RRefuted.congr {spec : RStreettSpec State L} {r : L → Bool} {C C' : St
     exact .pass sccs pick
       (henum.congr_init fun s => by simpa only [Std.HashSet.mem_toList] using hmem s) hpick hrec
 
+omit [LawfulHashable State] in
 /-- An empty candidate is refuted, since it has no SCC to report. -/
 theorem RRefuted.of_empty {spec : RStreettSpec State L} {r : L → Bool} {C : Std.HashSet State}
     (h : ∀ s, s ∉ C) : RRefuted spec r C := by
@@ -108,6 +110,7 @@ theorem RRefuted.of_empty {spec : RStreettSpec State L} {r : L → Bool} {C : St
 variable {spec : RStreettSpec State L} {succs : State → Array State}
   {edgeMarks : State → State → Std.HashSet Nat}
 
+omit [LawfulBEq State] [LawfulHashable State] in
 /-- A selection available on `B` is available on `B` read inside a candidate: the SCC is connected in, and
 covers its marks in, the candidate's own graph. The selection's region entails the candidate's, so every
 edge the selection admits is one the candidate keeps. -/
@@ -121,6 +124,7 @@ private theorem available_in_candGraph (hcompat : spec.Compat succs edgeMarks)
   exact ⟨hav.connected.restrict hg hB,
     (hav.covers.mono_marks fun s t m hm => hcompat.marks_mono hle s t m hm).restrict hg hB⟩
 
+omit [LawfulHashable State] in
 /-- A refuted candidate holds no fair SCC whose selection is narrower than the candidate's region,
 [SLDP09]'s prune read through [EL87]'s argument.
 
@@ -166,6 +170,7 @@ than on a candidate. -/
         t ∈ spec.regionSuccs (fun l => opt.region l && g l) s) →
       RRefuted spec opt.region M
 
+omit [LawfulHashable State] in
 /-- The whole check misses no fair SCC of the whole graph. -/
 theorem RRefutedFrom.no_fairSCC (hcompat : spec.Compat succs edgeMarks) {initialStates : List State}
     (h : RRefutedFrom spec succs edgeMarks initialStates)

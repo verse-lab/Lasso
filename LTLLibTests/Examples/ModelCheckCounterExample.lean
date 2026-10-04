@@ -60,7 +60,7 @@ def lightLabel : Light → Std.HashSet Prop'
 
 def lightInit : List Light := [.red]
 
-def lightFR : FiniteReach lightInit lightSucc :=
+theorem lightFR : FiniteReach lightInit lightSucc :=
   .of_forall_mem [.red, .yellow, .green] fun s => by cases s <;> simp
 
 

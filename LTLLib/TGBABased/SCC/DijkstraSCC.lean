@@ -137,14 +137,14 @@ entry's marks, and the settled root's entry marks stay out of `a`. -/
 private def dijkstraMergeRoots (dpos : Nat) (roots : Array RootEntry) (r a e : Nat) :
     Array RootEntry × Nat × Nat × Nat :=
   if dpos < r then
-    match h : roots.back? with
+    match _h : roots.back? with
     | none => (roots, r, a, e)
     | some ⟨r1, la, e1⟩ => dijkstraMergeRoots dpos roots.pop r1 (a ||| e ||| la) e1
   else (roots, r, a, e)
 termination_by roots.size
 decreasing_by
   have hne : roots.size > 0 := by
-    obtain ⟨ys, hys⟩ := Array.back?_eq_some_iff.mp h
+    obtain ⟨ys, hys⟩ := Array.back?_eq_some_iff.mp _h
     simp [hys]
   simp only [Array.size_pop]; omega
 
@@ -312,7 +312,7 @@ structure DijkstraRootsWF (aux : DijkstraAux State) : Prop where
   rootsMono : ∀ i j, i < j → j < aux.roots.size → (aux.roots[i]!).root < (aux.roots[j]!).root
   rootsLt : ∀ i, i < aux.roots.size → (aux.roots[i]!).root < aux.live.size
   -- the bottom range starts at position 0, and `live` is empty exactly when no candidate is open
-  rootsBase : ∀ h : 0 < aux.roots.size, (aux.roots[0]!).root = 0
+  rootsBase : 0 < aux.roots.size → (aux.roots[0]!).root = 0
   liveEmptyOfRootsEmpty : aux.roots.size = 0 → aux.live.size = 0
 
 /-- A live state always has a `roots`-range to sit inside. -/
@@ -375,7 +375,7 @@ theorem dijkstraRootsWF_push (aux : DijkstraAux State) (q : State) (marks : Std.
 private def RootsChain (roots : Array RootEntry) (bound : Nat) : Prop :=
   (∀ i, i < roots.size → (roots[i]!).root < bound) ∧
   (∀ i j, i < j → j < roots.size → (roots[i]!).root < (roots[j]!).root) ∧
-  (∀ h : 0 < roots.size, (roots[0]!).root = 0) ∧
+  (0 < roots.size → (roots[0]!).root = 0) ∧
   (roots.size = 0 → bound = 0)
 
 private theorem DijkstraRootsWF.chain_pop {aux : DijkstraAux State} (hwf : DijkstraRootsWF aux)
@@ -1239,7 +1239,7 @@ structure DijkstraRangeInv [Inhabited State] (succs : State → Array State)
   -- every open range is internally strongly connected
   connected : ∀ i, i < aux.roots.size → InternallyConnected succs (aux.range i)
   -- consecutive open ranges are tree-adjacent, range (i+1) was pushed as some range-i member's successor
-  chained : ∀ i, (h : i + 1 < aux.roots.size) → ∃ s ∈ aux.range i, ∃ t ∈ aux.range (i + 1), t ∈ succs s
+  chained : ∀ i, i + 1 < aux.roots.size → ∃ s ∈ aux.range i, ∃ t ∈ aux.range (i + 1), t ∈ succs s
   -- every bit of an open range's bitmask names a real edge with both endpoints inside that range
   bitSound : ∀ i, i < aux.roots.size → ∀ m, (aux.roots[i]!).acc.testBit m = true →
     ∃ s ∈ aux.range i, ∃ t ∈ aux.range i, t ∈ succs s ∧ m ∈ edgeMarks s t
@@ -2025,7 +2025,7 @@ theorem dijkstraOps_returns_none_fully_explored [Inhabited State] [LawfulBEq Sta
   genericDFS_returns_none_fully_explored (dijkstraOps numMarks) succs edgeMarks expand hexp (dijkstraLawful numMarks)
     (Reachable initialStates succs)
     (fun aux q hq hwf hgs => dijkstraOps_root_ne_none numMarks succs edgeMarks expand hexp initialStates fr aux q hq hwf hgs)
-    initialStates (fun q hq => Reachable.base hq)
+    initialStates (fun _ hq => Reachable.base hq)
     (genericDFSGo_ne_none (dijkstraOps numMarks) succs edgeMarks expand _ _)
     dijkstraWellFormed_init dijkstraGetStatus_initAux hnone
 
@@ -2896,7 +2896,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         · subst hieq
           intro s hs t ht
           left; rw [(hnewRangeIff s).mp hs, (hnewRangeIff t).mp ht]
-      have hchained' : ∀ i, (h : i + 1 < aux'.roots.size) →
+      have hchained' : ∀ i, i + 1 < aux'.roots.size →
           ∃ s ∈ aux'.range i, ∃ t ∈ aux'.range (i + 1), t ∈ succs s := by
         intro i hi
         rw [hsize'] at hi
@@ -3401,7 +3401,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         · exact Or.inl heq
         · exact Or.inr (hp.mono_succs
             (fun a b hab => sccSuccs_mono (fun x hx => (hrangeEqF i hi x).mpr hx) hab))
-      have hchained' : ∀ i, (h' : i + 1 < aux'.roots.size) →
+      have hchained' : ∀ i, i + 1 < aux'.roots.size →
           ∃ s ∈ aux'.range i, ∃ t ∈ aux'.range (i + 1), t ∈ succs s := by
         intro i hi
         rw [haux'sizeF] at hi
@@ -3598,7 +3598,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
         rw [haux'rootsNF] at hi
         rw [hrangeEqNF i hi]
         exact hrangeinv.connected i hi
-      have hchained' : ∀ i, (h' : i + 1 < aux'.roots.size) →
+      have hchained' : ∀ i, i + 1 < aux'.roots.size →
           ∃ s ∈ aux'.range i, ∃ t ∈ aux'.range (i + 1), t ∈ succs s := by
         intro i hi
         rw [haux'rootsNF] at hi

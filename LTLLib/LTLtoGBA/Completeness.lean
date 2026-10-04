@@ -116,7 +116,7 @@ private theorem satisfies_release_expand (ξ : OmegaWord α) (μ η : NNF α) :
   simp only [NNF.satisfies_release]
   intro h
   refine ⟨?_, ?_⟩
-  · have := h 0; simp [exec.drop] at this; exact this
+  · have := h 0; simp at this; exact this
   · by_cases hμ : NNF.satisfies ξ μ
     · exact Or.inl hμ
     · right; intro j

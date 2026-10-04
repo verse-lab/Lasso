@@ -139,9 +139,10 @@ structure TGBAConstructState (α : Type u) [BEq α] [Hashable α] where
   -- the outgoing transitions of every finished state, keyed by its number
   transitions : Std.HashMap Nat (Array (DNF α × Nat × Nat))
 
+-- Lean 4.32's module exporter needs the fixpoint body when inspecting partial_correctness.
 /-- Explore `e`, reusing its number if already visited, otherwise exploring every successor first and recording its
 own transitions last. -/
-def exploreState (cv : ConcreteVWAA α) (finals : Array Nat) (e : Nat) (st : TGBAConstructState α) :
+@[expose] def exploreState (cv : ConcreteVWAA α) (finals : Array Nat) (e : Nat) (st : TGBAConstructState α) :
     Option (Nat × TGBAConstructState α) := do
   match st.visited[e]? with
   | some id => pure (id, st)

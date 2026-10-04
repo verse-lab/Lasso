@@ -426,6 +426,7 @@ variable {initialStates : List State} [LawfulHashable State] (succs : State → 
   (fr : FiniteReach initialStates succs) (edgeMarks : State → State → Std.HashSet Nat)
   (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
 
+omit [BEq State] [Hashable State] [LawfulBEq State] [LawfulHashable State] in
 /-- The marks cached when a frame is pushed are exactly the marks of that state's outgoing edges.
 Immediate from `ExpandCoherent`, and the only thing the frame-cache invariant needs at a push. -/
 theorem expand_snd_toList (succs : State → Array State)

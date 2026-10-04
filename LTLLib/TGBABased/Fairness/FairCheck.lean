@@ -329,6 +329,7 @@ propositionally (`LSys.targets_totalize`). -/
       steps.any fun st => (TGBAProduct.fairConj gfs i).eval (LSys.letter base st.1))
     (ss, ss.map fun _ => m, #[])
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState] in
 theorem sysFairExpand_coherent (gfs : List (BoolFormula α))
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α) :
     ExpandCoherent (Product.totalizeSucc (LSys.targets sysSucc)) (sysFairMarks gfs sysSucc sysLabel)
@@ -349,6 +350,7 @@ so this keeps all of `s`'s steps or none, which is the state region the latch us
     (sysLabel : SysState → Std.HashSet α) : SysState → Array SysState :=
   LSys.targets (TGBAProduct.keptSteps sysSucc sysLabel fg.eval)
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState] in
 theorem mem_sysKeptSuccs_iff (fg : BoolFormula α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (s t : SysState) :
@@ -360,6 +362,7 @@ theorem mem_sysKeptSuccs_iff (fg : BoolFormula α)
   · rintro ⟨st, ⟨hst, he⟩, rfl⟩; exact ⟨st, hst, he, rfl⟩
   · rintro ⟨st, hst, he, rfl⟩; exact ⟨st, ⟨hst, he⟩, rfl⟩
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState] in
 theorem sysKeptSuccs_sub (fg : BoolFormula α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) :
     ∀ s t, t ∈ sysKeptSuccs fg sysSucc sysLabel s →
@@ -382,6 +385,7 @@ restricted targets *are* `keptSteps`' projection, so this one is still `rfl`. -/
       steps.any fun st => (TGBAProduct.fairConj gfs i).eval (LSys.letter base st.1))
     (ss, ss.map fun _ => m, #[])
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState] in
 theorem sysFairExpandR_coherent (fg : BoolFormula α) (gfs : List (BoolFormula α))
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α) :
     ExpandCoherent (sysKeptSuccs fg sysSucc sysLabel) (sysFairMarks gfs sysSucc sysLabel)
@@ -559,18 +563,22 @@ variable (sysStep : LSys.StepFn α SysState)
       steps.any fun st => (TGBAProduct.fairConj gfs i).eval (LSys.letter base st.1))
     (ss, ss.map fun _ => m, #[])
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState] in
 theorem sysFairMarksOfStep_eq' (gfs : List (BoolFormula α)) :
     sysFairMarksOfStep sysStep gfs
       = sysFairMarks gfs (fun s => (sysStep s).1) (fun s => (sysStep s).2) := rfl
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState] in
 theorem sysFairExpandOfStep_eq' (gfs : List (BoolFormula α)) :
     sysFairExpandOfStep sysStep gfs
       = sysFairExpand gfs (fun s => (sysStep s).1) (fun s => (sysStep s).2) := rfl
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState] in
 theorem sysKeptSuccsOfStep_eq' (fg : BoolFormula α) :
     sysKeptSuccsOfStep sysStep fg
       = sysKeptSuccs fg (fun s => (sysStep s).1) (fun s => (sysStep s).2) := rfl
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState] in
 theorem sysFairExpandROfStep_eq' (fg : BoolFormula α) (gfs : List (BoolFormula α)) :
     sysFairExpandROfStep sysStep fg gfs
       = sysFairExpandR fg gfs (fun s => (sysStep s).1) (fun s => (sysStep s).2) := rfl

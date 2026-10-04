@@ -50,7 +50,7 @@ def nodeLabel : Node → Std.HashSet String
 def nodeInit : List Node := [.entry]
 
 /-- Finitely many states, so the reachable set is trivially finite. -/
-def nodeFR : FiniteReach nodeInit nodeSucc :=
+theorem nodeFR : FiniteReach nodeInit nodeSucc :=
   .of_forall_mem [.entry, .gate, .a, .b] fun s => by cases s <;> simp
 
 /-- `◇goal`, which no run satisfies, so every run is a candidate counterexample. -/

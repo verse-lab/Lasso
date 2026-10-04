@@ -71,7 +71,7 @@ def label : Stage → Std.HashSet String
 
 def init : List Stage := [.idle]
 
-def fr : FiniteReach init succ :=
+theorem fr : FiniteReach init succ :=
   .of_forall_mem [.idle, .recv, .work, .emit, .bidle, .brecv, .bwork, .bemit] fun s => by cases s <;> simp
 
 def served : Formula String := .always (.eventually (.atom "served"))

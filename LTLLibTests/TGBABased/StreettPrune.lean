@@ -48,7 +48,7 @@ def genLabel (seed : Nat) (s : St) : Std.HashSet String :=
 
 def genInit : List St := [fin6 0]
 
-def genFR (seed : Nat) : FiniteReach genInit (genSucc seed) :=
+theorem genFR (seed : Nat) : FiniteReach genInit (genSucc seed) :=
   .of_forall_mem (List.finRange 6) List.mem_finRange
 
 /-! ## Formulas -/
@@ -136,7 +136,7 @@ abbrev Two := Fin 2
 def pfSucc (s : Two) : Array Two := if s == 0 then #[1] else #[0, 1]
 def pfLabel (s : Two) : Std.HashSet String := if s == 0 then {"a"} else ∅
 def pfInit : List Two := [0]
-def pfFR : FiniteReach pfInit pfSucc :=
+theorem pfFR : FiniteReach pfInit pfSucc :=
   .of_forall_mem (List.finRange 2) List.mem_finRange
 
 def pfStrong : Formula String := .implies (gf atomA) (gf atomB)

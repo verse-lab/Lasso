@@ -328,7 +328,6 @@ Reads a *labelled* system, but with an asymmetry between its two contracts that 
     -- §13.30: the position-carrying driver; `streettCheckP_eq` bridges it to `streettCheckF`.
     streettCheckP cs
       (TGBAProduct.getSuccessors tgba sysSucc sysLabel)
-      (TGBAProduct.edgeMarks tgba sysSucc sysLabel)
       (TGBAProduct.expandWithOpts tgba sysSucc sysLabel cs)
       (TGBAProduct.keptExpandWithOpts tgba sysSucc sysLabel cs)
       (TGBAProduct.initialStates tgba sysInit)
@@ -346,6 +345,7 @@ soundness theorem below transfers by one rewrite and none of them is restated. `
     (dss : List (List (NNF.FairDisjunct α))) : RStreettSpec (SysState × Nat) (Std.HashSet α) :=
   TGBAProduct.streettRSpecOfStep tgba sysStep tgba.numAcceptSets (hoistedOptions dss)
 
+omit [LawfulBEq SysState] [Inhabited SysState] in
 theorem streettRSpecOfStep_eq (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (dss : List (List (NNF.FairDisjunct α))) :
     streettRSpecOfStep tgba (fun s => (sysSucc s, sysLabel s)) dss
@@ -359,7 +359,6 @@ theorem streettRSpecOfStep_eq (tgba : TGBA α) (sysSucc : SysState → Array (LS
     let cs := CompiledSpec.of (streettRSpecOfStep tgba sysStep dss)
     streettCheckP cs
       (TGBAProduct.getSuccessorsOfStep tgba sysStep)
-      (TGBAProduct.edgeMarksOfStep tgba sysStep)
       (TGBAProduct.expandWithOptsOfStep tgba sysStep cs)
       (TGBAProduct.keptExpandWithOptsOfStep tgba sysStep cs)
       (TGBAProduct.initialStates tgba sysInit)
@@ -387,7 +386,7 @@ theorem modelCheckPruneSplit_eq [LawfulHashable SysState] (kept : Formula α)
         (TGBAProduct.initialStates tgba sysInit) := by
   unfold modelCheckPruneSplit
   rw [htg]
-  refine (streettCheckP_eq _ _ _ _ _ _).trans ?_
+  refine (streettCheckP_eq _ _ _ _ _).trans ?_
   exact streettCheckF_eq (CompiledSpec.of (streettRSpecOf tgba sysSucc sysLabel dss))
     (CompiledSpec.of_wf _) _ _ _ _
     (TGBAProduct.expand_coherent tgba sysSucc sysLabel)
@@ -711,6 +710,7 @@ everything else translated. -/
   let split := hoistFlat (φ.toNNF false).splitConj
   modelCheckPruneSplitOfStep (keptProperty split.2) split.1 sysInit sysStep
 
+omit [LawfulBEq α] [LawfulHashable α] in
 theorem modelCheckUnderFairnessFlatOfStep_eq (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α) :
     modelCheckUnderFairnessFlatOfStep φ sysInit (fun s => (sysSucc s, sysLabel s))

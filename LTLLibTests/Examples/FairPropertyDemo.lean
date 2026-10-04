@@ -60,7 +60,7 @@ def label : Spot → Std.HashSet String
 
 def init : List Spot := [.park]
 
-def fr : FiniteReach init succ :=
+theorem fr : FiniteReach init succ :=
   .of_forall_mem [.park, .hold, .carry, .drop] fun s => by cases s <;> simp
 
 /-- `□◇p`, the token is picked up infinitely often. -/

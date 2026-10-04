@@ -979,7 +979,7 @@ gives `cycleE` a restricted witness to pick realizations from. -/
   cycle := rc.cycle
   stem_nonempty := by simp
   cycle_nonempty := rc.cycle_nonempty
-  stem_head_initial := by simpa using List.head_mem _
+  stem_head_initial := by simp
   stem_chain := by intro i hi; simp at hi
   overlap := by simp
   cycle_chain := rc.cycle_chain

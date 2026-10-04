@@ -46,7 +46,7 @@ def stepLabel : Step → Std.HashSet String
 def stepInit : List Step := [.idle]
 
 /-- Finitely many states, so the reachable set is trivially finite. -/
-def stepFR : FiniteReach stepInit stepSucc :=
+theorem stepFR : FiniteReach stepInit stepSucc :=
   .of_forall_mem [.idle, .ready, .act] fun s => by cases s <;> simp
 
 /-- `◇goal`, which holds on every run that eventually leaves `ready`. -/

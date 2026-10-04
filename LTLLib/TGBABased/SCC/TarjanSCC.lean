@@ -253,7 +253,7 @@ The sequence of sets POP flushes, stated against the shared enumeration contract
   posNat := id
 
 /-- Tarjan's search obeys the shared lowlink discipline. -/
-def tarjanLowlinkLawful (numMarks : Nat) :
+theorem tarjanLowlinkLawful (numMarks : Nat) :
     LowlinkLawful (tarjanOps numMarks (State := State)) (tarjanView numMarks) where
   status := fun _ _ => rfl
   push_live := fun _ _ _ => rfl
@@ -460,7 +460,7 @@ theorem tarjan_sccHintSound [LawfulBEq State] [LawfulHashable State] [Inhabited 
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (hexp : ExpandCoherent succs edgeMarks expand)
-    (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
+    (initialStates : List State)
     (fr : FiniteReach initialStates succs) :
     SccHintSound (tarjanOps numMarks) succs edgeMarks expand numMarks initialStates := by
   intro anchor stem hfound
@@ -553,13 +553,13 @@ theorem tarjanCheck_nonEmpty_valid [LawfulBEq State] [LawfulHashable State] [Inh
     (numMarks : Nat) (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (hexp : ExpandCoherent succs edgeMarks expand)
-    (initialStates : List State) (hmarksBound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)
+    (initialStates : List State)
     (fr : FiniteReach initialStates succs)
     {stem loop : List State}
     (h : tarjanCheck succs initialStates edgeMarks expand numMarks = .nonEmpty stem loop) :
     ∃ ac : TAcceptingCycle initialStates succs edgeMarks numMarks, ac.stem = stem ∧ ac.cycle = loop.tail :=
   checkWithWitness_nonEmpty_valid (tarjanOps numMarks) succs edgeMarks expand numMarks initialStates
-    (tarjan_sccHintSound numMarks succs edgeMarks expand hexp initialStates hmarksBound fr) h
+    (tarjan_sccHintSound numMarks succs edgeMarks expand hexp initialStates fr) h
 
 /-- Completeness: an `.empty` answer proves no `TAcceptingCycle` exists. -/
 theorem tarjanCheck_empty_no_cycle [LawfulBEq State] [LawfulHashable State] [Inhabited State]
@@ -571,7 +571,7 @@ theorem tarjanCheck_empty_no_cycle [LawfulBEq State] [LawfulHashable State] [Inh
     {n : Nat} (h : tarjanCheck succs initialStates edgeMarks expand numMarks = .empty n) :
     ¬∃ _ac : TAcceptingCycle initialStates succs edgeMarks numMarks, True := by
   have hnone := checkWithWitness_empty_of_none (tarjanOps numMarks) succs edgeMarks expand numMarks initialStates
-    (tarjan_sccHintSound numMarks succs edgeMarks expand hexp initialStates hmarksBound fr) h
+    (tarjan_sccHintSound numMarks succs edgeMarks expand hexp initialStates fr) h
   intro hcyc
   obtain ⟨A, -⟩ := acceptingSCC_iff_acceptingCycle.mpr hcyc
   exact tarjan_no_acceptingSCC_of_none numMarks succs edgeMarks expand hexp initialStates hmarksBound fr hnone A
@@ -580,8 +580,8 @@ theorem tarjanCheck_empty_no_cycle [LawfulBEq State] [LawfulHashable State] [Inh
 def tarjanTChecker [LawfulBEq State] [LawfulHashable State] [Inhabited State] :
     TEmptinessChecker State where
   check := tarjanCheck
-  nonEmpty_valid := fun {succs initialStates edgeMarks expand numMarks _stem _loop} fr hexp hmarksBound h =>
-    tarjanCheck_nonEmpty_valid numMarks succs edgeMarks expand hexp initialStates hmarksBound fr h
+  nonEmpty_valid := fun {succs initialStates edgeMarks expand numMarks _stem _loop} fr hexp _ h =>
+    tarjanCheck_nonEmpty_valid numMarks succs edgeMarks expand hexp initialStates fr h
   empty_no_cycle := fun {succs initialStates edgeMarks expand numMarks _n} fr hexp hmarksBound h =>
     tarjanCheck_empty_no_cycle numMarks succs edgeMarks expand hexp initialStates hmarksBound fr h
 

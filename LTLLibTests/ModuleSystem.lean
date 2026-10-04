@@ -24,7 +24,9 @@ example (n : Nat) : n + 1 = n + 1 := by
 -- Check the actual exported environment, including definition-body boundaries.
 run_meta do
   let env ← Lean.getEnv
-  for name in #[`LTLLib.NNF.always, `LTLLib.NNF.satisfies] do
+  -- The fixpoint bodies are also needed when exporting partial_correctness metadata.
+  for name in #[`LTLLib.NNF.always, `LTLLib.NNF.satisfies,
+      `LTLLib.exploreState, `LTLLib.pruneLoopP] do
     unless (env.find? name).any (·.hasValue) do
       throwError "expected an exposed definition: {name}"
   for name in #[`LTLLib.NNF.subformulasDedup, `LTLLib.TGBA.edgeWitness] do

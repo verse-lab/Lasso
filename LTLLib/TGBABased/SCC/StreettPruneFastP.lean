@@ -41,6 +41,8 @@ def DFSStatusP.forget {Position : Type w} : DFSStatusP Position → DFSStatus
   | .live _ => .live
   | .unknown => .unknown
 
+-- As in DFSOps, Aux and Position deliberately have independent universes.
+set_option linter.checkUnivs false in
 /-- `DFSOps` whose `getStatus` carries the live position and whose `update` takes it. -/
 structure DFSOpsP (State : Type u) [BEq State] [Hashable State] where
   Aux : Type v
@@ -165,6 +167,7 @@ theorem liveStatusOfP_forget (liveIndex : Std.HashMap State Nat) (dead : Std.Has
     by_cases hd : dead.contains q = true <;>
       simp [DFSStatusP.forget, Std.HashMap.contains_eq_isSome_getElem?, h, hd]
 
+omit [LawfulBEq State] [LawfulHashable State] in
 theorem liveStatusOfP_live (liveIndex : Std.HashMap State Nat) (dead : Std.HashSet State) (q : State)
     (pos : Nat) (h : liveStatusOfP liveIndex dead q = .live pos) : liveIndex[q]? = some pos := by
   unfold liveStatusOfP at h
@@ -207,7 +210,8 @@ def candidateRunP (cs : CompiledSpec State L)
   streettRunP (cs.atBits c.regions) c.regions
     (fun s => filterExpand (regionExpand (c.region cs) s) c.states.contains) c.states.toList
 
-def pruneLoopP (cs : CompiledSpec State L)
+-- Lean 4.32's module exporter needs the fixpoint body when inspecting partial_correctness.
+@[expose] def pruneLoopP (cs : CompiledSpec State L)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     Nat → List (Candidate State) →
       Option (Option (State × Array State × Array (Array State) × Array Nat × Candidate State) × Nat)
@@ -222,7 +226,6 @@ def pruneLoopP (cs : CompiledSpec State L)
 partial_fixpoint
 
 @[expose] def streettCheckP (cs : CompiledSpec State L) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (initialStates : List State) : EmptinessResult State :=
@@ -523,12 +526,11 @@ theorem pruneLoopP_eq (cs : CompiledSpec State L)
 
 /-- The position-carrying driver computes what `streettCheckF` computes (§13.30). -/
 theorem streettCheckP_eq (cs : CompiledSpec State L) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (initialStates : List State) :
-    streettCheckP cs succs edgeMarks expand regionExpand initialStates =
-      streettCheckF cs succs edgeMarks expand regionExpand initialStates := by
+    streettCheckP cs succs expand regionExpand initialStates =
+      streettCheckF cs succs expand regionExpand initialStates := by
   unfold streettCheckP streettCheckF
   rw [streettRunP_eq]
   rcases streettRunF cs 0 expand initialStates with ⟨found?, aux⟩

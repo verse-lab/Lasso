@@ -49,7 +49,7 @@ def reachesLabel : Reaches → Std.HashSet String
 
 def reachesInit : List Reaches := [.a]
 
-def reachesFR : FiniteReach reachesInit reachesSucc :=
+theorem reachesFR : FiniteReach reachesInit reachesSucc :=
   .of_forall_mem [.a, .b] fun s => by cases s <;> simp
 
 /-! ## A system where `◇p` fails -/
@@ -73,8 +73,8 @@ def stuckLabel : Stuck → Std.HashSet String := fun _ => ∅
 
 def stuckInit : List Stuck := [.a]
 
-def stuckFR : FiniteReach stuckInit stuckSucc :=
-  .of_forall_mem [.a] fun s => by cases s <;> simp
+theorem stuckFR : FiniteReach stuckInit stuckSucc :=
+  .of_forall_mem [.a] fun s => by cases s; simp
 
 /-! ## Report -/
 

@@ -540,7 +540,7 @@ private theorem reachable_imp (tgba : TGBA α) (sysSucc : SysState → Array (LS
     exact hst2 ▸ Array.mem_map.mpr ⟨st, hst, rfl⟩
 
 /-- The product's own `FiniteReach` witness, from the caller's system-side one and `TGBA.WellFormed`. -/
-def finiteReach (tgba : TGBA α) (htwf : tgba.WellFormed)
+theorem finiteReach (tgba : TGBA α) (htwf : tgba.WellFormed)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysInit : List SysState) (sysFR : FiniteReach sysInit (LSys.targets sysSucc)) :
     FiniteReach (initialStates tgba sysInit) (getSuccessors tgba sysSucc sysLabel) :=
@@ -1061,6 +1061,7 @@ private def pick (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysSta
   ((realizations tgba sysSucc sysLabel p p').find? extra).getD
     (((∅ : Std.HashSet α), p'.1), junkTransition p'.2)
 
+omit [LawfulBEq SysState] [LawfulHashable SysState] in
 private theorem pick_spec (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p p' : SysState × Nat)
     (extra : LStep α SysState × TGBA.Transition α → Bool)
@@ -1080,6 +1081,7 @@ private def pickKept (tgba : TGBA α) (sysSucc : SysState → Array (LStep α Sy
   ((realizationsFrom tgba p.2 (sysLabel p.1) (keptSteps sysSucc sysLabel keep p.1) p').find?
     extra).getD (((∅ : Std.HashSet α), p'.1), junkTransition p'.2)
 
+omit [LawfulBEq SysState] [LawfulHashable SysState] in
 private theorem pickKept_spec (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) (p p' : SysState × Nat)
     (extra : LStep α SysState × TGBA.Transition α → Bool)
@@ -1122,6 +1124,7 @@ def edgeWitness (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysStat
       (mem_realizations_iff tgba sysSucc sysLabel p p' _).mp hmem
     exact ⟨⟨ht, hc, hst⟩, rfl, by simp only [toSpec, hst2, htgt], hextra⟩
 
+omit [LawfulHashable SysState] in
 /-- A restricted product step has a restricted realization. -/
 theorem exists_keptRealization_iff (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
@@ -1179,11 +1182,12 @@ def keptEdgeWitness (tgba : TGBA α) (sysSucc : SysState → Array (LStep α Sys
       (mem_realizationsFrom_iff tgba p.2 (sysLabel p.1) _ p' _).mp hmem
     exact ⟨⟨ht', hc', (mem_keptSteps.mp hst').1⟩, rfl, by simp only [toSpec, hst2, htgt], hextra⟩
 
+omit [LawfulHashable SysState] in
 /-- Every edge the restricted witness emits on a real restricted step reads a letter the restriction
 admits. This is what `cycleE_forall` turns into `◇□` on the run. -/
 private theorem keptEdgeWitness_letter (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
-    (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) (sysInit : List SysState)
-    (p p' : SysState × Nat) (hp' : p' ∈ keptSuccs tgba sysSucc sysLabel keep p)
+    (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool)
+    (p p' : SysState × Nat)
     (extra : LStep α SysState × TGBA.Transition α → Bool)
     (hex : ∃ r ∈ realizationsFrom tgba p.2 (sysLabel p.1) (keptSteps sysSucc sysLabel keep p.1) p',
       extra r = true) :
@@ -1203,7 +1207,7 @@ theorem keptEdgeWitness_stepEdge_letter (tgba : TGBA α)
         ((keptEdgeWitness tgba sysSucc sysLabel keep sysInit).stepEdge p p').2.1.1) = true := by
   rw [show ((keptEdgeWitness tgba sysSucc sysLabel keep sysInit).stepEdge p p').1 = p.1 from
     congrArg Prod.fst ((keptEdgeWitness tgba sysSucc sysLabel keep sysInit).stepEdge_spec hp').2.1]
-  refine keptEdgeWitness_letter tgba sysSucc sysLabel keep sysInit p p' hp' (fun _ => true) ?_
+  refine keptEdgeWitness_letter tgba sysSucc sysLabel keep p p' (fun _ => true) ?_
   obtain ⟨st, hst, t, ht, hc, h1, h2⟩ := (succsFrom_mem_iff _ _ _ _ _).mp hp'
   exact ⟨(st, t), (mem_realizationsFrom_iff _ _ _ _ _ _).mpr ⟨⟨hst, h1⟩, ht, h2, hc⟩, rfl⟩
 
@@ -1219,7 +1223,7 @@ theorem keptEdgeWitness_markEdge_letter (tgba : TGBA α)
   rw [show ((keptEdgeWitness tgba sysSucc sysLabel keep sysInit).markEdge p p' m).1 = p.1 from
     congrArg Prod.fst
       ((keptEdgeWitness tgba sysSucc sysLabel keep sysInit).markEdge_spec hlt hp' hm).2.1]
-  exact keptEdgeWitness_letter tgba sysSucc sysLabel keep sysInit p p' hp' _
+  exact keptEdgeWitness_letter tgba sysSucc sysLabel keep p p' _
     (exists_keptRealization_of_mark tgba sysSucc sysLabel keep p p' m hm)
 
 attribute [irreducible] keptEdgeWitness
@@ -1271,7 +1275,7 @@ end TGBAProduct
 /-! ## Lasso witness -/
 
 /-- The `TGBAProduct.toSpec` specialization of `TAcceptingCycle.toTValidLassoOf`. -/
-@[expose] def TAcceptingCycle.toTValidLassoProduct {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
+theorem TAcceptingCycle.toTValidLassoProduct {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
     [BEq SysState] [Hashable SysState] [LawfulBEq SysState] {tgba : TGBA α}
     {sysSucc : SysState → Array (LStep α SysState)} {sysLabel : SysState → Std.HashSet α}
     {sysInit : List SysState}

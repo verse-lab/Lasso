@@ -424,6 +424,7 @@ private theorem foldl_or_testBit' {β : Type w} (g : β → Nat) (b : Nat) :
       · exact Or.inl (Or.inr hby)
       · exact Or.inr ⟨y, hy, hby⟩
 
+omit [LawfulBEq SysState] [LawfulHashable SysState] in
 /-- A table built by folding `insert`s that accumulate, read back at one key, is the accumulation over
 exactly that key's entries — the rest of the fold never touches it. This is what lets the fused pass be
 compared against the per-successor folds `edgeMarksFrom` and `optBitsFor` perform: the two run over the
@@ -460,7 +461,7 @@ private theorem foldl_pair_snd {γ : Type w} {δ : Type w'} (h : Std.HashSet Nat
       (l.foldl (init := (a, c)) fun acc e => (h acc.1 e, f acc.2 e)).2
         = l.foldl (init := c) fun x e => f x e
   | [], _, _ => rfl
-  | e :: l, a, c => foldl_pair_snd h f l _ _
+  | _ :: l, _, _ => foldl_pair_snd h f l _ _
 
 /-- The first component, likewise. -/
 private theorem foldl_pair_fst {γ : Type w} {δ : Type w'} (h : Std.HashSet Nat → δ → Std.HashSet Nat)
@@ -469,7 +470,7 @@ private theorem foldl_pair_fst {γ : Type w} {δ : Type w'} (h : Std.HashSet Nat
       (l.foldl (init := (a, c)) fun acc e => (h acc.1 e, f acc.2 e)).1
         = l.foldl (init := a) fun x e => h x e
   | [], _, _ => rfl
-  | e :: l, a, c => foldl_pair_fst h f l _ _
+  | _ :: l, _, _ => foldl_pair_fst h f l _ _
 
 /-! ### The fused branch's obligations
 
@@ -479,6 +480,7 @@ arguments: the bits are a `Nat`, so `|||` being idempotent makes a bit-level ext
 enough, while the marks are a `Std.HashSet` that `ExpandCoherent` compares by *value*, so they need the
 triples reaching a target to be that target's realizations in the same order. -/
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [LawfulHashable SysState] in
 /-- Membership in the fused pass's triples: exactly the compatible (step, transition) pairs. Generic in
 the payload, so it applies whatever `simp` has made of the option-bit `if`. -/
 private theorem mem_fusedTriples {γ : Type w} (tgba : TGBA α)
@@ -499,6 +501,7 @@ private theorem mem_fusedTriples {γ : Type w} (tgba : TGBA α)
   · rintro ⟨st, hst, t, ht, hc, rfl⟩
     exact ⟨st, hst, Array.mem_filterMap.mpr ⟨t, ht, by rw [if_pos hc]⟩⟩
 
+omit [Hashable SysState] [LawfulHashable SysState] in
 /-- One step's contribution, when it does reach `p'`: the transitions it is compatible with that land on
 `p'.2`, in order. Proved on the transition list, elementwise, so neither side has to be coaxed into the
 other's normal form (the left is a `filterMap`, the right a `map` of a `filter`). -/
@@ -516,12 +519,13 @@ private theorem step_payload {γ : Type w} (lbl : Std.HashSet α) (tgt : SysStat
     · rw [List.filterMap_cons_some (b := ((tgt, t.target), mk t)) (by simp [hc])]
       by_cases htt : (t.target == p'.2) = true
       · have htt' : t.target = p'.2 := by simpa using htt
-        rw [List.filter_cons_of_pos (by simp [Prod.ext_iff, hs, htt']), List.map_cons, ih,
+        rw [List.filter_cons_of_pos (by simp [hs, htt']), List.map_cons, ih,
           List.filter_cons_of_pos (by simp [htt, hc]), List.map_cons]
       · rw [List.filter_cons_of_neg (by simp [Prod.ext_iff]; intro _; simpa using htt), ih,
           List.filter_cons_of_neg (by simp [htt])]
     · rw [List.filterMap_cons_none (by simp [hc]), ih, List.filter_cons_of_neg (by simp [hc])]
 
+omit [LawfulHashable SysState] in
 /-- The triples that reach `p'`, payload by payload, are `p'`'s realizations, in the same order.
 
 `realizationsFrom` filters the *steps* before descending into the transitions, while the fused pass keeps
@@ -551,7 +555,7 @@ private theorem fusedTriples_filter_payload {γ : Type w} (tgba : TGBA α)
     · have hs' : st.2 = p'.1 := by simpa using hs
       rw [if_pos hs, List.flatMap_cons]
       congr 1
-      simp only [Array.toList_map, List.map_map, Function.comp_def]
+      simp only [List.map_map, Function.comp_def]
       exact step_payload (LSys.letter base st.1) st.2
         (fun t => mk st t) p' hs' (tgba.getSuccessors q).toList
 
@@ -568,6 +572,7 @@ private theorem fusedTriples_filter_payload {γ : Type w} (tgba : TGBA α)
         · simp [hc]
       rw [hnil, List.nil_append]
 
+omit [LawfulBEq SysState] [LawfulHashable SysState] in
 /-- The fused pass produces `succsFrom`'s successors, in its order.
 
 Stated on the branch that uses it: `succsFrom` keeps its own fast path for a source all of whose steps
@@ -584,6 +589,7 @@ theorem fusedExpandWithOpts_fst (tgba : TGBA α) (cs : CompiledSpec (SysState ×
   funext t
   split <;> rfl
 
+omit [LawfulHashable SysState] in
 /-- Its marks agree with the spec's, edge by edge.
 
 Unlike the bits, the marks have to agree as `Std.HashSet` **values**, not just up to membership —
@@ -619,6 +625,7 @@ theorem fusedExpandWithOpts_snd (tgba : TGBA α) (cs : CompiledSpec (SysState ×
   rw [hfold, ← Array.toList_map, ← Array.toList_filter, key]
   rw [Array.toList_map, List.foldl_map]
 
+omit [LawfulHashable SysState] in
 /-- Its option bits are `optBitsFor`'s.
 
 `optBitsFor` `|||`s a step's bits once per *step*, guarded by "some compatible transition reaches `p'`",

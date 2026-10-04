@@ -165,6 +165,7 @@ variable [BEq SysState] [Hashable SysState]
   let out := succsFrom tba p.2 base steps
   (out, out.map fun p' => edgeMarksFrom tba p.2 base steps p', #[])
 
+omit [BEq SysState] [Hashable SysState] in
 theorem getSuccessorsOfStep_eq' :
     getSuccessorsOfStep tba sysStep
       = getSuccessors tba (fun s => (sysStep s).1) (fun s => (sysStep s).2) := by
@@ -272,7 +273,7 @@ private theorem reachable_imp (tba : TBA α) (sysSucc : SysState → Array (LSte
     exact hst2 ▸ Array.mem_map.mpr ⟨st, hst, rfl⟩
 
 /-- The product's own `FiniteReach` witness, from the caller's system-side one and `TBA.WellFormed`. -/
-def finiteReach (tba : TBA α) (htwf : tba.WellFormed)
+theorem finiteReach (tba : TBA α) (htwf : tba.WellFormed)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysInit : List SysState) (sysFR : FiniteReach sysInit (LSys.targets sysSucc)) :
     FiniteReach (initialStates tba sysInit) (getSuccessors tba sysSucc sysLabel) :=
@@ -431,6 +432,7 @@ private def pick (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState
   ((realizations tba sysSucc sysLabel p p').find? extra).getD
     (((∅ : Std.HashSet α), p'.1), junkTransition p'.2)
 
+omit [LawfulBEq SysState] in
 private theorem pick_spec (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p p' : SysState × TBAState)
     (extra : LStep α SysState × TBA.Transition α → Bool)

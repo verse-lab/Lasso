@@ -69,7 +69,7 @@ def breakableLightLabel : BreakableLight → Std.HashSet Prop'
 /-- The system starts at `on`. -/
 def breakableLightInit : List BreakableLight := [.on]
 
-def breakableLightFR : FiniteReach breakableLightInit breakableLightSucc :=
+theorem breakableLightFR : FiniteReach breakableLightInit breakableLightSucc :=
   .of_forall_mem [.on, .off] fun s => by cases s <;> simp
 
 

@@ -138,7 +138,8 @@ theorem mem_latchMarks_iff (edgeMarks edgeMarksR : State → State → Std.HashS
       (q.2 = true ∧ (m ∈ edgeMarksR p.1 q.1 ∨ (p.2 = true ∧ m = numMarks))) := by
   obtain ⟨s, b⟩ := p
   obtain ⟨t, c⟩ := q
-  cases b <;> cases c <;> simp [latchMarks] <;> grind
+  cases b <;> cases c <;> simp [latchMarks]
+  grind
 
 theorem latchMarks_lt {edgeMarks edgeMarksR : State → State → Std.HashSet Nat} {numMarks : Nat}
     (hbound : ∀ s t, ∀ m ∈ edgeMarks s t, m < numMarks)

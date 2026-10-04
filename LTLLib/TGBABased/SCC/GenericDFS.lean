@@ -134,6 +134,8 @@ theorem DFSStep.succMarks_get {State : Type u} {Position : Type w} {step : DFSSt
     step.succMarks[step.idx]! = edgeMarks step.state step.succ[step.idx] := by
   rw [hm, getElem!_pos _ _ (by simpa using hi), Array.getElem_map]
 
+-- Aux and Position deliberately have independent universes; clients can choose unrelated types.
+set_option linter.checkUnivs false in
 /-- The four operations (GET_STATUS, PUSH, UPDATE, POP) a concrete SCC-based emptiness check provides. -/
 structure DFSOps (State : Type u) [BEq State] [Hashable State] where
   Aux : Type v      -- the refinement's private search state
@@ -1874,7 +1876,7 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
       cases hf : (ops.pop succs edgeMarks aux step).2 with
       | true =>
         cases rest with
-        | nil => simpa using hrec
+        | nil => simp
         | cons newTop rest' => simp
       | false => simpa using hrec
 

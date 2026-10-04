@@ -35,8 +35,9 @@ variable {α : Type u} {SysState : Type v} [BEq SysState] [Hashable SysState] [L
 
 /-! ## Checker obligations -/
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- The degeneralized product's `FiniteReach` witness. -/
-def modelCheckTBA_finiteReach (φ : Formula α) (sysInit : List SysState)
+theorem modelCheckTBA_finiteReach (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit (LSys.targets sysSucc)) {tgba : TGBA α} (htg : ltl3ba (φ.toNNF false) = some tgba) :
     FiniteReach (TBAProduct.initialStates tgba.degeneralize sysInit)
