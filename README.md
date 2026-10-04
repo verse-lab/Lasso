@@ -6,25 +6,27 @@ The core LTL-to-GBA algorithm (Gerth et al.) is ported from the verified Isabell
 
 ## Contents
 
-- [LTL to BA translation](#ltl-to-ba-translation)
-  - [Top-level results](#top-level-results)
-  - [Correctness link in the chain](#correctness-link-in-the-chain)
-  - [Algorithm pipeline](#algorithm-pipeline)
-- [Model checking](#model-checking)
-  - [Top-level results](#top-level-results-1)
-  - [Example usage](#example-usage)
-  - [Termination: `FiniteReach`](#termination-finitereach)
-  - [Correctness link in the chain](#correctness-link-in-the-chain-1)
-  - [Algorithm pipeline](#algorithm-pipeline-1)
-  - [Terminal states](#terminal-states)
-- [Satisfiability](#satisfiability)
-  - [Top-level results](#top-level-results-2)
-  - [Example usage](#example-usage-1)
-  - [Algorithm pipeline](#algorithm-pipeline-2)
-  - [Correctness link in the chain](#correctness-link-in-the-chain-2)
-- [Proof status](#proof-status)
-- [File organization](#file-organization)
-  - [Module descriptions](#module-descriptions)
+- [LTLLib](#ltllib)
+  - [Contents](#contents)
+  - [LTL to BA translation](#ltl-to-ba-translation)
+    - [Top-level results](#top-level-results)
+    - [Correctness link in the chain](#correctness-link-in-the-chain)
+    - [Algorithm pipeline](#algorithm-pipeline)
+  - [Model checking](#model-checking)
+    - [Top-level results](#top-level-results-1)
+    - [Example usage](#example-usage)
+    - [Termination: `FiniteReach`](#termination-finitereach)
+    - [Correctness link in the chain](#correctness-link-in-the-chain-1)
+    - [Algorithm pipeline](#algorithm-pipeline-1)
+    - [Terminal states](#terminal-states)
+  - [Satisfiability](#satisfiability)
+    - [Top-level results](#top-level-results-2)
+    - [Example usage](#example-usage-1)
+    - [Algorithm pipeline](#algorithm-pipeline-2)
+    - [Correctness link in the chain](#correctness-link-in-the-chain-2)
+  - [Proof status](#proof-status)
+  - [File organization](#file-organization)
+    - [Module descriptions](#module-descriptions)
 
 ## LTL to BA translation
 
@@ -286,6 +288,13 @@ LTLLib/
   Product.lean
   ModelCheck.lean
   Examples/          -- worked usage examples, referenced above
+LTLLibTests/
+  ModuleSystem.lean
+  TGBABased/
+    Degeneralization.lean
+    NestedDFS.lean
+    LTLtoTGBA/       -- translation tests and test-only helpers
+    ...             -- TGBA tests and shared test utilities
 ```
 
 ### Module descriptions

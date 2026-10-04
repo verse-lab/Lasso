@@ -1,6 +1,7 @@
 name = "LTLLib"
 version = "0.1.0"
 defaultTargets = ["LTLLib"]
+testDriver = "LTLLibTests"
 
 [[require]]
 name = "lentil"
@@ -14,6 +15,10 @@ rev = "v4.32.0"
 
 [[lean_lib]]
 name = "LTLLib"
+
+[[lean_lib]]
+name = "LTLLibTests"
+globs = ["LTLLibTests.+"]
 
 [[lean_exe]]
 name = "tgbabench"
