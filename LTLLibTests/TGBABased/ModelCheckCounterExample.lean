@@ -50,7 +50,7 @@ def ψ : Formula String := .always (.eventually (.and (.atom "red") (.atom "gree
 
 def report : IO Unit :=
   verdict "traffic light violates □◇(red ∧ green)" do
-    match modelCheckTGBA ψ lightInit lightSucc lightLabel lightFR with
+    match modelCheckTGBA ψ lightInit (LSys.unlabelled lightSucc) lightLabel with
     | .empty n =>
       IO.println s!"  FAIL  reported sys ⊨ ψ ({n} product states), expected a counterexample"
       return [false]

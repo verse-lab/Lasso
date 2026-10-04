@@ -93,9 +93,9 @@ def report : IO Unit :=
     let c ← check "□p carries one mark" (numMarksOf (.always (.atom "p")) == 1)
     let d ← check "□◇p carries one mark" (numMarksOf (.always (.eventually (.atom "p"))) == 1)
     let e ← check "◇p holds on a → b → b↺"
-      (isEmptyResult (modelCheckTGBA eventuallyP reachesInit reachesSucc reachesLabel reachesFR))
+      (isEmptyResult (modelCheckTGBA eventuallyP reachesInit (LSys.unlabelled reachesSucc) reachesLabel))
     let f ← check "◇p fails on a↺ with p nowhere"
-      (!isEmptyResult (modelCheckTGBA eventuallyP stuckInit stuckSucc stuckLabel stuckFR))
+      (!isEmptyResult (modelCheckTGBA eventuallyP stuckInit (LSys.unlabelled stuckSucc) stuckLabel))
     return [a, b, c, d, e, f]
 
 #eval report

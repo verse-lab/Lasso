@@ -94,20 +94,20 @@ def report : IO Unit :=
     IO.println s!"    G¬p ∧ strong → ◇g: {showSplit (.implies (.and gNotP strongFair) ψ)}"
     IO.println s!"    temporal → ◇g:  {showSplit (.implies temporalFair ψ)}"
     let a ← check "◇g fails with no assumption"
-      (! isEmptyResult (modelCheckUnderFairness ψ nodeInit nodeSucc nodeLabel nodeFR))
+      (! isEmptyResult (modelCheckUnderFairness ψ nodeInit (LSys.unlabelled nodeSucc) nodeLabel))
     let b ← check "◇g fails under the hoisted □◇tk alone, the spin loop survives"
-      (! isEmptyResult (modelCheckUnderFairness (.implies gfTk ψ) nodeInit nodeSucc nodeLabel nodeFR))
+      (! isEmptyResult (modelCheckUnderFairness (.implies gfTk ψ) nodeInit (LSys.unlabelled nodeSucc) nodeLabel))
     let c ← check "◇g fails under the kept □¬p alone, the wait stall survives"
-      (! isEmptyResult (modelCheckUnderFairness (.implies gNotP ψ) nodeInit nodeSucc nodeLabel nodeFR))
+      (! isEmptyResult (modelCheckUnderFairness (.implies gNotP ψ) nodeInit (LSys.unlabelled nodeSucc) nodeLabel))
     let d ← check "◇g holds under both, one hoisted and one kept"
       (isEmptyResult (modelCheckUnderFairness (.implies (.and gNotP gfTk) ψ)
-        nodeInit nodeSucc nodeLabel nodeFR))
+        nodeInit (LSys.unlabelled nodeSucc) nodeLabel))
     let e ← check "◇g holds under the strong fairness too, across its two disjuncts"
       (isEmptyResult (modelCheckUnderFairness (.implies (.and gNotP strongFair) ψ)
-        nodeInit nodeSucc nodeLabel nodeFR))
+        nodeInit (LSys.unlabelled nodeSucc) nodeLabel))
     let f ← check "◇never still fails under the full assumption"
       (! isEmptyResult (modelCheckUnderFairness (.implies (.and gNotP gfTk) ψnever)
-        nodeInit nodeSucc nodeLabel nodeFR))
+        nodeInit (LSys.unlabelled nodeSucc) nodeLabel))
     let g ← check "□◇tk is hoisted, □¬p is kept"
       ((hoistFairness (NNF.splitConj ((Formula.and gNotP gfTk).toNNF true))).1.length == 1 &&
         (hoistFairness (NNF.splitConj ((Formula.and gNotP gfTk).toNNF true))).2.length == 1)
@@ -120,7 +120,7 @@ def report : IO Unit :=
         (hoistFairness (NNF.splitConj (deMorgan.toNNF true))).2.length == 1)
     let n ← check "◇g holds under the de Morgan form of the same assumption"
       (isEmptyResult (modelCheckUnderFairness (.implies deMorgan ψ)
-        nodeInit nodeSucc nodeLabel nodeFR))
+        nodeInit (LSys.unlabelled nodeSucc) nodeLabel))
     let i ← check "the temporal fairness is not hoisted, it is kept"
       ((hoistFairness (NNF.splitConj (temporalFair.toNNF true))).1.isEmpty &&
         (hoistFairness (NNF.splitConj (temporalFair.toNNF true))).2.length == 1)
@@ -140,11 +140,11 @@ def report : IO Unit :=
       (hoistedKept (.implies gfTk gfEn) == (2, 0))
     -- The fail-fast, on both halves of a disjunct.
     let j ← check "◇□(p ∧ g) is infeasible, the region is empty"
-      (! disjunctFeasible (.and (.prop "p") (.prop "g")) [] nodeInit nodeSucc nodeLabel nodeFR)
+      (! disjunctFeasible (.and (.prop "p") (.prop "g")) [] nodeInit (LSys.unlabelled nodeSucc) nodeLabel)
     let k ← check "□◇p ∧ □◇g is infeasible, no one cycle carries both marks"
-      (! disjunctFeasible .tt [.prop "p", .prop "g"] nodeInit nodeSucc nodeLabel nodeFR)
+      (! disjunctFeasible .tt [.prop "p", .prop "g"] nodeInit (LSys.unlabelled nodeSucc) nodeLabel)
     let l ← check "□◇tk is feasible, both self-loops carry it"
-      (disjunctFeasible .tt [.prop "tk"] nodeInit nodeSucc nodeLabel nodeFR)
+      (disjunctFeasible .tt [.prop "tk"] nodeInit (LSys.unlabelled nodeSucc) nodeLabel)
     return [a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s]
 
 #eval report

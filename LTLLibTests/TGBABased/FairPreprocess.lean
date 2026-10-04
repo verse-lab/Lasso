@@ -98,12 +98,15 @@ where go : Nat → StdGen → List (NNF String × Lasso String)
 /-- The negated property `θ` on the lasso as a one-run system: the route answers `empty` iff the lasso violates `θ`. -/
 private def routeAgrees (θ : NNF String) (l : Lasso String) : Bool :=
   let φ : Formula String := .not θ.toFormula
-  isEmptyResult (modelCheckUnderFairnessDisjunctiveHoist φ [0] (fun i => #[l.next i]) l.wordAt) == !l.holdsNNF θ
+  isEmptyResult (modelCheckUnderFairnessDisjunctiveHoist φ [0]
+    (LSys.unlabelled (fun i => #[l.next i])) l.wordAt) == !l.holdsNNF θ
 
 private def routesAgree (θ : NNF String) (l : Lasso String) : Bool :=
   let φ : Formula String := .not θ.toFormula
-  isEmptyResult (modelCheckUnderFairnessDisjunctiveHoist φ [0] (fun i => #[l.next i]) l.wordAt) ==
-    isEmptyResult (modelCheckUnderFairnessRehoistPrune φ [0] (fun i => #[l.next i]) l.wordAt)
+  isEmptyResult (modelCheckUnderFairnessDisjunctiveHoist φ [0]
+    (LSys.unlabelled (fun i => #[l.next i])) l.wordAt) ==
+    isEmptyResult (modelCheckUnderFairnessRehoistPrune φ [0]
+      (LSys.unlabelled (fun i => #[l.next i])) l.wordAt)
 
 def report : IO Unit :=
   verdict "fairness preprocessing against Lasso.evalNNF" do

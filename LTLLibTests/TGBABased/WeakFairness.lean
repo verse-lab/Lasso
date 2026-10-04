@@ -60,7 +60,7 @@ def fair : List (BoolFormula String) := [BoolFormula.weakFairMark (.prop "en") (
 
 def report : IO Unit :=
   verdict "◇goal fails unfairly and holds under weak fairness" do
-    let unfair := modelCheckTGBA ψ stepInit stepSucc stepLabel stepFR
+    let unfair := modelCheckTGBA ψ stepInit (LSys.unlabelled stepSucc) stepLabel
     let a ← check "◇goal fails without fairness" (! isEmptyResult unfair)
     let b ← match unfair with
       | .empty _ => pure [false]
@@ -73,9 +73,9 @@ def report : IO Unit :=
         let b3 ← check "unfair loop stalls in ready" (cyc.all (· == Step.ready))
         pure [b1, b2, b3]
     let c ← check "◇goal holds under weak fairness"
-      (isEmptyResult (modelCheckTGBAFair ψ fair stepInit stepSucc stepLabel stepFR))
+      (isEmptyResult (modelCheckTGBAFair ψ fair stepInit stepSucc stepLabel))
     let d ← check "◇never still fails under weak fairness"
-      (! isEmptyResult (modelCheckTGBAFair ψnever fair stepInit stepSucc stepLabel stepFR))
+      (! isEmptyResult (modelCheckTGBAFair ψnever fair stepInit stepSucc stepLabel))
     return a :: c :: d :: b
 
 #eval report

@@ -58,7 +58,7 @@ def ψ : Formula String := .eventually (.atom "goal")
 
 def report : IO Unit :=
   verdict "FG region confines the cycle but not the stem" do
-    let confined := modelCheckTGBADisjunct ψ (.prop "r") [] nodeInit nodeSucc nodeLabel nodeFR
+    let confined := modelCheckTGBADisjunct ψ (.prop "r") [] nodeInit (LSys.unlabelled nodeSucc) nodeLabel
     let a ← check "cycle inside the r-region is found through a stem outside it"
       (! isEmptyResult confined)
     let b ← match confined with
@@ -76,13 +76,13 @@ def report : IO Unit :=
           (sys.any fun s => ! (nodeLabel s).contains "r")
         pure [b1, b2, b3, b4]
     let c ← check "p-region holds no cycle, so the disjunct is rejected"
-      (isEmptyResult (modelCheckTGBADisjunct ψ (.prop "p") [] nodeInit nodeSucc nodeLabel nodeFR))
+      (isEmptyResult (modelCheckTGBADisjunct ψ (.prop "p") [] nodeInit (LSys.unlabelled nodeSucc) nodeLabel))
     let d ← check "GF p on the cycle passes alongside FG r"
       (! isEmptyResult
-        (modelCheckTGBADisjunct ψ (.prop "r") [.prop "p"] nodeInit nodeSucc nodeLabel nodeFR))
+        (modelCheckTGBADisjunct ψ (.prop "r") [.prop "p"] nodeInit (LSys.unlabelled nodeSucc) nodeLabel))
     let e ← check "GF never fails alongside FG r"
       (isEmptyResult
-        (modelCheckTGBADisjunct ψ (.prop "r") [.prop "never"] nodeInit nodeSucc nodeLabel nodeFR))
+        (modelCheckTGBADisjunct ψ (.prop "r") [.prop "never"] nodeInit (LSys.unlabelled nodeSucc) nodeLabel))
     return a :: c :: d :: e :: b
 
 #eval report
