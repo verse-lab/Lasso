@@ -14,10 +14,10 @@ module
   Therefore, the degeneralized Büchi automata will haver 2x the states of
   the GBA.
 -/
-import LTLLib.Examples.BuildPrint
-meta import LTLLib.Examples.BuildPrint
+import LTLLibTests.Examples.BuildPrint
+meta import LTLLibTests.Examples.BuildPrint
 
-namespace LTLLib.Examples
+namespace LTLLib.Tests.Examples
 
 /-- Atomic propositions are plain strings for this example. -/
 abbrev Prop' := String
@@ -28,4 +28,4 @@ def ψ : Formula Prop' :=
 
 #eval runExample ψ    /- GBA: 10 / BA: 20 -/
 
-end LTLLib.Examples
+end LTLLib.Tests.Examples

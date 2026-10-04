@@ -17,10 +17,10 @@ module
     \A c \in Clients, r \in Resources : r \in unsat[c] ~> r \in alloc[c]
 
 -/
-import LTLLib.Examples.BuildPrint
-meta import LTLLib.Examples.BuildPrint
+import LTLLibTests.Examples.BuildPrint
+meta import LTLLibTests.Examples.BuildPrint
 
-namespace LTLLib.Examples
+namespace LTLLib.Tests.Examples
 
 abbrev Prop' := String
 
@@ -33,4 +33,4 @@ def φ3 : Formula Prop' := .always (.implies (.atom "r in unsat[c]") (.eventuall
 #eval runExample (.implies (.and (φ0) (.and (φ1) (φ2))) (φ3))               /- GBA: 32  / BA: 160   -/
 --#eval runExample (.not (.implies (.and (φ0) (.and (φ1) (φ2))) (φ3)))      /- GBA: 496 / BA: 2976  -/
 
-end LTLLib.Examples
+end LTLLib.Tests.Examples

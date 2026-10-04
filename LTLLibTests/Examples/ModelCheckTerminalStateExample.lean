@@ -25,10 +25,10 @@ module
 
   Formula: `□◇on` ("the light turns on infinitely often"): Does not hold.
 -/
-import LTLLib.Examples.MCPrint
-meta import LTLLib.Examples.MCPrint
+import LTLLibTests.Examples.MCPrint
+meta import LTLLibTests.Examples.MCPrint
 
-namespace LTLLib.Examples
+namespace LTLLib.Tests.Examples
 
 /-- A light that switches on once, then off, then dead-ends
   `off` is a genuinely terminal state -/
@@ -78,4 +78,4 @@ def breakableLightFR : FiniteReach breakableLightInit breakableLightSucc :=
 def ψ : Formula Prop' := .always (.eventually (.atom "on"))
 #eval report breakableLightLabel (modelCheck (S := S) ψ breakableLightInit breakableLightSucc breakableLightLabel breakableLightFR)
 
-end LTLLib.Examples
+end LTLLib.Tests.Examples

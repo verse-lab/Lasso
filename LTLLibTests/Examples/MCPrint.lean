@@ -8,7 +8,7 @@ public import LTLLib
 
 public section
 
-namespace LTLLib.Examples
+namespace LTLLib.Tests.Examples
 
 abbrev S := Std.HashSet (NNF String)
 
@@ -42,4 +42,4 @@ def report (label : σ → Std.HashSet String) : EmptinessResult (σ × β) → 
     IO.println "sys ⊭ ψ"
     IO.println (showCounterexample label stem loop)
 
-end LTLLib.Examples
+end LTLLib.Tests.Examples

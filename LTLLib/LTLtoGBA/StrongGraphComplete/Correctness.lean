@@ -2,7 +2,8 @@ module
 
 /-
   Superseded: depends on `StrongGraphComplete`, which is never discharged for `createGraph`'s actual output. See
-  `LTLtoGBA/Correctness.lean` for the live unconditional result. Kept for reference, nothing outside this folder imports it.
+  `LTLtoGBA/Correctness.lean` for the live unconditional result. Kept for reference and checked by
+  `LTLLibTests.HistoricalTheorems`; not re-exported by the public library root.
 
   Correctness of the LTL-to-GBA construction: the `expandOASpec` abstract automaton accepts ξ iff ξ ⊨ φ, given both
   soundness and completeness of the node graph.

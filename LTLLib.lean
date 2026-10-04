@@ -1,7 +1,7 @@
 module
 
 -- This module serves as the root of the `LTLLib` library.
--- Import modules here that should be built as part of the library.
+-- Import modules here that should be publicly re-exported; lakefile.toml selects build targets.
 
 -- Utilities replacing Mathlib
 public import LTLLib.Data.Nat
@@ -44,6 +44,7 @@ public import LTLLib.ModelCheck
 public import LTLLib.TGBA
 public import LTLLib.TGBABased.AbstractSpec.Acceptance
 public import LTLLib.TGBABased.LTLtoTGBA.GBAToTGBA
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBAInstance
 public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
 public import LTLLib.TGBABased.AbstractSpec.SCCTheory
 public import LTLLib.TGBABased.AbstractSpec.Lasso

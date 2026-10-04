@@ -33,8 +33,9 @@ module
 import LTLLib
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+meta import LTLLib.TGBABased.Fairness.FairRouter
 
-namespace LTLLib.Examples.FairProperty
+namespace LTLLib.Tests.Examples.FairProperty
 
 open LTLLib
 
@@ -93,7 +94,7 @@ def beforeSplit : EmptinessResult ((Spot × Nat) × Bool) :=
   let split := hoistFairness (pickup.toNNF true).splitConj
   checkDisjuncts
     (fun d => modelCheckTGBADisjunctFast
-      (Formula.assuming (split.2.map NNF.toFormula) deliver) d.1 d.2 init succ label fr)
+      (Formula.assuming (split.2.map NNF.toFormula) deliver) d.1 d.2 init (LSys.unlabelled succ) label)
     (NNF.crossAllDNF split.1)
 
 def verdict {α} : EmptinessResult α → String
@@ -105,10 +106,10 @@ def explored {α} : EmptinessResult α → String
   | .nonEmpty stem loop => s!"counterexample {stem.length}+{loop.length}"
 
 def report : IO Unit := do
-  IO.println s!"□◇q on its own          : {verdict (modelCheckUnderFairness deliver init succ label fr)}, \
-{explored (modelCheckUnderFairness deliver init succ label fr)}"
-  IO.println s!"□◇p → □◇q               : {verdict (modelCheckUnderFairness prop init succ label fr)}, \
-{explored (modelCheckUnderFairness prop init succ label fr)}"
+  IO.println s!"□◇q on its own          : {verdict (modelCheckUnderFairness deliver init (LSys.unlabelled succ) label)}, \
+{explored (modelCheckUnderFairness deliver init (LSys.unlabelled succ) label)}"
+  IO.println s!"□◇p → □◇q               : {verdict (modelCheckUnderFairness prop init (LSys.unlabelled succ) label)}, \
+{explored (modelCheckUnderFairness prop init (LSys.unlabelled succ) label)}"
   IO.println ""
   -- the assumption-only split leaves the property for the translator
   let beforeProp := Formula.assuming ((hoistFairness (pickup.toNNF true).splitConj).2.map NNF.toFormula) deliver
@@ -124,9 +125,9 @@ def report : IO Unit := do
 {(disjunctsOf prop).foldl (fun n (d : NNF.FairDisjunct String) => n + d.2.length) 0} mark(s)"
   let afterProp := keptProperty (keptOf prop)
   IO.println s!"  translator receives  ⊤, {tgbaStatesOf afterProp} TGBA states, {marksOf afterProp} mark(s)"
-  IO.println s!"  result               {verdict (modelCheckUnderFairness prop init succ label fr)}, \
-explored {explored (modelCheckUnderFairness prop init succ label fr)}"
+  IO.println s!"  result               {verdict (modelCheckUnderFairness prop init (LSys.unlabelled succ) label)}, \
+explored {explored (modelCheckUnderFairness prop init (LSys.unlabelled succ) label)}"
 
 #eval report
 
-end LTLLib.Examples.FairProperty
+end LTLLib.Tests.Examples.FairProperty

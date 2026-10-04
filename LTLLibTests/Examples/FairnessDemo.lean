@@ -19,10 +19,10 @@ module
     able to eat or not ("eat" action is never continuously enabled)
   - Strong fairness: Philosopher 0 must eventually eat.
 -/
-import LTLLib.Examples.BuildPrint
-meta import LTLLib.Examples.BuildPrint
+import LTLLibTests.Examples.BuildPrint
+meta import LTLLibTests.Examples.BuildPrint
 
-namespace LTLLib.Examples
+namespace LTLLib.Tests.Examples
 
 abbrev Prop' := String
 
@@ -40,4 +40,4 @@ def φ : Formula Prop' :=
 #eval runExample (.implies ψWeak φ)   /- 10 GBA states, 20 BA states -/
 #eval runExample (.implies ψStrong φ) /- 16 GBA states, 48 BA states -/
 
-end LTLLib.Examples
+end LTLLib.Tests.Examples

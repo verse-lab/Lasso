@@ -34,8 +34,9 @@ module
 import LTLLib
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+meta import LTLLib.TGBABased.Fairness.FairRouter
 
-namespace LTLLib.Examples.DeMorganSplit
+namespace LTLLib.Tests.Examples.DeMorganSplit
 
 open LTLLib
 
@@ -115,11 +116,11 @@ def report : IO Unit := do
 automaton {surface.2.2} states"
     IO.println s!"  NNF split    : {nnf.1} hoisted, {nnf.2.1} kept, automaton {nnf.2.2} states"
   IO.println ""
-  IO.println s!"□◇served, no assumption      : {isEmptyResult (modelCheckTGBA served init succ label fr)}"
-  IO.println s!"□◇served, cycle fairness only: {isEmptyResult (modelCheckUnderFairness (.implies cycleFair served) init succ label fr)}"
-  IO.println s!"□◇served, □¬broken only      : {isEmptyResult (modelCheckUnderFairness (.implies notBroken served) init succ label fr)}"
-  IO.println s!"□◇served, plain form         : {isEmptyResult (modelCheckUnderFairness (.implies plainForm served) init succ label fr)}"
-  IO.println s!"□◇served, de Morgan form     : {isEmptyResult (modelCheckUnderFairness (.implies deMorganForm served) init succ label fr)}"
+  IO.println s!"□◇served, no assumption      : {isEmptyResult (modelCheckTGBA served init (LSys.unlabelled succ) label)}"
+  IO.println s!"□◇served, cycle fairness only: {isEmptyResult (modelCheckUnderFairness (.implies cycleFair served) init (LSys.unlabelled succ) label)}"
+  IO.println s!"□◇served, □¬broken only      : {isEmptyResult (modelCheckUnderFairness (.implies notBroken served) init (LSys.unlabelled succ) label)}"
+  IO.println s!"□◇served, plain form         : {isEmptyResult (modelCheckUnderFairness (.implies plainForm served) init (LSys.unlabelled succ) label)}"
+  IO.println s!"□◇served, de Morgan form     : {isEmptyResult (modelCheckUnderFairness (.implies deMorganForm served) init (LSys.unlabelled succ) label)}"
 where
   isEmptyResult {σ} : EmptinessResult σ → String
     | .empty _ => "holds"
@@ -127,4 +128,4 @@ where
 
 #eval report
 
-end LTLLib.Examples.DeMorganSplit
+end LTLLib.Tests.Examples.DeMorganSplit

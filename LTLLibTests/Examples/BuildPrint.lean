@@ -12,7 +12,7 @@ public import LTLLib
 
 public section
 
-namespace LTLLib.Examples
+namespace LTLLib.Tests.Examples
 
 variable {α : Type u} [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
   [DecidableEq α] [ToString α]
@@ -120,4 +120,4 @@ def runTGBAExample (φ : Formula α) : IO Unit := do
     IO.println (printEdgeMarks tgba)
   | none => IO.println "createGraph failed (unexpected: createGraph_term guarantees success)"
 
-end LTLLib.Examples
+end LTLLib.Tests.Examples

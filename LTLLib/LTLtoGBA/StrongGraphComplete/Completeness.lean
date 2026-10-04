@@ -2,8 +2,8 @@ module
 
 /-
   Superseded: `StrongGraphComplete` is never discharged for `createGraph`'s actual output (see `LTLtoGBA/Completeness.lean`
-  for the property `createGraph` really establishes and the live proof chain). Kept for reference, nothing outside this
-  folder imports it.
+  for the property `createGraph` really establishes and the live proof chain). Kept for reference and checked by
+  `LTLLibTests.HistoricalTheorems`; not re-exported by the public library root.
 
   Completeness of the LTL-to-GBA construction: if ξ ⊨ φ and the node graph is complete, then the abstract automaton
   accepts ξ.

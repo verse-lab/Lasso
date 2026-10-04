@@ -12,12 +12,13 @@ module
   System: a three-state traffic light, cycling `red → green → yellow →
   red → …` forever, starting at `red`.
 
-  Formula: `□◇green` ("the light turns green infinitely often"): Holds
+  Formula: `□◇(red ∧ green)` ("the light turns red and green at the same time
+  infinitely often"): Does not hold.
 -/
-import LTLLib.Examples.MCPrint
-meta import LTLLib.Examples.MCPrint
+import LTLLibTests.Examples.MCPrint
+meta import LTLLibTests.Examples.MCPrint
 
-namespace LTLLib.Examples
+namespace LTLLib.Tests.Examples
 
 inductive Light where
   | red | yellow | green
@@ -52,9 +53,9 @@ def lightSucc : Light → Array Light
   | .yellow => #[.red]
 
 def lightLabel : Light → Std.HashSet Prop'
-  | .red => ∅
-  -- Only green is ever asserted
+  | .red => {"red"}
   | .green => {"green"}
+  -- Deliberately no atomic proposition for "yellow" in this example
   | .yellow => ∅
 
 def lightInit : List Light := [.red]
@@ -64,8 +65,8 @@ def lightFR : FiniteReach lightInit lightSucc :=
 
 
 
-/-- `□◇green`: the light turns green infinitely often. -/
-def ψ : Formula Prop' := .always (.eventually (.atom "green"))
+/-- `□◇(red ∧ green)` -/
+def ψ : Formula Prop' := .always (.eventually (.and (.atom "red") (.atom "green")))
 #eval report lightLabel (modelCheck (S := S) ψ lightInit lightSucc lightLabel lightFR)
 
-end LTLLib.Examples
+end LTLLib.Tests.Examples

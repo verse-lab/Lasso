@@ -29,8 +29,9 @@ module
 import LTLLib
 import LTLLib.TGBABased.LTLtoTGBA.Pipeline
 meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+meta import LTLLib.TGBABased.Fairness.FairRouter
 
-namespace LTLLib.Examples.NestedFairness
+namespace LTLLib.Tests.Examples.NestedFairness
 
 open LTLLib
 
@@ -97,13 +98,13 @@ def report : IO Unit := do
   IO.println s!"automaton with the nested fairness compiled: {tgbaStatesOf (.implies cycleFair served)} states"
   IO.println s!"automaton with the flat fairness compiled  : {tgbaStatesOf (.implies recvFair served)} states"
   IO.println ""
-  IO.println s!"□◇served, no assumption        : {verdict (modelCheckTGBA served init succ label fr)}"
-  IO.println s!"□◇served, under □◇recv          : {verdict (modelCheckUnderFairness (.implies recvFair served) init succ label fr)}"
-  IO.println s!"□◇served, under the cycle fairness: {verdict (modelCheckUnderFairness (.implies cycleFair served) init succ label fr)}"
+  IO.println s!"□◇served, no assumption        : {verdict (modelCheckTGBA served init (LSys.unlabelled succ) label)}"
+  IO.println s!"□◇served, under □◇recv          : {verdict (modelCheckUnderFairness (.implies recvFair served) init (LSys.unlabelled succ) label)}"
+  IO.println s!"□◇served, under the cycle fairness: {verdict (modelCheckUnderFairness (.implies cycleFair served) init (LSys.unlabelled succ) label)}"
   IO.println ""
-  IO.println s!"product states explored, hoisted : {exploredOf (modelCheckUnderFairness (.implies cycleFair served) init succ label fr)}"
-  IO.println s!"product states explored, compiled: {exploredOf (modelCheckTGBA (.implies cycleFair served) init succ label fr)}"
+  IO.println s!"product states explored, hoisted : {exploredOf (modelCheckUnderFairness (.implies cycleFair served) init (LSys.unlabelled succ) label)}"
+  IO.println s!"product states explored, compiled: {exploredOf (modelCheckTGBA (.implies cycleFair served) init (LSys.unlabelled succ) label)}"
 
 #eval report
 
-end LTLLib.Examples.NestedFairness
+end LTLLib.Tests.Examples.NestedFairness

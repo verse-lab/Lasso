@@ -5,10 +5,10 @@ module
 
   Formula: □(a → ◇b)  ("whenever `a` holds, `b` eventually holds").
 -/
-import LTLLib.Examples.BuildPrint
-meta import LTLLib.Examples.BuildPrint
+import LTLLibTests.Examples.BuildPrint
+meta import LTLLibTests.Examples.BuildPrint
 
-namespace LTLLib.Examples
+namespace LTLLib.Tests.Examples
 
 abbrev Prop' := String
 
@@ -17,4 +17,4 @@ def φ : Formula Prop' := .always (.implies (.atom "a") (.eventually (.atom "b")
 
 #eval runExample φ
 
-end LTLLib.Examples
+end LTLLib.Tests.Examples

@@ -8,10 +8,10 @@ module
   `φSat = □◇a ∧ □◇¬a`:    Satisfiable, e.g. by alternating a, ¬a, a, ¬a, ….
   `φUnsat = □◇(a ∧ ¬a)`:  Unsatisfiable, `a`/`¬a` can't hold together.
 -/
-import LTLLib.Examples.BuildPrint
-meta import LTLLib.Examples.BuildPrint
+import LTLLibTests.Examples.BuildPrint
+meta import LTLLibTests.Examples.BuildPrint
 
-namespace LTLLib.Examples
+namespace LTLLib.Tests.Examples
 
 abbrev Prop' := String
 
@@ -47,4 +47,4 @@ def report (φ : Formula Prop') : IO Unit := do
 #eval report φSat
 #eval report φUnsat
 
-end LTLLib.Examples
+end LTLLib.Tests.Examples

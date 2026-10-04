@@ -18,7 +18,7 @@ import LTLLib.TGBABased.ModelCheck
 import LTLLib.TGBABased.Satisfiability
 -- This proof test reuses the private traffic-light fixture.
 import all LTLLibTests.TGBABased.ModelCheckCounterExample
-public meta import Lean
+import LTLLibTests.GuardAxioms
 
 namespace LTLLib.Tests.PipelineTheorems
 
@@ -70,22 +70,6 @@ example {State : Type u} {succs : State → Array State} {edgeMarks : State → 
   exists_TAcceptingCycle_of_run fr hinit htrans (fun _ h => absurd h (by omega))
 
 /-! ## Axioms -/
-
-meta section
-
-open Lean Elab Command
-
-/-- Assert that each declaration depends only on axioms from the given list. -/
-elab "#guard_axioms " decls:ident,+ " ⊆ " "[" allowed:ident,* "]" : command => liftTermElabM do
-  let allowed ← allowed.getElems.mapM fun ax => realizeGlobalConstNoOverloadWithInfo ax
-  for decl in decls.getElems do
-    let name ← realizeGlobalConstNoOverloadWithInfo decl
-    let axioms ← collectAxioms name
-    let unexpected := axioms.filter (!allowed.contains ·)
-    unless unexpected.isEmpty do
-      throwErrorAt decl "unexpected axioms in {name}: {unexpected}"
-
-end
 
 #guard_axioms
   modelCheckTGBA_empty_unsat, modelCheckTGBA_nonEmpty_sat,
