@@ -1,8 +1,8 @@
 module
 
 /-
-  Proof-level tests, checked at elaboration time: the correctness theorems are usable on concrete inputs, and nothing in
-  the pipeline leaks an axiom.
+  Proof-level tests, checked at elaboration time: the correctness theorems are usable on concrete inputs, and the
+  checked declarations depend only on explicitly allowed axioms.
   - `dijkstraTChecker.check` is definitionally `dijkstraCheck`.
   - Both top-level theorem pairs apply to a concrete system given only its `FiniteReach`.
   - `exists_TAcceptingCycle_of_run` still produces a non-empty cycle at `numMarks = 0`, where the marks hypothesis is vacuous.
@@ -18,6 +18,7 @@ import LTLLib.TGBABased.ModelCheck
 import LTLLib.TGBABased.Satisfiability
 -- This proof test reuses the private traffic-light fixture.
 import all LTLLibTests.TGBABased.ModelCheckCounterExample
+public meta import Lean
 
 namespace LTLLib.Tests.PipelineTheorems
 
@@ -70,25 +71,32 @@ example {State : Type u} {succs : State → Array State} {edgeMarks : State → 
 
 /-! ## Axioms -/
 
-#print axioms modelCheckTGBA_empty_unsat
-#print axioms modelCheckTGBA_nonEmpty_sat
-#print axioms modelCheckNDFS_empty_unsat
-#print axioms modelCheckNDFS_nonEmpty_sat
-#print axioms modelCheckDijkstra_empty_unsat
-#print axioms modelCheckDijkstra_nonEmpty_sat
-#print axioms modelCheckFairDirect_empty_unsat
-#print axioms modelCheckFairDirect_nonEmpty_sat
-#print axioms modelCheckFairFNFCross_empty_unsat
-#print axioms modelCheckFairFNFCross_nonEmpty_sat
-#print axioms modelCheckFairFNFPrune_empty_unsat
-#print axioms modelCheckFairFNFPrune_nonEmpty_sat
-#print axioms modelCheckFair_empty_unsat
-#print axioms modelCheckFair_nonEmpty_sat
-#print axioms tgbaPipeline_empty_unsat
-#print axioms tgbaPipeline_nonEmpty_sat
-#print axioms dijkstraTChecker
-#print axioms exists_TAcceptingCycle_of_run
-#print axioms light_checked
-#print axioms pipeline_checked
+meta section
+
+open Lean Elab Command
+
+/-- Assert that each declaration depends only on axioms from the given list. -/
+elab "#guard_axioms " decls:ident,+ " ⊆ " "[" allowed:ident,* "]" : command => liftTermElabM do
+  let allowed ← allowed.getElems.mapM fun ax => realizeGlobalConstNoOverloadWithInfo ax
+  for decl in decls.getElems do
+    let name ← realizeGlobalConstNoOverloadWithInfo decl
+    let axioms ← collectAxioms name
+    let unexpected := axioms.filter (!allowed.contains ·)
+    unless unexpected.isEmpty do
+      throwErrorAt decl "unexpected axioms in {name}: {unexpected}"
+
+end
+
+#guard_axioms
+  modelCheckTGBA_empty_unsat, modelCheckTGBA_nonEmpty_sat,
+  modelCheckNDFS_empty_unsat, modelCheckNDFS_nonEmpty_sat,
+  modelCheckDijkstra_empty_unsat, modelCheckDijkstra_nonEmpty_sat,
+  modelCheckFairDirect_empty_unsat, modelCheckFairDirect_nonEmpty_sat,
+  modelCheckFairFNFCross_empty_unsat, modelCheckFairFNFCross_nonEmpty_sat,
+  modelCheckFairFNFPrune_empty_unsat, modelCheckFairFNFPrune_nonEmpty_sat,
+  modelCheckFair_empty_unsat, modelCheckFair_nonEmpty_sat,
+  tgbaPipeline_empty_unsat, tgbaPipeline_nonEmpty_sat,
+  dijkstraTChecker, exists_TAcceptingCycle_of_run, light_checked, pipeline_checked
+  ⊆ [propext, Classical.choice, Quot.sound]
 
 end LTLLib.Tests.PipelineTheorems
