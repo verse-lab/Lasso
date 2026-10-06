@@ -1,3 +1,5 @@
+module
+
 /-
   GBA to TGBA conversion, pushing each state's acceptance-set membership and propositional label onto its outgoing
   transitions, states and initial states unchanged. `toTGBA` refines `OASpec.toTOASpec` onto `TGBA.Edge`s, every edge
@@ -18,9 +20,11 @@
   - Correctness
 -/
 
-import LTLLib.GBA
-import LTLLib.TGBA
-import LTLLib.TGBABased.AbstractSpec.Acceptance
+public import LTLLib.GBA
+public import LTLLib.TGBA
+public import LTLLib.TGBABased.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 
@@ -37,7 +41,7 @@ def tgbaTransitionOf (gba : GBA α) (q q' : Nat) : TGBA.Transition α :=
   { target := q', positiveProps := pos, negativeProps := neg, acceptMarks := gba.acceptMarksOf q }
 
 /-- Push each state's label and acceptance marks onto its outgoing transitions. -/
-def toTGBA (gba : GBA α) : TGBA α where
+@[expose] def toTGBA (gba : GBA α) : TGBA α where
   states := gba.states
   initialStates := gba.initialStates
   successors := gba.successors.map fun q qsuccs => qsuccs.map (gba.tgbaTransitionOf q)

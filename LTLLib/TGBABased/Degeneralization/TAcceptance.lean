@@ -1,3 +1,5 @@
+module
+
 /-
   Abstract degeneralization of edge-indexed automata, the transition-based analogue of `OASpec.degeneralize`.
   The `k` acceptance marks of a `TOASpec` collapse into one by pairing states and edges with a counter `c : Fin k`,
@@ -16,28 +18,30 @@
   - Abstract degeneralization
   - Degeneralization correctness
 -/
-import LTLLib.TGBABased.AbstractSpec.Acceptance
+public import LTLLib.TGBABased.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 
-open TLA Classical
+open Lentil Classical
 
 /-! ## Abstract degeneralization -/
 
 /-- One-step counter update, advances when the edge taken carries the currently awaited mark. -/
-noncomputable def TOASpec.counterStep {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
+@[expose] noncomputable def TOASpec.counterStep {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
     (A : TOASpec State Edge α k) (hk : k > 0) (e : Edge) (c : Fin k) : Fin k :=
   if A.acceptMark c e then ⟨(c.val + 1) % k, Nat.mod_lt _ hk⟩ else c
 
 /-- Counter sequence along an edge-run, starting at 0. -/
-noncomputable def TOASpec.mkCounter {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
+@[expose] noncomputable def TOASpec.mkCounter {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
     (A : TOASpec State Edge α k) (hk : k > 0) (σ : exec Edge) : Nat → Fin k
   | 0 => ⟨0, hk⟩
   | n + 1 => A.counterStep hk (σ n) (A.mkCounter hk σ n)
 
 /-- Degeneralize a `k`-mark edge-indexed automaton into a single-mark one by pairing states and edges with a counter.
 The single mark requires counter 0 and the edge carrying mark 0. -/
-noncomputable def TOASpec.degeneralize {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
+@[expose] noncomputable def TOASpec.degeneralize {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat}
     (A : TOASpec State Edge α k) (hk : k > 0) :
     TOASpec (State × Fin k) (Edge × Fin k) α 1 where
   src := fun (e, c) => (A.src e, c)
@@ -78,9 +82,8 @@ private theorem counter_stays_at (σ : exec Edge) (n m : Nat) (c : Fin k) (hc : 
 private theorem counter_advances_from (σ : exec Edge) (n : Nat) (c : Fin k) (hc : A.mkCounter hk σ n = c)
     (hvisit : ∃ j, A.acceptMark c (σ (n + j))) :
     ∃ m, n < m ∧ A.mkCounter hk σ m = ⟨(c.val + 1) % k, Nat.mod_lt _ hk⟩ := by
-  let j := Nat.find hvisit
-  have hj_spec : A.acceptMark c (σ (n + j)) := Nat.find_spec hvisit
-  have hj_min : ∀ m, m < j → ¬ A.acceptMark c (σ (n + m)) := fun m hm => Nat.find_min hvisit hm
+  obtain ⟨j, -, hj_spec, hj_min⟩ :=
+    LentilLib.Nat.find_min (p := fun j => A.acceptMark c (σ (n + j))) _ hvisit.choose_spec
   have hstay : A.mkCounter hk σ (n + j) = c :=
     counter_stays_at A hk σ n j c hc (fun p hp1 hp2 => by
       have : p - n < j := by omega
@@ -104,14 +107,13 @@ private theorem counter_reaches_zero (σ : exec Edge) (n : Nat)
   | succ d ih =>
     intro n c hc hd
     by_cases h0 : c.val = 0
-    · exact ⟨n, le_refl n, by rw [hc]; exact h0⟩
+    · exact ⟨n, Nat.le_refl n, by rw [hc]; exact h0⟩
     · obtain ⟨m, hnm, hm⟩ := counter_advances_from A hk σ n c hc (hacc c n)
       let c' : Fin k := ⟨(c.val + 1) % k, Nat.mod_lt _ hk⟩
       by_cases h0' : c'.val = 0
       · exact ⟨m, by omega, by rw [hm]; exact h0'⟩
       · have hc'lt : c.val + 1 < k := by
           by_contra hge
-          push_neg at hge
           have hceq : c.val + 1 = k := by have := c.isLt; omega
           exact h0' (by simp only [c']; rw [hceq, Nat.mod_self])
         have hc'eq : c'.val = c.val + 1 := by simp only [c']; exact Nat.mod_eq_of_lt hc'lt
@@ -126,22 +128,21 @@ private theorem counter_advance_to_next (σ : exec Edge) (c d : Nat) (v : Fin k)
       A.mkCounter hk σ (p + 1) = ⟨(v.val + 1) % k, Nat.mod_lt _ hk⟩ := by
   have hexists : ∃ j, A.acceptMark v (σ (c + j)) := by
     by_contra h
-    push_neg at h
+    simp only [_root_.not_exists] at h
     have hstay := counter_stays_at A hk σ c (d - c) v hc (fun p hp1 hp2 => by
       have := h (p - c); rwa [show c + (p - c) = p by omega] at this)
     rw [show c + (d - c) = d by omega] at hstay
     have : v.val = 0 := by rw [← congrArg Fin.val hstay]; exact hd
     omega
-  let j₀ := Nat.find hexists
-  have hj0_spec := Nat.find_spec hexists
-  have hj0_min : ∀ q, q < j₀ → ¬ A.acceptMark v (σ (c + q)) := fun q hq => Nat.find_min hexists hq
+  obtain ⟨j₀, -, hj0_spec, hj0_min⟩ :=
+    LentilLib.Nat.find_min (p := fun j => A.acceptMark v (σ (c + j))) _ hexists.choose_spec
   have hstay : A.mkCounter hk σ (c + j₀) = v :=
     counter_stays_at A hk σ c j₀ v hc (fun p hp1 hp2 => by
       have := hj0_min (p - c) (by omega)
       rwa [show c + (p - c) = p by omega] at this)
   have hj0_bound : c + j₀ < d := by
     by_contra h
-    push_neg at h
+    rw [Nat.not_lt] at h
     have hstay_d := counter_stays_at A hk σ c (d - c) v hc (fun p hp1 hp2 => by
       have : p - c < j₀ := by omega
       have := hj0_min (p - c) this
@@ -198,13 +199,13 @@ private theorem degeneralize_forward {ξ : OmegaWord α} (h : (A.degeneralize hk
         exact Fin.ext (Nat.mod_eq_of_lt h1k)
       obtain ⟨j₂, hm2_c0, _⟩ := hacc' (m₁ + 1)
       let m₂ := m₁ + 1 + j₂
-      suffices hsuff : ∀ w : Nat, (hw1 : 1 ≤ w) → (hwi : w ≤ i.val) →
+      suffices hsuff : ∀ w : Nat, 1 ≤ w → w ≤ i.val →
           (hwk : w < k) →
           ∃ p, m₁ + 1 ≤ p ∧ p < m₂ ∧
-            A.acceptMark ⟨w, by omega⟩ (σ_edge p) ∧
+            A.acceptMark ⟨w, hwk⟩ (σ_edge p) ∧
             A.mkCounter hk σ_edge (p + 1) =
               ⟨(w + 1) % k, Nat.mod_lt _ hk⟩ by
-        obtain ⟨p, hp1, _, hpacc, _⟩ := hsuff i.val (by omega) le_rfl i.isLt
+        obtain ⟨p, hp1, _, hpacc, _⟩ := hsuff i.val (by omega) (Nat.le_refl _) i.isLt
         exact ⟨p - n, by rw [show n + (p - n) = p by omega]; exact hpacc⟩
       intro w
       induction w with
@@ -241,11 +242,11 @@ private theorem degeneralize_backward {ξ : OmegaWord α} (h : A.accepts ξ) : (
   · intro i n
     obtain ⟨m, hnm, hm0⟩ := counter_reaches_zero A hk σ_edge n hacc
     have hvisit0 : ∃ j, A.acceptMark ⟨0, hk⟩ (σ_edge (m + j)) := hacc ⟨0, hk⟩ m
-    let j₀ := Nat.find hvisit0
-    have hj0_spec : A.acceptMark ⟨0, hk⟩ (σ_edge (m + j₀)) := Nat.find_spec hvisit0
+    obtain ⟨j₀, -, hj0_spec, hj0_min⟩ :=
+      LentilLib.Nat.find_min (p := fun j => A.acceptMark ⟨0, hk⟩ (σ_edge (m + j))) _ hvisit0.choose_spec
     have hstay : A.mkCounter hk σ_edge (m + j₀) = ⟨0, hk⟩ :=
       counter_stays_at A hk σ_edge m j₀ ⟨0, hk⟩ (Fin.ext hm0) (fun p hp1 hp2 => by
-        have := Nat.find_min hvisit0 (show p - m < j₀ by omega)
+        have := hj0_min (p - m) (show p - m < j₀ by omega)
         rwa [show m + (p - m) = p by omega] at this)
     refine ⟨m + j₀ - n, ?_⟩
     rw [show n + (m + j₀ - n) = m + j₀ by omega]

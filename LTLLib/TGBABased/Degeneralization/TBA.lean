@@ -1,3 +1,5 @@
+module
+
 /-
   Single-mark Transition-based Büchi Automaton (`TBA`) and the degeneralization of a TGBA into one.
 
@@ -22,7 +24,9 @@
   - Cached edge marks
   - Degeneralization
 -/
-import LTLLib.TGBA
+public import LTLLib.TGBA
+
+public section
 
 namespace LTLLib
 
@@ -70,30 +74,30 @@ namespace TBA
 
 variable {α} [BEq α] [Hashable α]
 
-def numStates (tba : TBA α) : Nat := tba.states.size
+@[expose] def numStates (tba : TBA α) : Nat := tba.states.size
 
 /-- Outgoing transitions of a state. -/
-def getSuccessors (tba : TBA α) (s : TBAState) : Array (Transition α) :=
+@[expose] def getSuccessors (tba : TBA α) (s : TBAState) : Array (Transition α) :=
   tba.successors[s]?.getD #[]
 
-def isInitial (tba : TBA α) (s : TBAState) : Bool :=
+@[expose] def isInitial (tba : TBA α) (s : TBAState) : Bool :=
   tba.initialStates.contains s
 
-def succStates (tba : TBA α) (s : TBAState) : Array TBAState :=
+@[expose] def succStates (tba : TBA α) (s : TBAState) : Array TBAState :=
   (tba.getSuccessors s).map (·.target)
 
 /-- Union of marks over every `s → s'` transition (there may be several parallel ones). -/
-def edgeMarks (tba : TBA α) (s s' : TBAState) : Std.HashSet Nat :=
+@[expose] def edgeMarks (tba : TBA α) (s s' : TBAState) : Std.HashSet Nat :=
   ((tba.getSuccessors s).filter (·.target == s')).foldl
     (init := Std.HashSet.emptyWithCapacity 0) fun acc t => acc.union t.acceptMarks
 
 /-- Precomputed `(source, target) → marks` lookup over every transition. -/
-def edgeMarksTable (tba : TBA α) : Std.HashMap (TBAState × TBAState) (Std.HashSet Nat) :=
+@[expose] def edgeMarksTable (tba : TBA α) : Std.HashMap (TBAState × TBAState) (Std.HashSet Nat) :=
   (tba.successors.toList.flatMap fun sts => sts.2.toList.map fun t => ((sts.1, t.target), t.acceptMarks)).foldl
     (init := {}) fun m kv => m.insert kv.1 ((m.getD kv.1 (Std.HashSet.emptyWithCapacity 0)).union kv.2)
 
 /-- `edgeMarks` as an O(1) lookup in `edgeMarksTable`. -/
-def cachedEdgeMarks (tba : TBA α) (s s' : TBAState) : Std.HashSet Nat :=
+@[expose] def cachedEdgeMarks (tba : TBA α) (s s' : TBAState) : Std.HashSet Nat :=
   tba.edgeMarksTable.getD (s, s') (Std.HashSet.emptyWithCapacity 0)
 
 structure WellFormed (tba : TBA α) : Prop where
@@ -102,35 +106,24 @@ structure WellFormed (tba : TBA α) : Prop where
   marks_range : ∀ s t, tba.states.contains s → t ∈ tba.getSuccessors s → ∀ m ∈ t.acceptMarks, m < tba.numAcceptSets
 
 /-- A well-formed `TBA` has finitely many reachable states, bounded by its state set. -/
-def finiteReach (tba : TBA α) (hwf : tba.WellFormed) :
+theorem finiteReach (tba : TBA α) (hwf : tba.WellFormed) :
     FiniteReach tba.initialStates.toList tba.succStates := by
-  show {s | Reachable tba.initialStates.toList tba.succStates s}.Finite
-  have hsub : {s | Reachable tba.initialStates.toList tba.succStates s} ⊆
-      {x | tba.states.contains x} := by
-    intro s hs
-    induction hs with
-    | base hi =>
-      exact hwf.initial_mem _ (by
-        show tba.isInitial _ = true
-        exact Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp hi))
-    | step _ hmem ih =>
-      rename_i prev cur
-      obtain ⟨t, ht, rfl⟩ := Array.mem_map.mp hmem
-      exact hwf.succ_mem _ _ ih ht
-  have hfin : {x | tba.states.contains x}.Finite := by
-    have heq : {x | tba.states.contains x} = {x | x ∈ tba.states.toList} := by
-      ext x
-      exact ⟨fun h => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr h),
-        fun h => Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp h)⟩
-    rw [heq]
-    exact List.finite_toSet tba.states.toList
-  exact hfin.subset hsub
+  refine ⟨tba.states.toList, fun s hs => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr ?_)⟩
+  induction hs with
+  | base hi =>
+    exact hwf.initial_mem _ (by
+      show tba.isInitial _ = true
+      exact Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp hi))
+  | step _ hmem ih =>
+    rename_i prev cur
+    obtain ⟨t, ht, rfl⟩ := Array.mem_map.mp hmem
+    exact hwf.succ_mem _ _ ih ht
 
 /-- An edge of a `TBA`: the source state together with one of its outgoing transitions. -/
 abbrev Edge (α : Type u) [BEq α] [Hashable α] := (_s : TBAState) × TBA.Transition α
 
 /-- Convert a computational `TBA` to an abstract `TOASpec`. -/
-def toSpec (tba : TBA α) : TOASpec TBAState (Edge α) α tba.numAcceptSets where
+@[expose] def toSpec (tba : TBA α) : TOASpec TBAState (Edge α) α tba.numAcceptSets where
   src e := e.1
   dst e := e.2.target
   valid e := e.2 ∈ tba.getSuccessors e.1
@@ -167,7 +160,7 @@ private theorem TBA.mem_edgeMarks_iff {α : Type u} [BEq α] [Hashable α] (tba 
         · exact Or.inr ⟨t, ht, htm⟩
   rw [TBA.edgeMarks, ← Array.foldl_toList, hfold, Std.HashSet.contains_emptyWithCapacity]
   simp only [Bool.false_eq_true, false_or, ← Array.mem_def, Array.mem_filter, beq_iff_eq]
-  tauto
+  grind
 
 private theorem TBA.mem_edgeMarksTable_iff {α : Type u} [BEq α] [Hashable α]
     (tba : TBA α) (s s' : TBAState) (m : Nat) :
@@ -248,7 +241,7 @@ variable {α} [BEq α] [Hashable α]
 - Initial: `{(q, 0) | q ∈ TGBA.initialStates}`
 - Transitions: `(q, i) → (q', i')` for each `q →[marks] q'` in the TGBA, with `i' = (i + 1) % k` if `i ∈ marks`, else `i' = i`
 - Accepting: the new edge carries the mark iff `i = 0` and the original carries mark `0`, or the TGBA has no marks at all -/
-def degeneralize (tgba : TGBA α) : TBA α :=
+@[expose] def degeneralize (tgba : TGBA α) : TBA α :=
   let k := if tgba.numAcceptSets == 0 then 1 else tgba.numAcceptSets
   let totalStates := tgba.states.size * k
 

@@ -1,3 +1,5 @@
+module
+
 /-
   Structural invariants maintained by the `expand`/`createGraph` worklist algorithm (Expand.lean), used to show that
   its output satisfies the abstract `ExpandSpec` (AbstractSpec/ExpansionSpec.lean).
@@ -34,11 +36,13 @@
   - Main correctness theorem
 -/
 
-import LTLLib.LTLtoGBA.Expand
-import LTLLib.LTLtoGBA.ExpansionNode
-import LTLLib.LTLtoGBA.AbstractSpec.ExpansionSpec
-import LTLLib.LTL.Semantics
-import LTLLib.LTL.Subformulas
+public import LTLLib.LTLtoGBA.Expand
+public import LTLLib.LTLtoGBA.ExpansionNode
+public import LTLLib.LTLtoGBA.AbstractSpec.ExpansionSpec
+public import LTLLib.LTL.Semantics
+public import LTLLib.LTL.Subformulas
+
+public section
 
 namespace LTLLib
 
@@ -122,13 +126,13 @@ structure ProcessingInv (n : ExpansionNode α S) : Prop where
     n.reachable ψ ∧ (n.reachable μ ∨ n.nextHas (.release μ ψ))
 
 /-- Invariant for all finished nodes in a state. -/
-def StateInv (st : ExpandState α S) : Prop :=
+@[expose] def StateInv (st : ExpandState α S) : Prop :=
   ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n → ProcessingInv n ∧ n.new = []
 
 /-! ## Monotonicity: nodes are preserved across expand calls -/
 
 /-- Nodes in `st` are preserved in `st'` (their old/next don't change, only incoming may grow via mergeIncoming). -/
-def NodesPreserved (st st' : ExpandState α S) : Prop :=
+@[expose] def NodesPreserved (st st' : ExpandState α S) : Prop :=
   ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n →
     ∃ n' : ExpansionNode α S, st'.nodes[k]? = some n' ∧
       (∀ ψ, FSet.contains n'.old ψ ↔ FSet.contains n.old ψ) ∧
@@ -266,7 +270,7 @@ theorem expand_invariants (node : ExpansionNode α S)
         nameFresh := mergeIncoming_preserves_absent st node existingName _ h_not_in
         freshInv := mergeIncoming_freshInv st node existingName h_fresh
         nameBound := by rw [mergeIncoming_nextName]; exact h_name
-        nextNameMono := by rw [mergeIncoming_nextName]
+        nextNameMono := by simp only [mergeIncoming_nextName, Nat.le_refl]
       }
     · -- Insert + recurse
       simp only [freshName] at h_result

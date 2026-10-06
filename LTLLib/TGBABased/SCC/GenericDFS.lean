@@ -1,3 +1,5 @@
+module
+
 /-
   Algorithm 1 of [RDKP13], a generic DFS skeleton parameterized by abstract PUSH, POP, GET_STATUS and UPDATE operations,
   which each SCC-based emptiness check refines. Also defines the witness extraction `checkWithWitness` they share.
@@ -63,9 +65,12 @@
   - Witness-check correctness
 -/
 
-import Std
-import LTLLib.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.SCC.WitnessExtraction
+public import Std
+public import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.SCC.WitnessExtraction
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -129,6 +134,8 @@ theorem DFSStep.succMarks_get {State : Type u} {Position : Type w} {step : DFSSt
     step.succMarks[step.idx]! = edgeMarks step.state step.succ[step.idx] := by
   rw [hm, getElem!_pos _ _ (by simpa using hi), Array.getElem_map]
 
+-- Aux and Position deliberately have independent universes; clients can choose unrelated types.
+set_option linter.checkUnivs false in
 /-- The four operations (GET_STATUS, PUSH, UPDATE, POP) a concrete SCC-based emptiness check provides. -/
 structure DFSOps (State : Type u) [BEq State] [Hashable State] where
   Aux : Type v      -- the refinement's private search state
@@ -145,7 +152,7 @@ structure DFSOps (State : Type u) [BEq State] [Hashable State] where
   numExplored : Aux → Nat -- only for reporting to the user
 
 /-- A mark set as a bitmask. -/
-def marksToBitmask (marks : Std.HashSet Nat) : Nat :=
+@[expose] def marksToBitmask (marks : Std.HashSet Nat) : Nat :=
   marks.toList.foldl (init := 0) fun mask m => mask ||| (1 <<< m)
 
 private theorem testBit_foldl_or (l : List Nat) (init : Nat) (m : Nat) :
@@ -155,7 +162,7 @@ private theorem testBit_foldl_or (l : List Nat) (init : Nat) (m : Nat) :
   | nil => simp
   | cons a l ih =>
     rw [List.foldl_cons, ih]
-    simp only [Nat.testBit_or, Bool.or_eq_true, Nat.shiftLeft_eq, one_mul,
+    simp only [Nat.testBit_or, Bool.or_eq_true, Nat.shiftLeft_eq, Nat.one_mul,
       Nat.testBit_two_pow, decide_eq_true_eq, List.mem_cons, or_assoc]
     constructor
     · rintro (h | h | h)
@@ -187,14 +194,14 @@ theorem marksToBitmask_congr {a b : Std.HashSet Nat} (h : ∀ m, m ∈ a ↔ m �
   exact h i
 
 /-- A state list running backwards: each entry is a successor of the next, and the last is initial. -/
-def RevPathFrom {State : Type u} (initialStates : List State) (succs : State → Array State)
+@[expose] def RevPathFrom {State : Type u} (initialStates : List State) (succs : State → Array State)
     (l : List State) : Prop :=
   (∀ i, (hi : i + 1 < l.length) → l[i] ∈ succs l[i + 1]) ∧
   ∀ (h : l ≠ []), l.getLast h ∈ initialStates
 
 /-- The driver stack read top-down, each frame's state a successor of the one below it and the outermost an initial
 state. -/
-def DFSStackChain {State : Type u} {P : Type w} (initialStates : List State)
+@[expose] def DFSStackChain {State : Type u} {P : Type w} (initialStates : List State)
     (succs : State → Array State) (stack : List (DFSStep State P)) : Prop :=
   RevPathFrom initialStates succs (stack.map (·.state))
 
@@ -202,7 +209,7 @@ theorem RevPathFrom.tail {State : Type u} {initialStates : List State} {succs : 
     {a : State} {l : List State} (h : RevPathFrom initialStates succs (a :: l)) :
     RevPathFrom initialStates succs l := by
   refine ⟨fun i hi => ?_, fun hne => ?_⟩
-  · simpa using h.1 (i + 1) (by simp only [List.length_cons]; omega)
+  · exact h.1 (i + 1) (by simp only [List.length_cons]; omega)
   · have := h.2 (by simp)
     rwa [List.getLast_cons hne] at this
 
@@ -258,7 +265,7 @@ root to `anchor`, the closing back-edge's source or the frame POP closed when PO
 
 The marks of an outgoing edge are read as `step.succMarks[step.idx]!`, not `edgeMarks step.state d`: the source half of
 that call is done once per pushed frame (see `DFSStep.marks`), not once per edge. -/
-def dfsGo (ops : DFSOps State) (succs : State → Array State)
+@[expose] def dfsGo (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     ops.Aux → List (DFSStep State ops.Position) → Option (Option (State × List State) × ops.Aux)
@@ -297,7 +304,7 @@ def dfsGo (ops : DFSOps State) (succs : State → Array State)
 partial_fixpoint -- never `none`, by `dfsGo_ne_none`
 
 /-- Run the generic DFS from a single fresh root, per Algorithm 1's lines 5-6. -/
-def dfsFromRoot (ops : DFSOps State) (succs : State → Array State)
+@[expose] def dfsFromRoot (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (aux : ops.Aux) (q0 : State) :
     Option (State × List State) × ops.Aux :=
@@ -311,7 +318,7 @@ def dfsFromRoot (ops : DFSOps State) (succs : State → Array State)
   (dfsGo ops succs edgeMarks expand aux' [step]).getD (none, aux')
 
 /-- Outer loop over initial states, sharing search state across roots. -/
-def genericDFSGo (ops : DFSOps State) (succs : State → Array State)
+@[expose] def genericDFSGo (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     List State → ops.Aux → Option (Option (State × List State) × ops.Aux)
@@ -326,7 +333,7 @@ def genericDFSGo (ops : DFSOps State) (succs : State → Array State)
     | .dead | .live => genericDFSGo ops succs edgeMarks expand rest aux -- skipped, earlier root's search already touched it
 partial_fixpoint -- never `none`, by `genericDFSGo_ne_none`
 
-def genericDFS (ops : DFSOps State) (succs : State → Array State)
+@[expose] def genericDFS (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (roots : List State) (aux : ops.Aux) :
     Option (State × List State) × ops.Aux :=
@@ -1629,7 +1636,7 @@ theorem genericDFS_returns_none_fully_explored [LawfulBEq State] (ops : DFSOps S
 
 /-- Run `ops`'s search to decide emptiness, then on `.nonEmpty` rebuild the cycle by graph BFS restricted to the
 accepting SCC `ops.sccHint` hands back. The stem comes from the search's own stack. -/
-def checkWithWitness [LawfulBEq State] [LawfulHashable State] (ops : DFSOps State)
+@[expose] def checkWithWitness [LawfulBEq State] [LawfulHashable State] (ops : DFSOps State)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (numMarks : Nat)
     (initialStates : List State) : EmptinessResult State :=
@@ -1652,7 +1659,7 @@ def checkWithWitness [LawfulBEq State] [LawfulHashable State] (ops : DFSOps Stat
 
 /-- A reported `(anchor, stem)` comes with an `sccHint` that is an internally connected accepting set containing `anchor`,
 and `stem` is a path from an initial state to `anchor`. -/
-def SccHintSound [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
+@[expose] def SccHintSound [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (numMarks : Nat) (initialStates : List State) : Prop :=
   ∀ anchor stem,
@@ -1667,38 +1674,29 @@ def SccHintSound [LawfulBEq State] (ops : DFSOps State) (succs : State → Array
 
 /-! ## Termination -/
 
-/-- The reachable states still unknown, finite by `FiniteReach`. -/
+/-- The reachable states still unknown. -/
 def unexploredSet (ops : DFSOps State) (succs : State → Array State) (initialStates : List State)
-    (aux : ops.Aux) : Set State :=
-  {s | Reachable initialStates succs s ∧ ops.getStatus aux s = .unknown}
-
-theorem unexploredSet_finite (ops : DFSOps State) (succs : State → Array State)
-    (initialStates : List State) (fr : FiniteReach initialStates succs) (aux : ops.Aux) :
-    (unexploredSet ops succs initialStates aux).Finite :=
-  fr.subset (fun _ hs => hs.1)
+    (aux : ops.Aux) : State → Prop :=
+  fun s => Reachable initialStates succs s ∧ ops.getStatus aux s = .unknown
 
 /-- First component of `dfsGo`'s lexicographic measure `(unexploredCard, stack.length, stackPending)`. -/
 noncomputable def unexploredCard (ops : DFSOps State) (succs : State → Array State)
-    (initialStates : List State) (fr : FiniteReach initialStates succs) (aux : ops.Aux) : Nat :=
-  (unexploredSet_finite ops succs initialStates fr aux).toFinset.card
+    (initialStates : List State) (aux : ops.Aux) : Nat :=
+  reachCount initialStates succs (unexploredSet ops succs initialStates aux)
 
 theorem unexploredCard_lt_of_subset (ops : DFSOps State) (succs : State → Array State)
     (initialStates : List State) (fr : FiniteReach initialStates succs) {aux aux' : ops.Aux}
-    (hsub : unexploredSet ops succs initialStates aux' ⊆ unexploredSet ops succs initialStates aux)
-    {d : State} (hd : d ∈ unexploredSet ops succs initialStates aux)
-    (hd' : d ∉ unexploredSet ops succs initialStates aux') :
-    unexploredCard ops succs initialStates fr aux' < unexploredCard ops succs initialStates fr aux :=
-  Finset.card_lt_card (by
-    rw [Finset.ssubset_iff_of_subset (Set.Finite.toFinset_subset_toFinset.mpr hsub)]
-    exact ⟨d, (Set.Finite.mem_toFinset _).mpr hd, fun hc => hd' ((Set.Finite.mem_toFinset _).mp hc)⟩)
+    (hsub : ∀ s, unexploredSet ops succs initialStates aux' s → unexploredSet ops succs initialStates aux s)
+    {d : State} (hd : unexploredSet ops succs initialStates aux d)
+    (hd' : ¬ unexploredSet ops succs initialStates aux' d) :
+    unexploredCard ops succs initialStates aux' < unexploredCard ops succs initialStates aux :=
+  reachCount_lt fr (fun s _ h => hsub s h) hd.1 hd' hd
 
 theorem unexploredCard_eq_of_eq (ops : DFSOps State) (succs : State → Array State)
-    (initialStates : List State) (fr : FiniteReach initialStates succs) {aux aux' : ops.Aux}
+    (initialStates : List State) {aux aux' : ops.Aux}
     (heq : unexploredSet ops succs initialStates aux' = unexploredSet ops succs initialStates aux) :
-    unexploredCard ops succs initialStates fr aux' = unexploredCard ops succs initialStates fr aux := by
-  unfold unexploredCard
-  congr 1
-  simp only [heq]
+    unexploredCard ops succs initialStates aux' = unexploredCard ops succs initialStates aux :=
+  congrArg (reachCount initialStates succs) heq
 
 /-- PUSH of a reachable, still unknown target strictly decreases the unexplored count. -/
 theorem unexploredCard_push [LawfulBEq State] (ops : DFSOps State) (succs : State → Array State)
@@ -1707,8 +1705,8 @@ theorem unexploredCard_push [LawfulBEq State] (ops : DFSOps State) (succs : Stat
       if q' == q then .live else ops.getStatus aux q')
     (aux : ops.Aux) (q : State) (marks : Std.HashSet Nat)
     (hq : ops.getStatus aux q = .unknown) (hqreach : Reachable initialStates succs q) :
-    unexploredCard ops succs initialStates fr (ops.push aux q marks).1 <
-      unexploredCard ops succs initialStates fr aux := by
+    unexploredCard ops succs initialStates (ops.push aux q marks).1 <
+      unexploredCard ops succs initialStates aux := by
   refine unexploredCard_lt_of_subset ops succs initialStates fr (d := q) ?_ ⟨hqreach, hq⟩ ?_
   · rintro s ⟨hr, hs⟩
     refine ⟨hr, ?_⟩
@@ -1727,7 +1725,7 @@ theorem unexploredSet_update (ops : DFSOps State) (succs : State → Array State
     (aux : ops.Aux) (marks : Std.HashSet Nat) (d : State) :
     unexploredSet ops succs initialStates (ops.update aux marks d).1 =
       unexploredSet ops succs initialStates aux := by
-  ext s; simp only [unexploredSet, Set.mem_setOf_eq, hupdate]
+  funext s; simp only [unexploredSet, hupdate]
 
 /-- `pop` only ever moves states from live to dead, which leaves the unknown set alone. -/
 theorem unexploredSet_pop (ops : DFSOps State) (succs : State → Array State)
@@ -1739,8 +1737,8 @@ theorem unexploredSet_pop (ops : DFSOps State) (succs : State → Array State)
     (aux : ops.Aux) (step : DFSStep State ops.Position) (hwf : WellFormed aux) :
     unexploredSet ops succs initialStates (ops.pop succs edgeMarks aux step).1 =
       unexploredSet ops succs initialStates aux := by
-  ext s
-  simp only [unexploredSet, Set.mem_setOf_eq]
+  funext s
+  simp only [unexploredSet]
   rcases hpop succs edgeMarks aux step s hwf with h | ⟨h1, h2⟩
   · rw [h]
   · rw [h1, h2]; simp
@@ -1795,19 +1793,19 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
     (∀ st ∈ stack, Reachable initialStates succs st.state) →
     dfsGo ops succs edgeMarks expand aux stack ≠ none := by
   suffices H : ∀ n1 n2 n3 aux (stack : List (DFSStep State ops.Position)),
-      unexploredCard ops succs initialStates fr aux = n1 → stack.length = n2 → stackPending stack = n3 →
+      unexploredCard ops succs initialStates aux = n1 → stack.length = n2 → stackPending stack = n3 →
       L.WellFormed aux → (∀ st ∈ stack, st.succ = succs st.state) →
       (∀ st ∈ stack, Reachable initialStates succs st.state) →
       dfsGo ops succs edgeMarks expand aux stack ≠ none by
     exact fun aux stack hwf hs hr => H _ _ _ aux stack rfl rfl rfl hwf hs hr
   intro n1
-  induction n1 using Nat.strong_induction_on with
+  induction n1 using Nat.strongRecOn with
   | _ n1 ih1 =>
   intro n2
-  induction n2 using Nat.strong_induction_on with
+  induction n2 using Nat.strongRecOn with
   | _ n2 ih2 =>
   intro n3
-  induction n3 using Nat.strong_induction_on with
+  induction n3 using Nat.strongRecOn with
   | _ n3 ih3 =>
   intro aux stack h1 h2 h3 hwf hsucc hreach
   subst h1; subst h2; subst h3
@@ -1845,10 +1843,10 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
         by_cases hf : (ops.update aux (step.succMarks[step.idx]!) d).2 = true
         · rw [if_pos hf]; simp
         · rw [if_neg hf]
-          have hcard : unexploredCard ops succs initialStates fr
+          have hcard : unexploredCard ops succs initialStates
               (ops.update aux (step.succMarks[step.idx]!) d).1 =
-              unexploredCard ops succs initialStates fr aux :=
-            unexploredCard_eq_of_eq ops succs initialStates fr
+              unexploredCard ops succs initialStates aux :=
+            unexploredCard_eq_of_eq ops succs initialStates
               (unexploredSet_update ops succs initialStates L.update_status aux (step.succMarks[step.idx]!) d)
           exact ih3 _ (stackPending_bump step rest h) _ _ hcard hbumpLen rfl
             (L.wf_update aux (step.succMarks[step.idx]!) d hwf) hbumpSucc hbumpReach
@@ -1867,9 +1865,9 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
           · exact hbumpReach st hst
     -- backtracking: the stack shrinks, and `pop` never touches the unknown set
     · rw [dif_neg h]
-      have hcard : unexploredCard ops succs initialStates fr (ops.pop succs edgeMarks aux step).1 =
-          unexploredCard ops succs initialStates fr aux :=
-        unexploredCard_eq_of_eq ops succs initialStates fr
+      have hcard : unexploredCard ops succs initialStates (ops.pop succs edgeMarks aux step).1 =
+          unexploredCard ops succs initialStates aux :=
+        unexploredCard_eq_of_eq ops succs initialStates
           (unexploredSet_pop ops succs initialStates L.WellFormed L.pop_status edgeMarks aux step hwf)
       have hrec : dfsGo ops succs edgeMarks expand (ops.pop succs edgeMarks aux step).1 rest ≠ none :=
         ih2 _ (by simp) _ _ rest hcard rfl rfl (L.wf_pop succs edgeMarks aux step hwf)
@@ -1878,7 +1876,7 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
       cases hf : (ops.pop succs edgeMarks aux step).2 with
       | true =>
         cases rest with
-        | nil => simpa using hrec
+        | nil => simp
         | cons newTop rest' => simp
       | false => simpa using hrec
 

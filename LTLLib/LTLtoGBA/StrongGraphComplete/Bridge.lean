@@ -1,15 +1,19 @@
+module
+
 /-
   Superseded: `constructGBA_correct_strong` depends on `StrongGraphComplete`, which is never discharged for
   `createGraph`'s actual output. See `LTLtoGBA/Bridge.lean` (`constructGBA_iff_expandOASpec`) and
-  `LTLtoGBA/Correctness.lean` (`constructGBA_correct`) for the live unconditional result. Kept for reference, nothing
-  outside this folder imports it.
+  `LTLtoGBA/Correctness.lean` (`constructGBA_correct`) for the live unconditional result. Kept for reference and
+  checked by `LTLLibTests.HistoricalTheorems`; not re-exported by the public library root.
 
   Defines, for `createGraph φ = some st`:
   - `constructGBA_correct_strong`: `constructGBA` accepts exactly the words satisfying φ, given `StrongGraphComplete`
 -/
 
-import LTLLib.LTLtoGBA.Bridge
-import LTLLib.LTLtoGBA.StrongGraphComplete.Correctness
+public import LTLLib.LTLtoGBA.Bridge
+public import LTLLib.LTLtoGBA.StrongGraphComplete.Correctness
+
+public section
 
 namespace LTLLib
 

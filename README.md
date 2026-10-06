@@ -6,25 +6,57 @@ The core LTL-to-GBA algorithm (Gerth et al.) is ported from the verified Isabell
 
 ## Contents
 
-- [LTL to BA translation](#ltl-to-ba-translation)
-  - [Top-level results](#top-level-results)
-  - [Correctness link in the chain](#correctness-link-in-the-chain)
-  - [Algorithm pipeline](#algorithm-pipeline)
-- [Model checking](#model-checking)
-  - [Top-level results](#top-level-results-1)
-  - [Example usage](#example-usage)
-  - [Termination: `FiniteReach`](#termination-finitereach)
-  - [Correctness link in the chain](#correctness-link-in-the-chain-1)
-  - [Algorithm pipeline](#algorithm-pipeline-1)
-  - [Terminal states](#terminal-states)
-- [Satisfiability](#satisfiability)
-  - [Top-level results](#top-level-results-2)
-  - [Example usage](#example-usage-1)
-  - [Algorithm pipeline](#algorithm-pipeline-2)
-  - [Correctness link in the chain](#correctness-link-in-the-chain-2)
-- [Proof status](#proof-status)
-- [File organization](#file-organization)
-  - [Module descriptions](#module-descriptions)
+- [LTLLib](#ltllib)
+  - [Contents](#contents)
+  - [Building and testing](#building-and-testing)
+  - [LTL to BA translation](#ltl-to-ba-translation)
+    - [Top-level results](#top-level-results)
+    - [Correctness link in the chain](#correctness-link-in-the-chain)
+    - [Algorithm pipeline](#algorithm-pipeline)
+  - [Model checking](#model-checking)
+    - [Top-level results](#top-level-results-1)
+    - [Example usage](#example-usage)
+    - [Termination: `FiniteReach`](#termination-finitereach)
+    - [Correctness link in the chain](#correctness-link-in-the-chain-1)
+    - [Algorithm pipeline](#algorithm-pipeline-1)
+    - [Terminal states](#terminal-states)
+  - [Satisfiability](#satisfiability)
+    - [Top-level results](#top-level-results-2)
+    - [Example usage](#example-usage-1)
+    - [Algorithm pipeline](#algorithm-pipeline-2)
+    - [Correctness link in the chain](#correctness-link-in-the-chain-2)
+  - [Proof status](#proof-status)
+  - [File organization](#file-organization)
+    - [Module descriptions](#module-descriptions)
+
+## Building and testing
+
+Install [Elan](https://github.com/leanprover/elan) and use the toolchain pinned in
+`lean-toolchain`. Full verification also requires Git and Python 3.9 or newer:
+
+```sh
+python3 scripts/verify.py
+```
+
+Use this command for full verification. It checks source coverage, then builds the main library,
+tests, examples and retained historical proofs. By default it prints coverage and the final result;
+build and test logs are shown on failure. Any coverage, compilation, test assertion or axiom-guard
+failure, warning, or Lean panic produces a nonzero exit status, including panics replayed from
+Lake's build cache. Add `--verbose` to stream all build and test output. A successful run reports:
+
+```text
+Source coverage: PASS (150/150 Lean files)
+Building library and tests...
+Library build: PASS
+Tests, examples and historical proofs: PASS
+Axiom checks: PASS
+Warnings: 0; panics: 0
+```
+
+| Command | Scope |
+|---|---|
+| `lake build` | Main library and proofs imported by `LTLLib.lean` |
+| `python3 scripts/verify.py` | Full verification of all Lean sources, tests, examples and historical proofs |
 
 ## LTL to BA translation
 
@@ -114,7 +146,7 @@ def ψ : Formula String := .always (.eventually (.atom "green"))
 -- .empty _  (the light does turn green infinitely often)
 ```
 
-The full runnable file — `LawfulBEq`/`LawfulHashable`/`ToString` instances included — is `LTLLib/Examples/ModelCheckExample.lean`; `Examples/ModelCheckCounterExample.lean` shows the `.nonEmpty` (violation) side.
+The full runnable file — `LawfulBEq`/`LawfulHashable`/`ToString` instances included — is `LTLLibTests/Examples/ModelCheckExample.lean`; `LTLLibTests/Examples/ModelCheckCounterExample.lean` shows the `.nonEmpty` (violation) side.
 
 ### Termination: `FiniteReach`
 
@@ -167,7 +199,7 @@ If a different emptiness-check algorithm suits your system better than nested DF
 
 LTL/Büchi semantics are defined over *infinite* words, so every state needs at least one successor; a terminal state is read as "the system stays there forever". A `sysSucc` that returns `#[]` for some reachable state breaks that silently — `modelCheck` just under-reports, missing any counterexample whose violation only manifests by the system stalling there.
 
-`Product.getSuccessors` fixes this automatically via `Product.totalizeSucc`: any state with no outgoing edges gets a self-loop before the product is ever built. Systems that are already total pay nothing extra — `totalizeSucc` is a no-op on them. See `LTLLib/Examples/ModelCheckTerminalStateExample.lean` for a worked failure/fix example.
+`Product.getSuccessors` fixes this automatically via `Product.totalizeSucc`: any state with no outgoing edges gets a self-loop before the product is ever built. Systems that are already total pay nothing extra — `totalizeSucc` is a no-op on them. See `LTLLibTests/Examples/ModelCheckTerminalStateExample.lean` for a worked failure/fix example.
 
 ## Satisfiability
 
@@ -204,7 +236,7 @@ def φ : Formula Prop' :=
 -- loop: {} → {} → {a} → {} → {a} → {a} ⟲ (repeats forever)
 ```
 
-`report` (`Examples/SatisfiabilityExample.lean`) calls `fullPipeline` for the verdict and, for `.nonEmpty`, renders the witness lasso's atoms at each step by looking them up in the same automaton's own labeling — see the file for `report`/`showRun` and the `.empty` (unsatisfiable) case.
+`report` (`LTLLibTests/Examples/SatisfiabilityExample.lean`) calls `fullPipeline` for the verdict and, for `.nonEmpty`, renders the witness lasso's atoms at each step by looking them up in the same automaton's own labeling — see the file for `report`/`showRun` and the `.empty` (unsatisfiable) case.
 
 ### Algorithm pipeline
 
@@ -285,7 +317,16 @@ LTLLib/
   Satisfiability.lean
   Product.lean
   ModelCheck.lean
+LTLLibTests/
+  ModuleSystem.lean
+  GuardAxioms.lean
+  HistoricalTheorems.lean
   Examples/          -- worked usage examples, referenced above
+  TGBABased/
+    Degeneralization.lean
+    NestedDFS.lean
+    LTLtoTGBA/       -- translation tests and test-only helpers
+    ...             -- TGBA tests and shared test utilities
 ```
 
 ### Module descriptions

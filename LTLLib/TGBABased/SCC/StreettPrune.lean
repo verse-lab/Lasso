@@ -1,3 +1,5 @@
+module
+
 /-
   The recursive fairness check of [SLDP09], run on the SCCs a Tarjan search closes, one search plus a prune instead of the
   `2ⁿ` crossing of `Fairness/FairRouter.lean`.
@@ -73,17 +75,22 @@
   - The outer loop
   - The contract
 -/
-import LTLLib.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.AbstractSpec.LassoCheck
-import LTLLib.TGBABased.AbstractSpec.SCCTheory
-import LTLLib.TGBABased.AbstractSpec.StreettPruneSpec
-import LTLLib.TGBABased.AbstractSpec.StreettSCC
-import LTLLib.TGBABased.AbstractSpec.StreettSCCRegion
-import LTLLib.TGBABased.SCC.GenericDFS
-import LTLLib.TGBABased.SCC.LiveStack
-import LTLLib.TGBABased.SCC.SCCEnumeration
-import LTLLib.TGBABased.SCC.WitnessExtraction
+public import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.AbstractSpec.LassoCheck
+public import LTLLib.TGBABased.AbstractSpec.SCCTheory
+public import LTLLib.TGBABased.AbstractSpec.StreettPruneSpec
+public import LTLLib.TGBABased.AbstractSpec.StreettSCC
+public import LTLLib.TGBABased.AbstractSpec.StreettSCCRegion
+public import LTLLib.TGBABased.SCC.GenericDFS
+public import LTLLib.TGBABased.SCC.LiveStack
+public import LTLLib.TGBABased.SCC.SCCEnumeration
+public import LTLLib.TGBABased.SCC.WitnessExtraction
+meta import LTLLib.Tactic.Set
+
+import Batteries.Data.List.Perm
+
+public section
 
 namespace LTLLib
 
@@ -144,7 +151,7 @@ private theorem prefixSums_spec (ns : Array Nat) :
           rw [getElem!_pos _ _ (by simp [hsize])]
           simp [Array.getElem_push, hsize]
         have h4 : (out.push (out[i]! + ns[i]))[i]! = out[i]! := by
-          rw [getElem!_pos _ _ (by simp [hsize])]
+          rw [getElem!_pos _ _ (by simp only [Array.size_push, hsize]; omega)]
           simp [Array.getElem_push, hsize]
         rw [p2 (i + 1) (by omega), p2 i (by omega), h3, h4, getElem!_pos ns i hi]
       · exact p3 j hlt hj
@@ -160,7 +167,7 @@ private theorem prefixSums_spec (ns : Array Nat) :
 of the options, but the candidate machinery needs their *letter* regions, so both are kept and the edge
 readings are derived from the letter ones by `map` — which is what makes `cs.regions[o]` and
 `cs.letterOptions[o]` correspond by `Array.getElem_map` rather than by a flatten/map commutation. -/
-def CompiledSpec.ofAt (spec : RStreettSpec State L) (restrict : L → Bool) (restrictBits : Nat) :
+@[expose] def CompiledSpec.ofAt (spec : RStreettSpec State L) (restrict : L → Bool) (restrictBits : Nat) :
     CompiledSpec State L :=
   let fs := flattenOpts spec.conjuncts
   let flat : Array (StreettOption L) := fs.1
@@ -180,31 +187,38 @@ def CompiledSpec.ofAt (spec : RStreettSpec State L) (restrict : L → Bool) (res
     restrictBits := restrictBits }
 
 /-- The spec the top-level search is compiled at: no option committed, so no restriction. -/
-def CompiledSpec.of (spec : RStreettSpec State L) : CompiledSpec State L :=
+@[expose] def CompiledSpec.of (spec : RStreettSpec State L) : CompiledSpec State L :=
   CompiledSpec.ofAt spec (fun _ => true) 0
 
 
+omit [Hashable State] in
 /-- Projections of a flattened spec that callers need without forcing the flattening itself. `CompiledSpec.of`
 is a `let`-heavy definition over `flattenOpts` and `prefixSums`, so leaving these to `whnf` makes any goal
 mentioning `(CompiledSpec.of spec).spec` blow up; rewriting with them first keeps it syntactic. -/
 @[simp] theorem CompiledSpec.ofAt_spec (spec : RStreettSpec State L) (r : L → Bool) (b : Nat) :
     (CompiledSpec.ofAt spec r b).spec = spec := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.ofAt_numMarks (spec : RStreettSpec State L) (r : L → Bool) (b : Nat) :
     (CompiledSpec.ofAt spec r b).numMarks = spec.numMarks := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.ofAt_restrict (spec : RStreettSpec State L) (r : L → Bool) (b : Nat) :
     (CompiledSpec.ofAt spec r b).restrict = r := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.ofAt_restrictBits (spec : RStreettSpec State L) (r : L → Bool) (b : Nat) :
     (CompiledSpec.ofAt spec r b).restrictBits = b := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.of_spec (spec : RStreettSpec State L) :
     (CompiledSpec.of spec).spec = spec := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.of_numMarks (spec : RStreettSpec State L) :
     (CompiledSpec.of spec).numMarks = spec.numMarks := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.of_restrictBits (spec : RStreettSpec State L) :
     (CompiledSpec.of spec).restrictBits = 0 := rfl
 
@@ -213,12 +227,15 @@ the mark-bit layout reads only the *number* of marks an option has, which `onEdg
 index, block base and mask a candidate's compiled spec carries is the one the top-level spec carries, and
 a candidate's bitmask means there what it means here. Each is `rfl`. -/
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.ofAt_letterOptions (spec : RStreettSpec State L) (r : L → Bool) (b : Nat) :
     (CompiledSpec.ofAt spec r b).letterOptions = (flattenOpts spec.conjuncts).1 := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.ofAt_numOptions (spec : RStreettSpec State L) (r : L → Bool) (b : Nat) :
     (CompiledSpec.ofAt spec r b).numOptions = (flattenOpts spec.conjuncts).1.size := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.ofAt_conjunctStart (spec : RStreettSpec State L) (r : L → Bool) (b : Nat) :
     (CompiledSpec.ofAt spec r b).conjunctStart = (flattenOpts spec.conjuncts).2 := rfl
 
@@ -252,7 +269,7 @@ private theorem regionFrom_eq_true {cs : CompiledSpec State L} {bits : Nat} {l :
       ∀ o', o ≤ o' → o' < cs.numOptions → bits.testBit o' = true →
         (cs.letterOptions[o']!).region l = true) := by
   intro n
-  induction n using Nat.strong_induction_on with
+  induction n using Nat.strongRecOn with
   | _ n ih =>
   intro o hn
   rw [regionFrom]
@@ -269,7 +286,7 @@ private theorem regionFrom_eq_true {cs : CompiledSpec State L} {bits : Nat} {l :
     · intro h
       refine ⟨?_, fun o' hoo' ho' hbit => h o' (Nat.le_of_succ_le hoo') ho' hbit⟩
       rcases hbit : bits.testBit o with _ | _
-      · exact Or.inl (by simp [hbit])
+      · exact Or.inl (by simp)
       · exact Or.inr (h o (Nat.le_refl _) ho hbit)
   · simp only [ho, dite_false, true_iff]
     intro o' hoo' ho'; omega
@@ -281,16 +298,19 @@ theorem regionOf_eq_true {cs : CompiledSpec State L} {bits : Nat} {l : L} :
   rw [regionOf, regionFrom_eq_true _ 0 rfl]
   exact ⟨fun h o ho hb => h o (Nat.zero_le _) ho hb, fun h o _ ho hb => h o ho hb⟩
 
+omit [BEq State] in
 theorem regionOf_mono {cs : CompiledSpec State L} {b b' : Nat}
     (hbits : ∀ o, b.testBit o = true → b'.testBit o = true) :
     LePred (regionOf cs b') (regionOf cs b) :=
-  fun l hl => regionOf_eq_true.mpr fun o ho hbit => regionOf_eq_true.mp hl o ho (hbits o hbit)
+  fun _ hl => regionOf_eq_true.mpr fun o ho hbit => regionOf_eq_true.mp hl o ho (hbits o hbit)
 
+omit [BEq State] in
 /-- A region bit that is set is entailed by the conjunction. -/
 theorem regionOf_le {cs : CompiledSpec State L} {bits o : Nat} (ho : o < cs.numOptions)
     (hbit : bits.testBit o = true) : LePred (regionOf cs bits) (cs.letterOptions[o]!).region :=
-  fun l hl => regionOf_eq_true.mp hl o ho hbit
+  fun _ hl => regionOf_eq_true.mp hl o ho hbit
 
+omit [BEq State] in
 /-- The empty bitmask is the top region. -/
 theorem regionOf_zero (cs : CompiledSpec State L) : regionOf cs 0 = fun _ => true := by
   funext l
@@ -455,7 +475,7 @@ theorem CompiledSpec.WF.base_inj {cs : CompiledSpec State L} (hwf : cs.WF) {p o 
 end Wellformed
 
 /-- Every property mark plus the internal-edge bit. -/
-def fullAccMask (numMarks : Nat) : Nat := (1 <<< (numMarks + 1)) - 1
+@[expose] def fullAccMask (numMarks : Nat) : Nat := (1 <<< (numMarks + 1)) - 1
 
 /-! ## Candidates
 
@@ -471,7 +491,7 @@ structure Candidate (State : Type u) [BEq State] [Hashable State] where
   regions : Nat
 
 /-- The letter restriction a candidate carries. -/
-def Candidate.region (cs : CompiledSpec State L) (c : Candidate State) : L → Bool :=
+@[expose] def Candidate.region (cs : CompiledSpec State L) (c : Candidate State) : L → Bool :=
   regionOf cs c.regions
 
 /-- The candidate form of `regionOf_eq_true`. -/
@@ -490,37 +510,45 @@ theorem Candidate.region_mono {cs : CompiledSpec State L} {c c' : Candidate Stat
 region those bits denote. Only the readings change — the flattening, the block bases and the masks are
 functions of `spec.conjuncts` and of how many marks each option has, none of which the restriction
 touches — so a bitmask means in the recompiled spec exactly what it means here. -/
-def CompiledSpec.atRegion (cs : CompiledSpec State L) (r : L → Bool) : CompiledSpec State L :=
+@[expose] def CompiledSpec.atRegion (cs : CompiledSpec State L) (r : L → Bool) : CompiledSpec State L :=
   { cs with
     restrict := r
     regions := cs.letterOptions.map fun opt => (opt.onEdgesIn cs.spec r).region
     optMarks := cs.letterOptions.map fun opt => (opt.onEdgesIn cs.spec r).marks }
 
 /-- The same at the region a bitmask denotes, recording the bitmask too. -/
-def CompiledSpec.atBits (cs : CompiledSpec State L) (bits : Nat) : CompiledSpec State L :=
+@[expose] def CompiledSpec.atBits (cs : CompiledSpec State L) (bits : Nat) : CompiledSpec State L :=
   { cs.atRegion (regionOf cs bits) with restrictBits := bits }
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.atRegion_letterOptions (cs : CompiledSpec State L) (r : L → Bool) :
     (cs.atRegion r).letterOptions = cs.letterOptions := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.atRegion_numOptions (cs : CompiledSpec State L) (r : L → Bool) :
     (cs.atRegion r).numOptions = cs.numOptions := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.atRegion_regions (cs : CompiledSpec State L) (r : L → Bool) :
     (cs.atRegion r).regions = cs.letterOptions.map fun opt => (opt.onEdgesIn cs.spec r).region := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.atBits_atRegion (cs : CompiledSpec State L) (bits : Nat) :
     (cs.atBits bits).regions = (cs.atRegion (regionOf cs bits)).regions := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.atBits_optMarks (cs : CompiledSpec State L) (bits : Nat) :
     (cs.atBits bits).optMarks = (cs.atRegion (regionOf cs bits)).optMarks := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.atBits_spec (cs : CompiledSpec State L) (bits : Nat) :
     (cs.atBits bits).spec = cs.spec := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.atBits_restrict (cs : CompiledSpec State L) (bits : Nat) :
     (cs.atBits bits).restrict = regionOf cs bits := rfl
 
+omit [Hashable State] in
 /-- A bitmask denotes the same region in a recompiled spec: `regionOf` reads only `letterOptions` and
 `numOptions`, neither of which the restriction touches. -/
 @[simp] theorem regionOf_atBits (cs : CompiledSpec State L) (bits b : Nat) :
@@ -529,6 +557,7 @@ def CompiledSpec.atBits (cs : CompiledSpec State L) (bits : Nat) : CompiledSpec 
   rw [Bool.eq_iff_iff, regionOf_eq_true, regionOf_eq_true]
   rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.atBits_numOptions (cs : CompiledSpec State L) (bits : Nat) :
     (cs.atBits bits).numOptions = cs.numOptions := rfl
 
@@ -536,9 +565,11 @@ def CompiledSpec.atBits (cs : CompiledSpec State L) (bits : Nat) : CompiledSpec 
     (c : Candidate State) : Candidate.region (cs.atBits bits) c = Candidate.region cs c :=
   regionOf_atBits cs bits c.regions
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.atBits_conjunctStart (cs : CompiledSpec State L) (bits : Nat) :
     (cs.atBits bits).conjunctStart = cs.conjunctStart := rfl
 
+omit [Hashable State] in
 /-- The two readings of an option differ only in which realizations they accept, never in how many marks
 they have. -/
 private theorem map_marks_size (cs : CompiledSpec State L) (r r' : L → Bool) (o : Nat) :
@@ -550,6 +581,7 @@ private theorem map_marks_size (cs : CompiledSpec State L) (r r' : L → Bool) (
     simp [StreettOption.onEdgesIn]
   · rw [getElem!_neg _ o (by simpa using ho), getElem!_neg _ o (by simpa using ho)]
 
+omit [Hashable State] in
 private theorem map_getElem!_letter (cs : CompiledSpec State L) (r : L → Bool)
     {f : StreettOption (State × State) → γ} [Inhabited γ] {o : Nat}
     (ho : o < cs.letterOptions.size) :
@@ -557,6 +589,7 @@ private theorem map_getElem!_letter (cs : CompiledSpec State L) (r : L → Bool)
       f ((cs.letterOptions[o]!).onEdgesIn cs.spec r) := by
   rw [getElem!_pos _ o (by simpa using ho), Array.getElem_map, ← getElem!_pos _ o ho]
 
+omit [Hashable State] in
 /-- Recompiling preserves well-formedness. Every structural field is copied, and the two that change are
 `map`s over the same `letterOptions` whose mark counts `onEdgesIn` preserves — so the block bases and
 masks that `cs.WF` pins still describe the new readings. -/
@@ -598,18 +631,22 @@ theorem CompiledSpec.WF.atBits {cs : CompiledSpec State L} (hwf : cs.WF) (bits :
     rw [map_getElem!_letter cs _ hlt, hwf.letter_option i hi k hk]
     rfl
 
+omit [Hashable State] in
 /-- Recompiling at the bitmask a spec already carries is the identity. -/
 theorem CompiledSpec.atBits_self {cs : CompiledSpec State L} (hwf : cs.WF) :
     cs.atBits cs.restrictBits = cs := by
   have hr : regionOf cs cs.restrictBits = cs.restrict := hwf.restrict_eq.symm
   rw [CompiledSpec.atBits, hr, CompiledSpec.atRegion, ← hwf.regions_eq, ← hwf.optMarks_eq]
 
+omit [Hashable State] in
 theorem CompiledSpec.of_wf (spec : RStreettSpec State L) : (CompiledSpec.of spec).WF :=
   CompiledSpec.ofAt_wf spec _ _ (regionOf_zero _).symm
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.atBits_restrictBits (cs : CompiledSpec State L) (bits : Nat) :
     (cs.atBits bits).restrictBits = bits := rfl
 
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.atBits_numMarks (cs : CompiledSpec State L) (bits : Nat) :
     (cs.atBits bits).numMarks = cs.numMarks := rfl
 
@@ -624,6 +661,7 @@ theorem testBit_or_shift {bits o x : Nat} :
   · rintro (h | rfl); · exact Or.inl h
     · exact Or.inr rfl
 
+omit [BEq State] [Hashable State] in
 /-- Setting one more bit conjoins exactly that option's region. This is the bridge between the bitmask the
 prune loop carries and the region `RRefuted` recurses on: `RRefuted.pass` asks for `r ∧ opt.region`, and the
 queued candidate's region is `regionOf` of the extended mask. Since both sides are `L → Bool`, pointwise
@@ -647,7 +685,7 @@ variable [LawfulBEq State] [LawfulHashable State]
 
 /-- The subgraph a candidate induces: the spec's graph restricted to the candidate's region, then to its
 states. -/
-def Candidate.graph (cs : CompiledSpec State L) (spec : RStreettSpec State L)
+@[expose] def Candidate.graph (cs : CompiledSpec State L) (spec : RStreettSpec State L)
     (c : Candidate State) : State → Array State :=
   sccSuccs (spec.regionSuccs (c.region cs)) c.states
 
@@ -661,10 +699,11 @@ source's label and steps. `EdgeLabels.md` §13.8 measured that shape at `1 + d` 
 `sysLabel` calls per state against the top-level scan's 1.0x, and 4.58x the wall clock for an identical
 answer. Body inlined from `sccExpand` rather than calling it, since that one lives under a later
 `variable` block. -/
-def Candidate.expand (cs : CompiledSpec State L) (spec : RStreettSpec State L)
+@[expose] def Candidate.expand (cs : CompiledSpec State L) (spec : RStreettSpec State L)
     (c : Candidate State) : State → Array State × Array (Std.HashSet Nat) × Array Nat :=
   fun s => filterExpand (spec.regionExpand (c.region cs) s) c.states.contains
 
+omit [LawfulBEq State] [LawfulHashable State] in
 theorem Candidate.expand_coherent (cs : CompiledSpec State L) (spec : RStreettSpec State L)
     (c : Candidate State) :
     ExpandCoherent (c.graph cs spec) (spec.regionMarks (c.region cs)) (c.expand cs spec) :=
@@ -672,6 +711,7 @@ theorem Candidate.expand_coherent (cs : CompiledSpec State L) (spec : RStreettSp
   -- is filtered by, so this is `filterExpand_fst_snd` at the spec's own coherence law.
   fun s => filterExpand_fst_snd _ (spec.regionExpand_coherent (c.region cs) s)
 
+omit [LawfulHashable State] [LawfulBEq State] in
 /-- A candidate's graph admits only ambient edges, which is all `RRefuted.no_fairSCC` asks of the graph a
 search runs on. -/
 theorem Candidate.graph_sub {cs : CompiledSpec State L} {spec : RStreettSpec State L}
@@ -681,6 +721,7 @@ theorem Candidate.graph_sub {cs : CompiledSpec State L} {spec : RStreettSpec Sta
   intro a b hb
   exact hcompat.succs_sub _ a b (Array.mem_filter.mp hb).1
 
+omit [LawfulBEq State] [LawfulHashable State] in
 /-- A candidate's graph shrinks when its bitmask grows. -/
 theorem Candidate.graph_mono {cs : CompiledSpec State L} {spec : RStreettSpec State L}
     {succs : State → Array State} {edgeMarks : State → State → Std.HashSet Nat}
@@ -701,31 +742,23 @@ an edge prune need not drop a state, so the state count alone cannot carry termi
 `blamed_bit_new` a queued candidate *always* gains a bit the search did not already have, so the first
 component strictly drops at every queue step and the second is never needed. Bounded by `numOptions`,
 which is fixed by the spec. -/
-def Candidate.measure (cs : CompiledSpec State L) (c : Candidate State) : Nat :=
-  cs.numOptions - ((Finset.range cs.numOptions).filter fun o => c.regions.testBit o = true).card
+@[expose] def Candidate.measure (cs : CompiledSpec State L) (c : Candidate State) : Nat :=
+  cs.numOptions - (List.range cs.numOptions).countP fun o => c.regions.testBit o
 
+omit [LawfulBEq State] [LawfulHashable State] in
 /-- Conjoining an option that was not already conjoined strictly drops the measure, so a prune step that
 restricts edges without removing a state still decreases it. -/
 theorem Candidate.measure_lt {cs : CompiledSpec State L} {c : Candidate State} {o : Nat}
     (ho : o < cs.numOptions) (hnew : c.regions.testBit o = false) :
     Candidate.measure cs ⟨c.states, c.regions ||| (1 <<< o)⟩ < Candidate.measure cs c := by
-  classical
-  set F₁ := (Finset.range cs.numOptions).filter fun x => c.regions.testBit x = true with hF₁
-  set F₂ := (Finset.range cs.numOptions).filter
-    fun x => (c.regions ||| (1 <<< o)).testBit x = true with hF₂
-  have hsub : F₁ ⊆ F₂ := by
-    intro x hx
-    obtain ⟨hr, hb⟩ := Finset.mem_filter.mp hx
-    exact Finset.mem_filter.mpr ⟨hr, testBit_or_shift.mpr (Or.inl hb)⟩
-  have hlt : F₁.card < F₂.card := by
-    refine Finset.card_lt_card ((Finset.ssubset_iff_of_subset hsub).mpr ⟨o, ?_, ?_⟩)
-    · exact Finset.mem_filter.mpr ⟨Finset.mem_range.mpr ho, testBit_or_shift.mpr (Or.inr rfl)⟩
-    · intro hmem
-      exact absurd (Finset.mem_filter.mp hmem).2 (by simp [hnew])
-  have hle : F₂.card ≤ cs.numOptions := by
-    calc F₂.card ≤ (Finset.range cs.numOptions).card := Finset.card_filter_le _ _
-    _ = cs.numOptions := Finset.card_range _
-  simp only [Candidate.measure, ← hF₁, ← hF₂]
+  have hlt : (List.range cs.numOptions).countP (fun x => c.regions.testBit x) <
+      (List.range cs.numOptions).countP fun x => (c.regions ||| (1 <<< o)).testBit x :=
+    LTLLib.List.countP_lt_countP (fun _ _ hx => testBit_or_shift.mpr (Or.inl hx)) (List.mem_range.mpr ho)
+      hnew (testBit_or_shift.mpr (Or.inr rfl))
+  have hle := List.countP_le_length (p := fun x => (c.regions ||| (1 <<< o)).testBit x)
+    (l := List.range cs.numOptions)
+  rw [List.length_range] at hle
+  simp only [Candidate.measure]
   omega
 
 end CandidateGraph
@@ -747,7 +780,7 @@ structure StreettAux (State : Type u) [BEq State] [Hashable State] where
   pending : Array (Candidate State)
     -- pruned candidates: the same states with one more region conjoined, or fewer states, or both
 
-def streettInitAux : StreettAux State where
+@[expose] def streettInitAux : StreettAux State where
   live := #[]
   liveIndex := Std.HashMap.emptyWithCapacity 0
   dead := Std.HashSet.emptyWithCapacity 0
@@ -756,7 +789,7 @@ def streettInitAux : StreettAux State where
   witnessOpts := #[]
   pending := #[]
 
-def streettGetStatus (aux : StreettAux State) (q : State) : DFSStatus :=
+@[expose] def streettGetStatus (aux : StreettAux State) (q : State) : DFSStatus :=
   liveStatusOf aux.liveIndex aux.dead q
 
 /-! ## The per-SCC test -/
@@ -777,7 +810,7 @@ over-approximation: two options can both survive an edge through different reali
 single step satisfies both. For a state-labelled system the two coincide, and every caller is state-labelled
 (`modelCheckPruneSplit`'s signature enforces it). Making the scan joint is `EdgeLabels.md` §11 item 4;
 `Tests/PruneJointRegions.lean` is the counterexample that fixes what "joint" has to mean. -/
-def scanOptionsAt (cs : CompiledSpec State L) (lab : State × State) (o : Nat)
+@[expose] def scanOptionsAt (cs : CompiledSpec State L) (lab : State × State) (o : Nat)
     (regionAlive marksSeen : Nat) :
     Nat × Nat :=
   if h : o < cs.numOptions then
@@ -792,7 +825,7 @@ def scanOptionsAt (cs : CompiledSpec State L) (lab : State × State) (o : Nat)
 termination_by cs.numOptions - o
 
 
-def scanLabels (cs : CompiledSpec State L) : List (State × State) → Nat → Nat → Nat × Nat
+@[expose] def scanLabels (cs : CompiledSpec State L) : List (State × State) → Nat → Nat → Nat × Nat
   | [], regionAlive, marksSeen => (regionAlive, marksSeen)
   | lab :: rest, regionAlive, marksSeen =>
     if regionAlive == 0 && marksSeen == (1 <<< cs.numOptMarks) - 1 then (regionAlive, marksSeen)
@@ -801,7 +834,7 @@ def scanLabels (cs : CompiledSpec State L) : List (State × State) → Nat → N
       scanLabels cs rest ra ms
 
 /-- One pass over an explicit letter list, from the full `regionAlive` and the empty `marksSeen`. -/
-def scanLetters (cs : CompiledSpec State L) (labs : List (State × State)) : Nat × Nat :=
+@[expose] def scanLetters (cs : CompiledSpec State L) (labs : List (State × State)) : Nat × Nat :=
   scanLabels cs labs ((1 <<< cs.numOptions) - 1) 0
 
 
@@ -915,6 +948,7 @@ private theorem and_eq_iff {ms mask : Nat} :
     | false => simp
     | true => simp [h x hx]
 
+omit [BEq State] in
 theorem scanMarksAt_testBit (gs : Array ((State × State) → Bool)) (lab : State × State)
     (base b : Nat)
     (j marksSeen : Nat) :
@@ -966,6 +1000,7 @@ theorem scanMarksAt_testBit (gs : Array ((State × State) → Bool)) (lab : Stat
       · exact h
       · omega
 
+omit [BEq State] in
 theorem scanOptionsAt_fst_testBit (cs : CompiledSpec State L) (lab : State × State)
     (b : Nat)
     (o ra ms : Nat) :
@@ -1031,6 +1066,7 @@ theorem scanOptionsAt_snd_testBit (cs : CompiledSpec State L) (hwf : cs.WF)
     simp only [ho, dif_neg, not_false_iff]
     grind
 
+omit [BEq State] in
 theorem scanLabels_fst_testBit (cs : CompiledSpec State L) (b : Nat) :
     ∀ (labs : List (State × State)) (ra ms : Nat),
       (scanLabels cs labs ra ms).1.testBit b = true ↔
@@ -1076,6 +1112,7 @@ theorem scanLabels_snd_testBit (cs : CompiledSpec State L) (hwf : cs.WF) (b : Na
       rw [scanLabels_snd_testBit cs hwf b rest, hbit]
       grind
 
+omit [BEq State] in
 /-- An option's region bit survives the letter scan exactly when its region holds at every scanned letter. -/
 theorem scanLetters_fst_testBit (cs : CompiledSpec State L) (labs : List (State × State)) (b : Nat)
     (hb : b < cs.numOptions) :
@@ -1138,6 +1175,7 @@ theorem optionAvailable_letters (cs : CompiledSpec State L) (hwf : cs.WF)
 
 /-! ## What the per-conjunct scan decides -/
 
+omit [BEq State] in
 private theorem selectOne_eq_none {cs : CompiledSpec State L} {ra ms hi : Nat} :
     ∀ o, selectOne cs ra ms o hi = none ↔
       ∀ p, o ≤ p → p < hi → optionAvailable cs ra ms p = false := by
@@ -1166,6 +1204,7 @@ private theorem selectOne_eq_none {cs : CompiledSpec State L} {ra ms hi : Nat} :
     intro p hp hph
     omega
 
+omit [BEq State] in
 private theorem selectOne_eq_some {cs : CompiledSpec State L} {ra ms hi : Nat} :
     ∀ o r, selectOne cs ra ms o hi = some r →
       o ≤ r ∧ r < hi ∧ optionAvailable cs ra ms r = true := by
@@ -1186,6 +1225,7 @@ private theorem selectOne_eq_some {cs : CompiledSpec State L} {ra ms hi : Nat} :
     rw [selectOne, if_neg hx] at h
     exact absurd h (by simp)
 
+omit [BEq State] in
 private theorem mem_liveOptionsIn {cs : CompiledSpec State L} {ms hi : Nat} :
     ∀ o acc p, p ∈ liveOptionsIn cs ms o hi acc ↔
       p ∈ acc ∨ (o ≤ p ∧ p < hi ∧ optionLive cs ms p = true) := by
@@ -1228,6 +1268,7 @@ private theorem mem_liveOptionsIn {cs : CompiledSpec State L} {ms hi : Nat} :
       · exact hp
       · omega
 
+omit [BEq State] in
 private theorem firstUnsatFrom_eq_none {cs : CompiledSpec State L} {ra ms : Nat} :
     ∀ i, firstUnsatFrom cs ra ms i = none →
       ∀ j, i ≤ j → j < cs.conjunctStart.size - 1 →
@@ -1250,6 +1291,7 @@ private theorem firstUnsatFrom_eq_none {cs : CompiledSpec State L} {ra ms : Nat}
     intro _ j hj hjn
     omega
 
+omit [BEq State] in
 private theorem firstUnsatFrom_eq_some {cs : CompiledSpec State L} {ra ms : Nat} :
     ∀ i opts, firstUnsatFrom cs ra ms i = some opts →
       ∃ j, i ≤ j ∧ j < cs.conjunctStart.size - 1 ∧
@@ -1280,6 +1322,7 @@ private theorem firstUnsatFrom_eq_some {cs : CompiledSpec State L} {ra ms : Nat}
     rw [firstUnsatFrom, if_neg hx] at h
     exact absurd h (by simp)
 
+omit [BEq State] in
 private theorem selectCommitted_eq_some {cs : CompiledSpec State L} {bits ra ms hi : Nat} :
     ∀ o r, selectCommitted cs bits ra ms o hi = some r →
       o ≤ r ∧ r < hi ∧ bits.testBit r = true ∧ optionAvailable cs ra ms r = true := by
@@ -1302,6 +1345,7 @@ private theorem selectCommitted_eq_some {cs : CompiledSpec State L} {bits ra ms 
     rw [selectCommitted, if_neg hx] at h
     exact absurd h (by simp)
 
+omit [BEq State] in
 private theorem selectCommitted_eq_none {cs : CompiledSpec State L} {bits ra ms hi : Nat} :
     ∀ o, selectCommitted cs bits ra ms o hi = none ↔
       ∀ p, o ≤ p → p < hi → (bits.testBit p && optionAvailable cs ra ms p) = false := by
@@ -1331,6 +1375,7 @@ private theorem selectCommitted_eq_none {cs : CompiledSpec State L} {bits ra ms 
     intro p hp hph
     omega
 
+omit [BEq State] in
 /-- The preferred option is available, and lies in the conjunct's block. -/
 private theorem selectPref_eq_some {cs : CompiledSpec State L} {bits ra ms hi : Nat} :
     ∀ o r, selectPref cs bits ra ms o hi = some r →
@@ -1345,6 +1390,7 @@ private theorem selectPref_eq_some {cs : CompiledSpec State L} {bits ra ms hi : 
     obtain ⟨h1, h2, -, h4⟩ := selectCommitted_eq_some _ _ hc
     exact ⟨h1, h2, h4⟩
 
+omit [BEq State] in
 /-- `selectPref` finds something whenever `selectOne` does. -/
 private theorem selectPref_isSome {cs : CompiledSpec State L} {bits ra ms o hi : Nat}
     (h : (selectOne cs ra ms o hi).isSome = true) :
@@ -1354,6 +1400,7 @@ private theorem selectPref_isSome {cs : CompiledSpec State L} {bits ra ms o hi :
   · rw [Option.none_or]; exact h
   · rw [Option.some_or]; simp
 
+omit [BEq State] in
 /-- When the conjunct has a committed available option, the preferred one is committed. -/
 private theorem selectPref_committed {cs : CompiledSpec State L} {bits ra ms o hi r : Nat}
     (hc : (selectCommitted cs bits ra ms o hi).isSome = true)
@@ -1365,6 +1412,7 @@ private theorem selectPref_committed {cs : CompiledSpec State L} {bits ra ms o h
 
 
 
+omit [BEq State] in
 private theorem mem_selectFrom_of_mem {cs : CompiledSpec State L} {bits ra ms : Nat} :
     ∀ i sel p, p ∈ sel → p ∈ selectFrom cs bits ra ms i sel := by
   intro i sel
@@ -1380,6 +1428,7 @@ private theorem mem_selectFrom_of_mem {cs : CompiledSpec State L} {bits ra ms : 
     rw [selectFrom, if_neg hi]
     exact hp
 
+omit [BEq State] in
 private theorem mem_selectFrom {cs : CompiledSpec State L} {bits ra ms : Nat} :
     ∀ i sel p, p ∈ selectFrom cs bits ra ms i sel →
       p ∈ sel ∨ optionAvailable cs ra ms p = true := by
@@ -1404,6 +1453,7 @@ private theorem mem_selectFrom {cs : CompiledSpec State L} {bits ra ms : Nat} :
     rw [selectFrom, if_neg hi] at hp
     exact Or.inl hp
 
+omit [BEq State] in
 private theorem selectFrom_covers {cs : CompiledSpec State L} {bits ra ms : Nat} :
     ∀ i sel j, i ≤ j → j < cs.conjunctStart.size - 1 →
       (selectPref cs bits ra ms cs.conjunctStart[j]! cs.conjunctStart[j + 1]!).isSome = true →
@@ -1429,6 +1479,7 @@ private theorem selectFrom_covers {cs : CompiledSpec State L} {bits ra ms : Nat}
     intro j hij hj _
     omega
 
+omit [BEq State] in
 private theorem selectFrom_committed {cs : CompiledSpec State L} {bits ra ms : Nat}
     (hfc : ∀ j, j < cs.conjunctStart.size - 1 →
       (selectCommitted cs bits ra ms cs.conjunctStart[j]! cs.conjunctStart[j + 1]!).isSome = true) :
@@ -1454,6 +1505,7 @@ private theorem selectFrom_committed {cs : CompiledSpec State L} {bits ra ms : N
     rw [selectFrom, if_neg hi] at hp
     exact Or.inl hp
 
+omit [BEq State] in
 theorem selectedOptions_available (cs : CompiledSpec State L) (bits ra ms : Nat) :
     ∀ o ∈ selectedOptions cs bits ra ms, optionAvailable cs ra ms o = true := by
   intro o ho
@@ -1462,7 +1514,7 @@ theorem selectedOptions_available (cs : CompiledSpec State L) (bits ra ms : Nat)
   · exact h
 
 /-- When no conjunct is unsatisfied, `selectedOptions` holds an available option of every conjunct. -/
-theorem selectedOptions_covers {cs : CompiledSpec State L} (hwf : cs.WF) (bits ra ms : Nat)
+private theorem selectedOptions_covers {cs : CompiledSpec State L} (hwf : cs.WF) (bits ra ms : Nat)
     (h : firstUnsatisfied cs ra ms = none) :
     ∀ i < cs.spec.conjuncts.size, ∃ o ∈ selectedOptions cs bits ra ms,
       cs.conjunctStart[i]! ≤ o ∧ o < cs.conjunctStart[i + 1]! ∧
@@ -1492,11 +1544,11 @@ private theorem mem_foldl_insert (l : List State) (init : Std.HashSet State) (x 
   | nil => simp
   | cons a l ih =>
     simp only [List.foldl_cons, ih, Std.HashSet.mem_insert, List.mem_cons, beq_iff_eq]
-    tauto
+    grind
 
 /-- The closing SCC as a set: the live stack from `lo` on. -/
 
-def sccSetOf (live : Array State) (lo : Nat) : Std.HashSet State :=
+@[expose] def sccSetOf (live : Array State) (lo : Nat) : Std.HashSet State :=
   (live.extract lo live.size).foldl
     (init := Std.HashSet.emptyWithCapacity (live.size - lo)) fun h x => h.insert x
 
@@ -1516,10 +1568,11 @@ What the edge-aware scan is pointed at. A candidate's internal edges are enumera
 search has flushed, keeping the targets that stay inside the candidate. -/
 
 /-- The edges of `states` that stay inside `B`, in walk order. -/
-def internalEdges (succs : State → Array State) (B : Std.HashSet State)
+@[expose] def internalEdges (succs : State → Array State) (B : Std.HashSet State)
     (states : List State) : List (State × State) :=
   states.flatMap fun s => ((succs s).filter B.contains).toList.map fun t => (s, t)
 
+omit [LawfulBEq State] [LawfulHashable State] in
 theorem mem_internalEdges {succs : State → Array State}
     {B : Std.HashSet State} {states : List State} {e : State × State} :
     e ∈ internalEdges succs B states ↔ e.1 ∈ states ∧ e.2 ∈ succs e.1 ∧ e.2 ∈ B := by
@@ -1527,7 +1580,7 @@ theorem mem_internalEdges {succs : State → Array State}
   constructor
   · rintro ⟨s, hs, hmem⟩
     obtain ⟨t, ht, rfl⟩ := List.mem_map.mp hmem
-    obtain ⟨h1, h2⟩ := Array.mem_filter.mp (by simpa using ht)
+    obtain ⟨h1, h2⟩ := Array.mem_filter.mp (Array.mem_def.mpr ht)
     exact ⟨hs, h1, Std.HashSet.mem_iff_contains.mpr h2⟩
   · rintro ⟨hs, h1, h2⟩
     refine ⟨e.1, hs, List.mem_map.mpr ⟨e.2, ?_, rfl⟩⟩
@@ -1538,6 +1591,7 @@ theorem mem_internalEdges {succs : State → Array State}
 `StreettOption.onEdges` lives in `AbstractSpec/StreettSCCRegion.lean`; this is the bridge saying the scan's
 verdict for one option is exactly the per-option half of `RStreettSpec.AvailableWith` on `B`. -/
 
+omit [LawfulHashable State] in
 /-- Region half: every internal edge of `B` has a realization satisfying the candidate's region `r` and
 the option's together. -/
 theorem optionRegion_onEdges {spec : RStreettSpec State L} {r : L → Bool} (opt : StreettOption L)
@@ -1554,6 +1608,7 @@ theorem optionRegion_onEdges {spec : RStreettSpec State L} {r : L → Bool} (opt
     obtain ⟨h1, h2, h3⟩ := mem_internalEdges.mp he
     exact Array.contains_iff_mem.mpr (hreg e.1 ((hstates e.1).mp h1) e.2 h3 h2)
 
+omit [LawfulHashable State] in
 /-- Mark half: each of the option's marks is carried by an internal edge that is itself in-region.
 
 The witnessing pair is required to be an edge of the graph the scan walks, not merely of the spec's
@@ -1580,7 +1635,7 @@ theorem optionMarks_onEdges {spec : RStreettSpec State L} {succs : State → Arr
 
 /-- The masks the scan produces for the frame closing at `lo`: the two bitmasks folded over the closing
 SCC's internal edges. This is the edge-aware replacement for `scanFrame cs succs live lo`. -/
-def scanFrame (cs : CompiledSpec State L) (succs : State → Array State)
+@[expose] def scanFrame (cs : CompiledSpec State L) (succs : State → Array State)
     (live : Array State) (lo : Nat) : Nat × Nat :=
   scanLetters cs (internalEdges succs (sccSetOf live lo) (live.toList.drop lo))
 
@@ -1772,6 +1827,7 @@ end SetOfRange
 section Decrease
 variable [LawfulBEq State] [LawfulHashable State]
 
+omit [Hashable State] [LawfulBEq State] [LawfulHashable State] in
 /-- Every option the scan blames is one of the compiled options. -/
 private theorem firstUnsatisfied_opt_lt {cs : CompiledSpec State L} (hwf : cs.WF) {ra ms : Nat}
     {opts : Array Nat} (hfu : firstUnsatisfied cs ra ms = some opts) {o : Nat} (ho : o ∈ opts) :
@@ -1784,12 +1840,14 @@ private theorem firstUnsatisfied_opt_lt {cs : CompiledSpec State L} (hwf : cs.WF
   omega
 
 
+omit [Hashable State] [LawfulBEq State] [LawfulHashable State] in
 /-- Either blame reason names only compiled options. -/
 private theorem blamed_opt_lt {cs : CompiledSpec State L} (hwf : cs.WF) {ra ms : Nat}
     {opts : Array Nat} (hfu : firstUnsatisfied cs ra ms = some opts)
     {o : Nat} (ho : o ∈ opts) : o < cs.numOptions :=
   firstUnsatisfied_opt_lt hwf hfu ho
 
+omit [LawfulHashable State] in
 /-- A committed option's region bit survives the scan: with the bit set, the candidate's region entails
 that option's, so every edge of the graph the search walked already has an in-region realization. -/
 private theorem committed_region_bit {cs : CompiledSpec State L} {curRegions : Nat}
@@ -1811,6 +1869,7 @@ private theorem committed_region_bit {cs : CompiledSpec State L} {curRegions : N
   rw [scanFrame, scanLetters_fst_testBit cs _ _ ho]
   exact hall
 
+omit [LawfulHashable State] in
 /-- The blamed option's bit was not already conjoined into the candidate the search ran on.
 
 Both blame reasons give the same thing, and for the same reason: the option's marks are present, so
@@ -1861,7 +1920,7 @@ end FlushedSCC
 
 /-- A fresh frame is its own lowlink with no marks and no internal edge yet. All three operations destructure the
 search state rather than using `{ aux with … }`, so the arrays are updated in place instead of copied. -/
-def streettPush (aux : StreettAux State) (q : State) (_marks : Std.HashSet Nat) :
+@[expose] def streettPush (aux : StreettAux State) (q : State) (_marks : Std.HashSet Nat) :
     StreettAux State × Nat :=
   let ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
   let pos := live.size
@@ -1869,7 +1928,7 @@ def streettPush (aux : StreettAux State) (q : State) (_marks : Std.HashSet Nat) 
 
 /-- A back-edge lowers the top frame's lowlink and folds in the edge's marks and the internal-edge bit. It never
 reports, an SCC only being decided once complete. -/
-def streettUpdate (numMarks : Nat) (aux : StreettAux State) (marks : Std.HashSet Nat) (d : State) :
+@[expose] def streettUpdate (numMarks : Nat) (aux : StreettAux State) (marks : Std.HashSet Nat) (d : State) :
     StreettAux State × Bool :=
   let ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
   match dstack.back? with
@@ -1880,7 +1939,7 @@ def streettUpdate (numMarks : Nat) (aux : StreettAux State) (marks : Std.HashSet
 
 /-- POP, where a closing frame either merges into its parent or completes an SCC and runs the test. A completed SCC
 is always flushed, whether it passes, is discarded, or is queued for pruning. -/
-def streettPop [Inhabited State] (cs : CompiledSpec State L) (curRegions : Nat)
+@[expose] def streettPop [Inhabited State] (cs : CompiledSpec State L) (curRegions : Nat)
     (succs : State → Array State) (aux : StreettAux State)
     (step : DFSStep State Nat) : StreettAux State × Bool :=
   let ⟨live, liveIndex, dead, dstack0, wit, wopts, pending⟩ := aux
@@ -1934,7 +1993,7 @@ def streettSccHint [LawfulBEq State] [LawfulHashable State] (aux : StreettAux St
   aux.witness.foldl (init := Std.HashSet.emptyWithCapacity aux.witness.size) fun h s => h.insert s
 
 /-- Tarjan refined with the prune's own POP, the property marks arriving in `acc`. -/
-def streettOps [Inhabited State] [LawfulBEq State] [LawfulHashable State]
+@[expose] def streettOps [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (curRegions : Nat) : DFSOps State where
   Aux := StreettAux State
   Position := Nat
@@ -2195,7 +2254,7 @@ def streettLawful [Inhabited State] [LawfulBEq State] [LawfulHashable State]
       exact (liveFlush_spec step.pos aux.live aux.liveIndex aux.dead hwf.live.fwd hwf.live.bwd).2.2 q
 
 /-- The prune's view of its search state for the flush-enumeration contract. -/
-def streettView [Inhabited State] [LawfulBEq State] [LawfulHashable State]
+@[expose] def streettView [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (curRegions : Nat) :
     LowlinkView (streettOps cs curRegions) where
   live := fun aux => aux.live
@@ -2207,9 +2266,8 @@ def streettView [Inhabited State] [LawfulBEq State] [LawfulHashable State]
   posNat := id
 
 /-- The prune's search obeys the shared lowlink discipline. -/
-def streettLowlinkLawful [Inhabited State] [LawfulBEq State] [LawfulHashable State]
-    (cs : CompiledSpec State L) (curRegions : Nat)
-    (succs : State → Array State) : LowlinkLawful (streettOps cs curRegions) (streettView cs curRegions) where
+theorem streettLowlinkLawful [Inhabited State] [LawfulBEq State] [LawfulHashable State]
+    (cs : CompiledSpec State L) (curRegions : Nat) : LowlinkLawful (streettOps cs curRegions) (streettView cs curRegions) where
   status := fun _ _ => rfl
   push_live := fun aux q m => (streettPush_fields aux q m).1
   push_liveIndex := fun aux q m => (streettPush_fields aux q m).2.1
@@ -2331,8 +2389,7 @@ private theorem streettPop_pending_mono [Inhabited State] (cs : CompiledSpec Sta
       · simpa only [streettPop, hb, if_neg h, hb2] using hP
 
 private theorem streettMonotone [Inhabited State] [LawfulBEq State] [LawfulHashable State]
-    (cs : CompiledSpec State L) (curRegions : Nat)
-    (succs : State → Array State) :
+    (cs : CompiledSpec State L) (curRegions : Nat) :
     MonotoneAlong (streettOps cs curRegions) (fun a b : StreettAux State => ∀ P ∈ a.pending, P ∈ b.pending) where
   refl := fun _ _ h => h
   trans := fun _ _ _ h1 h2 P hP => h2 P (h1 P hP)
@@ -2396,7 +2453,7 @@ private theorem streettPop_queues [Inhabited State] [LawfulBEq State] [LawfulHas
 variable [Inhabited State] [LawfulBEq State] [LawfulHashable State]
 
 /-- One search, over the whole product or over one pruned candidate. -/
-def streettRun (cs : CompiledSpec State L) (curRegions : Nat)
+@[expose] def streettRun (cs : CompiledSpec State L) (curRegions : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State) :
     Option (State × List State) × StreettAux State :=
@@ -2409,6 +2466,7 @@ def sccExpand (expand : State → Array State × Array (Std.HashSet Nat) × Arra
     State → Array State × Array (Std.HashSet Nat) × Array Nat :=
   fun s => filterExpand (expand s) C.contains
 
+omit [Inhabited State] [LawfulBEq State] [LawfulHashable State] in
 theorem sccExpand_coherent {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat}
     {expand : State → Array State × Array (Std.HashSet Nat) × Array Nat}
@@ -2422,14 +2480,14 @@ own *compiled spec*, recompiled at the region its bitmask denotes.
 Recompiling is the whole of `EdgeLabels.md` §12's first half. An option's edge reading has to be taken
 inside the candidate's region, not beside it: otherwise the scan can see a mark on a realization the
 candidate's region excludes, and two conjuncts end up witnessed by realizations no single run can take. -/
-def candidateRun (cs : CompiledSpec State L) (rspec : RStreettSpec State L) (c : Candidate State) :
+@[expose] def candidateRun (cs : CompiledSpec State L) (rspec : RStreettSpec State L) (c : Candidate State) :
     Option (State × List State) × StreettAux State :=
   streettRun (cs.atBits c.regions) c.regions (c.graph cs rspec)
     (rspec.regionMarks (c.region cs)) (c.expand cs rspec) c.states.toList
 
 /-- Drain the queue of pruned candidates, each searched on the subgraph it induces. New candidates go to
 the front, so the deepest prune is finished first and a witness is reached without draining the siblings. -/
-def pruneLoop (cs : CompiledSpec State L) (rspec : RStreettSpec State L) :
+@[expose] def pruneLoop (cs : CompiledSpec State L) (rspec : RStreettSpec State L) :
     Nat → List (Candidate State) →
       Option (Option (State × Array State × Array Nat × Candidate State) × Nat)
   | explored, [] => some (none, explored)
@@ -2536,7 +2594,7 @@ private theorem hashSet_size_lt {A B : Std.HashSet State} (hsub : ∀ s ∈ A, s
     rcases List.mem_cons.mp hy with rfl | hy'
     · exact Std.HashSet.mem_toList.mpr hxB
     · exact Std.HashSet.mem_toList.mpr (hsub y (Std.HashSet.mem_toList.mp hy'))
-  have hlen := (List.Nodup.subperm hnd hsubl).length_le
+  have hlen := (List.subperm_of_subset hnd hsubl).length_le
   simp only [List.length_cons, Std.HashSet.length_toList] at hlen
   omega
 
@@ -2567,7 +2625,7 @@ theorem streettSCCs_sound (cs : CompiledSpec State L) (hcs : cs.WF) (curRegions 
     (fr : FiniteReach initialStates succs) :
     SCCEnumerationSound initialStates succs
       (enumSCCs (streettOps cs curRegions) (streettView cs curRegions) succs edgeMarks expand initialStates) :=
-  enumSCCs_sound (streettOps cs curRegions) (streettView cs curRegions) (streettLowlinkLawful cs curRegions succs) (streettLawful cs curRegions hcs)
+  enumSCCs_sound (streettOps cs curRegions) (streettView cs curRegions) (streettLowlinkLawful cs curRegions) (streettLawful cs curRegions hcs)
     streettInitAux_wf succs edgeMarks expand hexp initialStates fr
 
 private theorem streettInitAux_unknown (cs : CompiledSpec State L) (curRegions : Nat)
@@ -2624,9 +2682,10 @@ private def witnessSet (wit : Array State) : Std.HashSet State :=
 
 /-- The edges of a reported cycle, indexed exactly as `TAcceptingCycle.cycle_covers_marks` indexes them:
 edge `i` is `(cycle[i], cycle[(i+1) % length])`, the last one wrapping round to the head. -/
-def cycleEdges [Inhabited State] (l : List State) : List (State × State) :=
+@[expose] def cycleEdges [Inhabited State] (l : List State) : List (State × State) :=
   (List.range l.length).map fun i => (l[i]!, l[(i + 1) % l.length]!)
 
+omit [BEq State] [Hashable State] [Inhabited State] [LawfulBEq State] [LawfulHashable State] in
 theorem mem_cycleEdges_iff [Inhabited State] {l : List State} {e : State × State} :
     e ∈ cycleEdges l ↔ ∃ i < l.length, e = (l[i]!, l[(i + 1) % l.length]!) := by
   simp [cycleEdges, List.mem_map, List.mem_range, eq_comm]
@@ -2657,6 +2716,7 @@ def CompiledSpec.fairCycleOpts (cs : CompiledSpec State L) (edges : List (State 
         edges.all (fun e => cs.regions[o]! e) &&
         (cs.optMarks[o]!).all fun g => edges.any fun e => g e
 
+omit [Hashable State] [Inhabited State] [LawfulHashable State] in
 /-- The cycle lives in the restricted graph. -/
 theorem fairCycleOpts_edges {cs : CompiledSpec State L} {edges : List (State × State)}
     (h : cs.fairCycleOpts edges = true) :
@@ -2664,6 +2724,7 @@ theorem fairCycleOpts_edges {cs : CompiledSpec State L} {edges : List (State × 
   rw [CompiledSpec.fairCycleOpts, Bool.and_eq_true] at h
   exact fun e he => Array.contains_iff_mem.mp (List.all_eq_true.mp h.1 e he)
 
+omit [Hashable State] [Inhabited State] [LawfulHashable State] in
 /-- What a passing check gives back, per conjunct: an option whose region admits every cycle edge and
 each of whose marks is witnessed by a cycle edge, both inside `cs.restrict`. Jointness of the selection
 across conjuncts is *not* established here — it is the caller's `LSys.StateOnly` obligation, discharged
@@ -2761,7 +2822,7 @@ def buildResult (cs : CompiledSpec State L) (cycGraph : State → Array State)
 
 /-- Does the product hold a fair accepting cycle? One search over the whole graph, then the prune's own queue. A
 witness a pruned search finds gets its stem by BFS over the first search's `dead`, the reachable set. -/
-def streettCheck (cs : CompiledSpec State L) (succs : State → Array State)
+@[expose] def streettCheck (cs : CompiledSpec State L) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State) :
     EmptinessResult State :=
@@ -2861,7 +2922,7 @@ theorem streett_acceptingMarks_of_full (cs : CompiledSpec State L) {succs : Stat
         ((1 <<< cs.numMarks).testBit b = true ∨ b ∈ edgeMarks u v) := by
     intro b hb
     have htb : ((streettView cs curRegions).accAt aux 0).testBit b = true := by
-      rw [hfull, fullAccMask, Nat.shiftLeft_eq, one_mul, Nat.testBit_two_pow_sub_one]
+      rw [hfull, fullAccMask, Nat.shiftLeft_eq, Nat.one_mul, Nat.testBit_two_pow_sub_one]
       simpa using Nat.lt_succ_of_le hb
     obtain ⟨u, v, pu, pv, he, hu, hv, hlo, ⟨l, hl, hlb⟩, -, hmk⟩ := hwf.acc_sound 0 (by simp) b htb
     obtain rfl : l = 0 := by omega
@@ -2873,11 +2934,11 @@ theorem streett_acceptingMarks_of_full (cs : CompiledSpec State L) {succs : Stat
     exact ⟨u, (mem_flushedSet _ _ u).mpr ⟨pu, hpu, hlo, hpu'⟩,
       v, (mem_flushedSet _ _ v).mpr ⟨pv, hpv, hlb, hpv'⟩, he.mem, hmk⟩
   refine ⟨?_, fun m hm => ?_⟩
-  · obtain ⟨u, hu, v, hv, he, -⟩ := hbit cs.numMarks le_rfl
+  · obtain ⟨u, hu, v, hv, he, -⟩ := hbit cs.numMarks (Nat.le_refl _)
     exact ⟨u, hu, v, hv, he⟩
-  · obtain ⟨u, hu, v, hv, he, hmk⟩ := hbit m hm.le
+  · obtain ⟨u, hu, v, hv, he, hmk⟩ := hbit m (Nat.le_of_lt hm)
     refine ⟨u, hu, v, hv, he, hmk.resolve_left ?_⟩
-    simp only [Nat.shiftLeft_eq, one_mul, Nat.testBit_two_pow, decide_eq_true_eq]
+    simp only [Nat.shiftLeft_eq, Nat.one_mul, Nat.testBit_two_pow, decide_eq_true_eq]
     omega
 
 /-- At a closing POP a flushed set covering every property mark leaves the accumulator full, the graph's own marks
@@ -2895,7 +2956,7 @@ theorem streett_full_of_acceptingMarks (cs : CompiledSpec State L) {succs : Stat
   have hcomp := hwf.close_acc_complete hsucc hidx
   apply Nat.eq_of_testBit_eq
   intro b
-  rw [fullAccMask, Nat.shiftLeft_eq, one_mul, Nat.testBit_two_pow_sub_one]
+  rw [fullAccMask, Nat.shiftLeft_eq, Nat.one_mul, Nat.testBit_two_pow_sub_one]
   rcases Nat.lt_trichotomy b cs.numMarks with hb | rfl | hb
   -- a property mark, carried by an internal edge
   · obtain ⟨u, hu, v, hv, he, hm⟩ := hA.2 b hb
@@ -2919,7 +2980,7 @@ theorem streett_full_of_acceptingMarks (cs : CompiledSpec State L) {succs : Stat
     exact (decide_eq_false (by omega)).symm
 
 /-- Every recorded option is available on `B`, and every conjunct has one of them among its own options. -/
-def OptionsCover (cs : CompiledSpec State L) (succs : State → Array State) (B : Std.HashSet State)
+@[expose] def OptionsCover (cs : CompiledSpec State L) (succs : State → Array State) (B : Std.HashSet State)
     (wopts : Array Nat) : Prop :=
   (∀ o ∈ wopts,
       (∀ s ∈ B, ∀ t ∈ B, t ∈ succs s → cs.regions[o]! (s, t) = true) ∧
@@ -2929,7 +2990,7 @@ def OptionsCover (cs : CompiledSpec State L) (succs : State → Array State) (B 
 /-- A counterexample the search reports lies in an internally connected SCC covering every property mark, reached
 by the reported stem, and the options recorded beside it cover every conjunct on that SCC. Connectivity and marks are
 read off the search invariant at the reporting POP [CCLMT18]. -/
-theorem streettRun_found (cs : CompiledSpec State L) (curRegions : Nat) (hcs : cs.WF) (hbits : cs.restrictBits = curRegions)
+theorem streettRun_found (cs : CompiledSpec State L) (curRegions : Nat) (hcs : cs.WF)
     (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
@@ -2944,7 +3005,7 @@ theorem streettRun_found (cs : CompiledSpec State L) (curRegions : Nat) (hcs : c
     OptionsCover cs succs (streettSccHint (streettRun cs curRegions succs edgeMarks expand initialStates).2)
       (streettRun cs curRegions succs edgeMarks expand initialStates).2.witnessOpts := by
   unfold streettRun at hfound ⊢
-  obtain ⟨-, hout⟩ := genericDFS_searchOutcome (streettOps cs curRegions) (streettView cs curRegions) (streettLowlinkLawful cs curRegions succs)
+  obtain ⟨-, hout⟩ := genericDFS_searchOutcome (streettOps cs curRegions) (streettView cs curRegions) (streettLowlinkLawful cs curRegions)
     (streettLawful cs curRegions hcs) streettInitAux_wf succs edgeMarks expand hexp initialStates fr
   obtain ⟨aux, step, gray, hwf, hsucc, hanchor, hrep⟩ := hout anchor stem hfound
   rcases hrep with ⟨hidx, hpop⟩ | ⟨d, -, -, hupd⟩
@@ -2974,7 +3035,7 @@ theorem streettRun_found (cs : CompiledSpec State L) (curRegions : Nat) (hcs : c
     obtain ⟨h1, h2⟩ := hwf.frame_pos ⟨step.state, (streettView cs curRegions).posNat step.pos, step.idx, step.acc⟩
       (List.mem_cons_self ..)
     rw [getElem!_pos ((streettView cs curRegions).live aux) _ h1] at h2
-    exact (mem_flushedSet _ _ anchor).mpr ⟨_, h1, le_refl _, h2.trans hanchor⟩
+    exact (mem_flushedSet _ _ anchor).mpr ⟨_, h1, Nat.le_refl _, h2.trans hanchor⟩
   have hAF := streett_acceptingMarks_of_full cs hclose hwf hacc0
   -- the recorded options are the ones the scan selected on the flushed range
   have hB : ∀ s, s ∈ (streettOps cs curRegions).sccHint (genericDFS (streettOps cs curRegions) succs edgeMarks expand initialStates
@@ -3016,7 +3077,7 @@ theorem streettRun_found (cs : CompiledSpec State L) (curRegions : Nat) (hcs : c
 /-- A counterexample the search reports lies in an internally connected SCC covering every property mark, reached
 by the reported stem. -/
 theorem streett_sccHintSound (cs : CompiledSpec State L) (curRegions : Nat) (hcs : cs.WF)
-    (hbits : cs.restrictBits = curRegions) (succs : State → Array State)
+    (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (hexp : ExpandCoherent succs edgeMarks expand) (initialStates : List State)
@@ -3024,7 +3085,7 @@ theorem streett_sccHintSound (cs : CompiledSpec State L) (curRegions : Nat) (hcs
     SccHintSound (streettOps cs curRegions) succs edgeMarks expand cs.numMarks initialStates := by
   intro anchor stem hfound
   obtain ⟨h1, h2, h3, h4, -⟩ :=
-    streettRun_found cs curRegions hcs hbits succs edgeMarks expand hexp initialStates fr hfound
+    streettRun_found cs curRegions hcs succs edgeMarks expand hexp initialStates fr hfound
   exact ⟨h1, h2, h3, h4⟩
 
 omit [LawfulBEq State] [LawfulHashable State] in
@@ -3230,8 +3291,8 @@ theorem streettRun_none_pass (cs : CompiledSpec State L) (hcs : cs.WF) (curRegio
             ∃ P ∈ (streettRun cs curRegions succs edgeMarks expand initialStates).2.pending,
               (∀ s, s ∈ P.states ↔ s ∈ M) ∧
               P.region cs = fun l => regionOf cs curRegions l && opt.region l := by
-  have hrec := enumRun_recordedAt (streettOps cs curRegions) (streettView cs curRegions) (streettLowlinkLawful cs curRegions succs)
-    (streettLawful cs curRegions hcs) streettInitAux_wf (streettMonotone cs curRegions succs) succs edgeMarks expand hexp initialStates fr hnone
+  have hrec := enumRun_recordedAt (streettOps cs curRegions) (streettView cs curRegions) (streettLowlinkLawful cs curRegions)
+    (streettLawful cs curRegions hcs) streettInitAux_wf (streettMonotone cs curRegions) succs edgeMarks expand hexp initialStates fr hnone
   have hblame : ∀ M, ∃ c : Array (StreettOption L),
       M ∈ enumSCCs (streettOps cs curRegions) (streettView cs curRegions) succs edgeMarks expand initialStates →
       AcceptingMarks succs edgeMarks cs.numMarks M → c ∈ cs.spec.conjuncts ∧ ∀ opt ∈ c,
@@ -3276,7 +3337,7 @@ theorem streettRun_none_pass (cs : CompiledSpec State L) (hcs : cs.WF) (curRegio
     · refine Or.inr ⟨_, hR _ hin, hmemsc, ?_⟩
       show regionOf cs (curRegions ||| (1 <<< o)) = _
       rw [regionOf_or_shift (hoptlt o ho), hlet]
-  choose pick hpick using hblame
+  obtain ⟨pick, hpick⟩ := Classical.axiomOfChoice hblame
   exact ⟨enumSCCs (streettOps cs curRegions) (streettView cs curRegions) succs edgeMarks expand initialStates, pick,
     streettSCCs_sound cs hcs curRegions succs edgeMarks expand hexp initialStates fr,
     fun M hM hA => (hpick M hM hA).1, fun M hM hA => (hpick M hM hA).2⟩
@@ -3284,7 +3345,7 @@ theorem streettRun_none_pass (cs : CompiledSpec State L) (hcs : cs.WF) (curRegio
 omit [Inhabited State] [LawfulHashable State] in
 private theorem finiteReach_sccSuccs (succs : State → Array State) (C : Std.HashSet State) :
     FiniteReach C.toList (sccSuccs succs C) :=
-  (List.finite_toSet C.toList).subset fun _ hs => Std.HashSet.mem_toList.mpr (mem_of_reachable_sccSuccs hs)
+  ⟨C.toList, fun _ hs => Std.HashSet.mem_toList.mpr (mem_of_reachable_sccSuccs hs)⟩
 
 omit [Inhabited State] [LawfulBEq State] [LawfulHashable State] in
 /-- A candidate's graph is the abstract candidate graph at the region its bitmask denotes. Definitional,
@@ -3292,6 +3353,7 @@ but stating it keeps the two vocabularies visibly aligned. -/
 theorem Candidate.graph_eq_candGraph (cs : CompiledSpec State L) (spec : RStreettSpec State L)
     (c : Candidate State) : c.graph cs spec = spec.candGraph (c.region cs) c.states := rfl
 
+omit [Inhabited State] [LawfulHashable State] [BEq State] [Hashable State] [LawfulBEq State] in
 /-- Marks survive the region restriction, so a bound on the ambient marks bounds every restricted one. -/
 theorem regionMarks_lt {cs : CompiledSpec State L} {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} (hcompat : cs.spec.Compat succs edgeMarks)
@@ -3334,7 +3396,7 @@ theorem pruneLoop_none_refuted (cs : CompiledSpec State L) (hcs : cs.WF) (hmono 
           (fun s t m hm => by
             rw [CompiledSpec.atBits_numMarks]; exact hrm (D.region cs) s t m hm)
           (by rw [CompiledSpec.atBits_restrict, regionOf_atBits]; exact LePred.refl _)
-          (fun _ _ hst => by simpa using (Array.mem_filter.mp hst).1) hrun
+          (fun _ _ hst => by simpa [Candidate.region] using (Array.mem_filter.mp hst).1) hrun
         -- an SCC of the candidate's graph lies inside the candidate
         have hMsub : ∀ M ∈ sccs, ∀ s ∈ M, s ∈ D.states :=
           fun M hM s hs => mem_of_reachable_sccSuccs (henum.1 M hM s hs)
@@ -3409,7 +3471,7 @@ theorem streettRun_none_dead (cs : CompiledSpec State L) (hcs : cs.WF) (succs : 
     ∀ s, Reachable initialStates succs s → s ∈ (streettRun cs curRegions succs edgeMarks expand initialStates).2.dead := by
   unfold streettRun at hnone ⊢
   intro s hs
-  have hwf := (genericDFS_searchOutcome (streettOps cs curRegions) (streettView cs curRegions) (streettLowlinkLawful cs curRegions succs)
+  have hwf := (genericDFS_searchOutcome (streettOps cs curRegions) (streettView cs curRegions) (streettLowlinkLawful cs curRegions)
     (streettLawful cs curRegions hcs) streettInitAux_wf succs edgeMarks expand hexp initialStates fr).1 hnone
   have hexpl := genericDFS_returns_none_fully_explored (streettOps cs curRegions) succs edgeMarks expand hexp (streettLawful cs curRegions hcs)
     (Reachable initialStates succs)
@@ -3481,7 +3543,7 @@ theorem pruneLoop_found (cs : CompiledSpec State L) (hcs : cs.WF) (Q : State →
       · exact hQ C (by simp) s (mem_of_reachable_sccSuccs
           (streettRun_pending_reachable (cs.atBits C.regions) (hcs.atBits C.regions) C.regions
             (C.graph cs cs.spec) (cs.spec.regionMarks (C.region cs)) (C.expand cs cs.spec)
-            (C.expand_coherent cs cs.spec) C.states.toList P (by simpa using hP) s hs))
+            (C.expand_coherent cs cs.spec) C.states.toList P (Array.mem_def.mpr hP) s hs))
       · exact hQ P (by simp [hP]) s hs
 
 /-- An `.empty` answer means the search refuted the whole graph in the sense of `RRefutedFrom`. -/
@@ -3518,7 +3580,7 @@ theorem streettCheck_empty_refutes (spec : RStreettSpec State L) (succs : State 
       simp only [candidateRun] at hfound hwit hwopts
       obtain ⟨hconn, hA, hanchor, hstem', hopts⟩ :=
         streettRun_found ((CompiledSpec.of spec).atBits C.regions) C.regions
-          (hcs.atBits C.regions) rfl (C.graph (CompiledSpec.of spec) (CompiledSpec.of spec).spec)
+          (hcs.atBits C.regions) (C.graph (CompiledSpec.of spec) (CompiledSpec.of spec).spec)
           ((CompiledSpec.of spec).spec.regionMarks (C.region (CompiledSpec.of spec)))
           (C.expand (CompiledSpec.of spec) (CompiledSpec.of spec).spec)
           (C.expand_coherent (CompiledSpec.of spec) (CompiledSpec.of spec).spec) C.states.toList
@@ -3551,14 +3613,14 @@ theorem streettCheck_empty_refutes (spec : RStreettSpec State L) (succs : State 
       rw [streettCheck, hrun] at h
       simp only [hq, hpath, Option.getD_some] at h
       exact buildResult_ne_empty _ (hcs.atBits C.regions) succs hg
-        (fun _ _ hb => by simpa using (Array.mem_filter.mp hb).1) _ initialStates hbound' _
+        (fun _ _ hb => (Array.mem_filter.mp hb).1) _ initialStates hbound' _
         hconn hAamb hanchor hstem hopts h
   -- a genuine find on the whole graph never degrades to `.empty`
   · exfalso
     have hfound : (streettRun (CompiledSpec.of spec) 0 succs edgeMarks expand initialStates).1
         = some (anchor, stem) := by rw [hrun]
     obtain ⟨hconn, hA, hanchor, hstem, hopts⟩ :=
-      streettRun_found _ 0 hcs rfl succs edgeMarks expand hexp initialStates fr hfound
+      streettRun_found _ 0 hcs succs edgeMarks expand hexp initialStates fr hfound
     rw [hrun] at hconn hA hanchor hopts
     rw [streettCheck, hrun] at h
     -- the top-level spec restricts nothing, so its region marks are the ambient ones

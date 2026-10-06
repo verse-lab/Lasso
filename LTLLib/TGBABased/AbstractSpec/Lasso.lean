@@ -1,3 +1,5 @@
+module
+
 /-
   Transition-based lasso theory. A valid lasso is a stem of edges into a cycle of edges covering every acceptance mark,
   witnessing non-emptiness of a TGBA. Unlike the state-based `ValidLasso.stem`, `TValidLasso.stemE` can be empty, when
@@ -22,12 +24,14 @@
   - Edge witnesses
   - The bridge from TAcceptingCycle
 -/
-import LTLLib.TGBABased.AbstractSpec.Acceptance
-import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.AbstractSpec.Acceptance
+public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+
+public section
 
 namespace LTLLib
 
-open TLA
+open Lentil
 
 /-! ## Lasso run construction -/
 
@@ -85,7 +89,7 @@ variable {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat} {A : TOASpec 
 /-! ## The run is valid and accepting -/
 
 /-- The constructed run (uses `cycleE.head` as default, which is always valid). -/
-noncomputable def run : Nat → Edge :=
+@[expose] noncomputable def run : Nat → Edge :=
   tlassoRun stemE cycleE (cycleE.head (List.ne_nil_of_length_pos (by have := hv.cycle_nonempty; omega)))
 
 theorem run_eq_stem (i : Nat) (hi : i < stemE.length) : hv.run i = stemE[i]'hi :=
@@ -232,7 +236,7 @@ variable {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat} {A : TOASpec 
   {initialStates : List State}
 
 /-- One traversal of `stem`'s consecutive pairs, `stepEdge`-lifted, zero edges if `stem` is a single state. -/
-def stemEdges (stepEdge : State → State → Edge) : List State → List Edge
+@[expose] def stemEdges (stepEdge : State → State → Edge) : List State → List Edge
   | [] => []
   | [_] => []
   | s :: s' :: rest => stepEdge s s' :: stemEdges stepEdge (s' :: rest)
@@ -691,7 +695,7 @@ private theorem flatMap_uniform_getElem (f : Nat → List Edge) (L n m j : Nat)
     · obtain ⟨hidx, heq⟩ := ih (fun i hi => hflen i (by omega)) hmn
       have hmL : m * L + L ≤ n * L := by
         have h1 : (m + 1) * L = m * L + L := by rw [Nat.succ_mul]
-        have h2 : (m + 1) * L ≤ n * L := Nat.mul_le_mul (by omega) (le_refl L)
+        have h2 : (m + 1) * L ≤ n * L := Nat.mul_le_mul (by omega) (Nat.le_refl L)
         omega
       have hidx' : m * L + j < (((List.range n).flatMap f) ++ f n).length := by
         rw [List.length_append]; omega
@@ -724,7 +728,7 @@ theorem cycleLapAt_length (W : TEdgeWitness A succs edgeMarks)
 
 /-- The cycle side of the bridge: `k` laps around `ac.cycle`, lap `m` covering mark `m`, or a single `stepEdge`-only
 pass when `k = 0`. -/
-noncomputable def TAcceptingCycle.cycleE (W : TEdgeWitness A succs edgeMarks)
+@[expose] noncomputable def TAcceptingCycle.cycleE (W : TEdgeWitness A succs edgeMarks)
     (ac : TAcceptingCycle initialStates succs edgeMarks k) : List Edge :=
   have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos (by have := ac.cycle_nonempty; omega)
   if h : k = 0 then stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne])
@@ -919,7 +923,7 @@ theorem stemEdges_forall {stepEdge : State → State → Edge} (P : Edge → Pro
       rw [stemEdges, List.mem_cons] at he
       rcases he with rfl | he
       · exact hstep a b (by simpa using hchain 0 (by simp))
-      · exact ih (fun i hi => by simpa using hchain (i + 1) (by simpa using hi)) e he
+      · exact ih (fun i hi => hchain (i + 1) (by simpa using hi)) e he
 
 /-- Every edge the bridge emits is a `stepEdge` or a `markEdge` applied to a genuine step of the cycle, so a
 property both constructors guarantee there holds of the whole cycle. A witness built over a *restricted*
@@ -967,7 +971,7 @@ structure TRegionCycle (initialStates : List State) (succs succsR : State → Ar
 
 /-- The cycle read as an accepting cycle of the *restricted* graph, rooted at its own head. This is what
 gives `cycleE` a restricted witness to pick realizations from. -/
-def TRegionCycle.cycleAc {initialStates : List State} {succs succsR : State → Array State}
+@[expose] def TRegionCycle.cycleAc {initialStates : List State} {succs succsR : State → Array State}
     {edgeMarks edgeMarksR : State → State → Std.HashSet Nat} {numMarks : Nat}
     (rc : TRegionCycle initialStates succs succsR edgeMarks edgeMarksR numMarks) :
     TAcceptingCycle rc.cycle succsR edgeMarksR numMarks where
@@ -975,7 +979,7 @@ def TRegionCycle.cycleAc {initialStates : List State} {succs succsR : State → 
   cycle := rc.cycle
   stem_nonempty := by simp
   cycle_nonempty := rc.cycle_nonempty
-  stem_head_initial := by simpa using List.head_mem _
+  stem_head_initial := by simp
   stem_chain := by intro i hi; simp at hi
   overlap := by simp
   cycle_chain := rc.cycle_chain

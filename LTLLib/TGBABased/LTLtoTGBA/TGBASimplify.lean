@@ -1,3 +1,5 @@
+module
+
 /-
   A posteriori TGBA simplification, generic over how the TGBA was built. SCCs come from Tarjan's enumeration, and the
   proofs only need it to be sound (`SCCEnumerationSound`). A round runs, in order:
@@ -49,19 +51,26 @@
   - The fixpoint loop
   - Correctness of the simplification loop
 -/
-import LTLLib.TGBA
-import LTLLib.TGBABased.LTLtoTGBA.Label
-import LTLLib.TGBABased.LTLtoTGBA.Reachability
-import LTLLib.TGBABased.LTLtoTGBA.VWAA
-import LTLLib.AbstractSpec.GraphPaths
-import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.AbstractSpec.SCCTheory
-import LTLLib.TGBABased.SCC.TarjanSCC
-import Mathlib.Algebra.Order.BigOperators.Group.Finset
-import Mathlib.Algebra.Order.BigOperators.Group.List
-import Mathlib.Data.List.SplitBy
+public import LTLLib.TGBA
+public import LTLLib.TGBABased.LTLtoTGBA.Label
+public import LTLLib.TGBABased.LTLtoTGBA.Reachability
+public import LTLLib.TGBABased.LTLtoTGBA.VWAA
+public import LTLLib.AbstractSpec.GraphPaths
+public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.AbstractSpec.SCCTheory
+public import LTLLib.TGBABased.SCC.TarjanSCC
+public import LTLLib.Data.Nat
+public import LTLLib.Data.List
+meta import LTLLib.Tactic.Set
+public import LTLLib.Data.FinSet
+
+import Batteries.Data.List.Lemmas
+
+public section
 
 namespace LTLLib
+
+open scoped FinSet
 
 variable {α : Type u} [BEq α] [Hashable α]
 
@@ -154,7 +163,7 @@ theorem transWeight_filter_le (p : TGBA.Transition α → Bool) (ts : Array (TGB
     transWeight (ts.filter p) ≤ transWeight ts := by
   unfold transWeight
   rw [Array.toList_filter]
-  exact (List.filter_sublist.map _).sum_le_sum fun a _ => Nat.zero_le a
+  exact List.sum_le_sum_of_sublist (List.filter_sublist.map _)
 
 /-- Rewriting transitions without adding marks can only lower the weight. -/
 theorem transWeight_map_le {f : TGBA.Transition α → TGBA.Transition α}
@@ -162,7 +171,7 @@ theorem transWeight_map_le {f : TGBA.Transition α → TGBA.Transition α}
     transWeight (ts.map f) ≤ transWeight ts := by
   unfold transWeight
   rw [Array.toList_map, List.map_map]
-  exact List.sum_le_sum fun t _ => Nat.add_le_add_left (h t) 1
+  exact List.sum_map_le_sum_map fun t _ => Nat.add_le_add_left (h t) 1
 
 /-- Rewriting transitions without touching their marks leaves the weight alone. -/
 theorem transWeight_map_marks_eq {f : TGBA.Transition α → TGBA.Transition α}
@@ -173,8 +182,8 @@ theorem transWeight_map_marks_eq {f : TGBA.Transition α → TGBA.Transition α}
   exact congrArg List.sum (List.map_congr_left fun t _ => by simp [h t])
 
 /-- States plus transitions plus acceptance marks, `simplifyTGBA`'s termination measure. -/
-def measureTGBA (tgba : TGBA α) : Nat :=
-  tgba.states.size + ∑ q ∈ tgba.states.toList.toFinset, transWeight (tgba.getSuccessors q)
+noncomputable def measureTGBA (tgba : TGBA α) : Nat :=
+  tgba.states.size + ∑ q ∈ tgba.states.toList.toFinSet, transWeight (tgba.getSuccessors q)
 
 /-- `tgba.states.toList` has no repeats. -/
 theorem states_toList_nodup (tgba : TGBA α) : tgba.states.toList.Nodup :=
@@ -192,13 +201,13 @@ theorem foldl_add_weight {β : Type w} (w : β → Nat) :
 @[csimp] theorem measureTGBA_eq_measureTGBAFast : @measureTGBA.{u} = @measureTGBAFast.{u} := by
   funext α _ _ tgba
   unfold measureTGBA measureTGBAFast
-  rw [Std.HashSet.fold_eq_foldl_toList, foldl_add_weight, List.sum_toFinset _ (states_toList_nodup tgba)]
+  rw [Std.HashSet.fold_eq_foldl_toList, foldl_add_weight, List.sum_toFinSet _ (states_toList_nodup tgba)]
 
 /-! ## Mark erasure -/
 
 /-- Mark erasure: a transition that leaves every enumerated SCC of its source, or whose enumerated SCCs are all bad, is
 used by an accepting run only finitely often, so its marks can be replaced by `∅`. -/
-def eraseMarks (tgba : TGBA α) (sccs : Array (Std.HashSet Nat)) : TGBA α :=
+@[expose] def eraseMarks (tgba : TGBA α) (sccs : Array (Std.HashSet Nat)) : TGBA α :=
   let bad := sccs.map (sccIsBad tgba)
   let idx := sccIndex sccs
   { tgba with
@@ -212,10 +221,10 @@ theorem measureTGBA_eraseMarks_le (tgba : TGBA α) (sccs : Array (Std.HashSet Na
     measureTGBA (eraseMarks tgba sccs) ≤ measureTGBA tgba := by
   have hnd := states_toList_nodup tgba
   have hst : (eraseMarks tgba sccs).states = tgba.states := rfl
-  have hgs : ∀ q ∈ tgba.states.toList.toFinset,
+  have hgs : ∀ q ∈ tgba.states.toList.toFinSet,
       transWeight ((eraseMarks tgba sccs).getSuccessors q) ≤ transWeight (tgba.getSuccessors q) := by
     intro q hq
-    rw [List.mem_toFinset] at hq
+    rw [List.mem_toFinSet] at hq
     unfold eraseMarks
     unfold TGBA.getSuccessors
     rw [getElem?_foldl_insert_of_mem _ q tgba.states.toList hnd hq]
@@ -223,7 +232,7 @@ theorem measureTGBA_eraseMarks_le (tgba : TGBA α) (sccs : Array (Std.HashSet Na
     exact transWeight_map_le (fun t => by split <;> simp) _
   unfold measureTGBA
   rw [hst]
-  exact Nat.add_le_add_left (Finset.sum_le_sum hgs) _
+  exact Nat.add_le_add_left (FinSet.sum_le_sum hgs) _
 
 /-! ## Mark erasure correctness -/
 
@@ -234,10 +243,12 @@ theorem antitone_nat_eventually_const (f : Nat → Nat) (hf : ∀ n, f (n + 1) �
   have hanti : ∀ m n, m ≤ n → f n ≤ f m := by
     intro m n hmn
     induction n, hmn using Nat.le_induction with
-    | base => exact le_refl _
-    | succ n _ ih => exact le_trans (hf n) ih
-  have hmin : ∀ a, f (Function.argmin f) ≤ f a := fun a => not_lt.mp (Function.not_lt_argmin f a)
-  exact ⟨Function.argmin f, fun n hn => le_antisymm (hanti _ n hn) (hmin n)⟩
+    | base => exact Nat.le_refl _
+    | succ n _ ih => exact Nat.le_trans (hf n) ih
+  obtain ⟨v, -, ⟨N, hN⟩, hvmin⟩ := LentilLib.Nat.find_min (p := fun v => ∃ a, f a = v) (f 0) ⟨0, rfl⟩
+  have hmin : ∀ a, f N ≤ f a := fun a =>
+    Nat.not_lt.mp fun h => hvmin (f a) (by omega) ⟨a, rfl⟩
+  exact ⟨N, fun n hn => Nat.le_antisymm (hanti _ n hn) (hmin n)⟩
 
 section MarkErasureCorrect
 
@@ -485,8 +496,8 @@ theorem trueSCC_internallyConnected (tgba : TGBA α) (hwf : tgba.WellFormed) {x 
 /-- Every state reachable from `tgba`'s own states is one of them, so reachability is finite. -/
 theorem tgba_finiteReach (tgba : TGBA α) (hwf : tgba.WellFormed) :
     FiniteReach tgba.states.toList tgba.succStates := by
-  refine Set.Finite.subset (tgba.states.toList.toFinset.finite_toSet) fun s hs => ?_
-  simp only [Finset.mem_coe, List.mem_toFinset, Std.HashSet.mem_toList, Std.HashSet.mem_iff_contains]
+  refine ⟨tgba.states.toList, fun s hs => ?_⟩
+  simp only [Std.HashSet.mem_toList, Std.HashSet.mem_iff_contains]
   induction hs with
   | base hi => exact Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp hi)
   | step _ ht ih =>
@@ -513,12 +524,12 @@ theorem eventually_mutually_reachable (tgba : TGBA α) (hwf : tgba.WellFormed) (
   have hsub : ∀ n x, (F (n + 1)).contains x = true → (F n).contains x = true := fun n x hx =>
     tgba_reachableFrom_trans tgba hwf (q n) (hqmem n) (q (n + 1))
       (tgba_reach_step tgba hwf (hqmem n) (hself n) (hqsucc n)) x hx
-  set f : Nat → Nat := fun n => (F n).toList.toFinset.card with hfdef
+  set f : Nat → Nat := fun n => (F n).toList.toFinSet.card with hfdef
   have hfanti : ∀ n, f (n + 1) ≤ f n := by
     intro n
-    apply Finset.card_le_card
+    apply FinSet.card_le_card
     intro x hx
-    rw [List.mem_toFinset, Std.HashSet.mem_toList, Std.HashSet.mem_iff_contains] at hx ⊢
+    rw [List.mem_toFinSet, Std.HashSet.mem_toList, Std.HashSet.mem_iff_contains] at hx ⊢
     exact hsub n x hx
   obtain ⟨N, hNstable⟩ := antitone_nat_eventually_const f hfanti
   have hReq : ∀ n, N ≤ n → ∀ x, (F n).contains x = (F N).contains x := by
@@ -529,14 +540,14 @@ theorem eventually_mutually_reachable (tgba : TGBA α) (hwf : tgba.WellFormed) (
       intro hn x
       by_cases hcase : N ≤ n
       · have hcardeq : f (n + 1) = f n := by rw [hNstable (n + 1) (by omega), hNstable n hcase]
-        have hsubfin : (F (n + 1)).toList.toFinset ⊆ (F n).toList.toFinset := by
+        have hsubfin : (F (n + 1)).toList.toFinSet ⊆ (F n).toList.toFinSet := by
           intro y hy
-          rw [List.mem_toFinset, Std.HashSet.mem_toList, Std.HashSet.mem_iff_contains] at hy ⊢
+          rw [List.mem_toFinSet, Std.HashSet.mem_toList, Std.HashSet.mem_iff_contains] at hy ⊢
           exact hsub n y hy
-        have heqfin := Finset.eq_of_subset_of_card_le hsubfin (le_of_eq hcardeq.symm)
+        have heqfin := FinSet.eq_of_subset_of_card_le hsubfin (Nat.le_of_eq hcardeq.symm)
         have hstep : (F (n + 1)).contains x = (F n).contains x := by
           rw [Bool.eq_iff_iff, ← Std.HashSet.mem_iff_contains, ← Std.HashSet.mem_iff_contains,
-            ← Std.HashSet.mem_toList, ← Std.HashSet.mem_toList, ← List.mem_toFinset, ← List.mem_toFinset, heqfin]
+            ← Std.HashSet.mem_toList, ← Std.HashSet.mem_toList, ← List.mem_toFinSet, ← List.mem_toFinSet, heqfin]
         rw [hstep, ih hcase]
       · rw [show N = n + 1 by omega]
   exact ⟨N, fun n m hn hm => by
@@ -624,8 +635,8 @@ theorem eraseMarks_correct (tgba : TGBA α) (hwf : tgba.WellFormed) (sccs : Arra
     obtain ⟨N, hmut⟩ := eventually_mutually_reachable tgba hwf (fun n => (σ n).1) hstateMem hqsucc
     -- the run stays inside the SCC of its state at `N`, which some enumerated set contains
     have hinS : ∀ n, N ≤ n → (σ n).1 ∈ trueSCC tgba (σ N).1 := fun n hn =>
-      (mem_trueSCC tgba).mpr ⟨hstateMem n, hmut N n le_rfl hn, hmut n N hn le_rfl⟩
-    obtain ⟨C, hC, hSC⟩ := hsccs.2.2 (trueSCC tgba (σ N).1) ⟨(σ N).1, hinS N le_rfl⟩
+      (mem_trueSCC tgba).mpr ⟨hstateMem n, hmut N n (Nat.le_refl _) hn, hmut n N hn (Nat.le_refl _)⟩
+    obtain ⟨C, hC, hSC⟩ := hsccs.2.2 (trueSCC tgba (σ N).1) ⟨(σ N).1, hinS N (Nat.le_refl _)⟩
       (trueSCC_internallyConnected tgba hwf (hstateMem N))
       (fun s hs => .base (Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr ((mem_trueSCC tgba).mp hs).1)))
     obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp hC
@@ -714,7 +725,8 @@ theorem eraseMarks_correct (tgba : TGBA α) (hwf : tgba.WellFormed) (sccs : Arra
       rw [eraseMarks_getSuccessors tgba sccs _ hqn] at hvalidn
       obtain ⟨t', ht'mem, ht'eq⟩ := Array.mem_map.mp hvalidn
       exact ⟨t', ht'mem, ht'eq.symm⟩
-    choose t htmem ht using hpre
+    obtain ⟨t, ht⟩ := Classical.axiomOfChoice hpre
+    obtain ⟨htmem, ht⟩ := forall_and.mp ht
     refine ⟨fun n => ⟨(σ n).1, t n⟩, ⟨?_, ?_⟩, ?_, ?_⟩
     · show tgba.initialStates.contains (σ 0).1
       rw [← eraseMarks_initialStates tgba sccs]
@@ -754,7 +766,7 @@ def sameTrans (t1 t2 : TGBA.Transition α) : Bool :=
   hashSetEq t1.positiveProps t2.positiveProps && hashSetEq t1.negativeProps t2.negativeProps
 
 /-- Fold exact duplicates into one, so implication is never checked against a transition's own copy. -/
-def dedupExactTrans (ts : Array (TGBA.Transition α)) : Array (TGBA.Transition α) :=
+@[expose] def dedupExactTrans (ts : Array (TGBA.Transition α)) : Array (TGBA.Transition α) :=
   ts.foldl (fun acc t => if acc.any (sameTrans · t) then acc else acc.push t) #[]
 
 /-- Deduplicating never increases the weight. -/
@@ -768,7 +780,7 @@ theorem dedupExactTrans_weight_le (ts : Array (TGBA.Transition α)) :
 
 /-- Implied-transition removal on one array: drop a transition implied by another to the same target with marks no
 fewer, `[GO01]` §6 rule 2. -/
-def dropImpliedWithin (ts : Array (TGBA.Transition α)) : Array (TGBA.Transition α) :=
+@[expose] def dropImpliedWithin (ts : Array (TGBA.Transition α)) : Array (TGBA.Transition α) :=
   let ts := dedupExactTrans ts
   ts.filter fun t2 =>
     !ts.any fun t1 =>
@@ -778,7 +790,7 @@ def dropImpliedWithin (ts : Array (TGBA.Transition α)) : Array (TGBA.Transition
 /-- `dropImpliedWithin` never increases the weight. -/
 theorem dropImpliedWithin_weight_le (ts : Array (TGBA.Transition α)) :
     transWeight (dropImpliedWithin ts) ≤ transWeight ts :=
-  le_trans (transWeight_filter_le _ _) (dedupExactTrans_weight_le ts)
+  Nat.le_trans (transWeight_filter_le _ _) (dedupExactTrans_weight_le ts)
 
 /-- `ts` sorted by target and split into the runs sharing one. -/
 def targetGroups (ts : Array (TGBA.Transition α)) : List (List (TGBA.Transition α)) :=
@@ -800,7 +812,7 @@ theorem transWeight_targetGroups (ts : Array (TGBA.Transition α)) :
     rw [List.map_flatten, List.sum_flatten, List.map_map]
     rfl
   rw [h, targetGroups, List.flatten_splitBy]
-  exact ((List.mergeSort_perm _ _).map _).sum_eq
+  exact ((List.mergeSort_perm _ _).map _).sum_nat
 
 /-- Implied-transition removal never increases the weight. -/
 theorem dropImpliedTrans_weight_le (ts : Array (TGBA.Transition α)) :
@@ -811,7 +823,7 @@ theorem dropImpliedTrans_weight_le (ts : Array (TGBA.Transition α)) :
     rw [List.toList_toArray, List.flatMap_def, List.map_flatten, List.sum_flatten, List.map_map, List.map_map]
     rfl
   rw [h, ← transWeight_targetGroups ts]
-  exact List.sum_le_sum fun g _ => dropImpliedWithin_weight_le _
+  exact List.sum_map_le_sum_map fun g _ => dropImpliedWithin_weight_le _
 
 /-! ## Implied-transition removal correctness -/
 
@@ -823,11 +835,11 @@ theorem sameTrans_iff (t1 t2 : TGBA.Transition α) :
       hashSetEq t1.positiveProps t2.positiveProps = true ∧ hashSetEq t1.negativeProps t2.negativeProps = true := by
   unfold sameTrans
   constructor
-  · intro h; simp only [Bool.and_eq_true, beq_iff_eq] at h; tauto
+  · intro h; simp only [Bool.and_eq_true, beq_iff_eq] at h; grind
   · rintro ⟨h1, h2, h3, h4⟩; simp [h1, h2, h3, h4]
 
 -- `t1` dominates `t2`, exactly `dropImpliedTrans`'s own per-pair check.
-def beatsPred (t1 t2 : TGBA.Transition α) : Bool :=
+@[expose] def beatsPred (t1 t2 : TGBA.Transition α) : Bool :=
   t1.target == t2.target && hashSetSubset t2.acceptMarks t1.acceptMarks && Cube.litImplies (cubeOf t2) (cubeOf t1) &&
     !sameTrans t1 t2
 
@@ -836,7 +848,7 @@ theorem beatsPred_iff (t1 t2 : TGBA.Transition α) :
       hashSetSubset t2.acceptMarks t1.acceptMarks = true ∧ Cube.litImplies (cubeOf t2) (cubeOf t1) = true := by
   unfold beatsPred
   constructor
-  · intro h; simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at h; tauto
+  · intro h; simp only [Bool.and_eq_true, Bool.not_eq_true', beq_iff_eq] at h; grind
   · rintro ⟨h1, h2, h3, h4⟩; simp [h1, h2, h3, h4]
 
 theorem dropImpliedWithin_eq (ts : Array (TGBA.Transition α)) :
@@ -902,7 +914,7 @@ theorem length_filter_lt_of_impl_of_mem_diff {γ} {l : List γ} {P Q : γ → Bo
     rw [List.mem_cons] at ht
     simp only [List.filter_cons]
     rcases ht with rfl | ht
-    · rw [htP, htQ]; simpa using hmono
+    · rw [htP, htQ]; simpa using Nat.lt_succ_of_le hmono
     · by_cases hPa : P a = true
       · have hQa : Q a = true := h a (List.mem_cons_self ..) hPa
         have := ih (fun x hx => h x (List.mem_cons_of_mem _ hx)) ht
@@ -926,7 +938,7 @@ theorem exists_dropImpliedTrans_dominator_aux (ts0 : Array (TGBA.Transition α))
   suffices h : ∀ n (t2 : TGBA.Transition α), (ts0.toList.filter (beatsPred · t2)).length ≤ n → t2 ∈ ts0 →
       ∃ t1 ∈ ts0, (t1 = t2 ∨ (t1.target = t2.target ∧ hashSetSubset t2.acceptMarks t1.acceptMarks = true ∧
         Cube.litImplies (cubeOf t2) (cubeOf t1) = true)) ∧ ∀ t' ∈ ts0, beatsPred t' t1 = false by
-    exact h _ t2 le_rfl ht2
+    exact h _ t2 (Nat.le_refl _) ht2
   intro n
   induction n with
   | zero =>
@@ -941,7 +953,7 @@ theorem exists_dropImpliedTrans_dominator_aux (ts0 : Array (TGBA.Transition α))
     intro t2 hn ht2
     by_cases hsurv : ∀ t' ∈ ts0, beatsPred t' t2 = false
     · exact ⟨t2, ht2, Or.inl rfl, hsurv⟩
-    · push_neg at hsurv
+    · simp only [Classical.not_forall] at hsurv
       obtain ⟨t1', ht1'mem, ht1'beats⟩ := hsurv
       have ht1'beats' : beatsPred t1' t2 = true := by simpa using ht1'beats
       have hsub : ∀ x ∈ ts0.toList, beatsPred x t1' = true → beatsPred x t2 = true :=
@@ -979,17 +991,17 @@ def dropImpliedAll (tgba : TGBA α) : TGBA α :=
 theorem measureTGBA_dropImpliedAll_le (tgba : TGBA α) : measureTGBA (dropImpliedAll tgba) ≤ measureTGBA tgba := by
   have hnd := states_toList_nodup tgba
   have hst : (dropImpliedAll tgba).states = tgba.states := rfl
-  have hgs : ∀ q ∈ tgba.states.toList.toFinset,
+  have hgs : ∀ q ∈ tgba.states.toList.toFinSet,
       transWeight ((dropImpliedAll tgba).getSuccessors q) ≤ transWeight (tgba.getSuccessors q) := by
     intro q hq
-    rw [List.mem_toFinset] at hq
+    rw [List.mem_toFinSet] at hq
     unfold dropImpliedAll
     unfold TGBA.getSuccessors
     rw [getElem?_foldl_insert_of_mem _ q tgba.states.toList hnd hq]
-    simpa using dropImpliedTrans_weight_le (tgba.getSuccessors q)
+    exact dropImpliedTrans_weight_le (tgba.getSuccessors q)
   unfold measureTGBA
   rw [hst]
-  exact Nat.add_le_add_left (Finset.sum_le_sum hgs) _
+  exact Nat.add_le_add_left (FinSet.sum_le_sum hgs) _
 
 section DropImpliedAllCorrect
 
@@ -1158,8 +1170,11 @@ theorem dropImpliedAll_correct (tgba : TGBA α) (hwf : tgba.WellFormed) (ξ : Om
         have hlink : (σ n).2.target = (σ (n + 1)).1 := (hrun.2 n).2
         rw [← hlink]
         exact hwf.succ_mem _ _ ih (hrun.2 n).1
-    choose rep hrepmem hreptgt hrepmarks hrepimp using fun n =>
+    obtain ⟨rep, hrep⟩ := Classical.axiomOfChoice fun n =>
       exists_dropImpliedTrans_dominator' (tgba.getSuccessors (σ n).1) (σ n).2 (hrun.2 n).1
+    obtain ⟨hrepmem, hrep⟩ := forall_and.mp hrep
+    obtain ⟨hreptgt, hrep⟩ := forall_and.mp hrep
+    obtain ⟨hrepmarks, hrepimp⟩ := forall_and.mp hrep
     refine ⟨fun n => ⟨(σ n).1, rep n⟩, ⟨?_, ?_⟩, ?_, ?_⟩
     · show (dropImpliedAll tgba).initialStates.contains (σ 0).1
       rw [hinit]; exact hrun.1
@@ -1252,7 +1267,7 @@ def redirectStep (key : Nat → Nat) (cands : Nat → List Nat) (cond : Nat → 
   | none => acc
 
 /-- `tgba` with every state of `ids` replaced by its representative `redirect.getD q q`. -/
-def redirectTGBA (tgba : TGBA α) (ids : List Nat) (redirect : Std.HashMap Nat Nat) : TGBA α :=
+@[expose] def redirectTGBA (tgba : TGBA α) (ids : List Nat) (redirect : Std.HashMap Nat Nat) : TGBA α :=
   let kept := ids.filter fun q => !redirect.contains q
   { states := Std.HashSet.ofList kept
     initialStates := Std.HashSet.ofList (tgba.initialStates.toList.map fun q => redirect.getD q q)
@@ -1276,11 +1291,11 @@ def mergeEquivalentStates (tgba : TGBA α) : TGBA α :=
     (Std.HashMap.emptyWithCapacity ids.length)
   if redirect.isEmpty then tgba else redirectTGBA tgba ids redirect
 
-/-- The `Finset` of a `Std.HashSet` built by `ofList` is the source list's `Finset`. -/
-theorem toList_toFinset_ofList {β} [BEq β] [Hashable β] [LawfulBEq β] [LawfulHashable β] [DecidableEq β]
-    (l : List β) : (Std.HashSet.ofList l).toList.toFinset = l.toFinset := by
+/-- The `FinSet` of a `Std.HashSet` built by `ofList` is the source list's `FinSet`. -/
+theorem toList_toFinSet_ofList {β} [BEq β] [Hashable β] [LawfulBEq β] [LawfulHashable β] [DecidableEq β]
+    (l : List β) : (Std.HashSet.ofList l).toList.toFinSet = l.toFinSet := by
   ext x
-  simp only [List.mem_toFinset]
+  simp only [List.mem_toFinSet]
   rw [Std.HashSet.mem_toList, Std.HashSet.mem_ofList, List.contains_iff_mem]
 
 theorem redirectTGBA_states (tgba : TGBA α) (ids : List Nat) (redirect : Std.HashMap Nat Nat) :
@@ -1310,31 +1325,31 @@ theorem measureTGBA_redirectTGBA_le (tgba : TGBA α) (ids : List Nat) (redirect 
   have hnd : tgba.states.toList.Nodup := states_toList_nodup tgba
   have hidsnd : ids.Nodup := (List.Perm.nodup_iff hperm).mpr hnd
   have hkeptnd : kept.Nodup := hidsnd.sublist List.filter_sublist
-  have hidsFinset : ids.toFinset = tgba.states.toList.toFinset := by
-    ext x; simp [List.mem_toFinset, hperm.mem_iff]
-  have hkeptSub : kept.toFinset ⊆ tgba.states.toList.toFinset := by
-    rw [hkept, List.toFinset_filter, ← hidsFinset]
-    exact Finset.filter_subset _ _
-  have hresultFinset : (redirectTGBA tgba ids redirect).states.toList.toFinset = kept.toFinset := by
-    rw [redirectTGBA_states]; exact toList_toFinset_ofList kept
-  have hgs : ∀ q ∈ kept.toFinset,
+  have hidsFinSet : ids.toFinSet = tgba.states.toList.toFinSet := by
+    ext x; simp [List.mem_toFinSet, hperm.mem_iff]
+  have hkeptSub : kept.toFinSet ⊆ tgba.states.toList.toFinSet := by
+    rw [hkept, List.toFinSet_filter, ← hidsFinSet]
+    exact FinSet.filter_subset _ _
+  have hresultFinSet : (redirectTGBA tgba ids redirect).states.toList.toFinSet = kept.toFinSet := by
+    rw [redirectTGBA_states]; exact toList_toFinSet_ofList kept
+  have hgs : ∀ q ∈ kept.toFinSet,
       transWeight ((redirectTGBA tgba ids redirect).getSuccessors q) = transWeight (tgba.getSuccessors q) := by
     intro q hq
-    rw [List.mem_toFinset] at hq
+    rw [List.mem_toFinSet] at hq
     rw [redirectTGBA_getSuccessors tgba ids redirect hidsnd, if_pos hq]
     exact transWeight_map_marks_eq
       (f := fun t => { t with target := redirect.getD t.target t.target }) (fun _ => rfl) _
   unfold measureTGBA
-  rw [hresultFinset, Finset.sum_congr rfl hgs, redirectTGBA_states]
-  calc (Std.HashSet.ofList kept).size + ∑ q ∈ kept.toFinset, transWeight (tgba.getSuccessors q)
-      ≤ kept.length + ∑ q ∈ kept.toFinset, transWeight (tgba.getSuccessors q) :=
+  rw [hresultFinSet, FinSet.sum_congr rfl hgs, redirectTGBA_states]
+  calc (Std.HashSet.ofList kept).size + ∑ q ∈ kept.toFinSet, transWeight (tgba.getSuccessors q)
+      ≤ kept.length + ∑ q ∈ kept.toFinSet, transWeight (tgba.getSuccessors q) :=
         Nat.add_le_add_right Std.HashSet.size_ofList_le _
-    _ = kept.toFinset.card + ∑ q ∈ kept.toFinset, transWeight (tgba.getSuccessors q) := by
-        rw [List.toFinset_card_of_nodup hkeptnd]
-    _ ≤ tgba.states.toList.toFinset.card + ∑ q ∈ tgba.states.toList.toFinset, transWeight (tgba.getSuccessors q) :=
-        Nat.add_le_add (Finset.card_le_card hkeptSub) (Finset.sum_le_sum_of_subset hkeptSub)
-    _ = tgba.states.size + ∑ q ∈ tgba.states.toList.toFinset, transWeight (tgba.getSuccessors q) := by
-        rw [List.toFinset_card_of_nodup hnd, Std.HashSet.length_toList]
+    _ = kept.toFinSet.card + ∑ q ∈ kept.toFinSet, transWeight (tgba.getSuccessors q) := by
+        rw [List.toFinSet_card_of_nodup hkeptnd]
+    _ ≤ tgba.states.toList.toFinSet.card + ∑ q ∈ tgba.states.toList.toFinSet, transWeight (tgba.getSuccessors q) :=
+        Nat.add_le_add (FinSet.card_le_card hkeptSub) (FinSet.sum_le_sum_of_subset hkeptSub)
+    _ = tgba.states.size + ∑ q ∈ tgba.states.toList.toFinSet, transWeight (tgba.getSuccessors q) := by
+        rw [List.toFinSet_card_of_nodup hnd, Std.HashSet.length_toList]
 
 /-- State merging never increases the measure. -/
 theorem measureTGBA_mergeEquivalentStates_le (tgba : TGBA α) :
@@ -1355,7 +1370,7 @@ theorem matchTrans_iff (t1 t2 : TGBA.Transition α) :
       hashSetEq t1.positiveProps t2.positiveProps = true ∧ hashSetEq t1.negativeProps t2.negativeProps = true := by
   unfold matchTrans
   constructor
-  · intro h; simp only [Bool.and_eq_true, beq_iff_eq] at h; tauto
+  · intro h; simp only [Bool.and_eq_true, beq_iff_eq] at h; grind
   · rintro ⟨h1, h2, h3, h4⟩; simp [h1, h2, h3, h4]
 
 theorem matchLabelTarget_iff (t1 t2 : TGBA.Transition α) :
@@ -1363,7 +1378,7 @@ theorem matchLabelTarget_iff (t1 t2 : TGBA.Transition α) :
       hashSetEq t1.positiveProps t2.positiveProps = true ∧ hashSetEq t1.negativeProps t2.negativeProps = true := by
   unfold matchLabelTarget
   constructor
-  · intro h; simp only [Bool.and_eq_true, beq_iff_eq] at h; tauto
+  · intro h; simp only [Bool.and_eq_true, beq_iff_eq] at h; grind
   · rintro ⟨h1, h2, h3⟩; simp [h1, h2, h3]
 
 /-- `sameOutgoing` bridged to bidirectional pointwise coverage. -/
@@ -1373,7 +1388,7 @@ theorem sameOutgoing_iff (ts1 ts2 : Array (TGBA.Transition α)) :
       (∀ t2 ∈ ts2, ∃ t1 ∈ ts1, matchTrans t1 t2 = true) := by
   unfold sameOutgoing
   simp only [Bool.and_eq_true, beq_iff_eq, Array.all_eq_true', Array.any_eq_true']
-  tauto
+  grind
 
 theorem sameLabelsTargets_iff (ts1 ts2 : Array (TGBA.Transition α)) :
     sameLabelsTargets ts1 ts2 = true ↔
@@ -1463,7 +1478,7 @@ theorem redirect_isRoot_of_suffix (ids : List Nat) (key : Nat → Nat) (cands : 
         · have hxltq : key x < key q := hJ1 x hxacc q List.mem_cons_self
           simp only [Std.HashMap.getD_insert, hneq x hxltq, Bool.false_eq_true, if_false]
           rw [Std.HashMap.contains_insert, Bool.not_eq_true', Bool.or_eq_false_iff,
-            hneq _ ((hJ2 x hxacc).trans hxltq)]
+            hneq _ (Nat.lt_trans (hJ2 x hxacc) hxltq)]
           exact ⟨rfl, by simpa using hJ3 x hxacc⟩
       · intro x hx
         rw [Std.HashMap.contains_insert, Bool.or_eq_true, beq_iff_eq] at hx
@@ -1542,28 +1557,28 @@ theorem not_reach_of_isTransient (tgba : TGBA α) (hwf : tgba.WellFormed) {q p :
 theorem eventually_not_transient (tgba : TGBA α) (hwf : tgba.WellFormed) (s : Nat → Nat)
     (hmem : ∀ n, tgba.states.contains (s n) = true) (hsucc : ∀ n, s (n + 1) ∈ tgba.succStates (s n)) :
     ∃ M, ∀ n, M ≤ n → isTransient tgba (tgbaSCCs tgba) (sccIndex (tgbaSCCs tgba)) (s n) = false := by
-  set T : Set Nat := {n | isTransient tgba (tgbaSCCs tgba) (sccIndex (tgbaSCCs tgba)) (s n) = true} with hT
+  set T : Nat → Prop := fun n => isTransient tgba (tgbaSCCs tgba) (sccIndex (tgbaSCCs tgba)) (s n) = true with hT
   have hreach : ∀ n k, n + 1 ≤ k →
       (reachableFrom (fun r => (tgba.succStates r).toList) [s (n + 1)] tgba.states.toList).contains (s k) = true := by
     intro n k hk
     induction k, hk using Nat.le_induction with
     | base => exact self_mem_reachableFrom _ _ _
     | succ k _ ih => exact tgba_reach_step tgba hwf (hmem (n + 1)) ih (hsucc k)
-  have hinj : Set.InjOn s T := by
+  have hinj : ∀ n, T n → ∀ m, T m → s n = s m → n = m := by
     intro n hn m hm heq
     by_contra hne
     rcases Nat.lt_or_gt_of_ne hne with hlt | hlt
     · exact not_reach_of_isTransient tgba hwf (hmem n) hn (hsucc n) (heq ▸ hreach n m hlt)
     · exact not_reach_of_isTransient tgba hwf (hmem m) hm (hsucc m) (heq ▸ hreach m n hlt)
-  have himg : (s '' T).Finite := by
-    refine Set.Finite.subset (tgba.states.toList.toFinset.finite_toSet) ?_
+  have himg : FinitePred fun b => ∃ n, T n ∧ s n = b := by
+    refine FinitePred.subset (FinSet.finite tgba.states.toList.toFinSet) ?_
     rintro _ ⟨n, -, rfl⟩
-    simp only [Finset.mem_coe, List.mem_toFinset, Std.HashSet.mem_toList, Std.HashSet.mem_iff_contains]
+    simp only [List.mem_toFinSet, Std.HashSet.mem_toList, Std.HashSet.mem_iff_contains]
     exact hmem n
-  obtain ⟨M, hM⟩ := (Set.Finite.of_finite_image himg hinj).bddAbove
-  refine ⟨M + 1, fun n hn => ?_⟩
+  obtain ⟨M, hM⟩ := FinitePred.nat_iff.mp (FinitePred.of_finite_image himg hinj)
+  refine ⟨M, fun n hn => ?_⟩
   by_contra h
-  have : n ≤ M := hM (show n ∈ T by simpa [hT] using h)
+  have : n < M := hM n (by simpa [hT] using h)
   omega
 
 /-- A property holding infinitely often carries over to one it implies from some point on. -/
@@ -1616,7 +1631,7 @@ theorem redirectTGBA_spec (tgba : TGBA α) (hwf : tgba.WellFormed) (ids : List N
     show (Std.HashSet.ofList (tgba.initialStates.toList.map fun q0 => redirect.getD q0 q0)).contains q = true ↔ _
     rw [Std.HashSet.contains_iff_mem, Std.HashSet.mem_ofList, List.contains_iff_mem, List.mem_map]
   have hkeptStates : ∀ q ∈ kept, tgba.states.contains q = true :=
-    fun q hq => (hidsstates q).mp (List.mem_of_mem_filter hq)
+    fun q hq => (hidsstates q).mp (List.filter_sublist.subset hq)
   have hresStates : ∀ q, result.states.contains q = true ↔ q ∈ kept := by
     intro q
     rw [hresult, redirectTGBA_states, Std.HashSet.contains_ofList, List.contains_iff_mem]
@@ -1658,7 +1673,9 @@ theorem redirectTGBA_spec (tgba : TGBA α) (hwf : tgba.WellFormed) (ids : List N
       show (σ (n + 1)).1 ∈ tgba.succStates (σ n).1
       rw [← (show (σ n).2.target = (σ (n + 1)).1 from (hrun.2 n).2)]
       exact hsuccStates _ _ (hstateMem n) (hrun.2 n).1
-    choose t' ht'mem ht'match ht'marks using fun n => hfwd (σ n).1 (hidmem n) (σ n).2 (hrun.2 n).1
+    obtain ⟨t', ht'⟩ := Classical.axiomOfChoice fun n => hfwd (σ n).1 (hidmem n) (σ n).2 (hrun.2 n).1
+    obtain ⟨ht'mem, ht'⟩ := forall_and.mp ht'
+    obtain ⟨ht'match, ht'marks⟩ := forall_and.mp ht'
     refine ⟨fun n => ⟨redirect.getD (σ n).1 (σ n).1,
       { t' n with target := redirect.getD (t' n).target (t' n).target }⟩, ⟨?_, ?_⟩, ?_, ?_⟩
     · show result.initialStates.contains (redirect.getD (σ 0).1 (σ 0).1)
@@ -1699,7 +1716,7 @@ theorem redirectTGBA_spec (tgba : TGBA α) (hwf : tgba.WellFormed) (ids : List N
         obtain ⟨v, hvmem, hveq⟩ := Array.mem_map.mp hvalidn
         have hlink : (σ' n).2.target = (σ' (n + 1)).1 := (hrun'.2 n).2
         have hqinstates : tgba.states.contains (σ' n).1 = true :=
-          (hidsstates _).mp (List.mem_of_mem_filter ih)
+          (hidsstates _).mp (List.filter_sublist.subset ih)
         have hvtargetids : v.target ∈ ids := (hidsstates _).mpr (hwf.succ_mem _ _ hqinstates hvmem)
         have hveqtarget : redirect.getD v.target v.target = (σ' (n + 1)).1 := by
           rw [← hveq] at hlink; simpa using hlink
@@ -1824,9 +1841,8 @@ private theorem mergeEquivalentStates_spec (tgba : TGBA α) (hwf : tgba.WellForm
         sameLabelsTargets (tgba.getSuccessors q) (tgba.getSuccessors (redirect.getD q q)) = true) := by
     intro q hq
     by_cases hc : redirect.contains q = true
-    · have h := (hrootAux q hc).2.2.2
-      unfold mergeCond at h
-      simpa only [Bool.or_eq_true, Bool.and_eq_true] using h
+    · have h : mergeCond tgba transient q (redirect.getD q q) = true := (hrootAux q hc).2.2.2
+      simpa only [mergeCond, Bool.or_eq_true, Bool.and_eq_true] using h
     · rw [Bool.not_eq_true] at hc
       rw [Std.HashMap.getD_eq_fallback_of_contains_eq_false hc]
       exact Or.inl (sameOutgoing_refl _)
@@ -1924,53 +1940,53 @@ theorem measureTGBA_pruneDeadAndUnreachable_le (tgba : TGBA α) :
   rw [heq]
   have hnd : tgba.states.toList.Nodup := states_toList_nodup tgba
   have hlivend : live.Nodup := hnd.sublist List.filter_sublist
-  have hliveSub : live.toFinset ⊆ tgba.states.toList.toFinset := by
-    rw [hlive, List.toFinset_filter]; exact Finset.filter_subset _ _
+  have hliveSub : live.toFinSet ⊆ tgba.states.toList.toFinSet := by
+    rw [hlive, List.toFinSet_filter]; exact FinSet.filter_subset _ _
   have htrimmedStates : trimmed.states = Std.HashSet.ofList live := by rw [htrimmed]
-  have htrimmedFinset : trimmed.states.toList.toFinset = live.toFinset := by
-    rw [htrimmedStates]; exact toList_toFinset_ofList live
+  have htrimmedFinSet : trimmed.states.toList.toFinSet = live.toFinSet := by
+    rw [htrimmedStates]; exact toList_toFinSet_ofList live
   have htrimmednd : trimmed.states.toList.Nodup := states_toList_nodup trimmed
-  have hreachedSub : reached.toFinset ⊆ live.toFinset := by
-    rw [hreached, List.toFinset_filter, htrimmedFinset]; exact Finset.filter_subset _ _
+  have hreachedSub : reached.toFinSet ⊆ live.toFinSet := by
+    rw [hreached, List.toFinSet_filter, htrimmedFinSet]; exact FinSet.filter_subset _ _
   have hreachednd : reached.Nodup := htrimmednd.sublist List.filter_sublist
-  have hgsLive : ∀ q ∈ live.toFinset,
+  have hgsLive : ∀ q ∈ live.toFinSet,
       transWeight (trimmed.getSuccessors q) ≤ transWeight (tgba.getSuccessors q) := by
     intro q hq
-    rw [List.mem_toFinset] at hq
+    rw [List.mem_toFinSet] at hq
     rw [htrimmed]
     unfold TGBA.getSuccessors
     rw [getElem?_foldl_insert_of_mem _ q live hlivend hq]
-    simpa using transWeight_filter_le (fun t => alive t.target) (tgba.successors[q]?.getD #[])
+    exact transWeight_filter_le (fun t => alive t.target) (tgba.successors[q]?.getD #[])
   have hresultStates : result.states = Std.HashSet.ofList reached := by rw [hresult]
-  have hresultFinset : result.states.toList.toFinset = reached.toFinset := by
-    rw [hresultStates]; exact toList_toFinset_ofList reached
-  have hgsReached : ∀ q ∈ reached.toFinset,
+  have hresultFinSet : result.states.toList.toFinSet = reached.toFinSet := by
+    rw [hresultStates]; exact toList_toFinSet_ofList reached
+  have hgsReached : ∀ q ∈ reached.toFinSet,
       transWeight (result.getSuccessors q) = transWeight (trimmed.getSuccessors q) := by
     intro q hq
-    rw [List.mem_toFinset] at hq
+    rw [List.mem_toFinSet] at hq
     rw [hresult]
     unfold TGBA.getSuccessors
     rw [getElem?_foldl_insert_of_mem _ q reached hreachednd hq]
     simp
   unfold measureTGBA
-  rw [hresultStates, hresultFinset, Finset.sum_congr rfl hgsReached]
-  calc (Std.HashSet.ofList reached).size + ∑ q ∈ reached.toFinset, transWeight (trimmed.getSuccessors q)
-      ≤ reached.length + ∑ q ∈ reached.toFinset, transWeight (trimmed.getSuccessors q) :=
+  rw [hresultStates, hresultFinSet, FinSet.sum_congr rfl hgsReached]
+  calc (Std.HashSet.ofList reached).size + ∑ q ∈ reached.toFinSet, transWeight (trimmed.getSuccessors q)
+      ≤ reached.length + ∑ q ∈ reached.toFinSet, transWeight (trimmed.getSuccessors q) :=
         Nat.add_le_add_right Std.HashSet.size_ofList_le _
-    _ = reached.toFinset.card + ∑ q ∈ reached.toFinset, transWeight (trimmed.getSuccessors q) := by
-        rw [List.toFinset_card_of_nodup hreachednd]
-    _ ≤ live.toFinset.card + ∑ q ∈ live.toFinset, transWeight (trimmed.getSuccessors q) :=
-        Nat.add_le_add (Finset.card_le_card hreachedSub) (Finset.sum_le_sum_of_subset hreachedSub)
-    _ = live.length + ∑ q ∈ live.toFinset, transWeight (trimmed.getSuccessors q) := by
-        rw [List.toFinset_card_of_nodup hlivend]
-    _ ≤ live.length + ∑ q ∈ live.toFinset, transWeight (tgba.getSuccessors q) :=
-        Nat.add_le_add_left (Finset.sum_le_sum hgsLive) _
-    _ = live.toFinset.card + ∑ q ∈ live.toFinset, transWeight (tgba.getSuccessors q) := by
-        rw [List.toFinset_card_of_nodup hlivend]
-    _ ≤ tgba.states.toList.toFinset.card + ∑ q ∈ tgba.states.toList.toFinset, transWeight (tgba.getSuccessors q) :=
-        Nat.add_le_add (Finset.card_le_card hliveSub) (Finset.sum_le_sum_of_subset hliveSub)
-    _ = tgba.states.size + ∑ q ∈ tgba.states.toList.toFinset, transWeight (tgba.getSuccessors q) := by
-        rw [List.toFinset_card_of_nodup hnd, Std.HashSet.length_toList]
+    _ = reached.toFinSet.card + ∑ q ∈ reached.toFinSet, transWeight (trimmed.getSuccessors q) := by
+        rw [List.toFinSet_card_of_nodup hreachednd]
+    _ ≤ live.toFinSet.card + ∑ q ∈ live.toFinSet, transWeight (trimmed.getSuccessors q) :=
+        Nat.add_le_add (FinSet.card_le_card hreachedSub) (FinSet.sum_le_sum_of_subset hreachedSub)
+    _ = live.length + ∑ q ∈ live.toFinSet, transWeight (trimmed.getSuccessors q) := by
+        rw [List.toFinSet_card_of_nodup hlivend]
+    _ ≤ live.length + ∑ q ∈ live.toFinSet, transWeight (tgba.getSuccessors q) :=
+        Nat.add_le_add_left (FinSet.sum_le_sum hgsLive) _
+    _ = live.toFinSet.card + ∑ q ∈ live.toFinSet, transWeight (tgba.getSuccessors q) := by
+        rw [List.toFinSet_card_of_nodup hlivend]
+    _ ≤ tgba.states.toList.toFinSet.card + ∑ q ∈ tgba.states.toList.toFinSet, transWeight (tgba.getSuccessors q) :=
+        Nat.add_le_add (FinSet.card_le_card hliveSub) (FinSet.sum_le_sum_of_subset hliveSub)
+    _ = tgba.states.size + ∑ q ∈ tgba.states.toList.toFinSet, transWeight (tgba.getSuccessors q) := by
+        rw [List.toFinSet_card_of_nodup hnd, Std.HashSet.length_toList]
 
 /-! ## The fixpoint loop -/
 
@@ -1979,12 +1995,12 @@ def reduceRound (tgba : TGBA α) : TGBA α :=
   pruneDeadAndUnreachable (mergeEquivalentStates (dropImpliedAll tgba))
 
 theorem measureTGBA_reduceRound_le (tgba : TGBA α) : measureTGBA (reduceRound tgba) ≤ measureTGBA tgba :=
-  (measureTGBA_pruneDeadAndUnreachable_le _).trans
-    ((measureTGBA_mergeEquivalentStates_le _).trans (measureTGBA_dropImpliedAll_le _))
+  (Nat.le_trans (measureTGBA_pruneDeadAndUnreachable_le _))
+    (Nat.le_trans (measureTGBA_mergeEquivalentStates_le _) (measureTGBA_dropImpliedAll_le _))
 
 /-- Mark erasure then `reduceRound`, repeated until `reduceRound` changes nothing. Mark erasure is idempotent on an
 unchanged graph and `reduceRound` does not depend on the order of transitions, so a further round would change nothing. -/
-def simplifyTGBA (tgba : TGBA α) : TGBA α :=
+@[expose] def simplifyTGBA (tgba : TGBA α) : TGBA α :=
   let erased := eraseMarks tgba (tgbaSCCs tgba)
   let next := reduceRound erased
   if _h : measureTGBA next = measureTGBA erased then next else simplifyTGBA next
@@ -1994,12 +2010,12 @@ decreasing_by
 
 
 /-- Run compatibility reads only the edges, so it agrees for any two `TGBA`s on the same run. -/
-theorem TGBA.toSpec_runCompatible_indep (T1 T2 : TGBA α) (σ : TLA.exec (TGBA.Edge α)) (ξ : OmegaWord α) :
+theorem TGBA.toSpec_runCompatible_indep (T1 T2 : TGBA α) (σ : Lentil.exec (TGBA.Edge α)) (ξ : OmegaWord α) :
     T1.toSpec.runCompatible σ ξ ↔ T2.toSpec.runCompatible σ ξ := Iff.rfl
 
 /-- Acceptance of a run agrees for any two `TGBA`s with the same `numAcceptSets`. -/
 theorem TGBA.toSpec_isAcceptingRun_indep (T1 T2 : TGBA α) (hk : T1.numAcceptSets = T2.numAcceptSets)
-    (σ : TLA.exec (TGBA.Edge α)) : T1.toSpec.isAcceptingRun σ ↔ T2.toSpec.isAcceptingRun σ := by
+    (σ : Lentil.exec (TGBA.Edge α)) : T1.toSpec.isAcceptingRun σ ↔ T2.toSpec.isAcceptingRun σ := by
   unfold TGBA.toSpec TOASpec.isAcceptingRun
   rw [hk]
 
@@ -2233,7 +2249,7 @@ theorem simplifyTGBA_spec (tgba : TGBA α) (hwf : tgba.WellFormed) :
             m < (simplifyTGBA tgba).numAcceptSets) ∧
         ∀ ξ : OmegaWord α, tgba.toSpec.accepts ξ ↔ (simplifyTGBA tgba).toSpec.accepts ξ from H _ tgba rfl hwf
   intro n
-  induction n using Nat.strong_induction_on with
+  induction n using Nat.strongRecOn with
   | _ n ih =>
     intro tgba hm hwf
     have h1 := eraseMarks_wellFormed tgba hwf (tgbaSCCs tgba)

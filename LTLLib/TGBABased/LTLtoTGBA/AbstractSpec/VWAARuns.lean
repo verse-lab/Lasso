@@ -1,3 +1,5 @@
+module
+
 /-
   Generic run theory for `VWAA`, mirroring `[HOL4-ltl]`'s `alterAScript`. Along a branch the rank never rises and drops at
   every change of state, so every branch is eventually constant without any finiteness assumption, and co-Büchi acceptance
@@ -37,16 +39,18 @@
   - Run union
   - Level shift
 -/
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
-import Mathlib.Data.Nat.Lattice
-import Mathlib.Order.Interval.Set.Infinite
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
+public import LTLLib.Data.Nat
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 
 universe u v
 
-variable {Q : Type v} {α : Type u} [DecidableEq Q]
-variable {A : VWAA Q α} {r : VWAA.Run Q} {S T : Finset Q} {ξ : OmegaWord α} {b : Nat → Q}
+variable {Q : Type v} {α : Type u}
+variable {A : VWAA Q α} {r : VWAA.Run Q} {S T : FinSet Q} {ξ : OmegaWord α} {b : Nat → Q}
 
 /-! ## Branches stay alive -/
 
@@ -70,23 +74,22 @@ theorem rank_step_of_infBranch (hv : r.ValidFrom A S ξ) (hb : r.InfBranch b) (i
 private theorem rank_antitone (hv : r.ValidFrom A S ξ) (hb : r.InfBranch b) {i j : Nat} (hij : i ≤ j) :
     A.rank (b j) ≤ A.rank (b i) := by
   induction j, hij using Nat.le_induction with
-  | base => exact le_refl _
+  | base => exact Nat.le_refl _
   | succ j hij ih =>
     rcases rank_step_of_infBranch hv hb j with h | h
     · rw [h]; exact ih
-    · exact le_trans (le_of_lt h) ih
+    · exact Nat.le_trans (Nat.le_of_lt h) ih
 
 /-- `[HOL4-ltl]` `BRANCH_FIXP`: every infinite branch is eventually constant. -/
 theorem exists_stabilizesAt (hv : r.ValidFrom A S ξ) (hb : r.InfBranch b) :
     ∃ q, VWAA.StabilizesAt b q := by
-  have hne : (Set.range fun i => A.rank (b i)).Nonempty := ⟨A.rank (b 0), 0, rfl⟩
-  obtain ⟨i₀, hi₀'⟩ := Nat.sInf_mem hne
-  have hi₀ : A.rank (b i₀) = sInf (Set.range fun i => A.rank (b i)) := hi₀'
+  obtain ⟨v, -, ⟨i₀, hi₀⟩, hvmin⟩ :=
+    LentilLib.Nat.find_min (p := fun v => ∃ i, A.rank (b i) = v) (A.rank (b 0)) ⟨0, rfl⟩
   have hconst : ∀ m, i₀ ≤ m → A.rank (b m) = A.rank (b i₀) := by
     intro m hm
-    refine le_antisymm (rank_antitone hv hb hm) ?_
+    refine Nat.le_antisymm (rank_antitone hv hb hm) ?_
     rw [hi₀]
-    exact Nat.sInf_le ⟨m, rfl⟩
+    exact Nat.not_lt.mp fun h => hvmin _ h ⟨m, rfl⟩
   refine ⟨b i₀, i₀, ?_⟩
   intro m hm
   induction m, hm using Nat.le_induction with
@@ -108,18 +111,16 @@ theorem acceptingRun_iff (hv : r.ValidFrom A S ξ) :
   constructor
   · intro hacc b q hb hst hfin
     obtain ⟨i₀, hst⟩ := hst
-    refine Set.Ici_infinite i₀ (Set.Finite.subset (hacc b hb) ?_)
+    refine FinitePred.not_ge i₀ (FinitePred.subset (hacc b hb) ?_)
     intro m hm
-    simp only [Set.mem_Ici] at hm
-    simp only [Set.mem_setOf_eq, hst m hm]
+    simp only [hst m hm]
     exact hfin
   · intro hno b hb
     obtain ⟨q, i₀, hst⟩ := exists_stabilizesAt hv hb
-    refine Set.Finite.subset (Set.finite_lt_nat i₀) ?_
+    refine FinitePred.subset (FinitePred.lt i₀) ?_
     intro m hm
-    simp only [Set.mem_setOf_eq] at hm ⊢
     by_contra hcon
-    push_neg at hcon
+    rw [Nat.not_lt] at hcon
     rw [hst m hcon] at hm
     exact hno b q hb ⟨i₀, hst⟩ hm
 
@@ -133,7 +134,7 @@ theorem restrict_level_subset (hv : r.ValidFrom A S ξ) (hsub : T ⊆ r.level 0)
   | zero => exact hsub
   | succ i ih =>
     intro x hx
-    simp only [VWAA.Run.restrict, VWAA.Run.restrictLevel, Finset.mem_biUnion] at hx
+    simp only [VWAA.Run.restrict, VWAA.Run.restrictLevel, FinSet.mem_biUnion] at hx
     obtain ⟨q, hq, hxq⟩ := hx
     exact hv.succ_sub i q (ih hq) hxq
 
@@ -142,8 +143,8 @@ theorem restrict_validFrom (hv : r.ValidFrom A S ξ) (hsub : T ⊆ r.level 0) :
     (r.restrict T).ValidFrom A T ξ :=
   { init := rfl
     step := fun i q hq => hv.step i q (restrict_level_subset hv hsub i hq)
-    succ_sub := fun _ _ hq => Finset.subset_biUnion_of_mem _ hq
-    no_orphan := fun _ _ hq => Finset.mem_biUnion.mp hq }
+    succ_sub := fun _ _ hq => FinSet.subset_biUnion_of_mem _ hq
+    no_orphan := fun _ _ hq => FinSet.mem_biUnion.mp hq }
 
 /-- `[HOL4-ltl]` `RUN_RESTR_FIXP_LEMM`: a branch of the restriction is a branch of the original run. -/
 theorem infBranch_of_restrict (hsub : T ⊆ r.level 0) (hb : (r.restrict T).InfBranch b) : r.InfBranch b :=
@@ -186,7 +187,7 @@ theorem exists_path_to (hv : r.ValidFrom A S ξ) :
 
 /-! ## Run union -/
 
-variable {r₁ r₂ : VWAA.Run Q} {S₁ S₂ : Finset Q}
+variable {r₁ r₂ : VWAA.Run Q} {S₁ S₂ : FinSet Q}
 
 /-- The union never leaves the two runs' own levels. -/
 theorem conj_level_subset (hv₁ : r₁.ValidFrom A S₁ ξ) (hv₂ : r₂.ValidFrom A S₂ ξ) :
@@ -196,18 +197,18 @@ theorem conj_level_subset (hv₁ : r₁.ValidFrom A S₁ ξ) (hv₂ : r₂.Valid
   | zero => exact fun x hx => hx
   | succ i ih =>
     intro x hx
-    simp only [VWAA.Run.conj, VWAA.Run.conjLevel, Finset.mem_biUnion] at hx
+    simp only [VWAA.Run.conj, VWAA.Run.conjLevel, FinSet.mem_biUnion] at hx
     obtain ⟨p, hp, hxp⟩ := hx
     simp only [VWAA.Run.conjSucc] at hxp
     by_cases hp1 : p ∈ r₁.level i
     · rw [if_pos hp1] at hxp
-      exact Finset.mem_union_left _ (hv₁.succ_sub i p hp1 hxp)
+      exact FinSet.mem_union_left _ (hv₁.succ_sub i p hp1 hxp)
     · rw [if_neg hp1] at hxp
       have hp2 : p ∈ r₂.level i := by
-        rcases Finset.mem_union.mp (ih hp) with h | h
+        rcases FinSet.mem_union.mp (ih hp) with h | h
         · exact absurd h hp1
         · exact h
-      exact Finset.mem_union_right _ (hv₂.succ_sub i p hp2 hxp)
+      exact FinSet.mem_union_right _ (hv₂.succ_sub i p hp2 hxp)
 
 /-- The union of two runs on the same word is a run from the union of their level-0 sets. -/
 theorem conj_validFrom (hv₁ : r₁.ValidFrom A S₁ ξ) (hv₂ : r₂.ValidFrom A S₂ ξ) :
@@ -220,12 +221,12 @@ theorem conj_validFrom (hv₁ : r₁.ValidFrom A S₁ ξ) (hv₂ : r₂.ValidFro
       · rw [if_pos hq1]; exact hv₁.step i q hq1
       · rw [if_neg hq1]
         have hq2 : q ∈ r₂.level i := by
-          rcases Finset.mem_union.mp (conj_level_subset hv₁ hv₂ i hq) with h | h
+          rcases FinSet.mem_union.mp (conj_level_subset hv₁ hv₂ i hq) with h | h
           · exact absurd h hq1
           · exact h
         exact hv₂.step i q hq2
-    succ_sub := fun _ _ hq => Finset.subset_biUnion_of_mem _ hq
-    no_orphan := fun _ _ hq => Finset.mem_biUnion.mp hq }
+    succ_sub := fun _ _ hq => FinSet.subset_biUnion_of_mem _ hq
+    no_orphan := fun _ _ hq => FinSet.mem_biUnion.mp hq }
 
 /-- Once a branch of the union is on the first run's levels it stays on them. -/
 private theorem conj_absorbing (hv₁ : r₁.ValidFrom A S₁ ξ) (hb : (r₁.conj r₂).InfBranch b)
@@ -257,7 +258,7 @@ theorem acceptingRun_conj (hv₁ : r₁.ValidFrom A S₁ ξ)
           exact hi₀
       · intro i
         show (if i + 1 < i₀ then p (i + 1) else b (i + 1)) ∈ r₁.succ i (if i < i₀ then p i else b i)
-        rcases lt_trichotomy (i + 1) i₀ with h | h | h
+        rcases Nat.lt_trichotomy (i + 1) i₀ with h | h | h
         · rw [if_pos h, if_pos (by omega : i < i₀)]
           exact hpstep i (by omega)
         · rw [if_neg (by omega : ¬ (i + 1 < i₀)), if_pos (by omega : i < i₀)]
@@ -269,19 +270,18 @@ theorem acceptingRun_conj (hv₁ : r₁.ValidFrom A S₁ ξ)
           simp only [VWAA.Run.conj, VWAA.Run.conjSucc, if_pos hmem] at hstep
           rw [if_neg (by omega : ¬ (i + 1 < i₀)), if_neg (by omega : ¬ (i < i₀))]
           exact hstep
-    refine Set.Finite.subset (Set.Finite.union (Set.finite_lt_nat i₀) (hacc₁ _ hb')) ?_
+    refine FinitePred.subset (FinitePred.union (FinitePred.lt i₀) (hacc₁ _ hb')) ?_
     intro m hm
-    simp only [Set.mem_setOf_eq] at hm
     by_cases hmlt : m < i₀
     · exact Or.inl hmlt
     · refine Or.inr ?_
       show A.final (if m < i₀ then p m else b m)
       rw [if_neg hmlt]
       exact hm
-  · push_neg at hcase
+  · simp only [_root_.not_exists] at hcase
     refine hacc₂ b ⟨?_, ?_⟩
     · have h0 := hb.1
-      simp only [VWAA.Run.conj, VWAA.Run.conjLevel, Finset.mem_union] at h0
+      simp only [VWAA.Run.conj, VWAA.Run.conjLevel, FinSet.mem_union] at h0
       rcases h0 with h | h
       · exact absurd h (hcase 0)
       · exact h
@@ -314,20 +314,19 @@ theorem exists_infBranch_of_shift (hv : r.ValidFrom A S ξ) (hb : r.shift.InfBra
   intro i
   match i with
   | 0 => simpa using hbp
-  | i + 1 => simpa using hb.2 i
+  | i + 1 => simpa [VWAA.Run.shift] using hb.2 i
 
 /-- Acceptance survives dropping level 0. -/
 theorem acceptingRun_shift (hv : r.ValidFrom A S ξ) (hacc : A.AcceptingRun r) :
     A.AcceptingRun r.shift := by
   intro b hb
   obtain ⟨b', hb', heq⟩ := exists_infBranch_of_shift hv hb
-  refine Set.Finite.subset ((hacc b' hb').image (· - 1)) ?_
+  refine FinitePred.subset ((hacc b' hb').image (· - 1)) ?_
   intro i hi
-  simp only [Set.mem_setOf_eq] at hi
   exact ⟨i + 1, show A.final (b' (i + 1)) from heq i ▸ hi, by simp⟩
 
 /-- A fresh level 0 with a chosen successor set gives a run of the un-dropped word. -/
-theorem prepend_validFrom {succ0 : Q → Finset Q} (hv : r.ValidFrom A (r.level 0) (ξ.drop 1))
+theorem prepend_validFrom {succ0 : Q → FinSet Q} (hv : r.ValidFrom A (r.level 0) (ξ.drop 1))
     (hstep0 : ∀ q ∈ S, ∃ g, (g, succ0 q) ∈ A.trans q ∧ g (ξ 0)) (hsub0 : ∀ q ∈ S, succ0 q ⊆ r.level 0)
     (horphan0 : ∀ q ∈ r.level 0, ∃ p ∈ S, q ∈ succ0 p) : (r.prepend S succ0).ValidFrom A S ξ where
   init := rfl
@@ -341,21 +340,19 @@ theorem prepend_validFrom {succ0 : Q → Finset Q} (hv : r.ValidFrom A (r.level 
     | 0, hq => exact horphan0 q hq
     | i + 1, hq => exact hv.no_orphan i q hq
 
-omit [DecidableEq Q] in
 /-- Shift undoes prepend exactly. -/
-theorem prepend_shift {succ0 : Q → Finset Q} : (r.prepend S succ0).shift = r := rfl
+theorem prepend_shift {succ0 : Q → FinSet Q} : (r.prepend S succ0).shift = r := rfl
 
 /-- Acceptance survives prepending a level. -/
-theorem acceptingRun_prepend {succ0 : Q → Finset Q} (hsub0 : ∀ q ∈ S, succ0 q ⊆ r.level 0)
+theorem acceptingRun_prepend {succ0 : Q → FinSet Q} (hsub0 : ∀ q ∈ S, succ0 q ⊆ r.level 0)
     (hacc : A.AcceptingRun r) : A.AcceptingRun (r.prepend S succ0) := by
   intro b hb
   have hb' : r.InfBranch fun i => b (i + 1) :=
     ⟨hsub0 (b 0) hb.1 (hb.2 0), fun i => hb.2 (i + 1)⟩
-  refine Set.Finite.subset ((hacc _ hb').image (· + 1) |>.insert 0) ?_
+  refine FinitePred.subset ((hacc _ hb').image (· + 1) |>.insert 0) ?_
   intro i hi
-  simp only [Set.mem_setOf_eq] at hi
   match i with
-  | 0 => exact Set.mem_insert _ _
-  | i + 1 => exact Set.mem_insert_of_mem _ ⟨i, hi, rfl⟩
+  | 0 => exact Or.inl rfl
+  | i + 1 => exact Or.inr ⟨i, hi, rfl⟩
 
 end LTLLib

@@ -1,3 +1,5 @@
+module
+
 /-
   Streett acceptance on an SCC when the hoisted regions restrict *steps* rather than states.
 
@@ -48,9 +50,12 @@
   - Runs that carry their letters
   - From a fair run to a fair SCC
 -/
-import LTLLib.TGBABased.AbstractSpec.Pumping
-import LTLLib.TGBABased.AbstractSpec.SCCTheory
-import LTLLib.TGBABased.AbstractSpec.StreettSCC
+public import LTLLib.TGBABased.AbstractSpec.Pumping
+public import LTLLib.TGBABased.AbstractSpec.SCCTheory
+public import LTLLib.TGBABased.AbstractSpec.StreettSCC
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -84,7 +89,7 @@ structure RStreettSpec (State : Type u) (L : Type w) where
   regionExpand_coherent : ∀ r, ExpandCoherent (regionSuccs r) (regionMarks r) (regionExpand r)
 
 /-- A predicate entailing another, pointwise. -/
-def LePred (r' r : L → Bool) : Prop := ∀ l, r' l = true → r l = true
+@[expose] def LePred (r' r : L → Bool) : Prop := ∀ l, r' l = true → r l = true
 
 theorem LePred.refl (r : L → Bool) : LePred r r := fun _ h => h
 
@@ -117,17 +122,20 @@ structure RStreettSpec.Mono (spec : RStreettSpec State L) : Prop where
 variable {spec : RStreettSpec State L} {succs : State → Array State}
   {edgeMarks : State → State → Std.HashSet Nat}
 
+omit [BEq State] [Hashable State] [LawfulBEq State] in
 /-- A restricted step is an ambient step. -/
 theorem RStreettSpec.Compat.succs_sub (h : spec.Compat succs edgeMarks) (r : L → Bool) (s t : State)
     (hst : t ∈ spec.regionSuccs r s) : t ∈ succs s := by
   rw [← h.succs_top s]
   exact h.succs_mono (fun _ _ => rfl) s t hst
 
+omit [BEq State] [Hashable State] [LawfulBEq State] in
 /-- A restricted mark is an ambient mark. -/
 theorem RStreettSpec.Compat.marks_sub (h : spec.Compat succs edgeMarks) (r : L → Bool) (s t : State)
     (m : Nat) (hm : m ∈ spec.regionMarks r s t) : m ∈ edgeMarks s t :=
   (h.marks_top s t m).mp (h.marks_mono (fun _ _ => rfl) s t m hm)
 
+omit [BEq State] [Hashable State] [LawfulBEq State] in
 /-- The graph-free half of a compatibility proof. -/
 theorem RStreettSpec.Compat.toMono (h : spec.Compat succs edgeMarks) : spec.Mono :=
   ⟨h.succs_mono, h.marks_mono⟩
@@ -136,12 +144,12 @@ theorem RStreettSpec.Compat.toMono (h : spec.Compat succs edgeMarks) : spec.Mono
 
 /-- The conjunction of the regions of one option per conjunct. A cycle witnessing a selection must satisfy
 every selected region at *every* step, so this — not the individual regions — is what restricts its graph. -/
-def selRegion (sel : List (StreettOption L)) : L → Bool :=
+@[expose] def selRegion (sel : List (StreettOption L)) : L → Bool :=
   fun l => sel.all fun opt => opt.region l
 
 theorem selRegion_le {sel : List (StreettOption L)} {opt : StreettOption L} (h : opt ∈ sel) :
     LePred (selRegion sel) opt.region :=
-  fun l hl => List.all_eq_true.mp hl opt h
+  fun _ hl => List.all_eq_true.mp hl opt h
 
 theorem selRegion_and_le {sel : List (StreettOption L)} (g : L → Bool) :
     LePred (fun l => selRegion sel l && g l) (selRegion sel) :=
@@ -161,7 +169,7 @@ structure RStreettSpec.AvailableWith (spec : RStreettSpec State L) (sel : List (
     t ∈ spec.regionSuccs (fun l => selRegion sel l && g l) s
 
 /-- Some selection picking one option per conjunct is available on `B`. -/
-def RStreettSpec.Accepting (spec : RStreettSpec State L) (B : Std.HashSet State) : Prop :=
+@[expose] def RStreettSpec.Accepting (spec : RStreettSpec State L) (B : Std.HashSet State) : Prop :=
   ∃ sel : List (StreettOption L),
     (∀ c ∈ spec.conjuncts, ∃ opt ∈ sel, opt ∈ c) ∧ spec.AvailableWith sel B
 
@@ -179,7 +187,7 @@ structure RFairSCC (initialStates : List State) (succs : State → Array State)
 /-- The ambient `AcceptingSCC` underneath, obtained by relaxing the restricted graph and marks to the
 ambient ones. The selection is recovered classically; `fair` is a `Prop`, and only its existence matters
 here. -/
-noncomputable def RFairSCC.toAcceptingSCC {initialStates : List State}
+@[expose] noncomputable def RFairSCC.toAcceptingSCC {initialStates : List State}
     (hcompat : spec.Compat succs edgeMarks) (A : RFairSCC initialStates succs spec) :
     AcceptingSCC initialStates succs edgeMarks spec.numMarks :=
   let sel := A.fair.choose
@@ -204,7 +212,7 @@ answered on one realization — §6.3's failure mode is excluded by construction
 condition. -/
 
 /-- An option read on edges. -/
-def StreettOption.onEdges (spec : RStreettSpec State L) (opt : StreettOption L) :
+@[expose] def StreettOption.onEdges (spec : RStreettSpec State L) (opt : StreettOption L) :
     StreettOption (State × State) where
   region := fun e => (spec.regionSuccs opt.region e.1).contains e.2
   marks := opt.marks.map fun g e =>
@@ -219,34 +227,39 @@ option at `r ∧ opt.region` rather than at `opt.region` alone is what makes the
 those commitments. Without it two conjuncts can each be witnessed by a *different* realization of the
 same edge, which is `EdgeLabels.md` §6.3 one level up and exactly what `AvailableWith` forbids by
 evaluating everything at `selRegion sel`. `onEdges` is the case `r = ⊤`, which is the top-level search. -/
-def StreettOption.onEdgesIn (spec : RStreettSpec State L) (r : L → Bool) (opt : StreettOption L) :
+@[expose] def StreettOption.onEdgesIn (spec : RStreettSpec State L) (r : L → Bool) (opt : StreettOption L) :
     StreettOption (State × State) where
   region := fun e => (spec.regionSuccs (fun l => r l && opt.region l) e.1).contains e.2
   marks := opt.marks.map fun g e =>
     (spec.regionSuccs (fun l => r l && opt.region l && g l) e.1).contains e.2
 
+omit [Hashable State] [LawfulBEq State] in
 /-- At the top region an option's edge reading is the unrestricted one, definitionally: `true && b` is
 `b` by `Bool.and`'s own recursion, so the two predicates are the same term. -/
 @[simp] theorem StreettOption.onEdgesIn_top (spec : RStreettSpec State L) (opt : StreettOption L) :
     opt.onEdgesIn spec (fun _ => true) = opt.onEdges spec := rfl
 
+omit [Hashable State] in
 @[simp] theorem StreettOption.onEdgesIn_marks_size (spec : RStreettSpec State L) (r : L → Bool)
     (opt : StreettOption L) : (opt.onEdgesIn spec r).marks.size = opt.marks.size := by
   simp [StreettOption.onEdgesIn]
 
 /-- The spec the prune compiles: the same conjuncts, read on edges. Its `label` is never consulted — the
 edge scan is pointed at an explicit edge list — so it is pinned to the diagonal. -/
-def RStreettSpec.edgeSpec (spec : RStreettSpec State L) : StreettSpec State (State × State) where
+@[expose] def RStreettSpec.edgeSpec (spec : RStreettSpec State L) : StreettSpec State (State × State) where
   numMarks := spec.numMarks
   label := fun s => (s, s)
   conjuncts := spec.conjuncts.map fun c => c.map fun opt => opt.onEdges spec
 
+omit [Hashable State] [LawfulBEq State] in
 @[simp] theorem RStreettSpec.edgeSpec_numMarks (spec : RStreettSpec State L) :
     spec.edgeSpec.numMarks = spec.numMarks := rfl
 
+omit [Hashable State] [LawfulBEq State] in
 theorem RStreettSpec.edgeSpec_conjuncts_size (spec : RStreettSpec State L) :
     spec.edgeSpec.conjuncts.size = spec.conjuncts.size := by simp [RStreettSpec.edgeSpec]
 
+omit [Hashable State] [LawfulBEq State] in
 theorem RStreettSpec.edgeSpec_conjunct_size (spec : RStreettSpec State L) {i : Nat}
     (hi : i < spec.conjuncts.size) :
     (spec.edgeSpec.conjuncts[i]!).size = (spec.conjuncts[i]!).size := by
@@ -254,6 +267,7 @@ theorem RStreettSpec.edgeSpec_conjunct_size (spec : RStreettSpec State L) {i : N
   rw [getElem!_pos _ i (by simpa using hi), getElem!_pos _ i hi]
   simp
 
+omit [Hashable State] [LawfulBEq State] in
 /-- Option `k` of conjunct `i` of the edge spec is the edge reading of the same option. -/
 theorem RStreettSpec.edgeSpec_getElem (spec : RStreettSpec State L) {i : Nat}
     (hi : i < spec.conjuncts.size) {k : Nat} (hk : k < (spec.conjuncts[i]!).size) :
@@ -282,6 +296,7 @@ structure RRun (spec : RStreettSpec State L) (initialStates : List State) where
   mark : ∀ (n : Nat) (r : L → Bool), r (lets n) = true →
     ∀ m ∈ rmarks n, m ∈ spec.regionMarks r (st n) (st (n + 1))
 
+omit [BEq State] [Hashable State] [LawfulBEq State] in
 /-- The ambient step relation the run walks. -/
 theorem RRun.trans (hcompat : spec.Compat succs edgeMarks) {initialStates : List State}
     (ρ : RRun spec initialStates) (n : Nat) : ρ.st (n + 1) ∈ succs (ρ.st n) :=
@@ -313,20 +328,22 @@ private theorem exists_common_threshold' {β : Type u₂} (f : β → Nat → Pr
     obtain ⟨N₂, hN₂⟩ := exists_common_threshold' f l fun x hx => h x (by simp [hx])
     refine ⟨max N₁ N₂, fun x hx n hn => ?_⟩
     rcases List.mem_cons.mp hx with rfl | hx
-    · exact hN₁ n (le_trans (le_max_left _ _) hn)
-    · exact hN₂ x hx n (le_trans (le_max_right _ _) hn)
+    · exact hN₁ n (Nat.le_trans (Nat.le_max_left _ _) hn)
+    · exact hN₂ x hx n (Nat.le_trans (Nat.le_max_right _ _) hn)
 
 /-- The conjunction of a selection holds at a letter exactly when every member's region does. -/
 theorem selRegion_eq_true {sel : List (StreettOption L)} {l : L}
     (h : ∀ opt ∈ sel, opt.region l = true) : selRegion sel l = true :=
   List.all_eq_true.mpr h
 
+omit [BEq State] [Hashable State] [LawfulBEq State] in
 /-- Every state the run visits is reachable in the ambient graph. -/
 theorem RRun.reachable (hcompat : spec.Compat succs edgeMarks) {initialStates : List State}
     (ρ : RRun spec initialStates) : ∀ n, Reachable initialStates succs (ρ.st n)
   | 0 => .base ρ.init
   | n + 1 => (ρ.reachable hcompat n).step (ρ.trans hcompat n)
 
+omit [BEq State] [Hashable State] [LawfulBEq State] in
 /-- The restricted graph reaches no further than the ambient one, so finiteness transfers. -/
 theorem finiteReach_of_sub {initialStates : List State} {g : State → Array State} {s₀ : State}
     (hg : ∀ a b, b ∈ g a → b ∈ succs a) (fr : FiniteReach initialStates succs)

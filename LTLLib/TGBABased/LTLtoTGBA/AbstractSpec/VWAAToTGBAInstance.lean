@@ -1,3 +1,5 @@
+module
+
 /-
   Three instances of `SoundComplete`, following `[GO01]` Step 2 and Remark 3: the plain product `δ''` with `T_f` marks,
   on-the-fly dominance, and OR-merging transitions with equal target and marks.
@@ -32,30 +34,34 @@
   - On-the-fly dominance
   - OR-merging equal transitions
 -/
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBA
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBA
+public import LTLLib.Data.FinSet
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
 universe u v
 
-variable {Q : Type v} {α : Type u} [DecidableEq Q]
+variable {Q : Type v} {α : Type u}
 
 /-! ## Product transition enumeration -/
 
 /-- One alternative per state of `l`, guard the conjunction and target the union of the choices, `[GO01]`'s plain
 product transition. -/
-def combos (A : VWAA Q α) : List Q → List (((α → Prop) → Prop) × Finset Q)
+def combos (A : VWAA Q α) : List Q → List (((α → Prop) → Prop) × FinSet Q)
   | [] => [(fun _ => True, ∅)]
   | q :: qs => (A.trans q).flatMap fun (g, O) =>
       (combos A qs).map fun (g', O') => (fun v => g v ∧ g' v, O ∪ O')
 
 -- The combo built from a specific per-state choice.
-private def canonicalCombo (gf : Q → (α → Prop) → Prop) (Of : Q → Finset Q) :
-    List Q → ((α → Prop) → Prop) × Finset Q
+private def canonicalCombo (gf : Q → (α → Prop) → Prop) (Of : Q → FinSet Q) :
+    List Q → ((α → Prop) → Prop) × FinSet Q
   | [] => (fun _ => True, ∅)
   | q :: qs => (fun v => gf q v ∧ (canonicalCombo gf Of qs).1 v, Of q ∪ (canonicalCombo gf Of qs).2)
 
-private theorem canonicalCombo_mem {A : VWAA Q α} {gf : Q → (α → Prop) → Prop} {Of : Q → Finset Q} :
+private theorem canonicalCombo_mem {A : VWAA Q α} {gf : Q → (α → Prop) → Prop} {Of : Q → FinSet Q} :
     ∀ l, (∀ q ∈ l, (gf q, Of q) ∈ A.trans q) → canonicalCombo gf Of l ∈ combos A l
   | [], _ => List.mem_singleton.mpr rfl
   | q :: qs, h => by
@@ -63,18 +69,18 @@ private theorem canonicalCombo_mem {A : VWAA Q α} {gf : Q → (α → Prop) →
       exact ⟨(gf q, Of q), h q (List.mem_cons_self ..),
         (canonicalCombo gf Of qs), canonicalCombo_mem qs fun p hp => h p (List.mem_cons_of_mem _ hp), rfl⟩
 
-private theorem canonicalCombo_guard {gf : Q → (α → Prop) → Prop} {Of : Q → Finset Q} :
+private theorem canonicalCombo_guard {gf : Q → (α → Prop) → Prop} {Of : Q → FinSet Q} :
     ∀ l v, (canonicalCombo gf Of l).1 v ↔ ∀ q ∈ l, gf q v
   | [], _ => by simp [canonicalCombo]
   | q :: qs, v => by simp [canonicalCombo, canonicalCombo_guard qs v]
 
-private theorem canonicalCombo_target {gf : Q → (α → Prop) → Prop} {Of : Q → Finset Q} :
+private theorem canonicalCombo_target {gf : Q → (α → Prop) → Prop} {Of : Q → FinSet Q} :
     ∀ l, (canonicalCombo gf Of l).2 = l.foldr (fun q acc => Of q ∪ acc) ∅
   | [] => rfl
   | q :: qs => by simp [canonicalCombo, canonicalCombo_target qs]
 
 -- Two per-state target choices agreeing on `l` fold to the same union.
-private theorem foldr_union_congr {Of Of' : Q → Finset Q} {l : List Q} (h : ∀ x ∈ l, Of x = Of' x) :
+private theorem foldr_union_congr {Of Of' : Q → FinSet Q} {l : List Q} (h : ∀ x ∈ l, Of x = Of' x) :
     l.foldr (fun q acc => Of q ∪ acc) ∅ = l.foldr (fun q acc => Of' q ∪ acc) ∅ := by
   induction l with
   | nil => rfl
@@ -86,9 +92,9 @@ private theorem foldr_union_congr {Of Of' : Q → Finset Q} {l : List Q} (h : �
 `A.trans`, guard the pointwise conjunction, target the union. `Nodup` is essential, a state repeated in `l`
 could otherwise take two different alternatives at its two occurrences, which no single `gf`/`Of` can
 represent. -/
-theorem mem_combos_iff {A : VWAA Q α} : ∀ (l : List Q), l.Nodup → ∀ (g : (α → Prop) → Prop) (B : Finset Q),
+theorem mem_combos_iff {A : VWAA Q α} : ∀ (l : List Q), l.Nodup → ∀ (g : (α → Prop) → Prop) (B : FinSet Q),
     (g, B) ∈ combos A l ↔
-      ∃ (gf : Q → (α → Prop) → Prop) (Of : Q → Finset Q),
+      ∃ (gf : Q → (α → Prop) → Prop) (Of : Q → FinSet Q),
         (∀ q ∈ l, (gf q, Of q) ∈ A.trans q) ∧ (∀ v, g v ↔ ∀ q ∈ l, gf q v) ∧
         B = l.foldr (fun q acc => Of q ∪ acc) ∅
   | [], _, g, B => by
@@ -110,6 +116,7 @@ theorem mem_combos_iff {A : VWAA Q α} : ∀ (l : List Q), l.Nodup → ∀ (g : 
         obtain ⟨⟨g0, O0⟩, hmem0, ⟨g', B'⟩, hmem', heq⟩ := hmem
         obtain ⟨gf', Of', hall', hg', hB'⟩ := (mem_combos_iff qs hndqs g' B').mp hmem'
         obtain ⟨hgeq, hBeq⟩ := Prod.mk.injEq .. |>.mp heq
+        classical
         refine ⟨fun x => if x = q then g0 else gf' x, fun x => if x = q then O0 else Of' x, ?_, ?_, ?_⟩
         · intro x hx
           rcases List.mem_cons.mp hx with rfl | hx
@@ -149,12 +156,12 @@ theorem mem_combos_iff {A : VWAA Q α} : ∀ (l : List Q), l.Nodup → ∀ (g : 
         have hpair : (g, B) = canonicalCombo gf Of (q :: qs) := by rw [← hgeq, ← hBeq]
         rw [hpair]; exact hcanon
 
-private theorem mem_foldr_union_iff {l : List Q} {Of : Q → Finset Q} {x : Q} :
+private theorem mem_foldr_union_iff {l : List Q} {Of : Q → FinSet Q} {x : Q} :
     x ∈ l.foldr (fun q acc => Of q ∪ acc) ∅ ↔ ∃ q ∈ l, x ∈ Of q := by
   induction l with
   | nil => simp
   | cons a as ih =>
-    simp only [List.foldr_cons, Finset.mem_union, ih, List.mem_cons]
+    simp only [List.foldr_cons, FinSet.mem_union, ih, List.mem_cons]
     constructor
     · rintro (h | ⟨q, hq, hxq⟩)
       · exact ⟨a, Or.inl rfl, h⟩
@@ -163,20 +170,20 @@ private theorem mem_foldr_union_iff {l : List Q} {Of : Q → Finset Q} {x : Q} :
       · exact Or.inl hxq
       · exact Or.inr ⟨q, hq, hxq⟩
 
-private theorem biUnion_eq_foldr_toList (e : Finset Q) (Of : Q → Finset Q) :
+private theorem biUnion_eq_foldr_toList (e : FinSet Q) (Of : Q → FinSet Q) :
     e.biUnion Of = e.toList.foldr (fun q acc => Of q ∪ acc) ∅ :=
-  Finset.ext fun x => by rw [Finset.mem_biUnion, mem_foldr_union_iff]; simp [Finset.mem_toList]
+  FinSet.ext fun x => by rw [FinSet.mem_biUnion, mem_foldr_union_iff]; simp [FinSet.mem_toList]
 
 /-! ## Escape witnesses -/
 
 /-- Every non-looping alternative of a final state `f`, with its guard and target, `[GO01]`'s `T_f` witnesses. Ranges
 over every final in `AF`, so a final pulled into a target by another final's witness still has a candidate. -/
-noncomputable def candidates (A : VWAA Q α) (AF : Finset Q) : List (Q × ((α → Prop) → Prop) × Finset Q) :=
+@[expose] noncomputable def candidates (A : VWAA Q α) (AF : FinSet Q) : List (Q × ((α → Prop) → Prop) × FinSet Q) :=
   AF.toList.flatMap fun f => ((A.trans f).filter fun p => decide (f ∉ p.2)).map fun p => (f, p.1, p.2)
 
-theorem mem_candidates_iff {A : VWAA Q α} {AF : Finset Q} {f : Q} {g : (α → Prop) → Prop} {O : Finset Q} :
+theorem mem_candidates_iff {A : VWAA Q α} {AF : FinSet Q} {f : Q} {g : (α → Prop) → Prop} {O : FinSet Q} :
     (f, g, O) ∈ candidates A AF ↔ f ∈ AF ∧ (g, O) ∈ A.trans f ∧ f ∉ O := by
-  simp only [candidates, List.mem_flatMap, List.mem_map, List.mem_filter, Finset.mem_toList,
+  simp only [candidates, List.mem_flatMap, List.mem_map, List.mem_filter, FinSet.mem_toList,
     decide_eq_true_eq]
   constructor
   · rintro ⟨f', hf', ⟨g', O'⟩, ⟨hmem, hnin⟩, heq⟩
@@ -189,22 +196,22 @@ theorem mem_candidates_iff {A : VWAA Q α} {AF : Finset Q} {f : Q} {g : (α → 
 /-! ## The product instance -/
 
 -- The guard, target and marks contributed by an activated escape subset `S`.
-private def escGuard (S : List (Q × ((α → Prop) → Prop) × Finset Q)) : (α → Prop) → Prop :=
+private def escGuard (S : List (Q × ((α → Prop) → Prop) × FinSet Q)) : (α → Prop) → Prop :=
   fun v => ∀ p ∈ S, p.2.1 v
 
-private def escTarget (S : List (Q × ((α → Prop) → Prop) × Finset Q)) : Finset Q :=
+private def escTarget (S : List (Q × ((α → Prop) → Prop) × FinSet Q)) : FinSet Q :=
   (S.map fun p => p.2.2).foldr (· ∪ ·) ∅
 
-private def escMarks (S : List (Q × ((α → Prop) → Prop) × Finset Q)) : Finset Q :=
-  (S.map Prod.fst).toFinset
+private def escMarks (S : List (Q × ((α → Prop) → Prop) × FinSet Q)) : FinSet Q :=
+  (S.map Prod.fst).toFinSet
 
-theorem mem_escTarget_iff {S : List (Q × ((α → Prop) → Prop) × Finset Q)} {x : Q} :
+private theorem mem_escTarget_iff {S : List (Q × ((α → Prop) → Prop) × FinSet Q)} {x : Q} :
     x ∈ escTarget S ↔ ∃ p ∈ S, x ∈ p.2.2 := by
   unfold escTarget
   induction S with
   | nil => simp
   | cons p ps ih =>
-    simp only [List.map_cons, List.foldr_cons, Finset.mem_union, ih, List.mem_cons]
+    simp only [List.map_cons, List.foldr_cons, FinSet.mem_union, ih, List.mem_cons]
     constructor
     · rintro (h | ⟨q, hq, hxq⟩)
       · exact ⟨p, Or.inl rfl, h⟩
@@ -213,19 +220,19 @@ theorem mem_escTarget_iff {S : List (Q × ((α → Prop) → Prop) × Finset Q)}
       · exact Or.inl hxq
       · exact Or.inr ⟨q, hq, hxq⟩
 
-theorem mem_escMarks_iff {S : List (Q × ((α → Prop) → Prop) × Finset Q)} {f : Q} :
+private theorem mem_escMarks_iff {S : List (Q × ((α → Prop) → Prop) × FinSet Q)} {f : Q} :
     f ∈ escMarks S ↔ ∃ p ∈ S, p.1 = f := by
-  unfold escMarks; simp [List.mem_toFinset, List.mem_map, eq_comm]
+  unfold escMarks; simp [List.mem_toFinSet, List.mem_map, eq_comm]
 
 /-- The product transitions at state `e`, one per combination and escape subset. -/
-noncomputable def productSetTrans (A : VWAA Q α) (AF : Finset Q) (e : Finset Q) :
-    List (((α → Prop) → Prop) × Finset Q × Finset Q) :=
+noncomputable def productSetTrans (A : VWAA Q α) (AF : FinSet Q) (e : FinSet Q) :
+    List (((α → Prop) → Prop) × FinSet Q × FinSet Q) :=
   (combos A e.toList).flatMap fun p =>
     (candidates A AF).sublists.map fun S =>
       (fun v => p.1 v ∧ escGuard S v, p.2 ∪ escTarget S, (AF \ (p.2 ∪ escTarget S)) ∪ escMarks S)
 
-theorem mem_productSetTrans_iff {A : VWAA Q α} {AF : Finset Q} {e : Finset Q}
-    {g : (α → Prop) → Prop} {e' m : Finset Q} :
+private theorem mem_productSetTrans_iff {A : VWAA Q α} {AF : FinSet Q} {e : FinSet Q}
+    {g : (α → Prop) → Prop} {e' m : FinSet Q} :
     (g, e', m) ∈ productSetTrans A AF e ↔
       ∃ g0 B, (g0, B) ∈ combos A e.toList ∧ ∃ S ∈ (candidates A AF).sublists,
         g = (fun v => g0 v ∧ escGuard S v) ∧ e' = B ∪ escTarget S ∧ m = (AF \ (B ∪ escTarget S)) ∪ escMarks S := by
@@ -239,7 +246,7 @@ theorem mem_productSetTrans_iff {A : VWAA Q α} {AF : Finset Q} {e : Finset Q}
     exact ⟨(g0, B), hmemc, S, hS, by rw [h1, h2, h3]⟩
 
 /-- `[GO01]` Step 2's product TGBA. -/
-noncomputable def productSetTGBA (A : VWAA Q α) (AF : Finset Q) : SetTGBA Q α where
+noncomputable def productSetTGBA (A : VWAA Q α) (AF : FinSet Q) : SetTGBA Q α where
   trans := productSetTrans A AF
   initial := A.initial
   finals := AF
@@ -247,7 +254,7 @@ noncomputable def productSetTGBA (A : VWAA Q α) (AF : Finset Q) : SetTGBA Q α 
 /-! ## Soundness -/
 
 /-- Every product transition satisfies (S). -/
-theorem productSetTGBA_soundTrans (A : VWAA Q α) (AF : Finset Q) (e : Finset Q) :
+theorem productSetTGBA_soundTrans (A : VWAA Q α) (AF : FinSet Q) (e : FinSet Q) :
     ∀ g e' m, (g, e', m) ∈ productSetTrans A AF e → SoundTrans A e g e' m := by
   intro g e' m hmem v hgv
   obtain ⟨g0, B, hmemc, S, hS, hgeq, he'eq, hmeq⟩ := mem_productSetTrans_iff.mp hmem
@@ -256,38 +263,38 @@ theorem productSetTGBA_soundTrans (A : VWAA Q α) (AF : Finset Q) (e : Finset Q)
   have hescv : escGuard S v := hgv.2
   obtain ⟨gf, Of, hall, hgiff, hBeq⟩ := (mem_combos_iff e.toList e.nodup_toList g0 B).mp hmemc
   have hgfv : ∀ q ∈ e.toList, gf q v := (hgiff v).mp hg0v
-  refine ⟨⟨gf, Of, fun q hq => ⟨hall q (Finset.mem_toList.mpr hq), hgfv q (Finset.mem_toList.mpr hq)⟩, ?_⟩, ?_⟩
+  refine ⟨⟨gf, Of, fun q hq => ⟨hall q (FinSet.mem_toList.mpr hq), hgfv q (FinSet.mem_toList.mpr hq)⟩, ?_⟩, ?_⟩
   · intro x hx
-    rw [Finset.mem_biUnion] at hx
+    rw [FinSet.mem_biUnion] at hx
     obtain ⟨q, hq, hxq⟩ := hx
-    apply Finset.mem_union_left
+    apply FinSet.mem_union_left
     rw [hBeq]
-    exact mem_foldr_union_iff.mpr ⟨q, Finset.mem_toList.mpr hq, hxq⟩
+    exact mem_foldr_union_iff.mpr ⟨q, FinSet.mem_toList.mpr hq, hxq⟩
   · intro f hf
-    rcases Finset.mem_union.mp hf with hf1 | hf2
-    · exact Or.inl (Finset.mem_sdiff.mp hf1).2
+    rcases FinSet.mem_union.mp hf with hf1 | hf2
+    · exact Or.inl (FinSet.mem_sdiff.mp hf1).2
     · obtain ⟨p, hpS, hpf⟩ := mem_escMarks_iff.mp hf2
       have hpcand : p ∈ candidates A AF := (List.mem_sublists.mp hS).subset hpS
       obtain ⟨-, hfmem, hfnin⟩ := mem_candidates_iff.mp hpcand
       rw [hpf] at hfmem hfnin
       refine Or.inr ⟨p.2.1, p.2.2, hfmem, hescv p hpS, hfnin, fun x hx => ?_⟩
-      exact Finset.mem_union_right _ (mem_escTarget_iff.mpr ⟨p, hpS, hx⟩)
+      exact FinSet.mem_union_right _ (mem_escTarget_iff.mpr ⟨p, hpS, hx⟩)
 
 /-! ## Completeness -/
 
 /-- The product satisfies (C). -/
-theorem productSetTGBA_completeTrans (A : VWAA Q α) (AF : Finset Q) (e : Finset Q) : CompleteTrans (productSetTGBA A AF) A e := by
+theorem productSetTGBA_completeTrans (A : VWAA Q α) (AF : FinSet Q) (e : FinSet Q) : CompleteTrans (productSetTGBA A AF) A e := by
   classical
   intro v e' hprod
   obtain ⟨gf, Of, hall, hsub⟩ := hprod
   have hcanonMem : (canonicalCombo gf Of e.toList).1 v ↔ ∀ q ∈ e.toList, gf q v := canonicalCombo_guard e.toList v
   have hmemc : canonicalCombo gf Of e.toList ∈ combos A e.toList :=
-    canonicalCombo_mem _ fun q hq => (hall q (Finset.mem_toList.mp hq)).1
+    canonicalCombo_mem _ fun q hq => (hall q (FinSet.mem_toList.mp hq)).1
   set g0 := (canonicalCombo gf Of e.toList).1 with hg0def
   set B := (canonicalCombo gf Of e.toList).2 with hBdef
   have hBeq : B = e.toList.foldr (fun q acc => Of q ∪ acc) ∅ := canonicalCombo_target e.toList
   have hBsub : B ⊆ e' := by rw [hBeq, ← biUnion_eq_foldr_toList]; exact hsub
-  set S : List (Q × ((α → Prop) → Prop) × Finset Q) :=
+  set S : List (Q × ((α → Prop) → Prop) × FinSet Q) :=
     (candidates A AF).filter fun p => decide (p.2.1 v ∧ p.2.2 ⊆ e') with hSdef
   have hSsub : S ∈ (candidates A AF).sublists := List.mem_sublists.mpr List.filter_sublist
   have hSmem : ∀ p ∈ S, p ∈ candidates A AF ∧ p.2.1 v ∧ p.2.2 ⊆ e' := by
@@ -296,32 +303,32 @@ theorem productSetTGBA_completeTrans (A : VWAA Q α) (AF : Finset Q) (e : Finset
     exact ⟨this.1, decide_eq_true_eq.mp this.2⟩
   refine ⟨fun v' => g0 v' ∧ escGuard S v', B ∪ escTarget S, (AF \ (B ∪ escTarget S)) ∪ escMarks S,
     mem_productSetTrans_iff.mpr ⟨g0, B, hmemc, S, hSsub, rfl, rfl, rfl⟩, ?_, ?_, ?_⟩
-  · refine ⟨hcanonMem.mpr fun q hq => (hall q (Finset.mem_toList.mp hq)).2, fun p hp => (hSmem p hp).2.1⟩
-  · apply Finset.union_subset hBsub
+  · refine ⟨hcanonMem.mpr fun q hq => (hall q (FinSet.mem_toList.mp hq)).2, fun p hp => (hSmem p hp).2.1⟩
+  · apply FinSet.union_subset hBsub
     intro x hx
     obtain ⟨p, hpS, hxp⟩ := mem_escTarget_iff.mp hx
     exact (hSmem p hpS).2.2 hxp
   · intro f hfAF hinTf
     by_cases hftgt : f ∈ B ∪ escTarget S
-    · refine Finset.mem_union_right _ ?_
+    · refine FinSet.mem_union_right _ ?_
       rw [mem_escMarks_iff]
       rcases hinTf with hfe' | ⟨g, O, hmemA, hgv, hfnO, hOsub⟩
-      · exact absurd (Finset.union_subset hBsub (fun x hx => (mem_escTarget_iff.mp hx).elim
+      · exact absurd (FinSet.union_subset hBsub (fun x hx => (mem_escTarget_iff.mp hx).elim
           fun p hp => (hSmem p hp.1).2.2 hp.2) hftgt) hfe'
       · refine ⟨(f, g, O), ?_, rfl⟩
         rw [hSdef, List.mem_filter, decide_eq_true_eq]
         exact ⟨mem_candidates_iff.mpr ⟨hfAF, hmemA, hfnO⟩, hgv, hOsub⟩
-    · exact Finset.mem_union_left _ (Finset.mem_sdiff.mpr ⟨hfAF, hftgt⟩)
+    · exact FinSet.mem_union_left _ (FinSet.mem_sdiff.mpr ⟨hfAF, hftgt⟩)
 
 /-- The product is sound and complete for `A`, `[GO01]` Theorem 2. -/
-theorem productSetTGBA_soundComplete (A : VWAA Q α) (AF : Finset Q) (hAF : ∀ q, q ∈ AF ↔ A.final q) :
+theorem productSetTGBA_soundComplete (A : VWAA Q α) (AF : FinSet Q) (hAF : ∀ q, q ∈ AF ↔ A.final q) :
     SoundComplete (productSetTGBA A AF) A where
   finals_iff := hAF
   sound := fun e _ g e' m hmem => productSetTGBA_soundTrans A AF e g e' m hmem
   complete := fun e _ => productSetTGBA_completeTrans A AF e
 
 /-- The product accepts from every reachable state exactly what `A` accepts, `[GO01]` Theorem 2. -/
-theorem productSetTGBA_correct (A : VWAA Q α) (AF : Finset Q) (hAF : ∀ q, q ∈ AF ↔ A.final q) {e : Finset Q}
+theorem productSetTGBA_correct (A : VWAA Q α) (AF : FinSet Q) (hAF : ∀ q, q ∈ AF ↔ A.final q) {e : FinSet Q}
     {ξ : OmegaWord α} (hreach : (productSetTGBA A AF).IsReachable e) :
     (productSetTGBA A AF).AcceptsFrom e ξ ↔ A.AcceptsFrom e ξ :=
   vwaaToTgba_correct (productSetTGBA_soundComplete A AF hAF) hreach
@@ -341,7 +348,7 @@ theorem SoundCompleteEverywhere.soundComplete {T : SetTGBA Q α} {A : VWAA Q α}
   complete := fun e _ => h.complete e
 
 /-- The product satisfies both obligations at every state. -/
-theorem productSetTGBA_soundCompleteEverywhere (A : VWAA Q α) (AF : Finset Q) (hAF : ∀ q, q ∈ AF ↔ A.final q) :
+theorem productSetTGBA_soundCompleteEverywhere (A : VWAA Q α) (AF : FinSet Q) (hAF : ∀ q, q ∈ AF ↔ A.final q) :
     SoundCompleteEverywhere (productSetTGBA A AF) A where
   finals_iff := hAF
   sound := productSetTGBA_soundTrans A AF
@@ -350,7 +357,7 @@ theorem productSetTGBA_soundCompleteEverywhere (A : VWAA Q α) (AF : Finset Q) (
 /-! ## On-the-fly dominance -/
 
 /-- `[GO01]` Step 2's `≼`: `t1`'s guard is at least as broad, its target no larger, and its marks no fewer. -/
-def Dominates (t1 t2 : ((α → Prop) → Prop) × Finset Q × Finset Q) : Prop :=
+@[expose] def Dominates (t1 t2 : ((α → Prop) → Prop) × FinSet Q × FinSet Q) : Prop :=
   (∀ v, t2.1 v → t1.1 v) ∧ t1.2.1 ⊆ t2.2.1 ∧ t2.2.2 ⊆ t1.2.2
 
 /-- Dropping transitions that each have a surviving dominator preserves correctness. -/

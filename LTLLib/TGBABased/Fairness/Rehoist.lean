@@ -1,3 +1,5 @@
+module
+
 /-
   Re-hoisting the kept conjuncts through the rewrite pass. `simplify` is a single-pass normal form for its rules, so one
   `simplify`, `splitConj`, `hoistFairness` sequence finds everything those rules expose, with no repeated rounds.
@@ -12,9 +14,11 @@
   - Re-hoisting
   - Correctness
 -/
-import LTLLib.LTL.Semantics
-import LTLLib.TGBABased.Fairness.FairRouter
-import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Simplify
+public import LTLLib.LTL.Semantics
+public import LTLLib.TGBABased.Fairness.FairRouter
+public import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Simplify
+
+public section
 
 namespace LTLLib
 
@@ -24,7 +28,7 @@ variable {α : Type u} [BEq α] [DecidableEq α]
 
 /-- Simplify every kept conjunct, re-split at `∧`, and hoist again, catching a fairness conjunct the first hoist missed
 because it was still nested under a rewritable shape. -/
-def rehoist (cs : List (NNF α)) : List (List (NNF.FairDisjunct α)) × List (NNF α) :=
+@[expose] def rehoist (cs : List (NNF α)) : List (List (NNF.FairDisjunct α)) × List (NNF α) :=
   hoistFairness (cs.flatMap fun c => (simplify c).splitConj)
 
 /-! ## Correctness -/

@@ -1,6 +1,8 @@
+module
+
 -- Re-exports LTL syntax types.
 -- Import this module to get both `Formula` (user-facing) and `NNF` (internal IR).
-import LTLLib.LTL.Syntax
-import LTLLib.LTL.Subformulas
-import LTLLib.LTL.Fairness
-import LTLLib.LTL.Semantics
+public import LTLLib.LTL.Syntax
+public import LTLLib.LTL.Subformulas
+public import LTLLib.LTL.Fairness
+public import LTLLib.LTL.Semantics

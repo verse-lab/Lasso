@@ -1,3 +1,5 @@
+module
+
 /-
   The product of `Product.lean`, extended with one generalized Büchi mark per propositional fairness conjunct. A conjunct
   `ψ` is carried as a mark on every edge whose source system state satisfies `ψ`, indexed from `tgba.numAcceptSets`, so
@@ -25,9 +27,12 @@
   - Lasso witness
   - Region cycles
 -/
-import LTLLib.LTL.Propositional
-import LTLLib.TGBABased.AbstractSpec.RegionLatch
-import LTLLib.TGBABased.Product
+public import LTLLib.LTL.Propositional
+public import LTLLib.TGBABased.AbstractSpec.RegionLatch
+public import LTLLib.TGBABased.Product
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -38,7 +43,7 @@ variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α] [BEq SysState]
 /-! ## Fairness marks -/
 
 /-- The `i`-th fairness conjunct, `⊥` past the end so the lookup is total. -/
-def fairConj (extra : List (BoolFormula α)) (i : Nat) : BoolFormula α := extra.getD i .ff
+@[expose] def fairConj (extra : List (BoolFormula α)) (i : Nat) : BoolFormula α := extra.getD i .ff
 
 /-- Marks contributed by the conjuncts at a source label, conjunct `i` giving mark `base + i`. -/
 def fairMarks (base : Nat) (extra : List (BoolFormula α)) (l : Std.HashSet α) : Std.HashSet Nat :=
@@ -55,7 +60,7 @@ theorem mem_fairMarks_iff (base : Nat) (extra : List (BoolFormula α)) (l : Std.
 /-- The steps whose letter satisfies conjunct `i`, under a standing restriction `keep`. Named rather than
 written inline so that the witness definitions below can mention it without the elaborator having to
 recover it from a metavariable. -/
-def fairKeep (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α)) (i : Nat) :
+@[expose] def fairKeep (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α)) (i : Nat) :
     Std.HashSet α → Bool :=
   fun l => keep l && (fairConj extra i).eval l
 
@@ -72,13 +77,14 @@ option's marks.
 Reading the conjuncts on the *edge* rather than on its source is what lets a `□◇` mention an edge atom.
 Unioning across parallel realizations over-approximates a single step, which `EdgeLabels.md` §6.3 shows is
 sound for marks (and unsound for regions, which is why the region half is not built this way). -/
-def fairMarksEdge (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def fairMarksEdge (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) (base : Nat)
     (extra : List (BoolFormula α)) (p p' : SysState × Nat) : Std.HashSet Nat :=
   Std.HashSet.ofList
     (((List.range extra.length).filter fun i =>
       (keptSuccs tgba sysSucc sysLabel (fairKeep keep extra i) p).contains p').map (base + ·))
 
+omit [Hashable SysState] [LawfulBEq SysState] in
 theorem mem_fairMarksEdge_iff (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) (base : Nat)
     (extra : List (BoolFormula α)) (p p' : SysState × Nat) (m : Nat) :
@@ -96,10 +102,11 @@ theorem mem_fairMarksEdge_iff (tgba : TGBA α) (sysSucc : SysState → Array (LS
 /-- The same marks read off an already-computed family of conjunct-restricted successor arrays. The fused
 expansions build that family once per *source* and then only test membership per target, which is what
 keeps `fairMarksEdge`'s `keptSuccs` call out of the inner loop. -/
-def fairMarksOf (base : Nat) (extra : List (BoolFormula α))
+@[expose] def fairMarksOf (base : Nat) (extra : List (BoolFormula α))
     (ks : Nat → Array (SysState × Nat)) (p' : SysState × Nat) : Std.HashSet Nat :=
   Std.HashSet.ofList (((List.range extra.length).filter fun i => (ks i).contains p').map (base + ·))
 
+omit [Hashable SysState] [LawfulBEq SysState] in
 theorem fairMarksEdge_eq_of (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) (base : Nat)
     (extra : List (BoolFormula α)) (p p' : SysState × Nat) :
@@ -160,12 +167,13 @@ theorem fairMarksOf_uniform [LawfulBEq SysState] (tgba : TGBA α) (q : Nat) (bas
     · rw [hl st hst]; exact hc
 
 /-- `edgeMarks` extended with one mark per fairness conjunct, indexed from `tgba.numAcceptSets`. -/
-def edgeMarksFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def edgeMarksFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
     (extra : List (BoolFormula α)) : (SysState × Nat) → (SysState × Nat) → Std.HashSet Nat :=
   fun p p' => (edgeMarks tgba sysSucc sysLabel p p').union
     (fairMarksEdge tgba sysSucc sysLabel (fun _ => true) tgba.numAcceptSets extra p p')
 
+omit [LawfulBEq SysState] in
 theorem mem_edgeMarksFair_iff (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
     (extra : List (BoolFormula α)) (p p' : SysState × Nat) (m : Nat) :
@@ -177,6 +185,7 @@ theorem mem_edgeMarksFair_iff (tgba : TGBA α) (sysSucc : SysState → Array (LS
   simp only [edgeMarksFair, Std.HashSet.mem_iff_contains, Std.HashSet.union_eq,
     Std.HashSet.contains_union, Bool.or_eq_true]
 
+omit [LawfulBEq SysState] in
 /-- The conjunct marks sit above `numAcceptSets`, so a base mark is never mistaken for a fairness one. -/
 theorem mem_edgeMarks_of_mem_edgeMarksFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
@@ -235,6 +244,7 @@ theorem eventuallyAlways_iff_indexed_letters [LawfulBEq α] (b : BoolFormula α)
   · rintro ⟨N, hN⟩
     exact ⟨N, fun k => (BoolFormula.eval_iff_holds b _).mp (hN (N + k) (by omega))⟩
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- The state-labelled specialization, which is how every caller that has not been lifted reads it. -/
 theorem fair_iff_indexed [LawfulBEq α] (extra : List (BoolFormula α))
     (sysLabel : SysState → Std.HashSet α) (τ : Nat → SysState) :
@@ -242,12 +252,14 @@ theorem fair_iff_indexed [LawfulBEq α] (extra : List (BoolFormula α))
       ∀ i, i < extra.length → ∀ n, ∃ j, (fairConj extra i).eval (sysLabel (τ (n + j))) = true :=
   fair_iff_indexed_letters extra (fun i => sysLabel (τ i))
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 theorem eventuallyAlways_iff_indexed [LawfulBEq α] (b : BoolFormula α)
     (sysLabel : SysState → Std.HashSet α) (τ : Nat → SysState) :
     (BoolFormula.eventuallyAlways b).satisfies (fun i a => a ∈ sysLabel (τ i)) ↔
       ∃ N, ∀ n, N ≤ n → b.eval (sysLabel (τ n)) = true :=
   eventuallyAlways_iff_indexed_letters b (fun i => sysLabel (τ i))
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- The labelled specialization: the letters a run of a labelled system reads *are* its valuation, so the
 two indexed readings apply to `LSys.valuation` with nothing in between. These are what the fairness entry
 points state their hypotheses with. -/
@@ -258,6 +270,7 @@ theorem fair_iff_indexed_run [LawfulBEq α] (extra : List (BoolFormula α))
         (fairConj extra i).eval (LSys.letter (sysLabel (ρ (n + j)).1) (ρ (n + j)).2.1) = true :=
   fair_iff_indexed_letters extra (fun i => LSys.letter (sysLabel (ρ i).1) (ρ i).2.1)
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 theorem eventuallyAlways_iff_indexed_run [LawfulBEq α] (b : BoolFormula α)
     (sysLabel : SysState → Std.HashSet α) (ρ : Nat → LSys.Edge α SysState) :
     (BoolFormula.eventuallyAlways b).satisfies (LSys.valuation sysLabel ρ) ↔
@@ -280,7 +293,7 @@ Writing this as `e.1.map (edgeMarksFair … p)` would be much shorter and would 
 `keptSuccs` — which re-enters `sysLabel` *twice* and `sysSucc` once, per conjunct. That made the callbacks
 `1 + 2k` and `1 + k` per product state for `k` conjuncts; they are now 1 and 1. On the Veil side each
 entry is a `tr` call, and `k` is `3n` on the nested-fairness workload. -/
-def expandFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def expandFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (extra : List (BoolFormula α)) (p : SysState × Nat) :
     Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
   let base := sysLabel p.1
@@ -339,7 +352,7 @@ letter *that edge reads* satisfies it. All other fields are `toSpec`'s.
 Reading the conjunct on the edge's letter rather than on its source state is what makes a `□◇` over an
 edge atom mean anything; on a system with no edge atoms every step reads its source's label and this is
 the old condition. -/
-def toSpecFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def toSpecFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
     (extra : List (BoolFormula α)) :
     TOASpec (SysState × Nat) (Edge SysState α) α (tgba.numAcceptSets + extra.length) where
@@ -355,29 +368,32 @@ def toSpecFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState
     else (fairConj extra ((i : Nat) - tgba.numAcceptSets)).eval
       (LSys.letter (sysLabel e.1) e.2.1.1) = true
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- The extended spec differs from `toSpec` only in its acceptance condition. -/
 theorem toSpecFair_isRun_iff (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    (extra : List (BoolFormula α)) (σ : TLA.exec (Edge SysState α)) :
+    (extra : List (BoolFormula α)) (σ : Lentil.exec (Edge SysState α)) :
     (toSpecFair tgba sysSucc sysLabel sysInit extra).isRun σ ↔
       (toSpec tgba sysSucc sysLabel sysInit).isRun σ := Iff.rfl
 
 /-! ## Acceptance transfer -/
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- The base half of an extended accepting run is an accepting run of the plain product. -/
 theorem isAcceptingRun_toSpec_of_fair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    (extra : List (BoolFormula α)) {σ : TLA.exec (Edge SysState α)}
+    (extra : List (BoolFormula α)) {σ : Lentil.exec (Edge SysState α)}
     (hacc : (toSpecFair tgba sysSucc sysLabel sysInit extra).isAcceptingRun σ) :
     (toSpec tgba sysSucc sysLabel sysInit).isAcceptingRun σ := by
   intro i n
   obtain ⟨j, hj⟩ := hacc ⟨i.val, by omega⟩ n
   exact ⟨j, by simpa [toSpecFair, toSpec, i.isLt] using hj⟩
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- The fairness half: conjunct `i` is satisfied by the letter of infinitely many edges of the run. -/
 theorem fair_of_isAcceptingRun (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    (extra : List (BoolFormula α)) {σ : TLA.exec (Edge SysState α)}
+    (extra : List (BoolFormula α)) {σ : Lentil.exec (Edge SysState α)}
     (hacc : (toSpecFair tgba sysSucc sysLabel sysInit extra).isAcceptingRun σ)
     (i : Nat) (hi : i < extra.length) (n : Nat) :
     ∃ j, (fairConj extra i).eval
@@ -386,11 +402,12 @@ theorem fair_of_isAcceptingRun (tgba : TGBA α) (sysSucc : SysState → Array (L
   have hcond : ¬ (tgba.numAcceptSets + i < tgba.numAcceptSets) := by omega
   exact ⟨j, by simpa [toSpecFair, hcond] using hj⟩
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- An accepting run of the extended product decomposes into a system run, a language-membership witness for
 the plain automaton, and one `□◇` witness per conjunct. -/
 theorem gsp_correct1Fair [LawfulBEq α] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    (extra : List (BoolFormula α)) {σ : TLA.exec (Edge SysState α)}
+    (extra : List (BoolFormula α)) {σ : Lentil.exec (Edge SysState α)}
     (hrun : (toSpecFair tgba sysSucc sysLabel sysInit extra).isRun σ)
     (hacc : (toSpecFair tgba sysSucc sysLabel sysInit extra).isAcceptingRun σ) :
     (LSys.toSpec sysSucc sysInit sysLabel).isRun (fun n => ((σ n).1, (σ n).2.1)) ∧
@@ -402,16 +419,17 @@ theorem gsp_correct1Fair [LawfulBEq α] (tgba : TGBA α) (sysSucc : SysState →
       isAcceptingRun_toSpec_of_fair tgba sysSucc sysLabel sysInit extra hacc⟩
   exact ⟨hsys, hlang, fun i hi n => fair_of_isAcceptingRun tgba sysSucc sysLabel sysInit extra hacc i hi n⟩
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- A system run whose labeling lies in the automaton's language and which satisfies every conjunct infinitely
 often lifts to an accepting run of the extended product. -/
 theorem gsp_correct2Fair [LawfulBEq α] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    (extra : List (BoolFormula α)) {ρ : TLA.exec (LSys.Edge α SysState)}
+    (extra : List (BoolFormula α)) {ρ : Lentil.exec (LSys.Edge α SysState)}
     (hsys : (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ)
     (hlang : tgba.toSpec.accepts (LSys.valuation sysLabel ρ))
     (hfair : ∀ i, i < extra.length → ∀ n, ∃ j,
       (fairConj extra i).eval (LSys.letter (sysLabel (ρ (n + j)).1) (ρ (n + j)).2.1) = true) :
-    ∃ σ : TLA.exec (Edge SysState α), ρ = (fun n => ((σ n).1, (σ n).2.1)) ∧
+    ∃ σ : Lentil.exec (Edge SysState α), ρ = (fun n => ((σ n).1, (σ n).2.1)) ∧
       (toSpecFair tgba sysSucc sysLabel sysInit extra).isRun σ ∧
       (toSpecFair tgba sysSucc sysLabel sysInit extra).isAcceptingRun σ := by
   obtain ⟨σ, hproj, hrun, hacc⟩ := gsp_correct2 tgba sysSucc sysLabel sysInit hsys hlang
@@ -446,7 +464,7 @@ def edgeWitnessFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α Sys
     · have hbase := (edgeWitness tgba sysSucc sysLabel sysInit).markEdge_spec (k := tgba.numAcceptSets)
         hlt hstep (mem_edgeMarks_of_mem_edgeMarksFair tgba sysSucc sysLabel extra p p' m hlt hmark)
       simp only [hlt, if_pos]
-      exact ⟨hbase.1, hbase.2.1, hbase.2.2.1, by simpa [toSpecFair, hlt] using hbase.2.2.2⟩
+      exact ⟨hbase.1, hbase.2.1, hbase.2.2.1, by simpa [toSpec, toSpecFair, hlt] using hbase.2.2.2⟩
     · obtain ⟨i, -, heq, hmem⟩ | hbase :=
         (mem_edgeMarksFair_iff tgba sysSucc sysLabel extra p p' m).mp hmark |>.symm
       · have hi : m - tgba.numAcceptSets = i := by omega
@@ -464,10 +482,11 @@ def edgeWitnessFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α Sys
 
 /-! ## From an accepting run to a lasso -/
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- The product-state projection of a run of the extended spec steps along the product graph. -/
 theorem acceptingRunFair_step (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    (extra : List (BoolFormula α)) {σ : TLA.exec (Edge SysState α)}
+    (extra : List (BoolFormula α)) {σ : Lentil.exec (Edge SysState α)}
     (hrun : (toSpecFair tgba sysSucc sysLabel sysInit extra).isRun σ) (n : Nat) :
     ((σ (n + 1)).1, (σ (n + 1)).2.2.1) ∈
       getSuccessors tgba sysSucc sysLabel ((σ n).1, (σ n).2.2.1) := by
@@ -480,7 +499,7 @@ theorem acceptingRunFair_step (tgba : TGBA α) (sysSucc : SysState → Array (LS
 /-- Every extended mark sits on infinitely many edges of the projected run. -/
 theorem acceptingRunFair_marks (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    (extra : List (BoolFormula α)) {σ : TLA.exec (Edge SysState α)}
+    (extra : List (BoolFormula α)) {σ : Lentil.exec (Edge SysState α)}
     (hrun : (toSpecFair tgba sysSucc sysLabel sysInit extra).isRun σ)
     (hacc : (toSpecFair tgba sysSucc sysLabel sysInit extra).isAcceptingRun σ)
     (m : Nat) (hm : m < tgba.numAcceptSets + extra.length) (N : Nat) :
@@ -509,6 +528,7 @@ theorem acceptingRunFair_marks (tgba : TGBA α) (sysSucc : SysState → Array (L
       ⟨(σ (N + j)).2.1, mem_keptSteps.mpr ⟨hsys, heval⟩, (σ (N + j)).2.2.2, ht, hc,
         congrArg Prod.fst hlink, congrArg Prod.snd hlink⟩
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- Where the run's own step reads a letter `keep` admits, the projected product edge survives the
 restriction.
 
@@ -519,7 +539,7 @@ restricted graph — only the step the run actually takes is known to satisfy it
 membership is built from. -/
 theorem acceptingRunFair_keptStep (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    (extra : List (BoolFormula α)) {σ : TLA.exec (Edge SysState α)}
+    (extra : List (BoolFormula α)) {σ : Lentil.exec (Edge SysState α)}
     (hrun : (toSpecFair tgba sysSucc sysLabel sysInit extra).isRun σ)
     (keep : Std.HashSet α → Bool) (n : Nat)
     (hkeep : keep (LSys.letter (sysLabel (σ n).1) (σ n).2.1.1) = true) :
@@ -534,7 +554,7 @@ theorem exists_TAcceptingCycle_of_acceptingRunFair (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysInit : List SysState) (extra : List (BoolFormula α))
     (fr : FiniteReach (initialStates tgba sysInit) (getSuccessors tgba sysSucc sysLabel))
-    {σ : TLA.exec (Edge SysState α)}
+    {σ : Lentil.exec (Edge SysState α)}
     (hrun : (toSpecFair tgba sysSucc sysLabel sysInit extra).isRun σ)
     (hacc : (toSpecFair tgba sysSucc sysLabel sysInit extra).isAcceptingRun σ) :
     ∃ _ac : TAcceptingCycle (initialStates tgba sysInit) (getSuccessors tgba sysSucc sysLabel)
@@ -546,7 +566,7 @@ theorem exists_TAcceptingCycle_of_acceptingRunFair (tgba : TGBA α)
 /-! ## Lasso witness -/
 
 /-- The `toSpecFair` specialization of `TAcceptingCycle.toTValidLassoOf`. -/
-def toTValidLassoProductFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+theorem toTValidLassoProductFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
     (extra : List (BoolFormula α))
     (hbound : ∀ q t, t ∈ tgba.getSuccessors q → ∀ m ∈ t.acceptMarks, m < tgba.numAcceptSets)
@@ -561,7 +581,7 @@ def toTValidLassoProductFair (tgba : TGBA α) (sysSucc : SysState → Array (LSt
 
 /-- Marks of the restricted extended product: the restricted base marks, widened by the fairness conjuncts
 the source satisfies. -/
-def keptEdgeMarksFair (tgba : TGBA α)
+@[expose] def keptEdgeMarksFair (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α)) :
     (SysState × Nat) → (SysState × Nat) → Std.HashSet Nat :=
@@ -570,7 +590,7 @@ def keptEdgeMarksFair (tgba : TGBA α)
 
 /-- The fused expansion for the restricted extended product. Same shape, and the same `PERF` note as
 `expandFair`. -/
-def keptExpandFair (tgba : TGBA α)
+@[expose] def keptExpandFair (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α)) (p : SysState × Nat) :
     Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
@@ -622,6 +642,7 @@ theorem keptExpandFair_coherent [LawfulHashable SysState] (tgba : TGBA α)
     rw [getElem!_pos _ i (by simpa using List.mem_range.mp hi), Array.getElem_map,
       Array.getElem_range]
 
+omit [Hashable SysState] [LawfulBEq SysState] in
 /-- The state-labelled special case for the fairness marks: every step out of `p.1` reads `sysLabel p.1`,
 so a restriction that holds there cuts nothing and the conjunct-restricted graphs coincide. -/
 theorem fairMarksEdge_unlabelled (tgba : TGBA α) (sysSucc : SysState → Array SysState)
@@ -655,6 +676,7 @@ theorem mem_keptEdgeMarksFair_unlabelled [LawfulHashable SysState] (tgba : TGBA 
   · rw [fairMarksEdge_unlabelled tgba sysSucc sysLabel keep _ extra p p' hk]
     exact Or.inr h
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- A restricted extended mark is an extended mark. -/
 theorem keptEdgeMarksFair_sub [BEq SysState] [Hashable SysState] [LawfulBEq SysState] (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
@@ -678,6 +700,7 @@ theorem keptEdgeMarksFair_sub [BEq SysState] [Hashable SysState] [LawfulBEq SysS
           simp [fairKeep, hl.2]) p p'
         (Array.contains_iff_mem.mp hmem))⟩
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 theorem keptEdgeMarksFair_lt [BEq SysState] [Hashable SysState] [LawfulBEq SysState] (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (hbound : ∀ q t, t ∈ tgba.getSuccessors q → ∀ m ∈ t.acceptMarks, m < tgba.numAcceptSets)
@@ -697,7 +720,7 @@ halves are therefore rebuilt from the run's own step, the base half through the 
 fairness half through `keptSuccs` at `fairKeep keep extra i`. -/
 theorem acceptingRunFair_keptMarks (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    (extra : List (BoolFormula α)) {σ : TLA.exec (Edge SysState α)}
+    (extra : List (BoolFormula α)) {σ : Lentil.exec (Edge SysState α)}
     (hrun : (toSpecFair tgba sysSucc sysLabel sysInit extra).isRun σ)
     (hacc : (toSpecFair tgba sysSucc sysLabel sysInit extra).isAcceptingRun σ)
     (keep : Std.HashSet α → Bool) {N : Nat}
@@ -739,7 +762,7 @@ theorem acceptingRunFair_keptMarks (tgba : TGBA α) (sysSucc : SysState → Arra
 set_option maxHeartbeats 1000000 in
 /-- The extended spec's witness over the restricted graph. A fairness mark constrains only the source
 system state, so any restricted step edge witnesses it. -/
-def edgeWitnessFairKept [BEq SysState] [Hashable SysState] [LawfulBEq SysState] (tgba : TGBA α)
+@[expose] def edgeWitnessFairKept [BEq SysState] [Hashable SysState] [LawfulBEq SysState] (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (keep : Std.HashSet α → Bool) (sysInit : List SysState) (extra : List (BoolFormula α))
     (hbound : ∀ q t, t ∈ tgba.getSuccessors q → ∀ m ∈ t.acceptMarks, m < tgba.numAcceptSets) :
@@ -767,7 +790,7 @@ def edgeWitnessFairKept [BEq SysState] [Hashable SysState] [LawfulBEq SysState] 
                 (Std.HashSet.mem_iff_contains.mpr h)
             omega)
       simp only [hlt, if_pos]
-      exact ⟨hbase.1, hbase.2.1, hbase.2.2.1, by simpa [toSpecFair, hlt] using hbase.2.2.2⟩
+      exact ⟨hbase.1, hbase.2.1, hbase.2.2.1, by simpa [toSpec, toSpecFair, hlt] using hbase.2.2.2⟩
     · -- the mark says the edge survives `keep ∧ conjᵢ`, so that witness's step edge reads such a letter
       have hmem : p' ∈ keptSuccs tgba sysSucc sysLabel
           (fairKeep keep extra (m - tgba.numAcceptSets)) p := by
@@ -792,6 +815,7 @@ def edgeWitnessFairKept [BEq SysState] [Hashable SysState] [LawfulBEq SysState] 
 
 -- Projection equations for the sealed `keptEdgeWitness` underneath: `rfl`, but needed explicitly since
 -- `keptEdgeWitness` is irreducible, so nothing downstream can see through the wrapper by defeq.
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 theorem edgeWitnessFairKept_stepEdge [BEq SysState] [Hashable SysState] [LawfulBEq SysState] (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (keep : Std.HashSet α → Bool) (sysInit : List SysState) (extra : List (BoolFormula α))
@@ -800,6 +824,7 @@ theorem edgeWitnessFairKept_stepEdge [BEq SysState] [Hashable SysState] [LawfulB
     (edgeWitnessFairKept tgba sysSucc sysLabel keep sysInit extra hbound).stepEdge p p'
       = (keptEdgeWitness tgba sysSucc sysLabel keep sysInit).stepEdge p p' := rfl
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 theorem edgeWitnessFairKept_markEdge [BEq SysState] [Hashable SysState] [LawfulBEq SysState] (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (keep : Std.HashSet α → Bool) (sysInit : List SysState) (extra : List (BoolFormula α))
@@ -812,6 +837,7 @@ theorem edgeWitnessFairKept_markEdge [BEq SysState] [Hashable SysState] [LawfulB
           (fairKeep keep extra (m - tgba.numAcceptSets)) sysInit).stepEdge p p' := rfl
 
 set_option maxHeartbeats 1000000 in
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- The counterexample a region cycle describes: one labelled system run the automaton accepts, satisfying
 every conjunct infinitely often, and whose tail reads only letters the restriction admits. That last part is
 `◇□` over *letters*, which is what an edge-indexed `FG` means. -/
@@ -881,23 +907,23 @@ section OfStep
 
 variable (tgba : TGBA α) (sysStep : LSys.StepFn α SysState)
 
-def fairMarksEdgeOfStep (keep : Std.HashSet α → Bool) (base : Nat)
+@[expose] def fairMarksEdgeOfStep (keep : Std.HashSet α → Bool) (base : Nat)
     (extra : List (BoolFormula α)) (p p' : SysState × Nat) : Std.HashSet Nat :=
   Std.HashSet.ofList
     (((List.range extra.length).filter fun i =>
       (keptSuccsOfStep tgba sysStep (fairKeep keep extra i) p).contains p').map (base + ·))
 
-def edgeMarksFairOfStep (extra : List (BoolFormula α)) :
+@[expose] def edgeMarksFairOfStep (extra : List (BoolFormula α)) :
     (SysState × Nat) → (SysState × Nat) → Std.HashSet Nat :=
   fun p p' => (edgeMarksOfStep tgba sysStep p p').union
     (fairMarksEdgeOfStep tgba sysStep (fun _ => true) tgba.numAcceptSets extra p p')
 
-def keptEdgeMarksFairOfStep (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α)) :
+@[expose] def keptEdgeMarksFairOfStep (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α)) :
     (SysState × Nat) → (SysState × Nat) → Std.HashSet Nat :=
   fun p p' => (keptEdgeMarksOfStep tgba sysStep keep p p').union
     (fairMarksEdgeOfStep tgba sysStep keep tgba.numAcceptSets extra p p')
 
-def expandFairOfStep (extra : List (BoolFormula α)) (p : SysState × Nat) :
+@[expose] def expandFairOfStep (extra : List (BoolFormula α)) (p : SysState × Nat) :
     Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
   let r := sysStep p.1
   let base := r.2
@@ -912,7 +938,7 @@ def expandFairOfStep (extra : List (BoolFormula α)) (p : SysState × Nat) :
     ms.union (fairMarksGen tgba.numAcceptSets extra fm? (fun i => ks[i]!) p'))
     (out.map fun p' => genMarksFromShared tgba p.2 base steps byTgt? p') out, #[])
 
-def keptExpandFairOfStep (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α))
+@[expose] def keptExpandFairOfStep (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α))
     (p : SysState × Nat) : Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
   let r := sysStep p.1
   let base := r.2
@@ -928,24 +954,29 @@ def keptExpandFairOfStep (keep : Std.HashSet α → Bool) (extra : List (BoolFor
     ms.union (fairMarksGen tgba.numAcceptSets extra fm? (fun i => ks[i]!) p'))
     (out.map fun p' => genMarksFromShared tgba p.2 base kept byTgt? p') out, #[])
 
+omit [Hashable SysState] [LawfulBEq SysState] in
 theorem fairMarksEdgeOfStep_eq' (keep : Std.HashSet α → Bool) (base : Nat)
     (extra : List (BoolFormula α)) :
     fairMarksEdgeOfStep tgba sysStep keep base extra
       = fairMarksEdge tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) keep base extra := rfl
 
+omit [LawfulBEq SysState] in
 theorem edgeMarksFairOfStep_eq' (extra : List (BoolFormula α)) :
     edgeMarksFairOfStep tgba sysStep extra
       = edgeMarksFair tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) extra := rfl
 
+omit [LawfulBEq SysState] in
 theorem keptEdgeMarksFairOfStep_eq' (keep : Std.HashSet α → Bool)
     (extra : List (BoolFormula α)) :
     keptEdgeMarksFairOfStep tgba sysStep keep extra
       = keptEdgeMarksFair tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) keep extra := rfl
 
+omit [LawfulBEq SysState] in
 theorem expandFairOfStep_eq' (extra : List (BoolFormula α)) :
     expandFairOfStep tgba sysStep extra
       = expandFair tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) extra := rfl
 
+omit [LawfulBEq SysState] in
 theorem keptExpandFairOfStep_eq' (keep : Std.HashSet α → Bool) (extra : List (BoolFormula α)) :
     keptExpandFairOfStep tgba sysStep keep extra
       = keptExpandFair tgba (fun s => (sysStep s).1) (fun s => (sysStep s).2) keep extra := rfl

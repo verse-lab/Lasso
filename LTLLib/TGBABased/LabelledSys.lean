@@ -1,3 +1,5 @@
+module
+
 /-
   A system whose letters are carried by steps rather than by states.
 
@@ -26,9 +28,11 @@
     `LSys.valuation_ofRun` and `LSys.valuation_unlabelled` (the letters such a run reads are just the state
     labels), and `LSys.finiteReach_unlabelled` (the finiteness witness)
 -/
-import LTLLib.LTL.Propositional
-import LTLLib.Product
-import LTLLib.TGBABased.AbstractSpec.Acceptance
+public import LTLLib.LTL.Propositional
+public import LTLLib.Product
+public import LTLLib.TGBABased.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 
@@ -45,12 +49,12 @@ variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
 abbrev Edge (α : Type u) (SysState : Type v) [BEq α] [Hashable α] := SysState × LStep α SysState
 
 /-- The underlying unlabelled successor function, which is what `FiniteReach` is stated against. -/
-def targets (sysSucc : SysState → Array (LStep α SysState)) : SysState → Array SysState :=
+@[expose] def targets (sysSucc : SysState → Array (LStep α SysState)) : SysState → Array SysState :=
   fun s => (sysSucc s).map Prod.snd
 
 /-- A system with no edge atoms: every step contributes the empty letter. Every state-labelled caller is
 adapted through this, and every statement about one specializes through `toSpec_unlabelled_isRun_iff`. -/
-def unlabelled (sysSucc : SysState → Array SysState) : SysState → Array (LStep α SysState) :=
+@[expose] def unlabelled (sysSucc : SysState → Array SysState) : SysState → Array (LStep α SysState) :=
   -- PERF: the empty letter is bound once per call rather than written inside the mapped closure, where
   -- it would allocate a `HashSet` per successor. (It cannot be hoisted above `fun s` — the compiler
   -- eta-expands a function-returning definition to its full arity, so a `let` there would be re-entered
@@ -59,7 +63,7 @@ def unlabelled (sysSucc : SysState → Array SysState) : SysState → Array (LSt
 
 /-- Give a terminal state a self-loop reading no edge atoms, so every state has a step, as Büchi semantics
 over infinite words requires. A deadlocked state stutters and takes no action. -/
-def totalize (sysSucc : SysState → Array (LStep α SysState)) : SysState → Array (LStep α SysState) :=
+@[expose] def totalize (sysSucc : SysState → Array (LStep α SysState)) : SysState → Array (LStep α SysState) :=
   fun s => let ss := sysSucc s; if ss.isEmpty then #[((∅ : Std.HashSet α), s)] else ss
 
 /-- A system presented as **one** callback: a state's steps and its own atoms, together.
@@ -73,7 +77,7 @@ abbrev StepFn (α : Type u) (SysState : Type v) [BEq α] [Hashable α] :=
   SysState → Array (LStep α SysState) × Std.HashSet α
 
 /-- `totalize` with the steps already in hand, so a caller holding `sysStep s` does not re-enter it. -/
-def totalizeAt (ss : Array (LStep α SysState)) (s : SysState) : Array (LStep α SysState) :=
+@[expose] def totalizeAt (ss : Array (LStep α SysState)) (s : SysState) : Array (LStep α SysState) :=
   if ss.isEmpty then #[((∅ : Std.HashSet α), s)] else ss
 
 theorem totalize_eq_totalizeAt (sysSucc : SysState → Array (LStep α SysState)) (s : SysState) :
@@ -81,15 +85,15 @@ theorem totalize_eq_totalizeAt (sysSucc : SysState → Array (LStep α SysState)
 
 /-- The two-callback view of a fused one. Every bridge below is stated against this, and Lean's
 definitional eta for structures makes `ofPair (fun s => ((f s).1, (f s).2)) = f` hold by `rfl`. -/
-def StepFn.succ (f : StepFn α SysState) : SysState → Array (LStep α SysState) := fun s => (f s).1
+@[expose] def StepFn.succ (f : StepFn α SysState) : SysState → Array (LStep α SysState) := fun s => (f s).1
 
-def StepFn.label (f : StepFn α SysState) : SysState → Std.HashSet α := fun s => (f s).2
+@[expose] def StepFn.label (f : StepFn α SysState) : SysState → Std.HashSet α := fun s => (f s).2
 
 /-- The letter read on a step whose source contributes `base` and which itself contributes `L`. Taking the
 source's atoms as a value rather than as `sysLabel` and a state lets a caller hoist `sysLabel s` out of its
 loop over the steps leaving `s`, which matters when deciding a state's atoms is expensive. The `isEmpty`
 guard keeps a system with no edge atoms allocation-free. -/
-def letter (base L : Std.HashSet α) : Std.HashSet α :=
+@[expose] def letter (base L : Std.HashSet α) : Std.HashSet α :=
   if L.isEmpty then base else base.union L
 
 /-! ## Basic facts -/
@@ -100,7 +104,7 @@ theorem mem_totalize {sysSucc : SysState → Array (LStep α SysState)} {s : Sys
       (if (sysSucc s).isEmpty then st = ((∅ : Std.HashSet α), s) else st ∈ sysSucc s) := by
   unfold totalize
   dsimp only
-  split <;> simp [Array.mem_singleton]
+  split <;> simp
 
 theorem mem_totalize_of_mem {sysSucc : SysState → Array (LStep α SysState)} {s : SysState}
     {st : LStep α SysState} (h : st ∈ sysSucc s) : st ∈ totalize sysSucc s := by
@@ -154,7 +158,7 @@ theorem mem_letter [LawfulBEq α] [LawfulHashable α] {base L : Std.HashSet α} 
 /-! ## The labelled system as an abstract spec -/
 
 /-- The labelled system as a `TOASpec`: the letter sits on the edge, not on the state. -/
-def toSpec (sysSucc : SysState → Array (LStep α SysState)) (sysInit : List SysState)
+@[expose] def toSpec (sysSucc : SysState → Array (LStep α SysState)) (sysInit : List SysState)
     (sysLabel : SysState → Std.HashSet α) : TOASpec SysState (Edge α SysState) α 0 where
   src e := e.1
   dst e := e.2.2
@@ -164,7 +168,7 @@ def toSpec (sysSucc : SysState → Array (LStep α SysState)) (sysInit : List Sy
   acceptMark := Fin.elim0
 
 /-- The valuation a labelled run reads, position by position. -/
-def valuation (sysLabel : SysState → Std.HashSet α) (σ : Nat → Edge α SysState) : Nat → α → Prop :=
+@[expose] def valuation (sysLabel : SysState → Std.HashSet α) (σ : Nat → Edge α SysState) : Nat → α → Prop :=
   fun i a => a ∈ letter (sysLabel (σ i).1) (σ i).2.1
 
 theorem toSpec_isRun_iff (sysSucc : SysState → Array (LStep α SysState)) (sysInit : List SysState)
@@ -180,7 +184,7 @@ A system with no edge atoms is a labelled system whose runs are exactly the old 
 go through this. -/
 
 /-- The labelled run an unlabelled one induces: every step reads the empty letter. -/
-def ofRun (τ : Nat → SysState) : Nat → Edge α SysState :=
+@[expose] def ofRun (τ : Nat → SysState) : Nat → Edge α SysState :=
   fun n => (τ n, ((∅ : Std.HashSet α), τ (n + 1)))
 
 @[simp] theorem valuation_ofRun (sysLabel : SysState → Std.HashSet α) (τ : Nat → SysState) :
@@ -215,7 +219,7 @@ theorem valuation_unlabelled {sysSucc : SysState → Array SysState} {sysInit : 
   rw [valuation, letter_eq_empty_of_unlabelled (h.2 i).1, letter_empty]
 
 /-- A state-labelled system's finiteness witness, read as the labelled system's. -/
-def finiteReach_unlabelled {sysInit : List SysState} {sysSucc : SysState → Array SysState}
+theorem finiteReach_unlabelled {sysInit : List SysState} {sysSucc : SysState → Array SysState}
     (fr : FiniteReach sysInit sysSucc) :
     FiniteReach sysInit (targets (unlabelled (α := α) sysSucc)) := by
   rw [targets_unlabelled]; exact fr
@@ -282,7 +286,7 @@ scores exactly as it scores `s`'s own label.
 
 Note the quantifier is over *all* states and *all* their steps, including the totalizing self-loop, not
 just the reachable ones — this is a property of the predicate against the system, established once. -/
-def StateOnly (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def StateOnly (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) : Prop :=
   ∀ s : SysState, ∀ st ∈ totalize sysSucc s, keep (letter (sysLabel s) st.1) = keep (sysLabel s)
 
@@ -338,7 +342,7 @@ A caller does not reason about `StateOnly` semantically. It knows which atoms a 
 in Veil, exactly the indices of `T(…)` atoms — and checks that the region mentions none of them. -/
 
 /-- No step ever contributes an atom the formula inspects. -/
-def NeverStepAtom (sysSucc : SysState → Array (LStep α SysState)) (b : BoolFormula α) : Prop :=
+@[expose] def NeverStepAtom (sysSucc : SysState → Array (LStep α SysState)) (b : BoolFormula α) : Prop :=
   ∀ s : SysState, ∀ st ∈ totalize sysSucc s, ∀ a ∈ b.atoms, a ∉ st.1
 
 /-- The syntactic discharge. A step can only *add* atoms to the source's label (`letter` is a union), so if

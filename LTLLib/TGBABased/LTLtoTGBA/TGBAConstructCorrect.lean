@@ -1,6 +1,8 @@
+module
+
 /-
   `buildTGBA`'s numbered output accepts exactly what the VWAA it is built from accepts. Runs of the exported TGBA and runs
-  of `canonicalTGBA`, the `Finset Nat`-indexed `SetTGBA` the construction denotes, determine each other whenever the
+  of `canonicalTGBA`, the `FinSet Nat`-indexed `SetTGBA` the construction denotes, determine each other whenever the
   worklist state `Represents` the construction, and `canonicalTGBA` meets (S) and tight (C) of `[GO01]` Theorem 2.
   Unlike `[JN18]` §4.5, which relates concrete and abstract GBA by an abstraction function, the relation here is a run
   correspondence, since the statement is about the numbered automaton's own language.
@@ -21,14 +23,19 @@
   - Canonical runs to numbered runs
   - Correctness of `buildTGBA`
 -/
-import LTLLib.TGBA
-import LTLLib.LTL.Semantics
-import LTLLib.TGBABased.AbstractSpec.Acceptance
-import LTLLib.TGBABased.LTLtoTGBA.Label
-import LTLLib.TGBABased.LTLtoTGBA.VWAA
-import LTLLib.TGBABased.LTLtoTGBA.TGBAConstruct
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.SetTGBA
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBA
+public import LTLLib.TGBA
+public import LTLLib.LTL.Semantics
+public import LTLLib.TGBABased.AbstractSpec.Acceptance
+public import LTLLib.TGBABased.LTLtoTGBA.Label
+public import LTLLib.TGBABased.LTLtoTGBA.VWAA
+public import LTLLib.TGBABased.LTLtoTGBA.TGBAConstruct
+-- The correctness bridge unfolds the concrete construction's private steps.
+import all LTLLib.TGBABased.LTLtoTGBA.TGBAConstruct
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.SetTGBA
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBA
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 
@@ -90,18 +97,21 @@ theorem canonical_acceptsFrom_of_export_accepts [LawfulBEq α] {cv : ConcreteVWA
   classical
   obtain ⟨σ, hrun, hcompat, hacc⟩ := h
   -- a state is admissible at position `n` when it is numbered by `σ n`'s source
-  have hstep : ∀ n (e : Nat), st.visited[e]? = some (σ n).1 →
-      ∃ e' : Nat, st.visited[e']? = some (σ (n + 1)).1 ∧
+  -- the successor id is chosen for every `e`, admissible or not, so that `nxt` needs no admissibility proof
+  have hstep : ∀ n (e : Nat), ∃ e' : Nat, st.visited[e]? = some (σ n).1 →
+      st.visited[e']? = some (σ (n + 1)).1 ∧
         ∃ g marks c, (g, e', marks) ∈ reduceCandidates (markedProduct cv finals e) ∧
           (σ n).2.acceptMarks = Std.HashSet.ofList (maskMembers marks) ∧ c ∈ DNF.cubes g ∧
           (σ n).2.positiveProps = c.pos ∧ (σ n).2.negativeProps = c.neg := by
-    intro n e he
-    obtain ⟨g, e', marks, c, hmem, hvis, hmarks, hc, hpos, hneg⟩ :=
-      exists_candidate_of_mem_getSuccessors (initId := initId) hrep he (hrun.2 n).1
-    refine ⟨e', ?_, g, marks, c, hmem, hmarks, hc, hpos, hneg⟩
-    rw [hvis]
-    exact congrArg some (hrun.2 n).2
-  choose! nxt hnxt using hstep
+    intro n e
+    by_cases he : st.visited[e]? = some (σ n).1
+    · obtain ⟨g, e', marks, c, hmem, hvis, hmarks, hc, hpos, hneg⟩ :=
+        exists_candidate_of_mem_getSuccessors (initId := initId) hrep he (hrun.2 n).1
+      refine ⟨e', fun _ => ⟨?_, g, marks, c, hmem, hmarks, hc, hpos, hneg⟩⟩
+      rw [hvis]
+      exact congrArg some (hrun.2 n).2
+    · exact ⟨0, fun h => absurd h he⟩
+  obtain ⟨nxt, hnxt⟩ := Classical.axiomOfChoice fun n => Classical.axiomOfChoice (hstep n)
   let A : Nat → Nat := fun n => Nat.rec (motive := fun _ => Nat) (bit cv.initial) nxt n
   have hA : ∀ n, st.visited[A n]? = some (σ n).1 := by
     intro n
@@ -110,7 +120,9 @@ theorem canonical_acceptsFrom_of_export_accepts [LawfulBEq α] {cv : ConcreteVWA
       have h0 : (σ 0).1 = initId := exportTGBA_isInitial_iff.mp hrun.1
       rw [h0]; exact hinit
     | succ n ih => exact (hnxt n (A n) ih).1
-  choose! gs ms cs hgs using fun n => (hnxt n (A n) (hA n)).2
+  obtain ⟨gs, hgs⟩ := Classical.axiomOfChoice fun n => (hnxt n (A n) (hA n)).2
+  obtain ⟨ms, hgs⟩ := Classical.axiomOfChoice hgs
+  obtain ⟨cs, hgs⟩ := Classical.axiomOfChoice hgs
   refine ⟨⟨fun n => maskSet (A n), fun n => idMarksOf finals (ms n)⟩, ⟨?_, fun n => ?_⟩, ?_⟩
   · exact maskSet_bit cv.initial
   · obtain ⟨hmem, -, hc, hpos, hneg⟩ := hgs n
@@ -123,16 +135,16 @@ theorem canonical_acceptsFrom_of_export_accepts [LawfulBEq α] {cv : ConcreteVWA
       · exact (hcompat n).1 a (by rw [hpos]; exact ha)
       · exact (hcompat n).2 a (by rw [hneg]; exact ha)
   · intro f hf
-    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp (List.mem_toFinset.mp hf)
+    obtain ⟨i, hi, rfl⟩ := List.mem_iff_getElem.mp (List.mem_toFinSet.mp hf)
     have hi' : i < finals.size := by simpa using hi
-    refine Set.infinite_of_forall_exists_gt fun a => ?_
+    refine FinitePred.not_of_forall_exists_gt fun a => ?_
     obtain ⟨j, hj⟩ := hacc ⟨i, hi'⟩ (a + 1)
     refine ⟨a + 1 + j, ?_, by omega⟩
     show finals.toList[i] ∈ idMarksOf finals (ms (a + 1 + j))
     change (σ (a + 1 + j)).2.acceptMarks.contains i = true at hj
     rw [(hgs (a + 1 + j)).2.1, Std.HashSet.contains_ofList, List.contains_iff_mem] at hj
     unfold idMarksOf
-    exact List.mem_toFinset.mpr (List.mem_map.mpr ⟨i, hj, getD_eq_toList_getElem hi'⟩)
+    exact List.mem_toFinSet.mpr (List.mem_map.mpr ⟨i, hj, getD_eq_toList_getElem hi'⟩)
 
 /-! ## Canonical runs to numbered runs -/
 
@@ -159,7 +171,9 @@ theorem export_accepts_of_canonical_acceptsFrom [LawfulBEq α] {cv : ConcreteVWA
       rw [htgt, maskOf_maskSet]
     obtain ⟨c, hc, hcs⟩ := (DNF.sat_cubes g (ξ n)).mpr hg'
     exact ⟨g, m, c, by rw [hA1]; exact hmem, hmk, hc, hcs⟩
-  choose gs ms cs hgs using hstep
+  obtain ⟨gs, hgs⟩ := Classical.axiomOfChoice hstep
+  obtain ⟨ms, hgs⟩ := Classical.axiomOfChoice hgs
+  obtain ⟨cs, hgs⟩ := Classical.axiomOfChoice hgs
   have hvis : ∀ n, ∃ id, st.visited[A n]? = some id := by
     intro n
     induction n with
@@ -189,8 +203,8 @@ theorem export_accepts_of_canonical_acceptsFrom [LawfulBEq α] {cv : ConcreteVWA
   · intro i n
     have hi : i.val < finals.size := i.isLt
     have hmemf : finals[i.val] ∈ (canonicalTGBA cv finals).finals :=
-      List.mem_toFinset.mpr (Array.getElem_mem_toList hi)
-    obtain ⟨b, hb, hnb⟩ := (hacc _ hmemf).exists_gt n
+      List.mem_toFinSet.mpr (Array.getElem_mem_toList hi)
+    obtain ⟨b, hb, hnb⟩ := FinitePred.exists_gt_of_not (hacc _ hmemf) n
     refine ⟨b - n, ?_⟩
     have hbn : n + (b - n) = b := by omega
     show (Std.HashSet.ofList (maskMembers (ms (n + (b - n))))).contains i.val = true
@@ -220,8 +234,8 @@ theorem buildTGBA_accepts_iff [LawfulBEq α] [LawfulHashable α] (cv : ConcreteV
   have hfin : ∀ f ∈ (finalsOf cv).toList, cv.final.getD f false = true := fun f hf => (mem_finalsOf_iff hsize).mp hf
   have hsc : SoundCompleteTight (canonicalTGBA cv (finalsOf cv)) (abstractOf cv hveryWeak) :=
     ⟨fun f => by
-        show f ∈ (finalsOf cv).toList.toFinset ↔ cv.final.getD f false = true
-        rw [List.mem_toFinset]
+        show f ∈ (finalsOf cv).toList.toFinSet ↔ cv.final.getD f false = true
+        rw [List.mem_toFinSet]
         exact mem_finalsOf_iff hsize,
       fun e _ g e' m h => canonicalTrans_soundTrans cv (finalsOf cv) hveryWeak e g e' m h,
       fun e _ => canonicalTrans_completeTransTight cv (finalsOf cv) hveryWeak hfin e⟩

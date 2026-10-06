@@ -1,3 +1,5 @@
+module
+
 /-
   Generic `succs`-graph reachability, `PathTo` is a path through unblocked intermediates, and the `chain_*`
   lemmas convert between `PathTo` and its list-of-states witness.
@@ -18,6 +20,8 @@
   - Paths
   - Chains
 -/
+
+public section
 namespace LTLLib
 
 /-! ## Paths -/

@@ -1,3 +1,5 @@
+module
+
 /-
   Completeness of the LTL-to-GBA construction: proves that the graph produced by `createGraph` satisfies
   `GraphComplete` (GPVW95, Gerth et al. 1995) — every node's `old` set implies satisfaction (the forward direction
@@ -43,12 +45,14 @@
   - Completeness from GraphComplete
 -/
 
-import LTLLib.LTLtoGBA.Invariants
-import LTLLib.LTLtoGBA.Bridge
+public import LTLLib.LTLtoGBA.Invariants
+public import LTLLib.LTLtoGBA.Bridge
+
+public section
 
 namespace LTLLib
 
-open NNF TLA
+open NNF Lentil
 
 variable {α : Type u} {S : Type v} [FSet (NNF α) S] [Hashable (NNF α)] [BEq (NNF α)] [LawfulBEq (NNF α)]
 
@@ -87,12 +91,13 @@ private theorem satisfies_or_iff (ξ : OmegaWord α) (μ η : NNF α) :
 omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] [Hashable (NNF α)] in
 private theorem satisfies_next_iff (ξ : OmegaWord α) (ψ : NNF α) :
     NNF.satisfies ξ (.next ψ) ↔ NNF.satisfies (ξ.drop 1) ψ :=
-  Iff.rfl
+  NNF.satisfies_next ξ ψ
 
 omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] [Hashable (NNF α)] in
 private theorem satisfies_until_expand (ξ : OmegaWord α) (μ η : NNF α) :
     NNF.satisfies ξ (.until μ η) →
     NNF.satisfies ξ η ∨ (NNF.satisfies ξ μ ∧ NNF.satisfies (ξ.drop 1) (.until μ η)) := by
+  simp only [NNF.satisfies_until]
   intro ⟨j, hη, hμ⟩
   cases j with
   | zero => left; exact hη
@@ -108,9 +113,10 @@ omit [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)] [Hashable (NNF α)] i
 private theorem satisfies_release_expand (ξ : OmegaWord α) (μ η : NNF α) :
     NNF.satisfies ξ (.release μ η) →
     NNF.satisfies ξ η ∧ (NNF.satisfies ξ μ ∨ NNF.satisfies (ξ.drop 1) (.release μ η)) := by
+  simp only [NNF.satisfies_release]
   intro h
   refine ⟨?_, ?_⟩
-  · have := h 0; simp [exec.drop] at this; exact this
+  · have := h 0; simp at this; exact this
   · by_cases hμ : NNF.satisfies ξ μ
     · exact Or.inl hμ
     · right; intro j
@@ -143,7 +149,7 @@ private theorem satisfies_prop_neg (ξ : OmegaWord α) (a : α) :
 Extends `NodesPreserved` to also track that incoming sets grow monotonically. -/
 
 /-- Nodes are preserved with possibly enlarged incoming sets. -/
-def NodesPreservedInc (st st' : ExpandState α S) : Prop :=
+@[expose] def NodesPreservedInc (st st' : ExpandState α S) : Prop :=
   ∀ (k : Nat) (n : ExpansionNode α S), st.nodes[k]? = some n →
     ∃ n' : ExpansionNode α S, st'.nodes[k]? = some n' ∧
       (∀ ψ, FSet.contains n'.old ψ ↔ FSet.contains n.old ψ) ∧
@@ -470,7 +476,7 @@ private theorem expand_exist_aux (ξ : OmegaWord α) (node : ExpansionNode α S)
             · exact hk
           · exact hk
         · rw [h_mn]; exact h_name
-        · rw [h_mn]
+        · rw [h_mn]; exact Nat.le_refl _
     | none =>
       -- INSERT + RECURSE CASE
       simp only [freshName] at h_result
@@ -930,7 +936,7 @@ private theorem expand_npi_result (node : ExpansionNode α S) (st : ExpandState 
       · -- nameBound
         rw [h_mn]; exact h_name
       · -- nextNameMono
-        rw [h_mn]
+        rw [h_mn]; exact Nat.le_refl _
     · -- Insert + recurse
       simp only [freshName] at h_result
       have res := ih _ _ _ h_result
@@ -1417,7 +1423,7 @@ theorem createGraph_all (φ : NNF α) {st : ExpandState α S}
 
 /-- Completeness property that `createGraph` actually establishes.
     Combined with `ExpandSpec`, it suffices to prove GBA acceptance. -/
-def GraphComplete (φ : NNF α) (nodes : NodeData α → Prop) : Prop :=
+@[expose] def GraphComplete (φ : NNF α) (nodes : NodeData α → Prop) : Prop :=
   ∀ ξ : OmegaWord α, NNF.satisfies ξ φ →
     ∃ σ : Nat → NodeData α,
       (∀ n, nodes (σ n)) ∧
@@ -1564,15 +1570,7 @@ theorem expandOASpec_completeness
       -- Unfold until semantics: ∃ j, η satisfied at n+j
       obtain ⟨j, hη_sat, _⟩ : ∃ j, NNF.satisfies (ξ.drop (n + j)) (untils[i]).2 ∧
           ∀ i_1, i_1 < j → NNF.satisfies (ξ.drop (n + i_1)) (untils[i]).1 := by
-        simp only [NNF.satisfies, NNF.toPred, tla_until] at hsat_u
-        obtain ⟨j, hη, hμ⟩ := hsat_u
-        refine ⟨j, ?_, fun k hk => ?_⟩
-        · show (untils[i]).2.toPred (ξ.drop (n + j))
-          have : ξ.drop (n + j) = (ξ.drop n).drop j := by rw [exec.drop_drop]
-          rw [this]; exact hη
-        · show (untils[i]).1.toPred (ξ.drop (n + k))
-          have : ξ.drop (n + k) = (ξ.drop n).drop k := by rw [exec.drop_drop]
-          rw [this]; exact hμ k hk
+        simpa only [NNF.satisfies_until, exec.drop_drop] using hsat_u
       -- Find the FIRST position where η ∈ old (may be before j), rather than showing until persists to exactly n+j.
       suffices ∃ j', (σ (n + j')).old (untils[i]).2 by
         obtain ⟨j', hη_old⟩ := this
@@ -1592,7 +1590,7 @@ theorem expandOASpec_completeness
             · right
               have ⟨_, h_carry⟩ := until_step spec h_nodes h_succ h_u_k h_eta_k
               rwa [show n + k + 1 = n + (k + 1) from by omega] at h_carry
-      rcases h_persist j le_rfl with ⟨k', _, hη'⟩ | h_u_j
+      rcases h_persist j (Nat.le_refl _) with ⟨k', _, hη'⟩ | h_u_j
       · exact ⟨k', hη'⟩
       · exact ⟨j, h_until_rhs (n + j) _ _ h_u_j hη_sat⟩
     · -- until formula NOT in old(σ n)

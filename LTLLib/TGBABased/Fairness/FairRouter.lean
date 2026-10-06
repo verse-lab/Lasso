@@ -1,3 +1,5 @@
+module
+
 /-
   Model checking under fairness, with every fairness conjunct hoisted out of the property. The negated property
   `φ.toNNF false` is split at its conjunctions. A conjunct that is a fairness ([LSFZ16, Definition 1], `NNF.isFairness`)
@@ -39,21 +41,24 @@
   - Completeness
   - Routes
 -/
-import LTLLib.AbstractSpec.EmptinessCheck
-import LTLLib.LTL.FairClass
-import LTLLib.LTL.FairNormalForm
-import LTLLib.LTL.Semantics
-import LTLLib.LTL.Syntax
-import LTLLib.Product
-import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.DijkstraCheck
-import LTLLib.TGBABased.Fairness.FairCheck
-import LTLLib.TGBABased.Fairness.StreettOptsProduct
-import LTLLib.TGBABased.Fairness.StreettRegionProduct
-import LTLLib.TGBABased.LTLtoTGBA.Pipeline
-import LTLLib.TGBABased.SCC.DijkstraSCC
-import LTLLib.TGBABased.SCC.StreettPrune
-import LTLLib.TGBABased.SCC.StreettPruneFastP
+public import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.LTL.FairClass
+public import LTLLib.LTL.FairNormalForm
+public import LTLLib.LTL.Semantics
+public import LTLLib.LTL.Syntax
+public import LTLLib.Product
+public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.DijkstraCheck
+public import LTLLib.TGBABased.Fairness.FairCheck
+public import LTLLib.TGBABased.Fairness.StreettOptsProduct
+public import LTLLib.TGBABased.Fairness.StreettRegionProduct
+public import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+public import LTLLib.TGBABased.SCC.DijkstraSCC
+public import LTLLib.TGBABased.SCC.StreettPrune
+public import LTLLib.TGBABased.SCC.StreettPruneFastP
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -65,7 +70,7 @@ variable {α : Type u} {P : Type v}
 
 /-- Check every disjunct, stopping at the first counterexample. The explored-state counts of an exhausted
 run are summed. -/
-def checkDisjuncts (f : NNF.FairDisjunct α → EmptinessResult P) :
+@[expose] def checkDisjuncts (f : NNF.FairDisjunct α → EmptinessResult P) :
     List (NNF.FairDisjunct α) → EmptinessResult P
   | [] => .empty 0
   | d :: ds =>
@@ -125,12 +130,12 @@ section Split
 variable {α : Type u} [DecidableEq α]
 
 /-- The fair normal form of one conjunct, `none` when it is not a fairness or does not flatten. -/
-def hoistConjunct (c : NNF α) : Option (List (NNF.FairDisjunct α)) :=
+@[expose] def hoistConjunct (c : NNF α) : Option (List (NNF.FairDisjunct α)) :=
   if c.isFairness then NNF.fnf c else none
 
 /-- Split conjuncts into the normal forms that get hoisted onto the product, and the ones that stay in the
 property. -/
-def hoistFairness : List (NNF α) → List (List (NNF.FairDisjunct α)) × List (NNF α)
+@[expose] def hoistFairness : List (NNF α) → List (List (NNF.FairDisjunct α)) × List (NNF α)
   | [] => ([], [])
   | c :: cs =>
     match hoistConjunct c, hoistFairness cs with
@@ -181,7 +186,7 @@ def isFlatFairness : NNF α → Bool
   | c => isFlatLeaf c
 
 /-- The split those classifiers make, only flat conjuncts hoisted and every other conjunct kept. -/
-def hoistFlat (cs : List (NNF α)) : List (List (NNF.FairDisjunct α)) × List (NNF α) :=
+@[expose] def hoistFlat (cs : List (NNF α)) : List (List (NNF.FairDisjunct α)) × List (NNF α) :=
   ((hoistFairness (cs.filter isFlatFairness)).1,
     (hoistFairness (cs.filter isFlatFairness)).2 ++ cs.filter fun c => !isFlatFairness c)
 
@@ -194,7 +199,7 @@ theorem hoistFlat_correct (ξ : OmegaWord α) (cs : List (NNF α)) :
   rw [← and_assoc, ← hoistFairness_correct]
   constructor
   · intro h
-    exact ⟨fun c hc => h c (List.mem_of_mem_filter hc), fun c hc => h c (List.mem_of_mem_filter hc)⟩
+    exact ⟨fun c hc => h c (List.filter_sublist.subset hc), fun c hc => h c (List.filter_sublist.subset hc)⟩
   · rintro ⟨h1, h2⟩ c hc
     by_cases hf : isFlatFairness c = true
     · exact h1 c (List.mem_filter.mpr ⟨hc, hf⟩)
@@ -252,7 +257,7 @@ section Kept
 variable {α : Type u}
 
 /-- The kept conjuncts as one property, negated because the translator negates what it is given. -/
-def keptProperty (cs : List (NNF α)) : Formula α := .not (Formula.conj (cs.map NNF.toFormula))
+@[expose] def keptProperty (cs : List (NNF α)) : Formula α := .not (Formula.conj (cs.map NNF.toFormula))
 
 theorem directSatisfies_keptProperty (ξ : OmegaWord α) (cs : List (NNF α)) :
     (keptProperty cs).directSatisfies ξ ↔ ¬ ∀ c ∈ cs, c.satisfies ξ := by
@@ -268,7 +273,7 @@ variable {α : Type u} {SysState : Type v} [BEq SysState] [Hashable SysState] [L
   [BEq α] [Hashable α]
 
 /-- The hoisted conjuncts as options, one entry per conjunct and one option per disjunct. -/
-def hoistedOptions (dss : List (List (NNF.FairDisjunct α))) :
+@[expose] def hoistedOptions (dss : List (List (NNF.FairDisjunct α))) :
     Array (Array (StreettOption (Std.HashSet α))) :=
   dss.toArray.map fun ds => ds.toArray.map fun d =>
     { region := d.1.eval, marks := d.2.toArray.map (·.eval) }
@@ -278,7 +283,7 @@ they read rather than states by their label, which is what lets a hoisted `FG ψ
 (`EdgeLabels.md` §6.5). For the state-labelled systems this route is wired to, every step out of `s` reads
 `sysLabel s` and the two readings coincide — that collapse is `TGBAProduct.acceptingRRun_lets_unlabelled`
 and `TGBAProduct.region_of_mem_keptSuccs_unlabelled`. -/
-def streettRSpecOf (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def streettRSpecOf (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (dss : List (List (NNF.FairDisjunct α))) :
     RStreettSpec (SysState × Nat) (Std.HashSet α) :=
   TGBAProduct.streettRSpecOf tgba sysSucc sysLabel tgba.numAcceptSets (hoistedOptions dss)
@@ -310,7 +315,7 @@ Reads a *labelled* system, but with an asymmetry between its two contracts that 
   counterexample need not exist — `Tests/PruneJointRegions.lean` is the worked case. Deciding jointness
   exactly is NP-hard (§12.1), so the hypothesis is the affordable answer rather than a stopgap, and the
   properties that violate it are routed to the crossing (§12.6). -/
-def modelCheckPruneSplit (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
+@[expose] def modelCheckPruneSplit (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) : EmptinessResult (SysState × Nat) :=
   match ltl3ba (kept.toNNF false) with
@@ -323,7 +328,6 @@ def modelCheckPruneSplit (kept : Formula α) (dss : List (List (NNF.FairDisjunct
     -- §13.30: the position-carrying driver; `streettCheckP_eq` bridges it to `streettCheckF`.
     streettCheckP cs
       (TGBAProduct.getSuccessors tgba sysSucc sysLabel)
-      (TGBAProduct.edgeMarks tgba sysSucc sysLabel)
       (TGBAProduct.expandWithOpts tgba sysSucc sysLabel cs)
       (TGBAProduct.keptExpandWithOpts tgba sysSucc sysLabel cs)
       (TGBAProduct.initialStates tgba sysInit)
@@ -337,16 +341,17 @@ the type rather than a memo installed behind `@[implemented_by]`. The bridge is 
 definitional eta for structures makes `fun s => ((f s).1, (f s).2)` the same term as `f` — so every
 soundness theorem below transfers by one rewrite and none of them is restated. `EdgeLabels.md` §15. -/
 
-def streettRSpecOfStep (tgba : TGBA α) (sysStep : LSys.StepFn α SysState)
+@[expose] def streettRSpecOfStep (tgba : TGBA α) (sysStep : LSys.StepFn α SysState)
     (dss : List (List (NNF.FairDisjunct α))) : RStreettSpec (SysState × Nat) (Std.HashSet α) :=
   TGBAProduct.streettRSpecOfStep tgba sysStep tgba.numAcceptSets (hoistedOptions dss)
 
+omit [LawfulBEq SysState] [Inhabited SysState] in
 theorem streettRSpecOfStep_eq (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (dss : List (List (NNF.FairDisjunct α))) :
     streettRSpecOfStep tgba (fun s => (sysSucc s, sysLabel s)) dss
       = streettRSpecOf tgba sysSucc sysLabel dss := rfl
 
-def modelCheckPruneSplitOfStep (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
+@[expose] def modelCheckPruneSplitOfStep (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
     (sysInit : List SysState) (sysStep : LSys.StepFn α SysState) :
     EmptinessResult (SysState × Nat) :=
   match ltl3ba (kept.toNNF false) with
@@ -354,7 +359,6 @@ def modelCheckPruneSplitOfStep (kept : Formula α) (dss : List (List (NNF.FairDi
     let cs := CompiledSpec.of (streettRSpecOfStep tgba sysStep dss)
     streettCheckP cs
       (TGBAProduct.getSuccessorsOfStep tgba sysStep)
-      (TGBAProduct.edgeMarksOfStep tgba sysStep)
       (TGBAProduct.expandWithOptsOfStep tgba sysStep cs)
       (TGBAProduct.keptExpandWithOptsOfStep tgba sysStep cs)
       (TGBAProduct.initialStates tgba sysInit)
@@ -382,7 +386,7 @@ theorem modelCheckPruneSplit_eq [LawfulHashable SysState] (kept : Formula α)
         (TGBAProduct.initialStates tgba sysInit) := by
   unfold modelCheckPruneSplit
   rw [htg]
-  refine (streettCheckP_eq _ _ _ _ _ _).trans ?_
+  refine (streettCheckP_eq _ _ _ _ _).trans ?_
   exact streettCheckF_eq (CompiledSpec.of (streettRSpecOf tgba sysSucc sysLabel dss))
     (CompiledSpec.of_wf _) _ _ _ _
     (TGBAProduct.expand_coherent tgba sysSucc sysLabel)
@@ -402,7 +406,7 @@ variable [DecidableEq α]
 Reads a *labelled* system, so a hoisted `◇□ψ` or `□◇ψ` may mention an edge atom such as `taken(a)`: the
 latch's region and its extra marks are both decided on the letter each step contributes
 (`EdgeLabels.md` §6.5). A system with no edge atoms is passed as `LSys.unlabelled sysSucc`. -/
-def modelCheckCrossSplit (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
+@[expose] def modelCheckCrossSplit (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
@@ -412,7 +416,7 @@ def modelCheckCrossSplit (kept : Formula α) (dss : List (List (NNF.FairDisjunct
     (NNF.crossAllDNF dss)
 
 /-- `modelCheckCrossSplit` over one system callback. -/
-def modelCheckCrossSplitOfStep (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
+@[expose] def modelCheckCrossSplitOfStep (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
     (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
     (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
@@ -470,7 +474,7 @@ theorem modelCheckPruneSplit_empty_unsat [LawfulHashable SysState] (kept : Formu
     (TGBAProduct.expand_coherent tgba sysSucc sysLabel) _
     (fun p p' m hm => TGBAProduct.edgeMarks_lt tgba sysSucc sysLabel
       (ltl3ba_marks_lt _ htg) p p' m hm) hFR h
-    (Nonempty.some (exists_RFairSCC_of_run hcompat hFR
+    (Classical.choice (exists_RFairSCC_of_run hcompat hFR
       (TGBAProduct.acceptingRRun tgba sysSucc sysLabel sysInit
         tgba.numAcceptSets (hoistedOptions dss) hrun)
       (TGBAProduct.acceptingRRun_marks tgba sysSucc sysLabel sysInit
@@ -554,10 +558,12 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
         hi
     rw [hci] at hopt
     obtain ⟨d, hd, rfl⟩ := Array.mem_map.mp hopt
-    simp only [hcsspec, streettRSpecOf_regionSuccs] at hregionE hmarksE
     refine ⟨d, by simpa using hd, fun e he => hregionE e he, fun g hg => ?_⟩
     exact hmarksE g.eval (Array.mem_map_of_mem (by simpa using hg))
-  choose sel hmem hR hM using hsel0
+  obtain ⟨sel, hsel⟩ := Classical.axiomOfChoice fun ds => Classical.axiomOfChoice (hsel0 ds)
+  have hmem := fun ds hds => (hsel ds hds).1
+  have hR := fun ds hds => (hsel ds hds).2.1
+  have hM := fun ds hds => (hsel ds hds).2.2
   -- the conjoined region, and the selected options' marks in one list
   set selected : List (NNF.FairDisjunct α) := dss.attach.map (fun p => sel p.1 p.2) with hselected
   set r : Std.HashSet α → Bool := fun l => selected.all (fun d => d.1.eval l) with hr
@@ -672,7 +678,7 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
 
 /-- Does `sys` satisfy `φ` on every run? The negated property is split at its conjunctions, every conjunct
 that is a fairness becomes marks and a region on the product, and the rest go back to the translator. -/
-def modelCheckUnderFairness (φ : Formula α)
+@[expose] def modelCheckUnderFairness (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
     (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
@@ -683,7 +689,7 @@ def modelCheckUnderFairness (φ : Formula α)
 
 /-- Does `sys` satisfy `φ` on every run? The negated property is split exactly as `modelCheckUnderFairness`
 splits it, and the hoisted conjuncts are then decided per SCC instead of being crossed. -/
-def modelCheckUnderFairnessPrune (φ : Formula α)
+@[expose] def modelCheckUnderFairnessPrune (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) : EmptinessResult (SysState × Nat) :=
   let split := hoistFairness (φ.toNNF false).splitConj
@@ -691,19 +697,20 @@ def modelCheckUnderFairnessPrune (φ : Formula α)
 
 /-- The prune with only flat fairness hoisted (`hoistFlat`), the conjuncts TLC, PAT and NuSMV recognise, and
 everything else translated. -/
-def modelCheckUnderFairnessFlat (φ : Formula α)
+@[expose] def modelCheckUnderFairnessFlat (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) : EmptinessResult (SysState × Nat) :=
   let split := hoistFlat (φ.toNNF false).splitConj
   modelCheckPruneSplit (keptProperty split.2) split.1 sysInit sysSucc sysLabel
 
 /-- `modelCheckUnderFairnessFlat` over one system callback. §15 -/
-def modelCheckUnderFairnessFlatOfStep (φ : Formula α)
+@[expose] def modelCheckUnderFairnessFlatOfStep (φ : Formula α)
     (sysInit : List SysState) (sysStep : LSys.StepFn α SysState) :
     EmptinessResult (SysState × Nat) :=
   let split := hoistFlat (φ.toNNF false).splitConj
   modelCheckPruneSplitOfStep (keptProperty split.2) split.1 sysInit sysStep
 
+omit [LawfulBEq α] [LawfulHashable α] in
 theorem modelCheckUnderFairnessFlatOfStep_eq (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α) :
     modelCheckUnderFairnessFlatOfStep φ sysInit (fun s => (sysSucc s, sysLabel s))
@@ -739,7 +746,7 @@ theorem modelCheckUnderFairness_nonEmpty_sat (φ : Formula α)
   obtain ⟨ρ, hρ, hdss, hviol⟩ := modelCheckCrossSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel sysFR checker
     sysChecker h
   -- the violated goal is the kept conjuncts negated, so they all hold on this run
-  have hkept := not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
+  have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   exact ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
     ((hoistFairness_correct _ (φ.toNNF false).splitConj).mpr ⟨hdss, hkept⟩))⟩
 
@@ -771,7 +778,7 @@ theorem modelCheckUnderFairnessPrune_nonEmpty_sat (φ : Formula α)
   obtain ⟨ρ, hρ, hdss, hviol⟩ :=
     modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
   -- the violated goal is the kept conjuncts negated, so they all hold on this run
-  have hkept := not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
+  have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   exact ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
     ((hoistFairness_correct _ (φ.toNNF false).splitConj).mpr ⟨hdss, hkept⟩))⟩
 
@@ -802,7 +809,7 @@ theorem modelCheckUnderFairnessFlat_nonEmpty_sat (φ : Formula α)
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
   obtain ⟨ρ, hρ, hdss, hviol⟩ :=
     modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
-  have hkept := not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
+  have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   exact ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
     ((hoistFlat_correct _ (φ.toNNF false).splitConj).mpr ⟨hdss, hkept⟩))⟩
 

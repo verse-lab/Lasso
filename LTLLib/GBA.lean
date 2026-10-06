@@ -1,3 +1,5 @@
+module
+
 /-
   Generalized Büchi Automaton (GBA) type definition.
 
@@ -9,8 +11,10 @@
   - Acceptance sets (one per Until-subformula)
 -/
 
-import Std
-import LTLLib.AbstractSpec.Acceptance
+public import Std
+public import LTLLib.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 
@@ -32,27 +36,27 @@ namespace GBA
 variable {α} [BEq α] [Hashable α]
 
 /-- Number of states in the GBA. -/
-def numStates (gba : GBA α) : Nat := gba.states.size
+@[expose] def numStates (gba : GBA α) : Nat := gba.states.size
 
 /-- Number of acceptance sets (= number of distinct Until-subformulas). -/
-def numAcceptSets (gba : GBA α) : Nat := gba.acceptSets.size
+@[expose] def numAcceptSets (gba : GBA α) : Nat := gba.acceptSets.size
 
 /-- Get successors of a state. Returns empty array if state not found. -/
-def getSuccessors (gba : GBA α) (state : Nat) : Array Nat :=
+@[expose] def getSuccessors (gba : GBA α) (state : Nat) : Array Nat :=
   gba.successors[state]?.getD #[]
 
 /-- Check if a state is initial. -/
-def isInitial (gba : GBA α) (state : Nat) : Bool :=
+@[expose] def isInitial (gba : GBA α) (state : Nat) : Bool :=
   gba.initialStates.contains state
 
 /-- Check if a state is in a given acceptance set. -/
-def isAccepting (gba : GBA α) (setIdx : Nat) (state : Nat) : Bool :=
+@[expose] def isAccepting (gba : GBA α) (setIdx : Nat) (state : Nat) : Bool :=
   match gba.acceptSets[setIdx]? with
   | some aset => aset.contains state
   | none => true  -- if no acceptance sets, all states accept
 
 /-- Acceptance sets `q` belongs to. -/
-def acceptMarksOf (gba : GBA α) (q : Nat) : Std.HashSet Nat :=
+@[expose] def acceptMarksOf (gba : GBA α) (q : Nat) : Std.HashSet Nat :=
   (List.range gba.acceptSets.size).foldl
     (init := Std.HashSet.emptyWithCapacity gba.acceptSets.size)
     fun acc i => if gba.isAccepting i q then acc.insert i else acc
@@ -64,7 +68,7 @@ structure WellFormed (gba : GBA α) : Prop where
     gba.states.contains q'
 
 /-- Convert a computational `GBA` to an abstract `OASpec`. -/
-def toSpec [BEq α] [Hashable α] (gba : GBA α) : OASpec Nat α gba.numAcceptSets where
+@[expose] def toSpec [BEq α] [Hashable α] (gba : GBA α) : OASpec Nat α gba.numAcceptSets where
   trans q q' := q' ∈ gba.getSuccessors q
   initial q := gba.isInitial q
   labelCompat q v :=

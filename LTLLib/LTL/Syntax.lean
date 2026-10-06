@@ -1,3 +1,5 @@
+module
+
 /-
   LTL formula syntax: both the user-facing type and the internal NNF IR.
 
@@ -19,6 +21,8 @@
   - NNF normalization
 -/
 
+
+public section
 namespace LTLLib
 
 /-! ## User-facing syntax -/
@@ -43,7 +47,7 @@ deriving Repr, Inhabited, DecidableEq, BEq, Hashable
 namespace Formula
 
 /-- Pretty-print an LTL formula. -/
-def toString {α} [ToString α] : Formula α → String
+@[expose] def toString {α} [ToString α] : Formula α → String
   | .tt => "⊤"
   | .ff => "⊥"
   | .atom a => s!"{a}"
@@ -61,13 +65,13 @@ def toString {α} [ToString α] : Formula α → String
 instance {α} [ToString α] : ToString (Formula α) := ⟨Formula.toString⟩
 
 /-- Conjunction of a list, `⊤` when empty. -/
-def conj {α} : List (Formula α) → Formula α
+@[expose] def conj {α} : List (Formula α) → Formula α
   | [] => .tt
   | [φ] => φ
   | φ :: φs => .and φ (conj φs)
 
 /-- `φ` under a list of assumptions, `φ` itself when there are none so an empty assumption costs nothing. -/
-def assuming {α} (ψs : List (Formula α)) (φ : Formula α) : Formula α :=
+@[expose] def assuming {α} (ψs : List (Formula α)) (φ : Formula α) : Formula α :=
   match ψs with
   | [] => φ
   | _ => .implies (conj ψs) φ
@@ -104,7 +108,7 @@ instance {α} [BEq α] [Hashable α] [inst : LawfulHashable α] : LawfulHashable
 namespace NNF
 
 /-- Negate a formula, pushing negation inward to stay in NNF (De Morgan + temporal duality). -/
-def neg {α} : NNF α → NNF α
+@[expose] def neg {α} : NNF α → NNF α
   | .tt => .ff
   | .ff => .tt
   | .prop a => .nprop a
@@ -116,16 +120,16 @@ def neg {α} : NNF α → NNF α
   | .release φ ψ => .until φ.neg ψ.neg  -- ¬(φ R ψ) = ¬φ U ¬ψ
 
 /-- Eventually (◇φ) = true U φ. -/
-def eventually {α} (φ : NNF α) : NNF α := .until .tt φ
+@[expose] def eventually {α} (φ : NNF α) : NNF α := .until .tt φ
 
 /-- Always (□φ) = false R φ. -/
-def always {α} (φ : NNF α) : NNF α := .release .ff φ
+@[expose] def always {α} (φ : NNF α) : NNF α := .release .ff φ
 
 /-- Implication φ → ψ = ¬φ ∨ ψ (in NNF). -/
-def implies {α} (φ ψ : NNF α) : NNF α := .or φ.neg ψ
+@[expose] def implies {α} (φ ψ : NNF α) : NNF α := .or φ.neg ψ
 
 /-- Embed back into the surface syntax, so a formula recovered from NNF can re-enter the translator. -/
-def toFormula {α} : NNF α → Formula α
+@[expose] def toFormula {α} : NNF α → Formula α
   | .tt => .tt
   | .ff => .ff
   | .prop a => .atom a
@@ -138,12 +142,12 @@ def toFormula {α} : NNF α → Formula α
 
 /-- Split at the top-level conjunctions. Run on the NNF rather than the surface formula, so a conjunction
 written as `¬(¬φ ∨ ¬ψ)` splits as well. -/
-def splitConj {α} : NNF α → List (NNF α)
+@[expose] def splitConj {α} : NNF α → List (NNF α)
   | .and φ ψ => splitConj φ ++ splitConj ψ
   | φ => [φ]
 
 /-- Pretty-print an NNF formula. -/
-def toString {α} [ToString α] : NNF α → String
+@[expose] def toString {α} [ToString α] : NNF α → String
   | .tt => "⊤"
   | .ff => "⊥"
   | .prop a => s!"{a}"
@@ -165,7 +169,7 @@ namespace Formula
 /-- Convert a surface formula to NNF: pushes negations inward via De Morgan and temporal duality,
 and desugars `implies`/`iff`/`eventually`/`always`. `pos` tracks polarity (`false` under an odd
 number of negations). -/
-def toNNF {α} (pos : Bool) : Formula α → NNF α
+@[expose] def toNNF {α} (pos : Bool) : Formula α → NNF α
   | .tt => if pos then .tt else .ff
   | .ff => if pos then .ff else .tt
   | .atom a => if pos then .prop a else .nprop a

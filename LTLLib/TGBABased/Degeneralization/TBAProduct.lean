@@ -1,3 +1,5 @@
+module
+
 /-
   On-the-fly product of an external system with a `TBA`, the construction of `TGBABased/Product.lean` with
   `TBAState` in place of `Nat` states. `TGBA.degeneralize` needs a materialized `TGBA`, so the system is
@@ -20,9 +22,11 @@
   - `exists_TAcceptingCycle_of_acceptingRun`: an accepting product run yields a lasso witness
   - `exists_run_of_TAcceptingCycle`: a lasso witness yields a system run
 -/
-import LTLLib.Product
-import LTLLib.TGBABased.Degeneralization.TBA
-import LTLLib.TGBABased.LabelledSys
+public import LTLLib.Product
+public import LTLLib.TGBABased.Degeneralization.TBA
+public import LTLLib.TGBABased.LabelledSys
+
+public section
 
 namespace LTLLib
 
@@ -32,18 +36,18 @@ variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
 
 /-! ## Product construction -/
 
-def initialStates (tba : TBA α) (sysInit : List SysState) :
+@[expose] def initialStates (tba : TBA α) (sysInit : List SysState) :
     List (SysState × TBAState) :=
   sysInit.flatMap fun s => tba.initialStates.toList.map fun q => (s, q)
 
 /-- Does `valuation` satisfy `t`'s own positive/negative propositional constraint? -/
-def transCompatible (t : TBA.Transition α) (valuation : Std.HashSet α) : Bool :=
+@[expose] def transCompatible (t : TBA.Transition α) (valuation : Std.HashSet α) : Bool :=
   t.positiveProps.all valuation.contains && !t.negativeProps.any valuation.contains
 
 /-- From `(s, q)`, every system step out of `s` paired with every `q`-transition compatible with the letter
 *that step* reads. The system step is chosen first because it is what fixes the letter; in a state-labelled
 product the two loops are nested the other way round. -/
-def succsFrom (tba : TBA α) (q : TBAState) (base : Std.HashSet α)
+@[expose] def succsFrom (tba : TBA α) (q : TBAState) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) : Array (SysState × TBAState) :=
   let ts := tba.getSuccessors q
   if steps.all (·.1.isEmpty) then
@@ -59,7 +63,7 @@ def succsFrom (tba : TBA α) (q : TBAState) (base : Std.HashSet α)
       ts.filterMap fun t =>
         if transCompatible t lbl then some (st.2, t.target) else none
 
-def getSuccessors (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def getSuccessors (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) :
     (SysState × TBAState) → Array (SysState × TBAState) :=
   fun (s, q) => succsFrom tba q (sysLabel s) (LSys.totalize sysSucc s)
@@ -71,7 +75,7 @@ compatible with that step's letter. Parallel system steps make several pairs rea
 which is why the marks are collected over all of them and why `edgeWitness` has to name one. -/
 
 /-- Every realization of a product step out of a source whose letter and steps are already in hand. -/
-def realizationsFrom [BEq SysState] [Hashable SysState] (tba : TBA α) (q : TBAState) (base : Std.HashSet α)
+@[expose] def realizationsFrom [BEq SysState] [Hashable SysState] (tba : TBA α) (q : TBAState) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) (p' : SysState × TBAState) :
     Array (LStep α SysState × TBA.Transition α) :=
   (steps.filter fun st => st.2 == p'.1).flatMap fun st =>
@@ -79,7 +83,7 @@ def realizationsFrom [BEq SysState] [Hashable SysState] (tba : TBA α) (q : TBAS
       t.target == p'.2 && transCompatible t (LSys.letter base st.1)).map (st, ·)
 
 /-- Every (system step, automaton transition) pair realizing the product step `p → p'`. -/
-def realizations [BEq SysState] [Hashable SysState] (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def realizations [BEq SysState] [Hashable SysState] (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p p' : SysState × TBAState) :
     Array (LStep α SysState × TBA.Transition α) :=
   realizationsFrom tba p.2 (sysLabel p.1) (LSys.totalize sysSucc p.1) p'
@@ -104,7 +108,7 @@ theorem mem_realizations_iff [BEq SysState] [Hashable SysState] [LawfulBEq SysSt
 across realizations over-approximates a single step; it is sound because TGBA acceptance asks for each mark
 infinitely often and `edgeWitness.markEdge` names a realization carrying the mark, so pumping the cycle
 realizes them one at a time. A *region* may not be over-approximated this way — see `EdgeLabels.md` §6.3. -/
-def edgeMarksFrom [BEq SysState] [Hashable SysState] (tba : TBA α) (q : TBAState) (base : Std.HashSet α)
+@[expose] def edgeMarksFrom [BEq SysState] [Hashable SysState] (tba : TBA α) (q : TBAState) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) (p' : SysState × TBAState) : Std.HashSet Nat :=
   (realizationsFrom tba q base steps p').foldl
     (init := Std.HashSet.emptyWithCapacity 0) fun acc r => acc.union r.2.acceptMarks
@@ -115,7 +119,7 @@ def edgeMarksFrom [BEq SysState] [Hashable SysState] (tba : TBA α) (q : TBAStat
 -- eta-expands a function-returning definition into its full arity, so `edgeMarks tba sysSucc sysLabel p` is
 -- a partial application whose body never runs. That was measured. `expand` returns a pair of arrays, which
 -- is not a function and so is saturated at `p`. See `EdgeLabels.md` §9.
-def edgeMarks [BEq SysState] [Hashable SysState] (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def edgeMarks [BEq SysState] [Hashable SysState] (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p : SysState × TBAState) :
     (SysState × TBAState) → Std.HashSet Nat :=
   let base := sysLabel p.1
@@ -125,7 +129,7 @@ def edgeMarks [BEq SysState] [Hashable SysState] (tba : TBA α) (sysSucc : SysSt
 /-- Successors of a product state together with the marks of each, from one pass over the source. The
 result type is a *pair of arrays*, not a function, so the compiler cannot eta-expand it: the body runs once
 per call and `sysLabel`/`sysSucc` are entered once per product state. -/
-def expand [BEq SysState] [Hashable SysState] (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def expand [BEq SysState] [Hashable SysState] (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p : SysState × TBAState) :
     Array (SysState × TBAState) × Array (Std.HashSet Nat) × Array Nat :=
   let base := sysLabel p.1
@@ -144,16 +148,16 @@ section OfStep
 
 variable (tba : TBA α) (sysStep : LSys.StepFn α SysState)
 
-def getSuccessorsOfStep : (SysState × TBAState) → Array (SysState × TBAState) :=
+@[expose] def getSuccessorsOfStep : (SysState × TBAState) → Array (SysState × TBAState) :=
   fun p => let r := sysStep p.1; succsFrom tba p.2 r.2 (LSys.totalizeAt r.1 p.1)
 
 variable [BEq SysState] [Hashable SysState]
 
-def edgeMarksOfStep (p : SysState × TBAState) : (SysState × TBAState) → Std.HashSet Nat :=
+@[expose] def edgeMarksOfStep (p : SysState × TBAState) : (SysState × TBAState) → Std.HashSet Nat :=
   let r := sysStep p.1
   fun p' => edgeMarksFrom tba p.2 r.2 (LSys.totalizeAt r.1 p.1) p'
 
-def expandOfStep (p : SysState × TBAState) :
+@[expose] def expandOfStep (p : SysState × TBAState) :
     Array (SysState × TBAState) × Array (Std.HashSet Nat) × Array Nat :=
   let r := sysStep p.1
   let base := r.2
@@ -161,6 +165,7 @@ def expandOfStep (p : SysState × TBAState) :
   let out := succsFrom tba p.2 base steps
   (out, out.map fun p' => edgeMarksFrom tba p.2 base steps p', #[])
 
+omit [BEq SysState] [Hashable SysState] in
 theorem getSuccessorsOfStep_eq' :
     getSuccessorsOfStep tba sysStep
       = getSuccessors tba (fun s => (sysStep s).1) (fun s => (sysStep s).2) := by
@@ -189,7 +194,7 @@ abbrev Edge (SysState : Type v) (α : Type u) [BEq α] [Hashable α] :=
   SysState × LStep α SysState × TBA.Edge α
 
 /-- Convert the computational product to an abstract `TOASpec`. -/
-def toSpec (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def toSpec (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) :
     TOASpec (SysState × TBAState) (Edge SysState α) α tba.numAcceptSets where
   src e := (e.1, e.2.2.1)
@@ -268,7 +273,7 @@ private theorem reachable_imp (tba : TBA α) (sysSucc : SysState → Array (LSte
     exact hst2 ▸ Array.mem_map.mpr ⟨st, hst, rfl⟩
 
 /-- The product's own `FiniteReach` witness, from the caller's system-side one and `TBA.WellFormed`. -/
-def finiteReach (tba : TBA α) (htwf : tba.WellFormed)
+theorem finiteReach (tba : TBA α) (htwf : tba.WellFormed)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysInit : List SysState) (sysFR : FiniteReach sysInit (LSys.targets sysSucc)) :
     FiniteReach (initialStates tba sysInit) (getSuccessors tba sysSucc sysLabel) :=
@@ -279,7 +284,7 @@ def finiteReach (tba : TBA α) (htwf : tba.WellFormed)
 /-- A product run splits into a TGBA edge-run and an `LSys.toSpec` run that stay compatible at every step. -/
 theorem run_decompose (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    {σ : TLA.exec (Edge SysState α)} (hrun : (toSpec tba sysSucc sysLabel sysInit).isRun σ) :
+    {σ : Lentil.exec (Edge SysState α)} (hrun : (toSpec tba sysSucc sysLabel sysInit).isRun σ) :
     tba.toSpec.isRun (fun n => (σ n).2.2) ∧
     (LSys.toSpec sysSucc sysInit sysLabel).isRun (fun n => ((σ n).1, (σ n).2.1)) ∧
     ∀ n, transCompatible (σ n).2.2.2 (LSys.letter (sysLabel (σ n).1) (σ n).2.1.1) = true := by
@@ -300,7 +305,7 @@ theorem run_decompose (tba : TBA α) (sysSucc : SysState → Array (LStep α Sys
 /-- A TGBA edge-run and a labelled system run that agree step by step combine into a genuine product run. -/
 theorem run_combine (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    {σ : TLA.exec (TBA.Edge α)} {ρ : TLA.exec (LSys.Edge α SysState)}
+    {σ : Lentil.exec (TBA.Edge α)} {ρ : Lentil.exec (LSys.Edge α SysState)}
     (htba : tba.toSpec.isRun σ) (hsys : (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ)
     (hcompat : ∀ n, transCompatible (σ n).2 (LSys.letter (sysLabel (ρ n).1) (ρ n).2.1) = true) :
     (toSpec tba sysSucc sysLabel sysInit).isRun (fun n => ((ρ n).1, (ρ n).2, σ n)) := by
@@ -327,7 +332,7 @@ private theorem transCompatible_iff_labelCompat [LawfulBEq α] (tba : TBA α)
 the letters that run reads. -/
 theorem gsp_correct1 [LawfulBEq α] (tba : TBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
-    (sysInit : List SysState) {σ : TLA.exec (Edge SysState α)}
+    (sysInit : List SysState) {σ : Lentil.exec (Edge SysState α)}
     (hacc : (toSpec tba sysSucc sysLabel sysInit).isRun σ ∧
             (toSpec tba sysSucc sysLabel sysInit).isAcceptingRun σ) :
     (LSys.toSpec sysSucc sysInit sysLabel).isRun (fun n => ((σ n).1, (σ n).2.1)) ∧
@@ -343,10 +348,10 @@ theorem gsp_correct1 [LawfulBEq α] (tba : TBA α)
 projecting back down to it. -/
 theorem gsp_correct2 [LawfulBEq α] (tba : TBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
-    (sysInit : List SysState) {ρ : TLA.exec (LSys.Edge α SysState)}
+    (sysInit : List SysState) {ρ : Lentil.exec (LSys.Edge α SysState)}
     (hsys : (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ)
     (hlang : tba.toSpec.accepts (LSys.valuation sysLabel ρ)) :
-    ∃ σ : TLA.exec (Edge SysState α), ρ = (fun n => ((σ n).1, (σ n).2.1)) ∧
+    ∃ σ : Lentil.exec (Edge SysState α), ρ = (fun n => ((σ n).1, (σ n).2.1)) ∧
       (toSpec tba sysSucc sysLabel sysInit).isRun σ ∧
       (toSpec tba sysSucc sysLabel sysInit).isAcceptingRun σ := by
   obtain ⟨σ, hrun, hcompat, hacc⟩ := hlang
@@ -427,6 +432,7 @@ private def pick (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState
   ((realizations tba sysSucc sysLabel p p').find? extra).getD
     (((∅ : Std.HashSet α), p'.1), junkTransition p'.2)
 
+omit [LawfulBEq SysState] in
 private theorem pick_spec (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p p' : SysState × TBAState)
     (extra : LStep α SysState × TBA.Transition α → Bool)
@@ -473,7 +479,7 @@ def edgeWitness (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState)
 carries every mark infinitely often. -/
 theorem acceptingRun_states (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    {σ : TLA.exec (Edge SysState α)}
+    {σ : Lentil.exec (Edge SysState α)}
     (hrun : (toSpec tba sysSucc sysLabel sysInit).isRun σ)
     (hacc : (toSpec tba sysSucc sysLabel sysInit).isAcceptingRun σ) :
     ((σ 0).1, (σ 0).2.2.1) ∈ initialStates tba sysInit ∧
@@ -501,7 +507,7 @@ theorem exists_TAcceptingCycle_of_acceptingRun (tba : TBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysInit : List SysState)
     (fr : FiniteReach (initialStates tba sysInit) (getSuccessors tba sysSucc sysLabel))
-    {σ : TLA.exec (Edge SysState α)}
+    {σ : Lentil.exec (Edge SysState α)}
     (hrun : (toSpec tba sysSucc sysLabel sysInit).isRun σ)
     (hacc : (toSpec tba sysSucc sysLabel sysInit).isAcceptingRun σ) :
     ∃ _ac : TAcceptingCycle (initialStates tba sysInit) (getSuccessors tba sysSucc sysLabel)
@@ -514,7 +520,7 @@ end TBAProduct
 /-! ## Lasso witness -/
 
 /-- The `TBAProduct.toSpec` specialization of `TAcceptingCycle.toTValidLassoOf`. -/
-def TAcceptingCycle.toTValidLassoTBAProduct {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
+theorem TAcceptingCycle.toTValidLassoTBAProduct {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
     [BEq SysState] [Hashable SysState] [LawfulBEq SysState] {tba : TBA α}
     {sysSucc : SysState → Array (LStep α SysState)} {sysLabel : SysState → Std.HashSet α}
     {sysInit : List SysState}

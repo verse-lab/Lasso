@@ -1,3 +1,5 @@
+module
+
 /-
   The fair normal form of [LSFZ16, Theorem 1]: every fairness in `LTL(F, G)` is equivalent to a disjunction
   `⋁ᵢ (FG lᵢ ∧ ⋀ⱼ GF lᵢⱼ)` with every `l` propositional. Each disjunct is one `modelCheckTGBADisjunct` call.
@@ -43,12 +45,14 @@
   - Pushing correctness
   - Fair normal form
 -/
-import LTLLib.LTL.FairClass
-import LTLLib.LTL.Propositional
+public import LTLLib.LTL.FairClass
+public import LTLLib.LTL.Propositional
+
+public section
 
 namespace LTLLib
 
-open TLA
+open Lentil
 
 namespace NNF
 
@@ -400,7 +404,7 @@ theorem fg_or_untilTop_left (ξ : OmegaWord α) (χ ψ₂ : NNF α) :
 mutual
 
 /-- A formula equivalent to `□◇ψ` with the modalities pushed in as far as the rules reach. -/
-def gfPush : NNF α → NNF α
+@[expose] def gfPush : NNF α → NNF α
   | .or ψ₁ ψ₂ => .or (gfPush ψ₁) (gfPush ψ₂)
   | .until .tt ψ' => gfPush ψ'
   | .release .ff ψ' => fgPush ψ'
@@ -502,7 +506,7 @@ theorem fgPush_correct (ψ : NNF α) :
 abbrev FairDisjunct (α : Type u) := BoolFormula α × List (BoolFormula α)
 
 /-- A disjunct denotes `◇□f ∧ ⋀ g ∈ gs, □◇g`, which is exactly what one emptiness check decides. -/
-def FairDisjunct.holds (ξ : OmegaWord α) (d : FairDisjunct α) : Prop :=
+@[expose] def FairDisjunct.holds (ξ : OmegaWord α) (d : FairDisjunct α) : Prop :=
   (BoolFormula.eventuallyAlways d.1).satisfies ξ ∧
   ∀ g ∈ d.2, (BoolFormula.alwaysEventually g).satisfies ξ
 
@@ -561,17 +565,17 @@ def normalise [DecidableEq α] (ds : List (FairDisjunct α)) : List (FairDisjunc
   dropSubsumed (ds.map fun d => (d.1, dedupList d.2))
 
 /-- Conjoin a list of normal forms, `⊤` when empty. -/
-def crossAllDNF [DecidableEq α] : List (List (FairDisjunct α)) → List (FairDisjunct α)
+@[expose] def crossAllDNF [DecidableEq α] : List (List (FairDisjunct α)) → List (FairDisjunct α)
   | [] => [(.tt, [])]
   | ds :: dss => crossDNF ds (crossAllDNF dss)
 
 /-- Read `◇□l` off a pushed formula. -/
-def asFGPart : NNF α → Option (BoolFormula α)
+@[expose] def asFGPart : NNF α → Option (BoolFormula α)
   | .release φ l => if φ.isBot then l.asBool? else none
   | _ => none
 
 /-- Read `□◇l` off a pushed formula. -/
-def asGFPart : NNF α → Option (BoolFormula α)
+@[expose] def asGFPart : NNF α → Option (BoolFormula α)
   | .until φ l => if φ.isTop then l.asBool? else none
   | _ => none
 
@@ -821,7 +825,7 @@ theorem toDNF_correct [DecidableEq α] : ∀ (φ : NNF α) {ds : List (FairDisju
     · exact absurd h (by simp)
 
 /-- The fair normal form of `φ`, `none` when the flattening does not land in the fragment. -/
-def fnf [DecidableEq α] (φ : NNF α) : Option (List (FairDisjunct α)) :=
+@[expose] def fnf [DecidableEq α] (φ : NNF α) : Option (List (FairDisjunct α)) :=
   (toDNF (gfPush φ)).map normalise
 
 /-- [LSFZ16, Theorem 1]. A fairness is equivalent to the disjunction of its fair normal form. -/

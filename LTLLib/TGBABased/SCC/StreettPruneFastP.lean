@@ -1,3 +1,5 @@
+module
+
 /-
   The fast Streett prune with the live position carried by `getStatus` (`EdgeLabels.md` §13.30).
 
@@ -17,7 +19,9 @@
   A second half — one status map for live and dead states — was built here the same way and measured at
   0.97–1.06x, noise (§13.32); it is archived on `archive/13.32-merged-status-map-measured` and not kept.
 -/
-import LTLLib.TGBABased.SCC.StreettPruneFast
+public import LTLLib.TGBABased.SCC.StreettPruneFast
+
+public section
 
 namespace LTLLib
 
@@ -37,6 +41,8 @@ def DFSStatusP.forget {Position : Type w} : DFSStatusP Position → DFSStatus
   | .live _ => .live
   | .unknown => .unknown
 
+-- As in DFSOps, Aux and Position deliberately have independent universes.
+set_option linter.checkUnivs false in
 /-- `DFSOps` whose `getStatus` carries the live position and whose `update` takes it. -/
 structure DFSOpsP (State : Type u) [BEq State] [Hashable State] where
   Aux : Type v
@@ -51,7 +57,7 @@ structure DFSOpsP (State : Type u) [BEq State] [Hashable State] where
 
 /-! ## The driver, as `dfsGo` with the position threaded -/
 
-def dfsGoP (ops : DFSOpsP State) (succs : State → Array State)
+@[expose] def dfsGoP (ops : DFSOpsP State) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     ops.Aux → List (DFSStep State ops.Position) → Option (Option (State × List State) × ops.Aux)
@@ -134,7 +140,7 @@ def streettUpdateP (numMarks : Nat) (aux : StreettAuxF State) (marks : Std.HashS
     let top := (min ll dpos, acc ||| marksToBitmask marks ||| (1 <<< numMarks))
     (⟨live, liveIndex, dead, dstack.pop.push top, wit, wopts, pending, ls, lo, ws⟩, false)
 
-def streettOpsP [Inhabited State] [LawfulBEq State] [LawfulHashable State]
+@[expose] def streettOpsP [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (curRegions : Nat) : DFSOpsP State where
   Aux := StreettAuxF State
   Position := Nat
@@ -161,6 +167,7 @@ theorem liveStatusOfP_forget (liveIndex : Std.HashMap State Nat) (dead : Std.Has
     by_cases hd : dead.contains q = true <;>
       simp [DFSStatusP.forget, Std.HashMap.contains_eq_isSome_getElem?, h, hd]
 
+omit [LawfulBEq State] [LawfulHashable State] in
 theorem liveStatusOfP_live (liveIndex : Std.HashMap State Nat) (dead : Std.HashSet State) (q : State)
     (pos : Nat) (h : liveStatusOfP liveIndex dead q = .live pos) : liveIndex[q]? = some pos := by
   unfold liveStatusOfP at h
@@ -203,7 +210,8 @@ def candidateRunP (cs : CompiledSpec State L)
   streettRunP (cs.atBits c.regions) c.regions
     (fun s => filterExpand (regionExpand (c.region cs) s) c.states.contains) c.states.toList
 
-def pruneLoopP (cs : CompiledSpec State L)
+-- Lean 4.32's module exporter needs the fixpoint body when inspecting partial_correctness.
+@[expose] def pruneLoopP (cs : CompiledSpec State L)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat) :
     Nat → List (Candidate State) →
       Option (Option (State × Array State × Array (Array State) × Array Nat × Candidate State) × Nat)
@@ -217,8 +225,7 @@ def pruneLoopP (cs : CompiledSpec State L)
     | none => pruneLoopP cs regionExpand explored' (aux.pending.toList ++ rest)
 partial_fixpoint
 
-def streettCheckP (cs : CompiledSpec State L) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat)
+@[expose] def streettCheckP (cs : CompiledSpec State L) (succs : State → Array State)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (initialStates : List State) : EmptinessResult State :=
@@ -420,6 +427,7 @@ theorem genericDFSGoP_eq (cs : CompiledSpec State L) (cr : Nat) (succs : State �
   | nil =>
     intro aux
     rw [genericDFSGoP.eq_def (streettOpsP cs cr), genericDFSGo.eq_def (streettOpsF cs cr)]
+    rfl
   | cons q rest ih =>
     intro aux
     rw [genericDFSGoP.eq_def (streettOpsP cs cr), genericDFSGo.eq_def (streettOpsF cs cr)]
@@ -453,6 +461,7 @@ theorem genericDFSP_eq (cs : CompiledSpec State L) (cr : Nat) (succs : State →
       genericDFS (streettOpsF cs cr) succs edgeMarks expand roots aux := by
   unfold genericDFSP genericDFS
   rw [genericDFSGoP_eq]
+  rfl
 
 theorem streettRunP_eq (cs : CompiledSpec State L) (cr : Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State) :
@@ -517,12 +526,11 @@ theorem pruneLoopP_eq (cs : CompiledSpec State L)
 
 /-- The position-carrying driver computes what `streettCheckF` computes (§13.30). -/
 theorem streettCheckP_eq (cs : CompiledSpec State L) (succs : State → Array State)
-    (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (initialStates : List State) :
-    streettCheckP cs succs edgeMarks expand regionExpand initialStates =
-      streettCheckF cs succs edgeMarks expand regionExpand initialStates := by
+    streettCheckP cs succs expand regionExpand initialStates =
+      streettCheckF cs succs expand regionExpand initialStates := by
   unfold streettCheckP streettCheckF
   rw [streettRunP_eq]
   rcases streettRunF cs 0 expand initialStates with ⟨found?, aux⟩

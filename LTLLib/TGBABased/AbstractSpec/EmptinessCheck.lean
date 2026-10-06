@@ -1,3 +1,5 @@
+module
+
 /-
   Transition-marked analogue of `AbstractSpec/EmptinessCheck.lean`'s algorithm-agnostic emptiness contract. Acceptance
   is a set of marks per transition (`edgeMarks`) plus their count (`numMarks`), instead of a single state predicate.
@@ -10,7 +12,9 @@
   - Accepting cycle witness
   - Checker contract
 -/
-import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.AbstractSpec.EmptinessCheck
+
+public section
 
 namespace LTLLib
 
@@ -38,7 +42,7 @@ structure TAcceptingCycle
     m ∈ edgeMarks (cycle[i]) (cycle[(i + 1) % cycle.length]'(Nat.mod_lt _ (by omega)))
 
 /-- Transport along an edge-marks function with the same membership, e.g. a cached one. -/
-def TAcceptingCycle.congr_edgeMarks {State : Type u} {initialStates : List State}
+@[expose] def TAcceptingCycle.congr_edgeMarks {State : Type u} {initialStates : List State}
     {succs : State → Array State} {em em' : State → State → Std.HashSet Nat} {numMarks : Nat}
     (h : ∀ s t m, m ∈ em s t ↔ m ∈ em' s t)
     (ac : TAcceptingCycle initialStates succs em numMarks) :
@@ -50,7 +54,7 @@ def TAcceptingCycle.congr_edgeMarks {State : Type u} {initialStates : List State
       exact ⟨i, hi, (h _ _ m).mp hmem⟩ }
 
 /-- Weaken to the first `n` marks, each carried by `em` wherever `em'` carries it. -/
-def TAcceptingCycle.restrictMarks {State : Type u} {initialStates : List State}
+@[expose] def TAcceptingCycle.restrictMarks {State : Type u} {initialStates : List State}
     {succs : State → Array State} {em em' : State → State → Std.HashSet Nat} {n n' : Nat}
     (hn : n ≤ n') (h : ∀ s t m, m < n → m ∈ em' s t → m ∈ em s t)
     (ac : TAcceptingCycle initialStates succs em' n') :

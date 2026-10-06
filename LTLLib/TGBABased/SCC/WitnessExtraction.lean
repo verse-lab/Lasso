@@ -1,3 +1,5 @@
+module
+
 /-
   Rebuilding an explicit accepting cycle from a known-valid SCC candidate, shared by every `DFSOps` refinement. A
   refinement's own stack is no witness, a state can sit in e.g. Dijkstra's `live` stack without lying on a path to the
@@ -25,11 +27,14 @@
   - Level-order BFS
   - Adaptive edge search and cycle stitching
 -/
-import Std
-import Mathlib.Data.Finset.Card
-import LTLLib.AbstractSpec.EmptinessCheck
-import LTLLib.AbstractSpec.GraphPaths
-import LTLLib.TGBABased.AbstractSpec.SCCTheory
+public import Std
+import Batteries.Data.List.Perm
+public import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.AbstractSpec.GraphPaths
+public import LTLLib.TGBABased.AbstractSpec.SCCTheory
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
@@ -55,7 +60,7 @@ private theorem collectNew_visited_eq (domain : Std.HashSet State) (visited : St
     (d : State) (path : List State) (rest : List (State × List State))
     (h1 : visited.contains d = true) :
     collectNew domain visited ((d, path) :: rest) = collectNew domain visited rest := by
-  conv_lhs => unfold collectNew
+  conv => lhs; unfold collectNew
   rw [if_pos h1]
 
 private theorem collectNew_new_eq (domain : Std.HashSet State) (visited : Std.HashSet State)
@@ -64,14 +69,14 @@ private theorem collectNew_new_eq (domain : Std.HashSet State) (visited : Std.Ha
     collectNew domain visited ((d, path) :: rest) =
       ((collectNew domain (visited.insert d) rest).1,
         (d, path) :: (collectNew domain (visited.insert d) rest).2) := by
-  conv_lhs => unfold collectNew
+  conv => lhs; unfold collectNew
   rw [if_neg h1, if_pos h2]
 
 private theorem collectNew_outside_eq (domain : Std.HashSet State) (visited : Std.HashSet State)
     (d : State) (path : List State) (rest : List (State × List State))
     (h1 : ¬ visited.contains d = true) (h2 : ¬ domain.contains d = true) :
     collectNew domain visited ((d, path) :: rest) = collectNew domain visited rest := by
-  conv_lhs => unfold collectNew
+  conv => lhs; unfold collectNew
   rw [if_neg h1, if_neg h2]
 
 private theorem collectNew_kept_subset_candidates (domain : Std.HashSet State)
@@ -358,23 +363,16 @@ section Bfs
 
 variable [LawfulBEq State] [LawfulHashable State]
 
-attribute [local instance 5] instDecidableEqOfLawfulBEq
-
 private theorem size_le_of_confined (domain visited : Std.HashSet State)
     (hvd : ∀ x, visited.contains x → domain.contains x) : visited.size ≤ domain.size := by
   have hnodupV : visited.toList.Nodup :=
     (Std.HashSet.distinct_toList (m := visited)).imp (fun {a b} h => by simpa [beq_iff_eq] using h)
-  have hnodupD : domain.toList.Nodup :=
-    (Std.HashSet.distinct_toList (m := domain)).imp (fun {a b} h => by simpa [beq_iff_eq] using h)
-  have hsub : visited.toList.toFinset ⊆ domain.toList.toFinset := by
-    intro x hx
-    simp only [List.mem_toFinset] at hx ⊢
-    exact (Std.HashSet.mem_toList (m := domain)).mpr
+  have hsub : visited.toList ⊆ domain.toList := fun x hx =>
+    (Std.HashSet.mem_toList (m := domain)).mpr
       (Std.HashSet.mem_iff_contains.mpr (hvd x ((Std.HashSet.mem_iff_contains).mp
         ((Std.HashSet.mem_toList (m := visited)).mp hx))))
-  have hcard := Finset.card_le_card hsub
-  rwa [List.toFinset_card_of_nodup hnodupV, List.toFinset_card_of_nodup hnodupD,
-    Std.HashSet.length_toList, Std.HashSet.length_toList] at hcard
+  have hlen := (List.subperm_of_subset hnodupV hsub).length_le
+  rwa [Std.HashSet.length_toList, Std.HashSet.length_toList] at hlen
 
 /-- `bfsGo`'s loop invariant: every frontier entry is a `domain`-confined `succs`-chain from `starts`,
 and every other visited state failed `isTarget` and is closed under one more `domain`-confined step. -/
@@ -416,7 +414,7 @@ private theorem bfsGo_found_eq (domain : Std.HashSet State) (succs : State → A
     (fst : State) (revPath : List State)
     (hfound : frontier.find? (fun p => isTarget p.1) = some (fst, revPath)) :
     bfsGo domain succs isTarget visited hvd frontier = some revPath.reverse := by
-  conv_lhs => unfold bfsGo
+  conv => lhs; unfold bfsGo
   rw [hfound]
 
 private theorem bfsGo_expand_empty_eq (domain : Std.HashSet State) (succs : State → Array State)
@@ -436,7 +434,7 @@ private theorem bfsGo_expand_cons_eq (domain : Std.HashSet State) (succs : State
     (hexpand : bfsExpandLevel domain succs visited frontier = (visited', hd :: tl))
     (hvd' : ∀ x, visited'.contains x → domain.contains x) :
     bfsGo domain succs isTarget visited hvd frontier = bfsGo domain succs isTarget visited' hvd' (hd :: tl) := by
-  conv_lhs => unfold bfsGo
+  conv => lhs; unfold bfsGo
   split <;> (try split) <;> simp_all
 
 private theorem bfsGo_spec (domain : Std.HashSet State) (succs : State → Array State)
@@ -690,12 +688,12 @@ theorem pickMarkedNext_complete (succs : State → Array State)
     ((Std.HashSet.mem_iff_contains).mpr hmark), hm⟩
 
 /-- A `succs`-path from `src` to `tgt` inclusive, confined to `domain`, or the fallback `[src]` if there is none. -/
-def connector [LawfulBEq State] [LawfulHashable State] (domain : Std.HashSet State)
+@[expose] def connector [LawfulBEq State] [LawfulHashable State] (domain : Std.HashSet State)
     (succs : State → Array State) (src tgt : State) : List State :=
   (bfsFindPath domain succs [src] (· == tgt)).getD [src]
 
 /-- Whenever `tgt` is reachable from `src` via a `domain`-confined `succs`-path, `connector` returns a genuine one. -/
-theorem connector_valid [LawfulBEq State] [LawfulHashable State] (domain : Std.HashSet State)
+private theorem connector_valid [LawfulBEq State] [LawfulHashable State] (domain : Std.HashSet State)
     (succs : State → Array State) (src tgt : State) (hsrc : domain.contains src)
     (htgt : domain.contains tgt)
     (hreach : src = tgt ∨ PathTo succs (fun x => ¬ domain.contains x) src tgt) :
@@ -758,7 +756,7 @@ decreasing_by
 
 /-- An accepting cycle anchored at `anchor`, covering every mark `< numMarks`, through a `findAnyEdge` edge when
 `numMarks = 0` and chained by `buildCycleFrom` otherwise. It is not minimized. -/
-def stitchCycleAt [LawfulBEq State] [LawfulHashable State] (scc : Std.HashSet State)
+@[expose] def stitchCycleAt [LawfulBEq State] [LawfulHashable State] (scc : Std.HashSet State)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat) (numMarks : Nat)
     (anchor : State) : List State :=
   if numMarks = 0 then
@@ -788,7 +786,7 @@ private theorem buildCycleFrom_empty_eq [LawfulBEq State] [LawfulHashable State]
     (edgeMarks : State → State → Std.HashSet Nat) (anchor cur : State) (remaining : Std.HashSet Nat)
     (hrem : remaining.isEmpty = true) :
     buildCycleFrom scc succs edgeMarks anchor cur remaining = connector scc succs cur anchor := by
-  conv_lhs => unfold buildCycleFrom
+  conv => lhs; unfold buildCycleFrom
   rw [dif_pos hrem]
 
 private theorem buildCycleFrom_next_eq [LawfulBEq State] [LawfulHashable State]
@@ -802,7 +800,7 @@ private theorem buildCycleFrom_next_eq [LawfulBEq State] [LawfulHashable State]
     buildCycleFrom scc succs edgeMarks anchor cur remaining =
       path ++ buildCycleFrom scc succs edgeMarks anchor b
         (remaining.filter fun x => !(edgeMarks a b).contains x) := by
-  conv_lhs => unfold buildCycleFrom
+  conv => lhs; unfold buildCycleFrom
   rw [dif_neg (by simp [hrem] : ¬ remaining.isEmpty = true), hpath]
   dsimp only
   rw [hlast]
@@ -931,7 +929,7 @@ private theorem stitchCycleAt_zero_eq [LawfulBEq State] [LawfulHashable State]
     (hfind : findAnyEdge succs scc = some (a, b)) :
     stitchCycleAt scc succs edgeMarks 0 anchor =
       (connector scc succs anchor a ++ connector scc succs b anchor).dropLast := by
-  conv_lhs => unfold stitchCycleAt
+  conv => lhs; unfold stitchCycleAt
   rw [if_pos rfl, hfind]
 
 private theorem stitchCycleAt_pos_eq [LawfulBEq State] [LawfulHashable State]
@@ -940,7 +938,7 @@ private theorem stitchCycleAt_pos_eq [LawfulBEq State] [LawfulHashable State]
     (hnm : numMarks ≠ 0) :
     stitchCycleAt scc succs edgeMarks numMarks anchor =
       (buildCycleFrom scc succs edgeMarks anchor anchor (Std.HashSet.ofList (List.range numMarks))).dropLast := by
-  conv_lhs => unfold stitchCycleAt
+  conv => lhs; unfold stitchCycleAt
   rw [if_neg hnm]
 
 /-- `stitchCycleAt` is a `scc`-confined cycle anchored at `anchor`, covering every mark `< numMarks`,

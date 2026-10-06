@@ -1,3 +1,5 @@
+module
+
 /-
   VWAA to TGBA on the fly, `[GO01]` Step 2 with on-the-fly dominance `≼` and OR-merging of candidates sharing a target
   and marks. A TGBA state is a set of VWAA ids as a bitmask, explored by a worklist from the singleton of the initial id.
@@ -50,10 +52,14 @@
   - OR-merging and dominance preservation
   - The canonical `SetTGBA`
 -/
-import LTLLib.TGBA
-import LTLLib.TGBABased.LTLtoTGBA.Label
-import LTLLib.TGBABased.LTLtoTGBA.VWAA
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBA
+public import LTLLib.TGBA
+public import LTLLib.TGBABased.LTLtoTGBA.Label
+public import LTLLib.TGBABased.LTLtoTGBA.VWAA
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAToTGBA
+meta import LTLLib.Tactic.Set
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 
@@ -78,7 +84,7 @@ def productTrans (cv : ConcreteVWAA α) (e : Nat) : List (DNF α × Nat × Nat) 
 
 /-- `[GO01]` Definition 5's `T_f`: `f ∉ e'`, or `g` is covered by the disjunction of every transition of `f` that does
 not loop in `f` and whose target lies inside `e'`, as distinct letters of `g` may escape through distinct alternatives. -/
-def inTf (cv : ConcreteVWAA α) (f : Nat) (g : DNF α) (e' : Nat) : Bool :=
+@[expose] def inTf (cv : ConcreteVWAA α) (f : Nat) (g : DNF α) (e' : Nat) : Bool :=
   !e'.testBit f || DNF.impliesFast g
     ((cv.trans.getD f []).flatMap fun p => if !p.2.testBit f && maskSub p.2 e' then p.1 else [])
 
@@ -92,7 +98,7 @@ def computeMarks (cv : ConcreteVWAA α) (finals : Array Nat) (g : DNF α) (e' es
   (List.range finals.size).foldl (fun acc i => if marksCond cv finals g e' escOwn i then acc ||| bit i else acc) 0
 
 /-- Every product transition of `e` with its marks attached. -/
-def markedProduct (cv : ConcreteVWAA α) (finals : Array Nat) (e : Nat) : List (DNF α × Nat × Nat) :=
+@[expose] def markedProduct (cv : ConcreteVWAA α) (finals : Array Nat) (e : Nat) : List (DNF α × Nat × Nat) :=
   (productTrans cv e).map fun c => (c.1, c.2.1, computeMarks cv finals c.1 c.2.1 c.2.2)
 
 /-! ## Reducing candidate transitions -/
@@ -120,7 +126,7 @@ def dominanceFilterFast (l : List (DNF α × Nat × Nat)) : List (DNF α × Nat 
   l.filter fun c2 => !beatenIn l byTarget n c2
 
 /-- OR-merge the candidates sharing a target and marks, then drop the dominated ones. -/
-def reduceCandidates (l : List (DNF α × Nat × Nat)) : List (DNF α × Nat × Nat) :=
+@[expose] def reduceCandidates (l : List (DNF α × Nat × Nat)) : List (DNF α × Nat × Nat) :=
   dominanceFilter (mergeByTarget l)
 
 /-! ## Worklist exploration -/
@@ -133,9 +139,10 @@ structure TGBAConstructState (α : Type u) [BEq α] [Hashable α] where
   -- the outgoing transitions of every finished state, keyed by its number
   transitions : Std.HashMap Nat (Array (DNF α × Nat × Nat))
 
+-- Lean 4.32's module exporter needs the fixpoint body when inspecting partial_correctness.
 /-- Explore `e`, reusing its number if already visited, otherwise exploring every successor first and recording its
 own transitions last. -/
-def exploreState (cv : ConcreteVWAA α) (finals : Array Nat) (e : Nat) (st : TGBAConstructState α) :
+@[expose] def exploreState (cv : ConcreteVWAA α) (finals : Array Nat) (e : Nat) (st : TGBAConstructState α) :
     Option (Nat × TGBAConstructState α) := do
   match st.visited[e]? with
   | some id => pure (id, st)
@@ -152,7 +159,7 @@ partial_fixpoint
 /-! ## Export -/
 
 /-- The VWAA ids of `cv`'s final states, in increasing order, acceptance set `i` standing for `finalsOf cv`'s `i`-th. -/
-def finalsOf (cv : ConcreteVWAA α) : Array Nat :=
+@[expose] def finalsOf (cv : ConcreteVWAA α) : Array Nat :=
   ((List.range cv.table.formulas.size).filter fun i => cv.final.getD i false).toArray
 
 /-- The empty worklist state `buildTGBA` starts from. -/
@@ -161,7 +168,7 @@ def initConstructState : TGBAConstructState α :=
 
 /-- The numbered `TGBA α` a finished worklist state denotes, one `TGBA.Transition` per non-contradictory cube of a
 recorded transition's guard. -/
-def exportTGBA (finals : Array Nat) (st : TGBAConstructState α) (initId : Nat) : TGBA α where
+@[expose] def exportTGBA (finals : Array Nat) (st : TGBAConstructState α) (initId : Nat) : TGBA α where
   states := Std.HashSet.ofList (st.visited.toList.map (·.2))
   initialStates := Std.HashSet.emptyWithCapacity 1 |>.insert initId
   successors := st.transitions.map fun _ arr =>
@@ -173,7 +180,7 @@ def exportTGBA (finals : Array Nat) (st : TGBAConstructState α) (initId : Nat) 
 
 /-- Explore from the singleton state of `cv`'s initial id and export, `none` only if the worklist does not terminate,
 which never happens on a finite VWAA. -/
-def buildTGBA (cv : ConcreteVWAA α) : Option (TGBA α) := do
+@[expose] def buildTGBA (cv : ConcreteVWAA α) : Option (TGBA α) := do
   let (initId, st) ← exploreState cv (finalsOf cv) (bit cv.initial) initConstructState
   pure (exportTGBA (finalsOf cv) st initId)
 
@@ -224,10 +231,10 @@ theorem mem_markedProduct_of_reduce {cv : ConcreteVWAA α} {finals : Array Nat} 
   exact ⟨c, hc, heq.2.1, heq.2.2⟩
 
 /-- The finite universe of every state `exploreState` can ever produce with a size-`n` VWAA. -/
-def validStates (n : Nat) : Finset Nat := Finset.range (2 ^ n)
+def validStates (n : Nat) : FinSet Nat := FinSet.range (2 ^ n)
 
 /-- The number of valid states `visited` has not yet marked, `exploreState`'s termination measure. -/
-def unexploredCardOf (n : Nat) (visited : Std.HashMap Nat Nat) : Nat :=
+noncomputable def unexploredCardOf (n : Nat) (visited : Std.HashMap Nat Nat) : Nat :=
   ((validStates n).filter fun e => !visited.contains e).card
 
 /-- A fresh valid state strictly shrinks the unexplored count. -/
@@ -237,13 +244,13 @@ theorem unexploredCardOf_insert_lt (n : Nat) {visited : Std.HashMap Nat Nat} {e 
   have heq : (validStates n).filter (fun x => !(visited.insert e id).contains x) =
       ((validStates n).filter (fun x => !visited.contains x)).erase e := by
     ext x
-    simp only [Finset.mem_filter, Finset.mem_erase, Std.HashMap.contains_insert]
+    simp only [FinSet.mem_filter, FinSet.mem_erase, Std.HashMap.contains_insert]
     by_cases hxe : x = e
     · subst hxe; simp [hne]
     · simp [hxe, Ne.symm hxe]
   unfold unexploredCardOf
   rw [heq]
-  exact Finset.card_erase_lt_of_mem (Finset.mem_filter.mpr ⟨he, by simp [hne]⟩)
+  exact FinSet.card_erase_lt_of_mem (FinSet.mem_filter.mpr ⟨he, by simp [hne]⟩)
 
 /-- `exploreState` is total and never increases its measure. -/
 theorem exploreState_spec (cv : ConcreteVWAA α) (n : Nat)
@@ -252,13 +259,13 @@ theorem exploreState_spec (cv : ConcreteVWAA α) (n : Nat)
       ∃ r, exploreState cv finals e st = some r ∧
         unexploredCardOf n r.2.visited ≤ unexploredCardOf n st.visited := by
   intro m
-  induction m using Nat.strong_induction_on with
+  induction m using Nat.strongRecOn with
   | _ m ih =>
   intro e he st hm
   rw [exploreState.eq_def]
   cases hvis : st.visited[e]? with
   | some id =>
-    refine ⟨(id, st), ?_, le_refl _⟩
+    refine ⟨(id, st), ?_, Nat.le_refl _⟩
     simp only
     rfl
   | none =>
@@ -270,7 +277,7 @@ theorem exploreState_spec (cv : ConcreteVWAA α) (n : Nat)
       { st with visited := st.visited.insert e st.nextId, nextId := st.nextId + 1 } with hst1
     have hlt : unexploredCardOf n st1.visited < unexploredCardOf n st.visited :=
       unexploredCardOf_insert_lt n he hcontains
-    have hmlt : unexploredCardOf n st1.visited < m := lt_of_lt_of_le hlt hm
+    have hmlt : unexploredCardOf n st1.visited < m := Nat.lt_of_lt_of_le hlt hm
     set candidates := markedProduct cv finals e with hcand
     suffices H : ∀ l : List (DNF α × Nat × Nat),
         (∀ g e' mk, (g, e', mk) ∈ l → e' ∈ validStates n) →
@@ -286,28 +293,28 @@ theorem exploreState_spec (cv : ConcreteVWAA α) (n : Nat)
         H (reduceCandidates candidates) (fun g e' mk hmk => by
           obtain ⟨c, hc, hct, -⟩ := mem_markedProduct_of_reduce hmk
           rw [← hct]
-          exact Finset.mem_range.mpr (productTrans_target_lt hbound e c hc)) #[] st1 (le_refl _)
+          exact FinSet.mem_range.mpr (productTrans_target_lt hbound e c hc)) #[] st1 (Nat.le_refl _)
       refine ⟨(st.nextId, { stFinal with transitions := stFinal.transitions.insert st.nextId transArr }), ?_, ?_⟩
       · simp only [hfold]
         rfl
-      · exact hmono.trans (le_of_lt hlt)
+      · exact Nat.le_trans hmono (Nat.le_of_lt hlt)
     intro l
     induction l with
     | nil =>
       intro _ accInit stf hstf
-      exact ⟨(accInit, stf), rfl, le_refl _⟩
+      exact ⟨(accInit, stf), rfl, Nat.le_refl _⟩
     | cons hd tl ihl =>
       intro hvalid accInit stf hstf
       obtain ⟨g, e', mk⟩ := hd
       have he'valid : e' ∈ validStates n := hvalid g e' mk (by simp)
-      have hstfm : unexploredCardOf n stf.visited < m := lt_of_le_of_lt hstf hmlt
-      obtain ⟨r1, hr1, hr1mono⟩ := ih (unexploredCardOf n stf.visited) hstfm e' he'valid stf (le_refl _)
+      have hstfm : unexploredCardOf n stf.visited < m := Nat.lt_of_le_of_lt hstf hmlt
+      obtain ⟨r1, hr1, hr1mono⟩ := ih (unexploredCardOf n stf.visited) hstfm e' he'valid stf (Nat.le_refl _)
       obtain ⟨tid, st2⟩ := r1
       have hstep : unexploredCardOf n st2.visited ≤ unexploredCardOf n st1.visited :=
-        le_trans hr1mono hstf
+        Nat.le_trans hr1mono hstf
       obtain ⟨r2, hr2, hr2mono⟩ :=
         ihl (fun g e' mk hmk => hvalid g e' mk (List.mem_cons_of_mem _ hmk)) (accInit.push (g, tid, mk)) st2 hstep
-      refine ⟨r2, ?_, hr2mono.trans hr1mono⟩
+      refine ⟨r2, ?_, Nat.le_trans hr2mono hr1mono⟩
       rw [List.foldlM_cons]
       simp only [hr1, Option.pure_def]
       exact hr2
@@ -316,7 +323,7 @@ theorem exploreState_ne_none (cv : ConcreteVWAA α) (n : Nat)
     (hbound : ∀ i g t, (g, t) ∈ cv.trans.getD i [] → ∀ j, t.testBit j = true → j < n) (finals : Array Nat)
     (e : Nat) (he : e ∈ validStates n) (st : TGBAConstructState α) :
     exploreState cv finals e st ≠ none := by
-  obtain ⟨r, hr, _⟩ := exploreState_spec cv n hbound finals (unexploredCardOf n st.visited) e he st (le_refl _)
+  obtain ⟨r, hr, _⟩ := exploreState_spec cv n hbound finals (unexploredCardOf n st.visited) e he st (Nat.le_refl _)
   rw [hr]
   simp
 
@@ -325,7 +332,7 @@ theorem buildTGBA_ne_none [LawfulBEq α] [LawfulHashable α] (φ : NNF α) :
     buildTGBA (ConcreteVWAA.build φ) ≠ none := by
   have hinit : bit (ConcreteVWAA.build φ).initial ∈ validStates (ConcreteVWAA.build φ).trans.size := by
     unfold validStates bit
-    rw [Finset.mem_range, Nat.one_shiftLeft]
+    rw [FinSet.mem_range, Nat.one_shiftLeft]
     exact Nat.pow_lt_pow_right (by omega) (ConcreteVWAA.build_initial_lt_size φ)
   have hne := exploreState_ne_none (ConcreteVWAA.build φ) (ConcreteVWAA.build φ).trans.size
     (ConcreteVWAA.build_target_lt_size φ) (finalsOf (ConcreteVWAA.build φ)) _ hinit initConstructState
@@ -371,15 +378,15 @@ private theorem getD_eq_getElem_of_lt {finals : Array Nat} {i : Nat} (h : i < fi
   simp [Array.getD_eq_getD_getElem?, Array.getElem?_eq_getElem h]
 
 /-- The VWAA ids the mark mask `m` stands for, through `finals`'s indexing. -/
-def idMarksOf (finals : Array Nat) (m : Nat) : Finset Nat :=
-  ((maskMembers m).map (finals.getD · 0)).toFinset
+@[expose] def idMarksOf (finals : Array Nat) (m : Nat) : FinSet Nat :=
+  ((maskMembers m).map (finals.getD · 0)).toFinSet
 
 /-- Read through a duplicate-free `finals`, an in-range mark mask marks `finals[i]` exactly when it has bit `i`. -/
 theorem getElem_mem_idMarksOf_iff {finals : Array Nat} (hnd : finals.toList.Nodup) {m : Nat}
     (hm : ∀ j, m.testBit j = true → j < finals.size) {i : Nat} (hi : i < finals.size) :
     finals[i] ∈ idMarksOf finals m ↔ m.testBit i = true := by
   unfold idMarksOf
-  simp only [List.mem_toFinset, List.mem_map, mem_maskMembers]
+  simp only [List.mem_toFinSet, List.mem_map, mem_maskMembers]
   constructor
   · rintro ⟨j, hj, hjeq⟩
     have hjlt := hm j hj
@@ -387,7 +394,10 @@ theorem getElem_mem_idMarksOf_iff {finals : Array Nat} (hnd : finals.toList.Nodu
     have hji : j = i := by
       have h1 : finals.toList[j]'(by simpa using hjlt) = finals.toList[i]'(by simpa using hi) := by
         simpa using hjeq
-      exact (List.Nodup.getElem_inj_iff hnd).mp h1
+      by_contra hne
+      rcases Nat.lt_or_gt_of_ne hne with hlt | hlt
+      · exact List.pairwise_iff_getElem.mp hnd _ _ _ _ hlt h1
+      · exact List.pairwise_iff_getElem.mp hnd _ _ _ _ hlt h1.symm
     exact hji ▸ hj
   · intro h
     exact ⟨i, h, getD_eq_getElem_of_lt hi⟩
@@ -397,17 +407,17 @@ theorem idMarksOf_mono {finals : Array Nat} {m1 m2 : Nat} (h : maskSub m1 m2 = t
     idMarksOf finals m1 ⊆ idMarksOf finals m2 := by
   unfold idMarksOf
   intro f hf
-  simp only [List.mem_toFinset, List.mem_map, mem_maskMembers] at hf ⊢
+  simp only [List.mem_toFinSet, List.mem_map, mem_maskMembers] at hf ⊢
   obtain ⟨i, hi, hif⟩ := hf
   exact ⟨i, maskSub_iff.mp h i hi, hif⟩
 
 /-- The marks of `computeMarks`, read as VWAA ids, are exactly the finals `escOwn` has or `inTf` holds for. -/
 theorem idMarksOf_computeMarks {cv : ConcreteVWAA α} {finals : Array Nat} {g : DNF α} {e' escOwn : Nat} :
     idMarksOf finals (computeMarks cv finals g e' escOwn) =
-      (finals.toList.filter fun f => escOwn.testBit f || inTf cv f g e').toFinset := by
+      (finals.toList.filter fun f => escOwn.testBit f || inTf cv f g e').toFinSet := by
   unfold idMarksOf
   ext f
-  simp only [List.mem_toFinset, List.mem_map, List.mem_filter, mem_maskMembers]
+  simp only [List.mem_toFinSet, List.mem_map, List.mem_filter, mem_maskMembers]
   constructor
   · rintro ⟨i, hi, rfl⟩
     obtain ⟨hbound, hcond⟩ := testBit_computeMarks.mp hi
@@ -424,7 +434,7 @@ theorem idMarksOf_computeMarks {cv : ConcreteVWAA α} {finals : Array Nat} {g : 
     rw [hival]; exact hcond
 
 /-- `st'` extends `st`: every id `st` has already assigned persists unchanged in `st'`. -/
-def Extends (st st' : TGBAConstructState α) : Prop :=
+@[expose] def Extends (st st' : TGBAConstructState α) : Prop :=
   ∀ (e : Nat) (id : Nat), st.visited[e]? = some id → st'.visited[e]? = some id
 
 theorem Extends.refl (st : TGBAConstructState α) : Extends st st := fun _ _ h => h
@@ -434,7 +444,7 @@ theorem Extends.trans {a b c : TGBAConstructState α} (h1 : Extends a b) (h2 : E
   fun e id h => h2 e id (h1 e id h)
 
 /-- Every transition `st` has recorded targets an id `st` has itself assigned, with marks in range. -/
-def TransitionsWF (finals : Array Nat) (st : TGBAConstructState α) : Prop :=
+@[expose] def TransitionsWF (finals : Array Nat) (st : TGBAConstructState α) : Prop :=
   ∀ (id0 : Nat) (arr : Array (DNF α × Nat × Nat)), st.transitions[id0]? = some arr →
     ∀ p ∈ arr.toList, (∃ e' : Nat, st.visited[e']? = some p.2.1) ∧ ∀ i, p.2.2.testBit i = true → i < finals.size
 
@@ -547,11 +557,11 @@ theorem exploreState_wf (cv : ConcreteVWAA α) (finals : Array Nat) :
 /-! ## Id-renumbering -/
 
 /-- Every id `visited` assigns is strictly below the fresh-id counter. -/
-def NextIdBound (st : TGBAConstructState α) : Prop :=
+@[expose] def NextIdBound (st : TGBAConstructState α) : Prop :=
   ∀ (e : Nat) (id : Nat), st.visited[e]? = some id → id < st.nextId
 
 /-- `visited` never maps two different states to the same id. -/
-def VisitedInjective (st : TGBAConstructState α) : Prop :=
+@[expose] def VisitedInjective (st : TGBAConstructState α) : Prop :=
   ∀ (e1 e2 : Nat) (id : Nat), st.visited[e1]? = some id → st.visited[e2]? = some id → e1 = e2
 
 private theorem visited_insert_bound {st : TGBAConstructState α} {e : Nat} (hbnd : NextIdBound st)
@@ -560,7 +570,7 @@ private theorem visited_insert_bound {st : TGBAConstructState α} {e : Nat} (hbn
   rw [Std.HashMap.getElem?_insert] at h0
   by_cases heq0 : e == e0
   · rw [if_pos heq0] at h0; injection h0 with h0; omega
-  · rw [if_neg heq0] at h0; exact lt_trans (hbnd e0 id0 h0) (by omega)
+  · rw [if_neg heq0] at h0; exact Nat.lt_trans (hbnd e0 id0 h0) (by omega)
 
 private theorem visited_insert_eq_or {st : TGBAConstructState α} {e : Nat}
     {e0 : Nat} {id0 : Nat} (h0 : (st.visited.insert e st.nextId)[e0]? = some id0) :
@@ -665,7 +675,7 @@ theorem exploreState_injective (cv : ConcreteVWAA α) (finals : Array Nat) :
 
 /-- Every finished id records exactly its state's reduced candidates, every target explored and translated to its id
 through `visited`. -/
-def Denotes (finals : Array Nat) (cv : ConcreteVWAA α) (st : TGBAConstructState α) : Prop :=
+@[expose] def Denotes (finals : Array Nat) (cv : ConcreteVWAA α) (st : TGBAConstructState α) : Prop :=
   ∀ id arr, st.transitions[id]? = some arr → ∃ e, st.visited[e]? = some id ∧
     (∀ g e' m, (g, e', m) ∈ reduceCandidates (markedProduct cv finals e) → ∃ tid, st.visited[e']? = some tid) ∧
     arr.toList = (reduceCandidates (markedProduct cv finals e)).map fun (g, e', m) => (g, st.visited.getD e' 0, m)
@@ -821,7 +831,7 @@ private theorem mem_states_of_visited {visited : Std.HashMap Nat Nat} {e0 : Nat}
 
 /-- Every id `visited` assigns has its transitions recorded, except those `pending` allows, the ids of the
 states whose exploration is still in progress. -/
-def FinishedExcept (st : TGBAConstructState α) (pending : Nat → Prop) : Prop :=
+@[expose] def FinishedExcept (st : TGBAConstructState α) (pending : Nat → Prop) : Prop :=
   ∀ (e : Nat) (id : Nat), st.visited[e]? = some id → (∃ arr, st.transitions[id]? = some arr) ∨ pending id
 
 /-- `exploreState` records the transitions of every state it assigns an id to before returning. -/
@@ -939,7 +949,7 @@ theorem buildTGBA_eq_some {cv : ConcreteVWAA α} {result : TGBA α} (hr : buildT
 theorem finalsOf_nodup (cv : ConcreteVWAA α) : (finalsOf cv).toList.Nodup := by
   unfold finalsOf
   rw [List.toList_toArray]
-  exact List.nodup_range.filter _
+  exact List.filter_sublist.nodup List.nodup_range
 
 /-- `finalsOf` holds exactly the final ids, given `cv.final` is no longer than the table. -/
 theorem mem_finalsOf_iff {cv : ConcreteVWAA α} (hsize : cv.final.size ≤ cv.table.formulas.size) {f : Nat} :
@@ -1173,16 +1183,16 @@ theorem testBit_escFold {cv : ConcreteVWAA α} {Of : Nat → Nat} {l : List Nat}
   rw [testBit_foldl_marks]
   simp [Bool.and_eq_true]
 
-/-- The left-folded union of targets, read as a `Finset`. -/
+/-- The left-folded union of targets, read as a `FinSet`. -/
 theorem maskSet_foldl_or (l : List Nat) (Of : Nat → Nat) (t0 : Nat) :
-    maskSet (l.foldl (fun acc q => acc ||| Of q) t0) = maskSet t0 ∪ l.toFinset.biUnion fun q => maskSet (Of q) := by
+    maskSet (l.foldl (fun acc q => acc ||| Of q) t0) = maskSet t0 ∪ l.toFinSet.biUnion fun q => maskSet (Of q) := by
   induction l generalizing t0 with
   | nil => simp
   | cons q qs ih =>
-    rw [List.foldl_cons, ih, maskSet_or, List.toFinset_cons, Finset.biUnion_insert]
+    rw [List.foldl_cons, ih, maskSet_or, List.toFinSet_cons, FinSet.biUnion_insert]
     ext x
-    simp only [Finset.mem_union]
-    tauto
+    simp only [FinSet.mem_union]
+    grind
 
 /-! ## OR-merging and dominance preservation -/
 
@@ -1192,7 +1202,7 @@ theorem candBeats_iff [LawfulBEq α] [LawfulHashable α] (c1 c2 : DNF α × Nat 
   unfold candBeats
   rw [DNF.impliesFast_eq]
   simp only [Bool.and_eq_true, Bool.not_eq_true', beq_eq_false_iff_ne]
-  tauto
+  grind
 
 theorem maskSub_of_candBeats {c1 c2 : DNF α × Nat × Nat} (h : candBeats c1 c2 = true) :
     maskSub c1.2.1 c2.2.1 = true := by
@@ -1264,7 +1274,7 @@ private theorem length_filter_lt_of_impl_of_mem_diff {γ} {l : List γ} {P Q : �
     rw [List.mem_cons] at ht
     simp only [List.filter_cons]
     rcases ht with rfl | ht
-    · rw [htP, htQ]; simpa using hmono
+    · rw [htP, htQ]; simpa using Nat.lt_succ_of_le hmono
     · by_cases hPa : P a = true
       · have hQa : Q a = true := h a List.mem_cons_self hPa
         have := ih (fun x hx => h x (List.mem_cons_of_mem _ hx)) ht
@@ -1282,7 +1292,7 @@ theorem exists_dominanceFilter_dominator_aux [LawfulBEq α] [LawfulHashable α] 
   suffices h : ∀ n (c2 : DNF α × Nat × Nat), (l.filter (candBeats · c2)).length ≤ n → c2 ∈ l →
       ∃ c1 ∈ l, (c1 = c2 ∨ (maskSub c1.2.1 c2.2.1 = true ∧ DNF.implies c2.1 c1.1 = true ∧
         maskSub c2.2.2 c1.2.2 = true)) ∧ ∀ c' ∈ l, candBeats c' c1 = false by
-    exact h _ c2 le_rfl hc2
+    exact h _ c2 (Nat.le_refl _) hc2
   intro n
   induction n with
   | zero =>
@@ -1296,7 +1306,7 @@ theorem exists_dominanceFilter_dominator_aux [LawfulBEq α] [LawfulHashable α] 
     intro c2 hn hc2
     by_cases hsurv : ∀ c' ∈ l, candBeats c' c2 = false
     · exact ⟨c2, hc2, Or.inl rfl, hsurv⟩
-    · push_neg at hsurv
+    · simp only [Classical.not_forall] at hsurv
       obtain ⟨c1', hc1'mem, hc1'beats⟩ := hsurv
       have hc1'beats' : candBeats c1' c2 = true := by simpa using hc1'beats
       have hsub : ∀ x ∈ l, candBeats x c1' = true → candBeats x c2 = true :=
@@ -1327,37 +1337,37 @@ theorem exists_dominanceFilter_dominator [LawfulBEq α] [LawfulHashable α] (l :
 /-! ## The canonical `SetTGBA` -/
 
 /-- The candidates a state `e` produces before reduction. -/
-noncomputable def rawCandidates (cv : ConcreteVWAA α) (finals : Array Nat) (e : Finset Nat) :
+noncomputable def rawCandidates (cv : ConcreteVWAA α) (finals : Array Nat) (e : FinSet Nat) :
     List (DNF α × Nat × Nat) :=
   markedProduct cv finals (maskOf e)
 
 /-- The `SetTGBA Nat α` the concrete construction denotes, ignoring numbering. -/
-noncomputable def canonicalTrans (cv : ConcreteVWAA α) (finals : Array Nat) (e : Finset Nat) :
-    List (((α → Prop) → Prop) × Finset Nat × Finset Nat) :=
+noncomputable def canonicalTrans (cv : ConcreteVWAA α) (finals : Array Nat) (e : FinSet Nat) :
+    List (((α → Prop) → Prop) × FinSet Nat × FinSet Nat) :=
   (reduceCandidates (rawCandidates cv finals e)).map fun c => (DNF.sat c.1, maskSet c.2.1, idMarksOf finals c.2.2)
 
 /-- The canonical `SetTGBA`, `Q := Nat`, one transition per surviving reduced candidate. -/
-noncomputable def canonicalTGBA (cv : ConcreteVWAA α) (finals : Array Nat) : SetTGBA Nat α where
+@[expose] noncomputable def canonicalTGBA (cv : ConcreteVWAA α) (finals : Array Nat) : SetTGBA Nat α where
   trans := canonicalTrans cv finals
   initial := [{cv.initial}]
-  finals := finals.toList.toFinset
+  finals := finals.toList.toFinSet
 
 /-- Every raw candidate marks every final outside its target. -/
-theorem rawCandidates_target_exit {cv : ConcreteVWAA α} {finals : Array Nat} {e : Finset Nat} {g : DNF α} {t m : Nat}
+theorem rawCandidates_target_exit {cv : ConcreteVWAA α} {finals : Array Nat} {e : FinSet Nat} {g : DNF α} {t m : Nat}
     (h : (g, t, m) ∈ rawCandidates cv finals e) {f : Nat} (hf : f ∈ finals.toList) (hnmem : t.testBit f = false) :
     f ∈ idMarksOf finals m := by
   obtain ⟨c, -, heq⟩ := List.mem_map.mp h
   simp only [Prod.mk.injEq] at heq
   obtain ⟨-, rfl, rfl⟩ := heq
   rw [idMarksOf_computeMarks]
-  simp only [List.mem_toFinset, List.mem_filter]
+  simp only [List.mem_toFinSet, List.mem_filter]
   refine ⟨hf, ?_⟩
   have hitf : inTf cv f c.1 c.2.1 = true := by unfold inTf; rw [hnmem]; rfl
   rw [hitf, Bool.or_true]
 
 /-- Membership in `canonicalTrans`, unfolded to a surviving reduced candidate. -/
-theorem mem_canonicalTrans_iff (cv : ConcreteVWAA α) (finals : Array Nat) (e : Finset Nat)
-    (g' : (α → Prop) → Prop) (e'' m' : Finset Nat) :
+theorem mem_canonicalTrans_iff (cv : ConcreteVWAA α) (finals : Array Nat) (e : FinSet Nat)
+    (g' : (α → Prop) → Prop) (e'' m' : FinSet Nat) :
     (g', e'', m') ∈ canonicalTrans cv finals e ↔
       ∃ g t m, (g, t, m) ∈ reduceCandidates (rawCandidates cv finals e) ∧ g' = DNF.sat g ∧
         e'' = maskSet t ∧ m' = idMarksOf finals m := by
@@ -1423,7 +1433,7 @@ theorem inTf_iff (cv : ConcreteVWAA α) (hveryWeak : cv.VeryWeak) (f : Nat) (g :
 /-- Every reduced candidate satisfies (S): every letter its guard admits has a component choice into its target, and
 every mark it carries is justified by `inTf` there. -/
 theorem canonicalTrans_soundTrans (cv : ConcreteVWAA α) (finals : Array Nat) (hveryWeak : cv.VeryWeak)
-    (e : Finset Nat) (g' : (α → Prop) → Prop) (e'' m' : Finset Nat) (h : (g', e'', m') ∈ canonicalTrans cv finals e) :
+    (e : FinSet Nat) (g' : (α → Prop) → Prop) (e'' m' : FinSet Nat) (h : (g', e'', m') ∈ canonicalTrans cv finals e) :
     SoundTrans (abstractOf cv hveryWeak) e g' e'' m' := by
   obtain ⟨g, t, m, hmem, hg', he'', hm'⟩ := (mem_canonicalTrans_iff cv finals e g' e'' m').mp h
   have hmemMerge : (g, t, m) ∈ mergeByTarget (rawCandidates cv finals e) := (List.mem_filter.mp hmem).1
@@ -1437,17 +1447,17 @@ theorem canonicalTrans_soundTrans (cv : ConcreteVWAA α) (finals : Array Nat) (h
   have hsatc : DNF.sat c.1 v := by rw [hg0eq]; exact hsatg0
   have hsatgf : ∀ q ∈ maskMembers (maskOf e), DNF.sat (gf q) v :=
     ((sat_foldl_and_iff _ gf DNF.top v).mp (hgeq ▸ hsatc)).2
-  have heset : (maskMembers (maskOf e)).toFinset = e := maskSet_maskOf e
+  have heset : (maskMembers (maskOf e)).toFinSet = e := maskSet_maskOf e
   have htarget : maskSet c.2.1 = e.biUnion fun q => maskSet (Of q) := by
-    rw [hteq, maskSet_foldl_or, maskSet_zero, Finset.empty_union, heset]
+    rw [hteq, maskSet_foldl_or, maskSet_zero, FinSet.empty_union, heset]
   refine ⟨⟨fun q => DNF.sat (gf q), fun q => maskSet (Of q), ?_, ?_⟩, ?_⟩
   · intro q hq
-    have hqe' : q ∈ maskMembers (maskOf e) := by rw [← List.mem_toFinset, heset]; exact hq
+    have hqe' : q ∈ maskMembers (maskOf e) := by rw [← List.mem_toFinSet, heset]; exact hq
     exact ⟨List.mem_map.mpr ⟨(gf q, Of q), hvalid q hqe', rfl⟩, hsatgf q hqe'⟩
   · rw [he'', ← htg0, htarget]
   · intro f hf
     rw [hm', ← hm0eq, idMarksOf_computeMarks] at hf
-    simp only [List.mem_toFinset, List.mem_filter, Bool.or_eq_true] at hf
+    simp only [List.mem_toFinSet, List.mem_filter, Bool.or_eq_true] at hf
     obtain ⟨-, hcond⟩ := hf
     rw [he'', ← htg0]
     rcases hcond with hesc | hinTf
@@ -1458,27 +1468,34 @@ theorem canonicalTrans_soundTrans (cv : ConcreteVWAA α) (finals : Array Nat) (h
       · refine Or.inr ⟨DNF.sat (gf f), maskSet (Of f), List.mem_map.mpr ⟨(gf f, Of f), hvalid f hfl, rfl⟩,
           hsatgf f hfl, fun hcon => by rw [mem_maskSet, hfnl] at hcon; exact absurd hcon (by simp), ?_⟩
         rw [htarget]
-        exact fun x hx => Finset.mem_biUnion.mpr ⟨f, heset ▸ List.mem_toFinset.mpr hfl, hx⟩
+        exact fun x hx => FinSet.mem_biUnion.mpr ⟨f, heset ▸ List.mem_toFinSet.mpr hfl, hx⟩
     · exact (inTf_iff cv hveryWeak f c.1 c.2.1).mp hinTf v hsatc
 
 /-- The construction satisfies tight (C): every component choice for `e` admitting `v` is refined by a surviving reduced
 candidate marking every final of `e` whose chosen component does not loop in it and every final outside its target. -/
 theorem canonicalTrans_completeTransTight (cv : ConcreteVWAA α) (finals : Array Nat) (hveryWeak : cv.VeryWeak)
-    (hfinals : ∀ f ∈ finals.toList, cv.final.getD f false = true) (e : Finset Nat) :
+    (hfinals : ∀ f ∈ finals.toList, cv.final.getD f false = true) (e : FinSet Nat) :
     CompleteTransTight (canonicalTGBA cv finals) (abstractOf cv hveryWeak) e := by
   classical
   intro v gf Of hgfOf
-  have heset : (maskMembers (maskOf e)).toFinset = e := maskSet_maskOf e
+  have heset : (maskMembers (maskOf e)).toFinSet = e := maskSet_maskOf e
   -- Concretize the abstract choice functions to concrete alternatives.
-  have hconcretize : ∀ q ∈ maskMembers (maskOf e),
-      ∃ β o, (β, o) ∈ cv.trans.getD q [] ∧ DNF.sat β = gf q ∧ maskSet o = Of q := by
-    intro q hq
-    have hqe : q ∈ e := by rw [← heset]; exact List.mem_toFinset.mpr hq
-    obtain ⟨hmem, -⟩ := hgfOf q hqe
-    obtain ⟨⟨β, o⟩, hmem2, heq2⟩ := List.mem_map.mp hmem
-    injection heq2 with h1 h2
-    exact ⟨β, o, hmem2, h1, h2⟩
-  choose! gfc Ofc hvalidc hgeqc hOeqc using hconcretize
+  -- the alternative is chosen for every `q`, member or not, so that `gfc`/`Ofc` need no membership proof
+  have hconcretize : ∀ q, ∃ β o, q ∈ maskMembers (maskOf e) →
+      (β, o) ∈ cv.trans.getD q [] ∧ DNF.sat β = gf q ∧ maskSet o = Of q := by
+    intro q
+    by_cases hq : q ∈ maskMembers (maskOf e)
+    · have hqe : q ∈ e := by rw [← heset]; exact List.mem_toFinSet.mpr hq
+      obtain ⟨hmem, -⟩ := hgfOf q hqe
+      obtain ⟨⟨β, o⟩, hmem2, heq2⟩ := List.mem_map.mp hmem
+      injection heq2 with h1 h2
+      exact ⟨β, o, fun _ => ⟨hmem2, h1, h2⟩⟩
+    · exact ⟨DNF.top, 0, fun h => absurd h hq⟩
+  obtain ⟨gfc, hconcretize⟩ := Classical.axiomOfChoice hconcretize
+  obtain ⟨Ofc, hconcretize⟩ := Classical.axiomOfChoice hconcretize
+  have hvalidc := fun q hq => (hconcretize q hq).1
+  have hgeqc := fun q hq => (hconcretize q hq).2.1
+  have hOeqc := fun q hq => (hconcretize q hq).2.2
   set g0 := (maskMembers (maskOf e)).foldl (fun acc q => DNF.and acc (gfc q)) DNF.top with hg0def
   set t0 := (maskMembers (maskOf e)).foldl (fun acc q => acc ||| Ofc q) 0 with ht0def
   set esc0 := (maskMembers (maskOf e)).foldl
@@ -1487,16 +1504,16 @@ theorem canonicalTrans_completeTransTight (cv : ConcreteVWAA α) (finals : Array
     rw [hg0def]
     apply (sat_foldl_and_iff (maskMembers (maskOf e)) gfc DNF.top v).mpr
     refine ⟨DNF.sat_top v, fun q hq => ?_⟩
-    have hqe : q ∈ e := by rw [← heset]; exact List.mem_toFinset.mpr hq
+    have hqe : q ∈ e := by rw [← heset]; exact List.mem_toFinSet.mpr hq
     rw [hgeqc q hq]; exact (hgfOf q hqe).2
   have hmemProd : (g0, t0, esc0) ∈ productTrans cv (maskOf e) :=
     mem_productTrans_of_sat gfc Ofc v hvalidc hsatg0
   set m0 := computeMarks cv finals g0 t0 esc0 with hm0def
   have htarget : maskSet t0 = e.biUnion Of := by
-    rw [ht0def, maskSet_foldl_or, maskSet_zero, Finset.empty_union, heset]
-    apply Finset.biUnion_congr rfl
+    rw [ht0def, maskSet_foldl_or, maskSet_zero, FinSet.empty_union, heset]
+    apply FinSet.biUnion_congr rfl
     intro q hq
-    exact hOeqc q (List.mem_toFinset.mp (heset.symm ▸ hq))
+    exact hOeqc q (List.mem_toFinSet.mp (heset.symm ▸ hq))
   have hmemRaw : (g0, t0, m0) ∈ rawCandidates cv finals e := List.mem_map.mpr ⟨(g0, t0, esc0), hmemProd, rfl⟩
   obtain ⟨g', hg'mem, himplies1⟩ := exists_mergeByTarget_of_mem hmemRaw
   obtain ⟨g'', t'', m'', hg''mem, htsub, himplies2, hmsub⟩ :=
@@ -1507,8 +1524,8 @@ theorem canonicalTrans_completeTransTight (cv : ConcreteVWAA α) (finals : Array
   · exact (DNF.implies_iff _ _).mp himplies2 v (himplies1 v hsatg0)
   · rw [← htarget]; exact maskSet_subset_of_maskSub htsub
   · intro f hf hfe hfOf
-    have hf' : f ∈ finals.toList := List.mem_toFinset.mp hf
-    have hfl : f ∈ maskMembers (maskOf e) := by rw [← List.mem_toFinset, heset]; exact hfe
+    have hf' : f ∈ finals.toList := List.mem_toFinSet.mp hf
+    have hfl : f ∈ maskMembers (maskOf e) := by rw [← List.mem_toFinSet, heset]; exact hfe
     have hnl : (Ofc f).testBit f = false := by
       have hnot : f ∉ maskSet (Ofc f) := by rw [hOeqc f hfl]; exact hfOf
       cases h : (Ofc f).testBit f
@@ -1517,11 +1534,11 @@ theorem canonicalTrans_completeTransTight (cv : ConcreteVWAA α) (finals : Array
     have hesc : esc0.testBit f = true := testBit_escFold.mpr (Or.inr ⟨hfl, hfinals f hf', hnl⟩)
     apply idMarksOf_mono hmsub
     rw [hm0def, idMarksOf_computeMarks]
-    simp only [List.mem_toFinset, List.mem_filter]
+    simp only [List.mem_toFinSet, List.mem_filter]
     exact ⟨hf', by rw [hesc, Bool.true_or]⟩
   · intro f hf hnmem
     obtain ⟨g0c, hg0c⟩ := reduceCandidates_target_mem hg''mem
-    have hf' : f ∈ finals.toList := List.mem_toFinset.mp hf
+    have hf' : f ∈ finals.toList := List.mem_toFinSet.mp hf
     have hnmem' : t''.testBit f = false := by
       cases h : t''.testBit f
       · rfl

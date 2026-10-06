@@ -1,3 +1,5 @@
+module
+
 /-
   Abstract finite set interface for the LTL-to-GBA construction, letting the expand algorithm and its correctness proofs
   be agnostic to the concrete set container.
@@ -15,9 +17,11 @@
   - `Std.TreeSet` instance
 -/
 
-import Std
+public import Std
 import Std.Data.TreeSet.Lemmas
 import Batteries.Data.List.Perm
+
+public section
 
 namespace LTLLib
 
@@ -56,7 +60,7 @@ theorem contains_insert [BEq α] [LawfulBEq α] (a b : α) (s : S) :
 
 /-- Set equality via mutual containment. With `Std.TreeSet`, this could use the built-in `BEq`
 instance instead, for better performance (structural comparison on sorted trees). -/
-def setEq (s₁ s₂ : S) : Bool :=
+@[expose] def setEq (s₁ s₂ : S) : Bool :=
   FSet.all s₁ (FSet.contains s₂ ·) && FSet.all s₂ (FSet.contains s₁ ·)
 
 /-- `setEq` is correct: it returns true iff the two sets contain the same elements. -/
@@ -164,9 +168,7 @@ instance instFSetTreeSet [Ord α] [Std.TransOrd α] [Std.LawfulEqOrd α] :
     unfold Std.TreeSet.toList Std.TreeMap.keys Std.DTreeMap.keys
     rw [Std.DTreeMap.Internal.Impl.all_eq_all_toListModel,
         Std.DTreeMap.Internal.Impl.keys_eq_keys]
-    induction s.inner.inner.inner.toListModel with
-    | nil => rfl
-    | cons x xs ih => simp [Std.Internal.List.keys, List.all_cons, ih]
+    simp only [Std.Internal.List.keys_eq_map, List.all_map, Function.comp_def]
   mem_toList_iff a s := by
     rw [Std.TreeSet.mem_toList, Std.TreeSet.contains_iff_mem]
   toList_nodup s := by

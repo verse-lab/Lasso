@@ -1,3 +1,5 @@
+module
+
 /-
   Correctness of the nested DFS emptiness check.
 
@@ -56,8 +58,10 @@
   - Outer DFS invariants
   - Main correctness theorem
 -/
-import LTLLib.AbstractSpec.EmptinessCheck
-import LTLLib.AbstractSpec.GraphPaths
+public import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.AbstractSpec.GraphPaths
+
+public section
 
 namespace LTLLib
 
@@ -213,7 +217,7 @@ theorem head_eq_getLast_of_length_eq_one {α : Type u} (l : List α) (hl : l.len
     element (later elements reach earlier ones). On the outer-DFS stack (top at the
     head), this is the tree-path fact that makes reaching an ancestor via inner DFS
     force a self-cycle. -/
-def ReachChain {State} (succs : State → Array State) : List State → Prop
+@[expose] def ReachChain {State} (succs : State → Array State) : List State → Prop
   | [] => True
   | [_] => True
   | a :: b :: rest => PathTo succs (fun _ => False) b a ∧ ReachChain succs (b :: rest)
@@ -262,7 +266,7 @@ abbrev InnerResult (State : Type u) [BEq State] [Hashable State] :=
 mutual
 /-- Inner DFS with fuel. Returns `none` if fuel runs out.
     Corresponds to the "red DFS" in Schwoon & Esparza's color formulation. -/
-def innerDFS_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
+@[expose] def innerDFS_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
     (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State)
     (innerVisited : Std.HashSet State) (st : FNDFSState State)
@@ -279,7 +283,7 @@ def innerDFS_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
       innerDFS_fuel_fold succs seed cyan fuel current (succs current).toList innerVisited st
 
 /-- Process successor list for inner DFS. -/
-def innerDFS_fuel_fold {State} [BEq State] [Hashable State] [LawfulBEq State]
+@[expose] def innerDFS_fuel_fold {State} [BEq State] [Hashable State] [LawfulBEq State]
     (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State) (remaining : List State)
     (innerVisited : Std.HashSet State) (st : FNDFSState State)
@@ -304,7 +308,7 @@ end
 
 /-- Outer DFS loop with fuel.
     Corresponds to the "blue DFS" in Schwoon & Esparza's color formulation. -/
-def outerDFSLoop_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
+@[expose] def outerDFSLoop_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
     (succs : State → Array State) (isAccepting : State → Bool)
     (fuel : Nat)
     (stack : List (State × List State))
@@ -362,7 +366,7 @@ def outerDFSLoop_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
           outerDFSLoop_fuel succs isAccepting fuel stack' (pathStack ++ [succ]) st
 
 /-- Full nested DFS with fuel. -/
-def nestedDFS_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
+@[expose] def nestedDFS_fuel {State} [BEq State] [Hashable State] [LawfulBEq State]
     (initialStates : List State)
     (succs : State → Array State)
     (isAccepting : State → Bool)
@@ -402,7 +406,7 @@ variable {State} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- `s` is blocked if visited in the current inner DFS call, or already `innerFinished`.
     Corresponds to "red ∪ pink" in Schwoon & Esparza's color scheme. -/
-def isBlocked (iv : Std.HashSet State) (ifin : Std.HashSet State) (s : State) : Prop :=
+@[expose] def isBlocked (iv : Std.HashSet State) (ifin : Std.HashSet State) (s : State) : Prop :=
   iv.contains s ∨ ifin.contains s
 
 /-! ## Inner DFS correctness proofs

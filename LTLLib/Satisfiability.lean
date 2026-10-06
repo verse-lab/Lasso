@@ -1,19 +1,24 @@
+module
+
 /-
   End-to-end pipeline for satisfiability:
   LTL formula φ → satisfiability decision.
 -/
-import LTLLib.LTLtoGBA.Correctness
-import LTLLib.DegeneralBridge
-import LTLLib.LTLtoGBA.ExpandTermination
-import LTLLib.NestedDFS.NestedDFSTermination
+public import LTLLib.LTLtoGBA.Correctness
+public import LTLLib.DegeneralBridge
+public import LTLLib.LTLtoGBA.ExpandTermination
+public import LTLLib.NestedDFS.NestedDFSTermination
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
 variable {α : Type u} {S : Type v} [FSet (NNF α) S]
-  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
+  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
 
 /-- Chain `createGraph → constructGBA → GBA.degeneralize → nestedDFSWF` -/
-def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
+@[expose] def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
   match hcg : createGraph (S := S) φ with
   | some st =>
     let gba := constructGBA φ st
@@ -22,7 +27,7 @@ def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
     nestedDFSWF ba.getSuccessors ba.initialStates.toList (ba.finiteReach hbawf) ba.isAccepting
   | none => .empty 0
 
-omit [LawfulBEq α] [LawfulHashable α] [DecidableEq α] in
+omit [LawfulBEq α] [LawfulHashable α] in
 /-- `fullPipeline` restated with the `createGraph` result exposed as `st`. -/
 theorem fullPipeline_eq (φ : NNF α) {st : ExpandState α S} (hcg : createGraph φ = some st) :
     fullPipeline (S := S) φ =

@@ -1,3 +1,5 @@
+module
+
 /-
   The bottom-up rewrite pass: constant folding and idempotence, absorption under syntactic implication (`[SB00]` §3),
   `φ U e ≡ e` and `φ R u ≡ u` for a pure eventuality `e` and a purely universal `u` (`[EH00]` Lemma 3.4-3.5), `X γ ≡ γ`
@@ -46,7 +48,9 @@
   - Correctness of the rules
   - Correctness of the pass
 -/
-import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Rules
+public import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Rules
+
+public section
 
 namespace LTLLib
 
@@ -174,7 +178,7 @@ def simplifyRelease [BEq α] (a b : NNF α) : NNF α :=
 /-! ## The pass -/
 
 /-- One bottom-up pass of the rules. -/
-def simplify [BEq α] : NNF α → NNF α
+@[expose] def simplify [BEq α] : NNF α → NNF α
   | .and a b => simplifyAnd (simplify a) (simplify b)
   | .or a b => simplifyOr (simplify a) (simplify b)
   | .next a => simplifyNext (simplify a)
@@ -339,7 +343,7 @@ theorem orAll_prefixInvariant {fs : List (NNF α)} (hfs : ∀ f ∈ fs, f.isFair
 theorem fg_and_fg (a b : NNF α) (ξ : OmegaWord α) :
     (NNF.eventually (NNF.always (NNF.and a b))).satisfies ξ ↔
       (NNF.eventually (NNF.always a)).satisfies ξ ∧ (NNF.eventually (NNF.always b)).satisfies ξ := by
-  simp only [NNF.satisfies_eventually, NNF.satisfies_always, NNF.satisfies_and, TLA.exec.drop_drop]
+  simp only [NNF.satisfies_eventually, NNF.satisfies_always, NNF.satisfies_and, Lentil.exec.drop_drop]
   constructor
   · rintro ⟨i, h⟩
     exact ⟨⟨i, fun k => (h k).1⟩, ⟨i, fun k => (h k).2⟩⟩
@@ -354,7 +358,7 @@ theorem fg_and_fg (a b : NNF α) (ξ : OmegaWord α) :
 theorem gf_or_gf (a b : NNF α) (ξ : OmegaWord α) :
     (NNF.always (NNF.eventually (NNF.or a b))).satisfies ξ ↔
       (NNF.always (NNF.eventually a)).satisfies ξ ∨ (NNF.always (NNF.eventually b)).satisfies ξ := by
-  simp only [NNF.satisfies_eventually, NNF.satisfies_always, NNF.satisfies_or, TLA.exec.drop_drop]
+  simp only [NNF.satisfies_eventually, NNF.satisfies_always, NNF.satisfies_or, Lentil.exec.drop_drop]
   constructor
   · intro h
     by_cases ha : ∀ k, ∃ m, a.satisfies (ξ.drop (k + m))
@@ -375,22 +379,22 @@ theorem gf_or_gf (a b : NNF α) (ξ : OmegaWord α) :
 /-- `[SB00]` §3: `X a U X b ≡ X (a U b)`. -/
 theorem until_next_next (a b : NNF α) (ξ : OmegaWord α) :
     (NNF.until (.next a) (.next b)).satisfies ξ ↔ (NNF.next (NNF.until a b)).satisfies ξ := by
-  simp only [NNF.satisfies_until, NNF.satisfies_next, TLA.exec.drop_drop, Nat.add_comm]
+  simp only [NNF.satisfies_until, NNF.satisfies_next, Lentil.exec.drop_drop, Nat.add_comm]
 
 /-- `[SB00]` §3: `F X b ≡ X F b`. -/
 theorem eventually_next (b : NNF α) (ξ : OmegaWord α) :
     (NNF.until .tt (.next b)).satisfies ξ ↔ (NNF.next (NNF.until .tt b)).satisfies ξ := by
-  simp only [NNF.satisfies_until, NNF.satisfies_next, NNF.satisfies_tt, TLA.exec.drop_drop, Nat.add_comm]
+  simp only [NNF.satisfies_until, NNF.satisfies_next, NNF.satisfies_tt, Lentil.exec.drop_drop, Nat.add_comm]
 
 /-- `[SB00]` §3: `X a R X b ≡ X (a R b)`. -/
 theorem release_next_next (a b : NNF α) (ξ : OmegaWord α) :
     (NNF.release (.next a) (.next b)).satisfies ξ ↔ (NNF.next (NNF.release a b)).satisfies ξ := by
-  simp only [NNF.satisfies_release, NNF.satisfies_next, TLA.exec.drop_drop, Nat.add_comm]
+  simp only [NNF.satisfies_release, NNF.satisfies_next, Lentil.exec.drop_drop, Nat.add_comm]
 
 /-- `[SB00]` §3: `G X b ≡ X G b`. -/
 theorem always_next (b : NNF α) (ξ : OmegaWord α) :
     (NNF.release .ff (.next b)).satisfies ξ ↔ (NNF.next (NNF.release .ff b)).satisfies ξ := by
-  simp only [NNF.satisfies_release, NNF.satisfies_next, NNF.satisfies_ff, TLA.exec.drop_drop, Nat.add_comm]
+  simp only [NNF.satisfies_release, NNF.satisfies_next, NNF.satisfies_ff, Lentil.exec.drop_drop, Nat.add_comm]
 
 theorem satisfies_andShapes (a b : NNF α) (ξ : OmegaWord α) :
     (andShapes a b).satisfies ξ ↔ a.satisfies ξ ∧ b.satisfies ξ := by

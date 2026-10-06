@@ -1,8 +1,10 @@
+module
+
 /-
   Executable nested DFS: well-founded definitions and the fuel bridge.
 
   `innerDFSCore`/`outerDFSLoopWF`/`nestedDFSWF` are the actual executable
-  (structurally-terminating, `Set.ncard`-measure-based) versions of the
+  (structurally-terminating, `reachCount`-measure-based) versions of the
   algorithm. Each is bridged to a fuel-indexed twin (proved correct in
   `NestedDFSCorrectness.lean` by induction on fuel) transferring that
   correctness to the executable version.
@@ -24,7 +26,7 @@
   Sections:
   - HashSet cardinality helpers
   - Finite-reachability hypothesis
-  - `Set.ncard`-based termination-measure helpers
+  - `reachCount`-based termination-measure helpers
   - Well-founded `innerDFS`
   - Fuel ↔ well-founded bridge, inner half
   - Well-founded `outerDFSLoop`
@@ -35,9 +37,10 @@
   - Packaging a `FiniteReach` witness from `BA.WellFormed`
   - From an accepting run to an `AcceptingCycle`
 -/
-import LTLLib.NestedDFS.NestedDFSCorrectness
-import LTLLib.BA
-import Mathlib.Data.Set.Card
+public import LTLLib.NestedDFS.NestedDFSCorrectness
+public import LTLLib.BA
+
+public section
 
 namespace LTLLib
 
@@ -96,7 +99,7 @@ structure RFrame (initialStates : List State) (succs : State → Array State) wh
   hsuffix : remaining <:+ (succs state).toList
 
 /-- Consume the head of a frame's `remaining` list, updating `hsuffix` accordingly. -/
-def RFrame.consumeOne {initialStates : List State} {succs : State → Array State}
+@[expose] def RFrame.consumeOne {initialStates : List State} {succs : State → Array State}
     (frame : RFrame initialStates succs) (succ : State) (tl : List State)
     (heq : frame.remaining = succ :: tl) : RFrame initialStates succs where
   state := frame.state
@@ -105,7 +108,7 @@ def RFrame.consumeOne {initialStates : List State} {succs : State → Array Stat
   hsuffix := (List.suffix_cons succ tl).trans (heq ▸ frame.hsuffix)
 
 /-- Push a fresh successor as a new active frame on top. -/
-def RFrame.push {initialStates : List State} {succs : State → Array State}
+@[expose] def RFrame.push {initialStates : List State} {succs : State → Array State}
     (frame : RFrame initialStates succs) (succ : State) (hmem : succ ∈ succs frame.state) :
     RFrame initialStates succs where
   state := succ
@@ -114,7 +117,7 @@ def RFrame.push {initialStates : List State} {succs : State → Array State}
   hsuffix := List.suffix_refl _
 
 /-- Total pending-successor count across every stack frame. -/
-def pendingSum {initialStates : List State} {succs : State → Array State}
+@[expose] def pendingSum {initialStates : List State} {succs : State → Array State}
     (stack : List (RFrame initialStates succs)) : Nat :=
   (stack.map (fun f => f.remaining.length)).sum
 
@@ -128,59 +131,35 @@ def pendingSum {initialStates : List State} {succs : State → Array State}
 
 end RFrameDef
 
-/-! ## `Set.ncard`-based termination-measure helpers
+/-! ## `reachCount`-based termination-measure helpers
 
-`Set.ncard`-based analogues of `HashSet.size_lt_of_ssubset`/`HashSet.size_le_of_subset` above,
-for the `{s | Reachable ...} \ {x | iv.contains x}` measure. Kept as a `Nat × Nat` tuple in
+`reachCount`-based analogues of `HashSet.size_lt_of_ssubset`/`HashSet.size_le_of_subset` above,
+for the measure counting the reachable states outside `iv`. Kept as a `Nat × Nat` tuple in
 every `termination_by` clause below (never a bare `Nat`), so elaboration stays on the erased
-`WellFounded.fix` path regardless of `Set.ncard` being noncomputable. -/
+`WellFounded.fix` path regardless of `reachCount` being noncomputable. -/
 
-section ReachableSetCard
+section ReachableCount
 
-variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
+variable {State : Type u} [BEq State] [Hashable State]
   {initialStates : List State} {succs : State → Array State}
 
-/-- Inserting a fresh reachable state into `iv` strictly shrinks the reachable-minus-`iv` measure. -/
-theorem Reachable.ncard_diff_insert_lt (fr : FiniteReach initialStates succs)
+/-- Inserting a fresh reachable state into `iv` strictly shrinks the count of reachable states outside `iv`. -/
+theorem Reachable.reachCount_insert_lt [LawfulBEq State] (fr : FiniteReach initialStates succs)
     {iv : Std.HashSet State} {x : State} (hx_reach : Reachable initialStates succs x)
     (hx_niv : iv.contains x = false) :
-    ({s | Reachable initialStates succs s} \ {y | (iv.insert x).contains y}).ncard <
-      ({s | Reachable initialStates succs s} \ {y | iv.contains y}).ncard := by
-  have hsetof : {y | (iv.insert x).contains y} = insert x {y | iv.contains y} := by
-    ext y
-    simp only [Set.mem_setOf_eq, Std.HashSet.contains_insert, Bool.or_eq_true, beq_iff_eq,
-      Set.mem_insert_iff]
-    constructor
-    · rintro (h | h)
-      · exact Or.inl h.symm
-      · exact Or.inr h
-    · rintro (h | h)
-      · exact Or.inl h.symm
-      · exact Or.inr h
-  rw [hsetof]
-  apply Set.ncard_lt_ncard _ (fr.subset Set.diff_subset)
-  rw [Set.ssubset_def]
-  refine ⟨?_, ?_⟩
-  · intro y hy
-    simp only [Set.mem_diff, Set.mem_insert_iff, not_or] at hy ⊢
-    exact ⟨hy.1, hy.2.2⟩
-  · intro hsub
-    have hx : x ∈ ({s | Reachable initialStates succs s} \ {y | iv.contains y}) :=
-      ⟨hx_reach, Bool.eq_false_iff.mp hx_niv⟩
-    exact (hsub hx).2 (Set.mem_insert x _)
+    reachCount initialStates succs (fun y => (iv.insert x).contains y = false) <
+      reachCount initialStates succs (fun y => iv.contains y = false) :=
+  reachCount_lt fr (fun y _ hy => by simp_all [Std.HashSet.contains_insert]) hx_reach (by simp) hx_niv
 
 /-- Growing `iv` (as a `Std.HashSet`, via a `.contains`-subset relation) can't increase the
-reachable-set-minus-`iv` difference's cardinality. -/
-theorem Reachable.ncard_diff_le_of_subset (fr : FiniteReach initialStates succs)
-    {iv iv' : Std.HashSet State} (hsub : ∀ x, iv.contains x → iv'.contains x) :
-    ({s | Reachable initialStates succs s} \ {y | iv'.contains y}).ncard ≤
-      ({s | Reachable initialStates succs s} \ {y | iv.contains y}).ncard := by
-  apply Set.ncard_le_ncard _ (fr.subset Set.diff_subset)
-  intro y hy
-  simp only [Set.mem_diff, Set.mem_setOf_eq] at hy ⊢
-  exact ⟨hy.1, fun h => hy.2 (hsub y h)⟩
+count of reachable states outside `iv`. -/
+theorem Reachable.reachCount_le_of_subset {iv iv' : Std.HashSet State}
+    (hsub : ∀ x, iv.contains x → iv'.contains x) :
+    reachCount initialStates succs (fun y => iv'.contains y = false) ≤
+      reachCount initialStates succs (fun y => iv.contains y = false) :=
+  reachCount_le fun y _ hy => Bool.eq_false_iff.mpr fun h => absurd (hsub y h) (by rw [hy]; decide)
 
-end ReachableSetCard
+end ReachableCount
 
 /-! ## Well-founded `innerDFS` -/
 
@@ -188,7 +167,7 @@ section InnerDFSWellFounded
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
-/-- Well-founded (`Set.ncard`-measure-terminating) inner-DFS loop over an explicit `RFrame`
+/-- Well-founded (`reachCount`-measure-terminating) inner-DFS loop over an explicit `RFrame`
 stack, looking for a path back to `seed` or into `cyan`. -/
 def innerDFSCore [LawfulBEq State] [LawfulHashable State] {initialStates : List State}
     (succs : State → Array State) (fr : FiniteReach initialStates succs)
@@ -208,7 +187,7 @@ def innerDFSCore [LawfulBEq State] [LawfulHashable State] {initialStates : List 
       let stack' := frame.consumeOne succ remainingTail hrem :: rest
       if succ == seed || cyan.contains succ then
         (some (pathStack, succ), iv, st)
-      else if hblocked : st.innerFinished.contains succ || iv.contains succ then
+      else if _hblocked : st.innerFinished.contains succ || iv.contains succ then
         innerDFSCore succs fr seed cyan stack' pathStack iv st
       else
         have hmemrem : succ ∈ frame.remaining := hrem ▸ List.mem_cons_self
@@ -217,7 +196,7 @@ def innerDFSCore [LawfulBEq State] [LawfulHashable State] {initialStates : List 
         innerDFSCore succs fr seed cyan (frame.push succ hmemsuccs :: stack') (pathStack ++ [succ])
           (iv.insert succ) st
 termination_by
-  (({s | Reachable initialStates succs s} \ {x | iv.contains x}).ncard,
+  (reachCount initialStates succs (fun x => iv.contains x = false),
    pendingSum stack + stack.length)
 decreasing_by
   · simp [pendingSum_cons, hrem]
@@ -226,14 +205,14 @@ decreasing_by
     omega
   · have hsucc_niv : iv.contains succ = false := by
       rw [Bool.eq_false_iff]
-      simp only [Bool.or_eq_true, not_or] at hblocked
-      exact hblocked.2
-    exact Prod.Lex.left _ _ (Reachable.ncard_diff_insert_lt fr
+      simp only [Bool.or_eq_true, not_or] at _hblocked
+      exact _hblocked.2
+    exact Prod.Lex.left _ _ (Reachable.reachCount_insert_lt fr
       (Reachable.step frame.hreach hmemsuccs) hsucc_niv)
 
 /-- Well-founded inner DFS from `current`, short-circuiting on an already-finished or
 already-visited start state. -/
-def innerDFSWF [LawfulHashable State] (succs : State → Array State)
+@[expose] def innerDFSWF [LawfulHashable State] (succs : State → Array State)
     {initialStates : List State} (fr : FiniteReach initialStates succs) (seed : State)
     (cyan : List State) (current : State) (hcurrent_reach : Reachable initialStates succs current)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -321,13 +300,12 @@ variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State] [Lawful
   (seed : State) (cyan : List State)
 
 /-- Sufficient-fuel measure. -/
-private noncomputable def innerFuelMeasure (succs : State → Array State)
-    (fr : FiniteReach initialStates succs)
+private noncomputable def innerFuelMeasure (initialStates : List State) (succs : State → Array State)
     (iv : Std.HashSet State) : Nat :=
-  ({s | Reachable initialStates succs s} \ {x | iv.contains x}).ncard
+  reachCount initialStates succs (fun x => iv.contains x = false)
 
 /-- Chains `innerDFS_fuel_fold` calls across an explicit stack of pending frames. -/
-def innerDFS_fuel_chain [BEq State] [Hashable State] [LawfulBEq State]
+@[expose] def innerDFS_fuel_chain [BEq State] [Hashable State] [LawfulBEq State]
     (succs : State → Array State) (seed : State) (cyan : List State) (fuel : Nat)
     (stack : List (State × List State)) (pathStack : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -342,6 +320,7 @@ def innerDFS_fuel_chain [BEq State] [Hashable State] [LawfulBEq State]
 
 /-! One-step unfolding lemmas for `innerDFS_fuel`/`innerDFS_fuel_fold`/`innerDFS_fuel_chain`. -/
 
+omit [LawfulHashable State] in
 theorem innerDFS_fuel_fold_nil (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State) :
     innerDFS_fuel_fold succs seed cyan fuel current [] iv st =
@@ -349,6 +328,7 @@ theorem innerDFS_fuel_fold_nil (fuel : Nat) (current : State)
   unfold innerDFS_fuel_fold
   rfl
 
+omit [LawfulHashable State] in
 theorem innerDFS_fuel_fold_seed (fuel : Nat) (current succ : State) (rest : List State)
     (iv : Std.HashSet State) (st : FNDFSState State) (hse : succ == seed || cyan.contains succ) :
     innerDFS_fuel_fold succs seed cyan fuel current (succ :: rest) iv st =
@@ -356,6 +336,7 @@ theorem innerDFS_fuel_fold_seed (fuel : Nat) (current succ : State) (rest : List
   unfold innerDFS_fuel_fold
   simp only [hse, if_true]
 
+omit [LawfulHashable State] in
 theorem innerDFS_fuel_fold_cons (fuel : Nat) (current succ : State) (rest : List State)
     (iv : Std.HashSet State) (st : FNDFSState State) (hse : ¬ (succ == seed || cyan.contains succ)) :
     innerDFS_fuel_fold succs seed cyan fuel current (succ :: rest) iv st =
@@ -367,6 +348,7 @@ theorem innerDFS_fuel_fold_cons (fuel : Nat) (current succ : State) (rest : List
   simp only [hse, Bool.false_eq_true, if_false]
   rfl
 
+omit [LawfulHashable State] in
 theorem innerDFS_fuel_blocked (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (hblocked : st.innerFinished.contains current || iv.contains current) :
@@ -378,6 +360,7 @@ theorem innerDFS_fuel_blocked (fuel : Nat) (current : State)
     · simp [h1]
     · simp [h1, h]
 
+omit [LawfulHashable State] in
 theorem innerDFS_fuel_fresh (fuel : Nat) (current : State)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (hnotfin : st.innerFinished.contains current = false)
@@ -387,6 +370,7 @@ theorem innerDFS_fuel_fresh (fuel : Nat) (current : State)
   unfold innerDFS_fuel
   simp [hnotfin, hnotvisited]
 
+omit [LawfulHashable State] in
 theorem innerDFS_fuel_chain_cons (fuel : Nat) (current : State) (remaining : List State)
     (rest : List (State × List State)) (pathStack : List State)
     (iv : Std.HashSet State) (st : FNDFSState State) :
@@ -400,6 +384,7 @@ theorem innerDFS_fuel_chain_cons (fuel : Nat) (current : State) (remaining : Lis
 -- More fuel doesn't change a successful `innerDFS_fuel_fold` result. Needed since
 -- `innerDFS_fuel_chain` reuses one uniform fuel value across the whole stack, unlike the
 -- original nested-call semantics which decrements fuel by one per descent.
+omit [LawfulHashable State] in
 private theorem innerDFS_fuel_fold_add_aux (succs : State → Array State) (seed : State)
     (cyan : List State) (extra fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -433,6 +418,7 @@ private theorem innerDFS_fuel_fold_add_aux (succs : State → Array State) (seed
         | some cyclePath => exact h
         | none => exact ih_rem iv_mid st_mid result iv' st' h
 
+omit [LawfulHashable State] in
 /-- Fuel-increase preserves a successful result, for `innerDFS_fuel` itself. -/
 theorem innerDFS_fuel_add_preserves (succs : State → Array State) (seed : State)
     (cyan : List State) (extra fuel : Nat) (current : State)
@@ -458,6 +444,7 @@ theorem innerDFS_fuel_add_preserves (succs : State → Array State) (seed : Stat
       rw [innerDFS_fuel_fresh succs seed cyan (n + extra) current iv st hnotfin hnotvisited]
       exact innerDFS_fuel_fold_add_aux succs seed cyan extra n current _ _ st ih result iv' st' h
 
+omit [LawfulHashable State] in
 theorem innerDFS_fuel_fold_add_preserves (succs : State → Array State) (seed : State)
     (cyan : List State) (extra fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -471,9 +458,9 @@ theorem innerDFS_fuel_fold_add_preserves (succs : State → Array State) (seed :
       innerDFS_fuel_add_preserves succs seed cyan extra fuel curr iv₀ st₀ res iv₁ st₁ h)
     result iv' st' h
 
+omit [LawfulHashable State] in
 /-- Sufficient fuel guarantees success. -/
 private theorem innerDFS_fuel_fold_exists_aux (succs : State → Array State)
-    (fr : FiniteReach initialStates succs)
     (seed : State) (cyan : List State) (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (hiv : ∀ x, iv.contains x → Reachable initialStates succs x)
@@ -481,10 +468,10 @@ private theorem innerDFS_fuel_fold_exists_aux (succs : State → Array State)
     (hremaining : ∀ x ∈ remaining, x ∈ succs current)
     (ih_inner : ∀ (curr : State) (iv₀ : Std.HashSet State) (st₀ : FNDFSState State),
       (∀ x, iv₀.contains x → Reachable initialStates succs x) → Reachable initialStates succs curr →
-      fuel ≥ innerFuelMeasure succs fr iv₀ + 1 →
+      fuel ≥ innerFuelMeasure initialStates succs iv₀ + 1 →
       ∃ result iv₁ st₁, innerDFS_fuel succs seed cyan fuel curr iv₀ st₀ = some (result, iv₁, st₁) ∧
         (∀ x, iv₁.contains x → Reachable initialStates succs x))
-    (hfuel : fuel ≥ innerFuelMeasure succs fr iv + 1) :
+    (hfuel : fuel ≥ innerFuelMeasure initialStates succs iv + 1) :
     ∃ result iv' st', innerDFS_fuel_fold succs seed cyan fuel current remaining iv st =
       some (result, iv', st') ∧ (∀ x, iv'.contains x → Reachable initialStates succs x) := by
   induction remaining generalizing iv st with
@@ -501,20 +488,20 @@ private theorem innerDFS_fuel_fold_exists_aux (succs : State → Array State)
       cases result1 with
       | some cyclePath => exact ⟨_, _, _, rfl, hiv1⟩
       | none =>
-        have hfuel1 : fuel ≥ innerFuelMeasure succs fr iv1 + 1 := by
-          have hle : innerFuelMeasure succs fr iv1 ≤ innerFuelMeasure succs fr iv := by
+        have hfuel1 : fuel ≥ innerFuelMeasure initialStates succs iv1 + 1 := by
+          have hle : innerFuelMeasure initialStates succs iv1 ≤ innerFuelMeasure initialStates succs iv := by
             unfold innerFuelMeasure
-            exact Reachable.ncard_diff_le_of_subset fr
+            exact Reachable.reachCount_le_of_subset
               ((innerDFS_fuel_mono succs seed cyan fuel succ iv st none iv1 st1 heq1).1)
           omega
         exact ih_rem iv1 st1 hiv1 (fun x hx => hremaining x (List.mem_cons_of_mem _ hx)) hfuel1
 
-theorem innerDFS_fuel_exists (succs : State → Array State) (fr : FiniteReach initialStates succs)
+private theorem innerDFS_fuel_exists (succs : State → Array State) (fr : FiniteReach initialStates succs)
     (seed : State)
     (cyan : List State) (fuel : Nat) (current : State) (iv : Std.HashSet State) (st : FNDFSState State)
     (hiv : ∀ x, iv.contains x → Reachable initialStates succs x)
     (hcurrent : Reachable initialStates succs current)
-    (hfuel : fuel ≥ innerFuelMeasure succs fr iv + 1) :
+    (hfuel : fuel ≥ innerFuelMeasure initialStates succs iv + 1) :
     ∃ result iv' st', innerDFS_fuel succs seed cyan fuel current iv st = some (result, iv', st') ∧
       (∀ x, iv'.contains x → Reachable initialStates succs x) := by
   induction fuel generalizing current iv st with
@@ -536,22 +523,22 @@ theorem innerDFS_fuel_exists (succs : State → Array State) (fr : FiniteReach i
         · have hxc : current = x := by simpa using hx
           exact hxc ▸ hcurrent
         · exact hiv x hx
-      have hmeasure : n ≥ innerFuelMeasure succs fr (iv.insert current) + 1 := by
-        have hlt : innerFuelMeasure succs fr (iv.insert current) < innerFuelMeasure succs fr iv := by
+      have hmeasure : n ≥ innerFuelMeasure initialStates succs (iv.insert current) + 1 := by
+        have hlt : innerFuelMeasure initialStates succs (iv.insert current) < innerFuelMeasure initialStates succs iv := by
           unfold innerFuelMeasure
-          exact Reachable.ncard_diff_insert_lt fr hcurrent hnotvisited
+          exact Reachable.reachCount_insert_lt fr hcurrent hnotvisited
         omega
-      exact innerDFS_fuel_fold_exists_aux succs fr seed cyan n current (succs current).toList
+      exact innerDFS_fuel_fold_exists_aux succs seed cyan n current (succs current).toList
         (iv.insert current) st hiv' hcurrent (fun x hx => Array.mem_toList_iff.mp hx)
         (fun curr iv₀ st₀ hiv₀ hcurr hf => ih curr iv₀ st₀ hiv₀ hcurr hf) hmeasure
 
 /-- The main bridge: `innerDFS_fuel_chain` equals `innerDFSCore` for sufficient fuel. -/
-theorem innerDFS_fuel_chain_eq_innerDFSCore
+private theorem innerDFS_fuel_chain_eq_innerDFSCore
     (fuel : Nat) (stack : List (RFrame initialStates succs)) (pathStack : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (hiv : ∀ x, iv.contains x → Reachable initialStates succs x)
     (hfin : ∀ x, st.innerFinished.contains x → Reachable initialStates succs x)
-    (hfuel : fuel ≥ innerFuelMeasure succs fr iv + 1) :
+    (hfuel : fuel ≥ innerFuelMeasure initialStates succs iv + 1) :
     ∃ result iv₁ st₁, innerDFS_fuel_chain succs seed cyan fuel
         (stack.map (fun f => (f.state, f.remaining))) pathStack iv st =
         some (result, iv₁, st₁) ∧
@@ -628,10 +615,10 @@ theorem innerDFS_fuel_chain_eq_innerDFSCore
       · have hxc : succ = x := by simpa using hx
         exact hxc ▸ hsucc_reach
       · exact hiv x hx
-    have hfuel' : fuel' + 1 ≥ innerFuelMeasure succs fr (iv.insert succ) + 1 := by
-      have hlt : innerFuelMeasure succs fr (iv.insert succ) < innerFuelMeasure succs fr iv := by
+    have hfuel' : fuel' + 1 ≥ innerFuelMeasure initialStates succs (iv.insert succ) + 1 := by
+      have hlt : innerFuelMeasure initialStates succs (iv.insert succ) < innerFuelMeasure initialStates succs iv := by
         unfold innerFuelMeasure
-        exact Reachable.ncard_diff_insert_lt fr hsucc_reach hnotviv
+        exact Reachable.reachCount_insert_lt fr hsucc_reach hnotviv
       omega
     obtain ⟨result, iv₁, st₁, heq2, hiv1, hfin1, heqC⟩ := ih1 hiv' hfin hfuel'
     have hnotfin : st.innerFinished.contains succ = false := by
@@ -687,6 +674,7 @@ theorem innerDFS_fuel_chain_eq_innerDFSCore
     · rw [innerDFSCore.eq_2]
       grind
 
+omit [LawfulHashable State] in
 /-- `innerDFS_fuel_fold`'s own "found" result always starts with `current`. -/
 private theorem innerDFS_fuel_fold_cyclePath_head (fuel : Nat) (current : State)
     (remaining : List State) (iv : Std.HashSet State) (st : FNDFSState State)
@@ -716,6 +704,7 @@ private theorem innerDFS_fuel_fold_cyclePath_head (fuel : Nat) (current : State)
           rfl
         | none => exact ih_rem iv2 st2 h
 
+omit [LawfulHashable State] in
 /-- A singleton-stack `innerDFS_fuel_chain` call is exactly `innerDFS_fuel_fold`. -/
 theorem innerDFS_fuel_chain_singleton (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State) :
@@ -739,12 +728,12 @@ theorem innerDFS_fuel_chain_singleton (fuel : Nat) (current : State) (remaining 
         rfl
 
 /-- Top-level bridge: for sufficient fuel, `innerDFS_fuel` equals `innerDFSWF`. -/
-theorem innerDFS_fuel_eq_innerDFSWF
+private theorem innerDFS_fuel_eq_innerDFSWF
     (fuel : Nat) (current : State) (hcurrent_reach : Reachable initialStates succs current)
     (iv : Std.HashSet State) (st : FNDFSState State)
     (hiv : ∀ x, iv.contains x → Reachable initialStates succs x)
     (hfin : ∀ x, st.innerFinished.contains x → Reachable initialStates succs x)
-    (hfuel : fuel ≥ innerFuelMeasure succs fr iv + 1) :
+    (hfuel : fuel ≥ innerFuelMeasure initialStates succs iv + 1) :
     ∃ result iv₁ st₁, innerDFS_fuel succs seed cyan fuel current iv st = some (result, iv₁, st₁) ∧
       (∀ x, iv₁.contains x → Reachable initialStates succs x) ∧
       (∀ x, st₁.innerFinished.contains x → Reachable initialStates succs x) ∧
@@ -770,10 +759,10 @@ theorem innerDFS_fuel_eq_innerDFSWF
       · have hxc : current = x := by simpa using hx
         exact hxc ▸ hcurrent_reach
       · exact hiv x hx
-    have hmeasure : n ≥ innerFuelMeasure succs fr (iv.insert current) + 1 := by
-      have hlt : innerFuelMeasure succs fr (iv.insert current) < innerFuelMeasure succs fr iv := by
+    have hmeasure : n ≥ innerFuelMeasure initialStates succs (iv.insert current) + 1 := by
+      have hlt : innerFuelMeasure initialStates succs (iv.insert current) < innerFuelMeasure initialStates succs iv := by
         unfold innerFuelMeasure
-        exact Reachable.ncard_diff_insert_lt fr hcurrent_reach hnotvisited
+        exact Reachable.reachCount_insert_lt fr hcurrent_reach hnotvisited
       omega
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
       innerDFS_fuel_chain_eq_innerDFSCore succs fr seed cyan n
@@ -796,7 +785,7 @@ variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 **Holzmann-Peled-Yannakakis shortcut** (accepting-leaf branch, `target` may be any state on
 `pathStack`, not just `current`) and the **Schwoon-Esparza back-edge shortcut**
 (`pathStack.contains succ` detects a cycle directly, no inner DFS launched). -/
-def outerDFSLoopWF [LawfulHashable State] {initialStates : List State}
+@[expose] def outerDFSLoopWF [LawfulHashable State] {initialStates : List State}
     (succs : State → Array State) (isAccepting : State → Bool)
     (fr : FiniteReach initialStates succs)
     (stack : List (RFrame initialStates succs))
@@ -847,7 +836,7 @@ def outerDFSLoopWF [LawfulHashable State] {initialStates : List State}
         outerDFSLoopWF succs isAccepting fr (frame.push succ hmemsuccs :: stack')
           (pathStack ++ [succ]) st2
 termination_by
-  (({s | Reachable initialStates succs s} \ {x | st.outerVisited.contains x}).ncard,
+  (reachCount initialStates succs (fun x => st.outerVisited.contains x = false),
    pendingSum stack + stack.length)
 decreasing_by
   · have hst'_eq : st'.outerVisited = st.outerVisited := by
@@ -861,7 +850,7 @@ decreasing_by
   · exact Prod.Lex.right _ (by simp [pendingSum_cons, RFrame.consumeOne, hrem])
   · exact Prod.Lex.right _ (by simp [pendingSum_cons, RFrame.consumeOne, hrem])
   · have hsucc_niv : st.outerVisited.contains succ = false := by simpa using _hvis
-    exact Prod.Lex.left _ _ (Reachable.ncard_diff_insert_lt fr
+    exact Prod.Lex.left _ _ (Reachable.reachCount_insert_lt fr
       (Reachable.step frame.hreach hmemsuccs) hsucc_niv)
 
 end OuterDFSWellFounded
@@ -1106,18 +1095,18 @@ theorem outerDFSLoop_fuel_eq_outerDFSLoopWF
       simp [innerVisited, Std.HashSet.contains_emptyWithCapacity]
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
       innerDFS_fuel_eq_innerDFSWF succs fr frame.state pathStack
-        (innerFuelMeasure succs fr innerVisited + 1) frame.state frame.hreach innerVisited st
+        (innerFuelMeasure initialStates succs innerVisited + 1) frame.state frame.hreach innerVisited st
         hiv hfin (by omega)
     rw [hr] at heqC
     simp only [Prod.mk.injEq] at heqC
     obtain ⟨rfl, rfl, rfl⟩ := heqC
-    refine ⟨innerFuelMeasure succs fr innerVisited + 1 + 1,
+    refine ⟨innerFuelMeasure initialStates succs innerVisited + 1 + 1,
       .nonEmpty pathStack
         (frame.state :: cyclePath ++ (pathStack.dropWhile (fun y => !(y == target))).dropLast), st₁,
       ?_, hfin1, ?_⟩
     · simp only [List.map_cons, hrem]
       exact outerDFSLoop_fuel_accept_found succs isAccepting
-        (innerFuelMeasure succs fr innerVisited + 1) frame.state (List.map (fun f => (f.state, f.remaining)) rest) pathStack st hacc
+        (innerFuelMeasure initialStates succs innerVisited + 1) frame.state (List.map (fun f => (f.state, f.remaining)) rest) pathStack st hacc
         cyclePath target iv₁ st₁ heq
     · rw [outerDFSLoopWF.eq_2]
       grind
@@ -1127,20 +1116,20 @@ theorem outerDFSLoop_fuel_eq_outerDFSLoopWF
       simp [innerVisited, Std.HashSet.contains_emptyWithCapacity]
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
       innerDFS_fuel_eq_innerDFSWF succs fr frame.state pathStack
-        (innerFuelMeasure succs fr innerVisited + 1) frame.state frame.hreach innerVisited st
+        (innerFuelMeasure initialStates succs innerVisited + 1) frame.state frame.hreach innerVisited st
         hiv hfin (by omega)
     rw [hr] at heqC
     simp only [Prod.mk.injEq] at heqC
     obtain ⟨rfl, rfl, rfl⟩ := heqC
     obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 hfin1
-    let m := max (innerFuelMeasure succs fr innerVisited + 1) fuel2
+    let m := max (innerFuelMeasure initialStates succs innerVisited + 1) fuel2
     have heqm : innerDFS_fuel succs frame.state pathStack m frame.state innerVisited st =
         some (none, iv₁, st₁) := by
-      rw [show m = (innerFuelMeasure succs fr innerVisited + 1) +
-          (m - (innerFuelMeasure succs fr innerVisited + 1)) by
+      rw [show m = (innerFuelMeasure initialStates succs innerVisited + 1) +
+          (m - (innerFuelMeasure initialStates succs innerVisited + 1)) by
         simp only [m]; omega]
       exact innerDFS_fuel_add_preserves succs frame.state pathStack _
-        (innerFuelMeasure succs fr innerVisited + 1) frame.state innerVisited st none iv₁ st₁ heq
+        (innerFuelMeasure initialStates succs innerVisited + 1) frame.state innerVisited st none iv₁ st₁ heq
     have heq2m : outerDFSLoop_fuel succs isAccepting m
         (List.map (fun f => (f.state, f.remaining)) rest) pathStack.dropLast st₁ =
         some (result2, st2) := by
@@ -1255,7 +1244,7 @@ section TopLevelWF
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- Well-founded top-level nested DFS emptiness check. -/
-def nestedDFSWF [LawfulHashable State] (succs : State → Array State) (initialStates : List State)
+@[expose] def nestedDFSWF [LawfulHashable State] (succs : State → Array State) (initialStates : List State)
     (fr : FiniteReach initialStates succs) (isAccepting : State → Bool) : EmptinessResult State :=
   let st : FNDFSState State := {
     outerVisited := Std.HashSet.emptyWithCapacity 1024
@@ -1506,11 +1495,11 @@ section EmptinessCheckerInterface
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- `nestedDFSWF` packaged as an `EmptinessChecker` instance. -/
-def nestedDFSChecker [LawfulHashable State] : EmptinessChecker State where
+@[expose] def nestedDFSChecker [LawfulHashable State] : EmptinessChecker State where
   check := nestedDFSWF
-  nonEmpty_valid := fun {succs initialStates fr isAccepting stem loop} h =>
+  nonEmpty_valid := fun {succs _initialStates fr isAccepting stem loop} h =>
     nestedDFSWF_nonEmpty_valid succs fr isAccepting stem loop h
-  empty_no_cycle := fun {succs initialStates fr isAccepting n} h =>
+  empty_no_cycle := fun {succs _initialStates fr isAccepting n} h =>
     nestedDFSWF_empty_no_cycle succs fr isAccepting n h
 
 end EmptinessCheckerInterface
@@ -1522,25 +1511,13 @@ section BAFiniteReach
 variable {α : Type u} [BEq α] [Hashable α]
 
 /-- A well-formed `BA`'s own state set is a `FiniteReach` witness for its `getSuccessors` function. -/
-def BA.finiteReach (ba : BA α) (hwf : ba.WellFormed) :
+theorem BA.finiteReach (ba : BA α) (hwf : ba.WellFormed) :
     FiniteReach ba.initialStates.toList ba.getSuccessors := by
-  show {s | Reachable ba.initialStates.toList ba.getSuccessors s}.Finite
-  have hsub : {s | Reachable ba.initialStates.toList ba.getSuccessors s} ⊆
-      {x | ba.states.contains x} := by
-    intro s hs
-    induction hs with
-    | base hi =>
-      exact hwf.initial_mem _ (Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp hi))
-    | step _ hmem ih => exact hwf.succ_mem _ _ ih hmem
-  have hfin : {x | ba.states.contains x}.Finite := by
-    have heq : {x | ba.states.contains x} = {x | x ∈ ba.states.toList} := by
-      ext x
-      constructor
-      · intro h; exact Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr h)
-      · intro h; exact Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp h)
-    rw [heq]
-    exact List.finite_toSet ba.states.toList
-  exact hfin.subset hsub
+  refine ⟨ba.states.toList, fun s hs => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr ?_)⟩
+  induction hs with
+  | base hi =>
+    exact hwf.initial_mem _ (Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp hi))
+  | step _ hmem ih => exact hwf.succ_mem _ _ ih hmem
 
 end BAFiniteReach
 
@@ -1632,7 +1609,7 @@ theorem exists_acceptingCycle_of_run
       intro i hi
       simp only [List.length_map, List.length_range] at hi
       rw [hcycle_get i (by omega), hcycle_get (i + 1) (by omega)]
-      simpa using htrans (p + i)
+      simpa [Nat.add_assoc] using htrans (p + i)
     cycle_back := by
       rw [List.head_eq_getElem, List.getLast_eq_getElem]
       simp only [List.length_map, List.length_range]

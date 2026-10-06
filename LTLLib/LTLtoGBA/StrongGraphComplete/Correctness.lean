@@ -1,6 +1,9 @@
+module
+
 /-
   Superseded: depends on `StrongGraphComplete`, which is never discharged for `createGraph`'s actual output. See
-  `LTLtoGBA/Correctness.lean` for the live unconditional result. Kept for reference, nothing outside this folder imports it.
+  `LTLtoGBA/Correctness.lean` for the live unconditional result. Kept for reference and checked by
+  `LTLLibTests.HistoricalTheorems`; not re-exported by the public library root.
 
   Correctness of the LTL-to-GBA construction: the `expandOASpec` abstract automaton accepts ξ iff ξ ⊨ φ, given both
   soundness and completeness of the node graph.
@@ -9,8 +12,10 @@
   - `expandOASpec_correct_strong`: abstract correctness, given `ExpandSpec` + `StrongGraphComplete`
   - `gba_abstract_correct_strong`: `expandOASpec_correct_strong` corollary via `createGraph`
 -/
-import LTLLib.LTLtoGBA.StrongGraphComplete.Completeness
-import LTLLib.LTL.Subformulas
+public import LTLLib.LTLtoGBA.StrongGraphComplete.Completeness
+public import LTLLib.LTL.Subformulas
+
+public section
 
 namespace LTLLib
 
@@ -29,6 +34,7 @@ theorem expandOASpec_correct_strong
 
 /-- Full correctness via `createGraph`, given graph completeness. -/
 theorem gba_abstract_correct_strong
+    [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
     {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
     {φ : NNF α} {st : ExpandState α S}
     (hcg : createGraph φ = some st)

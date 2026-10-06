@@ -1,3 +1,5 @@
+module
+
 /-
   Model checking a system against a TGBA product, searched by Dijkstra's SCC-based emptiness check, no fairness. The
   `¬φ`-automaton comes from `ltl3ba` (`LTLtoTGBA/Pipeline.lean`).
@@ -21,14 +23,16 @@
   - Soundness
   - Completeness
 -/
-import LTLLib.LTL.Propositional
-import LTLLib.LTL.Semantics
-import LTLLib.Product
-import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
-import LTLLib.TGBABased.Fairness.FairProduct
-import LTLLib.TGBABased.LTLtoTGBA.Pipeline
-import LTLLib.TGBABased.Product
-import LTLLib.TGBABased.SCC.DijkstraSCC
+public import LTLLib.LTL.Propositional
+public import LTLLib.LTL.Semantics
+public import LTLLib.Product
+public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
+public import LTLLib.TGBABased.Fairness.FairProduct
+public import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+public import LTLLib.TGBABased.Product
+public import LTLLib.TGBABased.SCC.DijkstraSCC
+
+public section
 
 namespace LTLLib
 
@@ -42,7 +46,7 @@ variable [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysS
 
 /-- Does `sys` satisfy `φ`? `.empty` means it does, `.nonEmpty stem loop` witnesses a violating run as
 `(system state, TGBA state)` pairs. -/
-def modelCheckTGBA (φ : Formula α) (sysInit : List SysState)
+@[expose] def modelCheckTGBA (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (checker : TEmptinessChecker (SysState × Nat) := dijkstraTChecker) :
     EmptinessResult (SysState × Nat) :=
@@ -55,7 +59,7 @@ def modelCheckTGBA (φ : Formula α) (sysInit : List SysState)
   | none => .empty 0
 
 /-- `modelCheckTGBA` over one system callback. -/
-def modelCheckTGBAOfStep (φ : Formula α) (sysInit : List SysState)
+@[expose] def modelCheckTGBAOfStep (φ : Formula α) (sysInit : List SysState)
     (sysStep : LSys.StepFn α SysState)
     (checker : TEmptinessChecker (SysState × Nat) := dijkstraTChecker) :
     EmptinessResult (SysState × Nat) :=
@@ -92,7 +96,7 @@ theorem modelCheckTGBA_eq (φ : Formula α) (sysInit : List SysState)
 
 /-- Does `sys` satisfy `φ` on every run that also satisfies every `□◇ b` for `b` in `fair`? The assumptions
 never reach the translator, they become marks on the product. `modelCheckTGBA` is the `fair = []` case. -/
-def modelCheckTGBAFair (φ : Formula α) (fair : List (BoolFormula α)) (sysInit : List SysState)
+@[expose] def modelCheckTGBAFair (φ : Formula α) (fair : List (BoolFormula α)) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (checker : TEmptinessChecker (SysState × Nat) := dijkstraTChecker) :
     EmptinessResult (SysState × Nat) :=
@@ -193,7 +197,8 @@ theorem modelCheckTGBAFair_empty_unsat [DecidableEq α] (φ : Formula α) (fair 
   have hrunL := LSys.toSpec_isRun_ofRun hτ
   obtain ⟨σ, -, hrun, hacc⟩ := TGBAProduct.gsp_correct2Fair _ (LSys.unlabelled sysSucc) sysLabel sysInit fair
     hrunL
-    ((ltl3ba_accepts _ htg _).mpr ((Formula.toNNF_correct_neg _ φ).mp hviolate))
+    ((ltl3ba_accepts _ htg _).mpr ((Formula.toNNF_correct_neg _ φ).mp
+      (by simpa only [LSys.valuation_ofRun] using hviolate)))
     -- the conjuncts are now read on the letters; unlabelled, those are the state labels
     (fun i hi n => by
       obtain ⟨j, hj⟩ := (TGBAProduct.fair_iff_indexed fair sysLabel τ).mp hfair i hi n

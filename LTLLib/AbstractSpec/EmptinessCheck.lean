@@ -1,3 +1,5 @@
+module
+
 /-
   Abstract contract any concrete emptiness-check algorithm must satisfy.
 
@@ -5,6 +7,7 @@
   - `EmptinessResult`: Outcome of a check (empty, or a witnessing stem/loop)
   - `AcceptingCycle`: Lasso witness of non-emptiness over a graph
   - `Reachable`/`FiniteReach`: Canonical reachability and its finiteness hypothesis
+  - `reachCount`: termination measure counting reachable states with a property
   - `EmptinessChecker`: Sound and complete emptiness-check contract
 
   Key theorems:
@@ -12,16 +15,20 @@
   - `Reachable.mono_init`: reachability from a list is reachability from any list containing its members
   - `Reachable.exists_pathTo`: a reachable state is reached by a path through reachable states only
   - `FiniteReach.exists_lt_sample_eq`: the pigeonhole step shared by the pumping lemmas
+  - `reachCount_le`, `reachCount_lt`: the measure is monotone, and strictly so once a reachable state leaves
 
   Sections:
   - Accepting cycle definition
   - Finite-reachability hypothesis
   - Algorithm-agnostic emptiness-check contract
 -/
-import Std
-import Mathlib.Data.Set.Card
-import LTLLib.AbstractSpec.Lasso
-import LTLLib.AbstractSpec.GraphPaths
+public import Std
+public import LTLLib.Data.FinitePred
+public import LTLLib.Data.List
+public import LTLLib.AbstractSpec.Lasso
+public import LTLLib.AbstractSpec.GraphPaths
+
+public section
 
 namespace LTLLib
 
@@ -62,7 +69,7 @@ structure AcceptingCycle {State}
 
 /-- An `AcceptingCycle` over any graph is exactly a `ValidLasso` for any `OASpec` whose
 `trans`/`initial`/`acceptSet` agree with that graph's `succs`/`initialStates`/`isAccepting`. -/
-def AcceptingCycle.toValidLassoOf {State : Type u} {α : Type v}
+theorem AcceptingCycle.toValidLassoOf {State : Type u} {α : Type v}
     {succs : State → Array State} {initialStates : List State}
     {isAccepting : State → Bool} {A : OASpec State α 1}
     (htrans : ∀ {s t : State}, t ∈ succs s ↔ A.trans s t)
@@ -133,7 +140,7 @@ theorem Reachable.of_run {State : Type u} {initialStates : List State} {succs : 
 the marks of each. Fusing them is what lets `dfsGo` pay the caller's per-source cost once per pushed frame
 instead of once per outgoing edge — see `DFSStep.succMarks`. Every theorem that reads a frame's cache back
 as `succs`/`edgeMarks` takes this as a hypothesis. -/
-def ExpandCoherent {State : Type u} (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
+@[expose] def ExpandCoherent {State : Type u} (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) : Prop :=
   ∀ s, ((expand s).1, (expand s).2.1) = (succs s, (succs s).map (edgeMarks s))
 
@@ -149,7 +156,7 @@ operand, so an empty payload takes *every successor with it* and the restricted 
 The searches that walk it then report `.empty` — no counterexample — on a graph that has no edges to find
 one in. Caught by a probe, not by the bench: the benched properties leave `aux.pending` empty (§13.14), so
 neither caller runs on them. -/
-def filterExpand {State : Type u} (e : Array State × Array (Std.HashSet Nat) × Array Nat)
+@[expose] def filterExpand {State : Type u} (e : Array State × Array (Std.HashSet Nat) × Array Nat)
     (p : State → Bool) : Array State × Array (Std.HashSet Nat) × Array Nat :=
   let z := (e.1.zip e.2.1).filter fun x => p x.1
   (z.map Prod.fst, z.map Prod.snd,
@@ -192,7 +199,7 @@ theorem filterExpand_fst_snd {State : Type u}
 per-source work once per *edge*, so it is only for callers whose `succs`/`edgeMarks` are cheap — a table
 lookup, a hand-written test graph, an automaton walked on its own. A caller that pays real per-source cost
 (Veil, via `TGBAProduct.expand`) supplies a genuinely fused one instead. -/
-def derivedExpand {State : Type u} (succs : State → Array State)
+@[expose] def derivedExpand {State : Type u} (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (optBits : Option (State → State → Nat) := none) :
     State → Array State × Array (Std.HashSet Nat) × Array Nat :=
@@ -233,24 +240,69 @@ theorem ExpandCoherent.getElem {State : Type u} {succs : State → Array State}
     (expand s).2.1[i]! = edgeMarks s (succs s)[i] := by
   rw [h.snd s, getElem!_pos _ i (by simpa using hi), Array.getElem_map]
 
-/-- Bare existence certificate: the canonically-reachable set is finite.
-    No witness must be provided. -/
-def FiniteReach {State : Type u} (initialStates : List State)
+/-- Bare existence certificate: only finitely many states are canonically reachable (some list contains all of
+    them). No witness must be provided. -/
+@[expose] def FiniteReach {State : Type u} (initialStates : List State)
     (succs : State → Array State) : Prop :=
-  {s | Reachable initialStates succs s}.Finite
+  FinitePred (Reachable initialStates succs)
+
+/-- A list containing every state makes any graph over them finite-reach. -/
+theorem FiniteReach.of_forall_mem {State : Type u} {initialStates : List State} {succs : State → Array State}
+    (l : List State) (h : ∀ s, s ∈ l) : FiniteReach initialStates succs :=
+  FinitePred.of_forall_mem l h
 
 /-- Pigeonhole on an infinite sampling of a run: only finitely many states are reachable, so two distinct
 sample points carry the same state. The step every pumping lemma opens with, `f` need not be injective. -/
 theorem FiniteReach.exists_lt_sample_eq {State : Type u} {initialStates : List State}
     {succs : State → Array State} (fr : FiniteReach initialStates succs) {σ : Nat → State}
     (hmem : ∀ n, Reachable initialStates succs (σ n)) (f : Nat → Nat) :
-    ∃ i j, i < j ∧ σ (f i) = σ (f j) := by
-  obtain ⟨i, -, j, -, hne, heq⟩ := Set.Infinite.exists_ne_map_eq_of_mapsTo
-    (s := (Set.univ : Set Nat)) (t := {s | Reachable initialStates succs s})
-    (f := fun k => σ (f k)) Set.infinite_univ (fun k _ => hmem _) fr
-  rcases Nat.lt_or_gt_of_ne hne with h | h
-  · exact ⟨i, j, h, heq⟩
-  · exact ⟨j, i, h, heq.symm⟩
+    ∃ i j, i < j ∧ σ (f i) = σ (f j) :=
+  FinitePred.exists_lt_eq fr (σ := fun k => σ (f k)) fun k => hmem (f k)
+
+/-- Termination measure: the reachable states satisfying `q`, counted along a fixed list covering the reachable
+states (a state may count more than once, only monotonicity matters). `0` without `FiniteReach`, like the
+cardinality of an infinite set. -/
+@[expose] noncomputable def reachCount {State : Type u} (initialStates : List State) (succs : State → Array State)
+    (q : State → Prop) : Nat :=
+  open Classical in
+  if h : FiniteReach initialStates succs then
+    (Classical.choose h).countP fun s => decide (Reachable initialStates succs s ∧ q s)
+  else 0
+
+section ReachCount
+
+variable {State : Type u} {initialStates : List State} {succs : State → Array State}
+
+open Classical in
+/-- Weakening the property (on reachable states) cannot decrease the count. -/
+theorem reachCount_le {q q' : State → Prop} (h : ∀ s, Reachable initialStates succs s → q s → q' s) :
+    reachCount initialStates succs q ≤ reachCount initialStates succs q' := by
+  by_cases fr : FiniteReach initialStates succs
+  · simp only [reachCount, dif_pos fr]
+    exact List.countP_mono_left fun s _ hs => by
+      simp only [decide_eq_true_eq] at hs ⊢
+      exact ⟨hs.1, h s hs.1 hs.2⟩
+  · simp only [reachCount, dif_neg fr, Nat.le_refl]
+
+open Classical in
+/-- Weakening the property strictly increases the count once some reachable state gains it. -/
+theorem reachCount_lt (fr : FiniteReach initialStates succs) {q q' : State → Prop}
+    (h : ∀ s, Reachable initialStates succs s → q s → q' s) {x : State}
+    (hx : Reachable initialStates succs x) (hq : ¬ q x) (hq' : q' x) :
+    reachCount initialStates succs q < reachCount initialStates succs q' := by
+  simp only [reachCount, dif_pos fr]
+  refine LTLLib.List.countP_lt_countP (fun s _ hs => ?_) (Classical.choose_spec fr x hx) ?_ ?_
+  · simp only [decide_eq_true_eq] at hs ⊢
+    exact ⟨hs.1, h s hs.1 hs.2⟩
+  · simp [hq]
+  · simp [hx, hq']
+
+/-- Properties agreeing on the reachable states have the same count. -/
+theorem reachCount_congr {q q' : State → Prop} (h : ∀ s, Reachable initialStates succs s → (q s ↔ q' s)) :
+    reachCount initialStates succs q = reachCount initialStates succs q' :=
+  Nat.le_antisymm (reachCount_le fun s hs hq => (h s hs).mp hq) (reachCount_le fun s hs hq => (h s hs).mpr hq)
+
+end ReachCount
 
 /-! ## Algorithm-agnostic emptiness-check contract -/
 

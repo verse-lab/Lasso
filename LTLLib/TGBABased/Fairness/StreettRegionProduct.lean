@@ -1,3 +1,5 @@
+module
+
 /-
   The product satisfies the region-indexed Streett interface of `AbstractSpec/StreettSCCRegion.lean`.
 
@@ -18,8 +20,10 @@
     ambient step and the top region restricts nothing
   - `acceptingRRun_marks`: the `RRun` meets the property automaton's marks infinitely often
 -/
-import LTLLib.TGBABased.AbstractSpec.StreettSCCRegion
-import LTLLib.TGBABased.Product
+public import LTLLib.TGBABased.AbstractSpec.StreettSCCRegion
+public import LTLLib.TGBABased.Product
+
+public section
 
 namespace LTLLib
 
@@ -30,7 +34,7 @@ variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
 
 /-- The hoisted conjuncts as a region-indexed Streett spec over the product. The regions restrict steps by
 their letter, so a conjunct's `FG ψ` may mention an edge atom. -/
-def streettRSpecOf (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def streettRSpecOf (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (numMarks : Nat)
     (conjuncts : Array (Array (StreettOption (Std.HashSet α)))) :
     RStreettSpec (SysState × Nat) (Std.HashSet α) where
@@ -44,7 +48,7 @@ def streettRSpecOf (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysS
 
 /-- `streettRSpecOf` over one system callback. The three region functions are the `OfStep` forms, so the
 spec a fused route compiles computes a source's transitions once. `EdgeLabels.md` §15. -/
-def streettRSpecOfStep (tgba : TGBA α) (sysStep : LSys.StepFn α SysState) (numMarks : Nat)
+@[expose] def streettRSpecOfStep (tgba : TGBA α) (sysStep : LSys.StepFn α SysState) (numMarks : Nat)
     (conjuncts : Array (Array (StreettOption (Std.HashSet α)))) :
     RStreettSpec (SysState × Nat) (Std.HashSet α) where
   numMarks := numMarks
@@ -54,12 +58,14 @@ def streettRSpecOfStep (tgba : TGBA α) (sysStep : LSys.StepFn α SysState) (num
   regionExpand := fun r => keptExpandOfStep tgba sysStep r
   regionExpand_coherent := fun _ _ => rfl
 
+omit [LawfulBEq SysState] [LawfulHashable SysState] in
 theorem streettRSpecOfStep_eq (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (numMarks : Nat)
     (conjuncts : Array (Array (StreettOption (Std.HashSet α)))) :
     streettRSpecOfStep tgba (fun s => (sysSucc s, sysLabel s)) numMarks conjuncts
       = streettRSpecOf tgba sysSucc sysLabel numMarks conjuncts := rfl
 
+omit [LawfulBEq SysState] [LawfulHashable SysState] in
 /-- Projections, as rewrite rules. A goal that mentions `regionSuccs` of this spec should never be left to
 `whnf`: the spec usually arrives wrapped in `CompiledSpec.of`, and unfolding through the flattening is
 ruinous. -/
@@ -70,13 +76,13 @@ ruinous. -/
     (streettRSpecOf tgba sysSucc sysLabel numMarks conjuncts).regionSuccs r
       = keptSuccs tgba sysSucc sysLabel r := rfl
 
-omit [LawfulBEq SysState] in
+omit [LawfulBEq SysState] [LawfulHashable SysState] in
 @[simp] theorem streettRSpecOf_numMarks (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (numMarks : Nat) (conjuncts : Array (Array (StreettOption (Std.HashSet α)))) :
     (streettRSpecOf tgba sysSucc sysLabel numMarks conjuncts).numMarks = numMarks := rfl
 
-omit [LawfulBEq SysState] in
+omit [LawfulBEq SysState] [LawfulHashable SysState] in
 @[simp] theorem streettRSpecOf_conjuncts (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (numMarks : Nat) (conjuncts : Array (Array (StreettOption (Std.HashSet α)))) :
@@ -103,11 +109,12 @@ point on" is a statement about the steps the run takes rather than about the sta
 two laws are immediate — a step whose letter satisfies the region is not filtered out by `keptSteps`, and
 its transition's marks survive into `keptEdgeMarks` because the same realization is still there. -/
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [LawfulHashable SysState] in
 /-- The step law, proved apart from the structure instance so that its goal is stated in terms of
 `keptSuccs` rather than of the fields being defined. -/
 private theorem rrun_step (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    {σ : TLA.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
+    {σ : Lentil.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
     (n : Nat) (r : Std.HashSet α → Bool)
     (hr : r (LSys.letter (sysLabel (σ n).1) (σ n).2.1.1) = true) :
     ((σ (n + 1)).1, (σ (n + 1)).2.2.1)
@@ -122,7 +129,7 @@ private theorem rrun_step (tgba : TGBA α) (sysSucc : SysState → Array (LStep 
 marks it carries survive with it. -/
 private theorem rrun_mark (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
-    {σ : TLA.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
+    {σ : Lentil.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
     (n : Nat) (r : Std.HashSet α → Bool)
     (hr : r (LSys.letter (sysLabel (σ n).1) (σ n).2.1.1) = true)
     (m : Nat) (hm : m ∈ (σ n).2.2.2.acceptMarks) :
@@ -137,23 +144,23 @@ private theorem rrun_mark (tgba : TGBA α) (sysSucc : SysState → Array (LStep 
 
 /-- The `RRun` a product run walks: its product states, the letter each step reads, and the marks the
 automaton transition it takes carries. -/
-def acceptingRRun (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
+@[expose] def acceptingRRun (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) (numMarks : Nat)
     (conjuncts : Array (Array (StreettOption (Std.HashSet α))))
-    {σ : TLA.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ) :
+    {σ : Lentil.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ) :
     RRun (streettRSpecOf tgba sysSucc sysLabel numMarks conjuncts) (initialStates tgba sysInit) where
   st := fun n => ((σ n).1, (σ n).2.2.1)
   lets := fun n => LSys.letter (sysLabel (σ n).1) (σ n).2.1.1
   rmarks := fun n => (σ n).2.2.2.acceptMarks
   init := hrun.1
-  step := rrun_step tgba sysSucc sysLabel sysInit hrun
-  mark := rrun_mark tgba sysSucc sysLabel sysInit hrun
+  step := by exact rrun_step tgba sysSucc sysLabel sysInit hrun
+  mark := by exact rrun_mark tgba sysSucc sysLabel sysInit hrun
 
 /-- The run meets every mark of the property automaton infinitely often, read on the realization it takes. -/
 theorem acceptingRRun_marks (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) (numMarks : Nat)
     (conjuncts : Array (Array (StreettOption (Std.HashSet α))))
-    {σ : TLA.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
+    {σ : Lentil.exec (Edge SysState α)} (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
     (hacc : (toSpec tgba sysSucc sysLabel sysInit).isAcceptingRun σ) (hnm : numMarks ≤ tgba.numAcceptSets) :
     ∀ m, m < numMarks → ∀ K, ∃ n ≥ K,
       m ∈ (acceptingRRun tgba sysSucc sysLabel sysInit numMarks conjuncts hrun).rmarks n := by
@@ -182,13 +189,14 @@ theorem acceptingRRun_lets_stateOnly (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) (numMarks : Nat)
     (conjuncts : Array (Array (StreettOption (Std.HashSet α))))
-    {σ : TLA.exec (Edge SysState α)}
+    {σ : Lentil.exec (Edge SysState α)}
     (hrun : (toSpec tgba sysSucc sysLabel sysInit).isRun σ)
     {keep : Std.HashSet α → Bool} (hstate : LSys.StateOnly sysSucc sysLabel keep) (n : Nat) :
     keep ((acceptingRRun tgba sysSucc sysLabel sysInit numMarks conjuncts hrun).lets n)
       = keep (sysLabel (σ n).1) :=
   hstate (σ n).1 (σ n).2.1 (hrun.2 n).1.2.2
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [LawfulHashable SysState] in
 /-- A product step that survives a `StateOnly` restriction shows the restriction holds at the source
 state, since the step scores as the source's label does. -/
 theorem region_of_mem_keptSuccs_stateOnly (tgba : TGBA α)
@@ -201,6 +209,7 @@ theorem region_of_mem_keptSuccs_stateOnly (tgba : TGBA α)
   obtain ⟨hst', hkeep⟩ := mem_keptSteps.mp hst
   rwa [hstate p.1 st hst'] at hkeep
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [LawfulHashable SysState] in
 /-- Conversely, a `StateOnly` region that holds at `p.1` admits *every* product step out of `p`: the
 restricted graph agrees with the ambient one there. This is the direction that makes several regions
 jointly satisfiable as soon as they are separately satisfiable, which is what the prune's per-conjunct
@@ -231,6 +240,7 @@ theorem mem_keptEdgeMarks_of_stateOnly (tgba : TGBA α)
       ⟨⟨mem_keptSteps.mpr ⟨hst, LSys.mem_of_stateOnly hstate hp hst⟩, hst2⟩, ht, htgt, hc⟩)
     (Std.HashSet.mem_iff_contains.mpr hmm)
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [LawfulHashable SysState] in
 /-- The old form, for the state-labelled callers that have not moved. -/
 theorem region_of_mem_keptSuccs_unlabelled (tgba : TGBA α) (sysSucc : SysState → Array SysState)
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) {p p' : SysState × Nat}

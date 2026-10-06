@@ -1,3 +1,5 @@
+module
+
 /-
   Syntactic recognisers for the fairness class, and the classifier that routes a conjunct of a fairness
   assumption to a mechanism.
@@ -42,11 +44,13 @@
   - Fairness
   - Routing
 -/
-import LTLLib.LTL.Semantics
+public import LTLLib.LTL.Semantics
+
+public section
 
 namespace LTLLib
 
-open TLA
+open Lentil
 
 namespace NNF
 
@@ -59,12 +63,12 @@ general `U` or `R`.
 -/
 
 /-- Is this `⊤`, the left operand that makes `φ U ψ` an `F`? -/
-def isTop : NNF α → Bool
+@[expose] def isTop : NNF α → Bool
   | .tt => true
   | _ => false
 
 /-- Is this `⊥`, the left operand that makes `φ R ψ` a `G`? -/
-def isBot : NNF α → Bool
+@[expose] def isBot : NNF α → Bool
   | .ff => true
   | _ => false
 
@@ -79,7 +83,7 @@ theorem eq_ff_of_isBot {φ : NNF α} (h : φ.isBot = true) : φ = .ff := by
 /-- A pure eventuality, whose language is closed under prepending a finite prefix, so `F e ≡ e`.
 Grammar: `e ::= ⊤ | ⊥ | X e | F f | e ∧ e | e ∨ e | f U e | f R e`, where `G e = ⊥ R e` is the last rule at
 `f = ⊥`. The last rule generalises [EH00]'s `e R e`, see the deviation note in the file header. -/
-def isPureEventuality : NNF α → Bool
+@[expose] def isPureEventuality : NNF α → Bool
   | .tt | .ff => true
   | .prop _ | .nprop _ => false
   | .and φ ψ | .or φ ψ => isPureEventuality φ && isPureEventuality ψ
@@ -90,7 +94,7 @@ def isPureEventuality : NNF α → Bool
 /-- A purely universal formula, whose language is closed under suffixes, so `G u ≡ u`.
 Grammar: `u ::= ⊤ | ⊥ | X u | G f | u ∧ u | u ∨ u | f U u | f R u`, where `F u = ⊤ U u` is the `f U u` rule at
 `f = ⊤`. That rule generalises [EH00]'s `u U u`, see the deviation note in the file header. -/
-def isPurelyUniversal : NNF α → Bool
+@[expose] def isPurelyUniversal : NNF α → Bool
   | .tt | .ff => true
   | .prop _ | .nprop _ => false
   | .and φ ψ | .or φ ψ => isPurelyUniversal φ && isPurelyUniversal ψ
@@ -99,7 +103,7 @@ def isPurelyUniversal : NNF α → Bool
   | .release φ ψ => φ.isBot || isPurelyUniversal ψ
 
 /-- A fairness in the sense of [LSFZ16, Definition 1], both closures at once. -/
-def isFairness (φ : NNF α) : Bool := φ.isPureEventuality && φ.isPurelyUniversal
+@[expose] def isFairness (φ : NNF α) : Bool := φ.isPureEventuality && φ.isPurelyUniversal
 
 /-! ## Fragments -/
 
@@ -127,7 +131,7 @@ def isFastConj : NNF α → Bool
   | φ => isLTLUX φ
 
 /-- [LSFZ16, Definition 4]'s `φ_f ::= φ₀ | φ_f ∨ φ_f`, on which the flattening stays linear in `|φ|`. -/
-def isFastFair : NNF α → Bool
+@[expose] def isFastFair : NNF α → Bool
   | .or φ ψ => isFastFair φ && isFastFair ψ
   | φ => isFastConj φ
 
@@ -292,7 +296,7 @@ inductive FairRoute where
 deriving Repr, DecidableEq, BEq, Hashable, Inhabited
 
 /-- Classify a conjunct, first by whether it is a fairness at all, then by which fragment it falls in. -/
-def classify (φ : NNF α) : FairRoute :=
+@[expose] def classify (φ : NNF α) : FairRoute :=
   if φ.isFairness then (if φ.isLTLFG then .fgFragment else .temporal) else .notFairness
 
 theorem classify_eq_notFairness {φ : NNF α} (h : φ.isFairness = false) :

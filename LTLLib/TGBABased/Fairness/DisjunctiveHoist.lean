@@ -1,3 +1,5 @@
+module
+
 /-
   Disjunctive hoisting. A kept conjunct `ψ ∨ γ` whose `∨`-chain contains a fairness `γ` that `fnf` flattens is not a
   fairness itself, so `rehoist` keeps it whole and the translator builds `γ` along with `ψ`. Since `A ∧ (ψ ∨ γ)` holds
@@ -26,8 +28,10 @@
   - Mixed conjuncts
   - Combinations
 -/
-import LTLLib.TGBABased.Fairness.FairRouter
-import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Rules
+public import LTLLib.TGBABased.Fairness.FairRouter
+public import LTLLib.TGBABased.LTLtoTGBA.Preprocess.Rules
+
+public section
 
 namespace LTLLib
 
@@ -84,7 +88,7 @@ theorem mixedSplit_correct {c : NNF α} {stay : List (NNF α)} {ds : List (NNF.F
 
 /-- Every combination of sides of the mixed conjuncts of `cs`, as the normal forms to hoist and the conjuncts to keep.
 The combination hoisting every fairness side comes first. -/
-def branches : List (NNF α) → List (List (List (NNF.FairDisjunct α)) × List (NNF α))
+@[expose] def branches : List (NNF α) → List (List (List (NNF.FairDisjunct α)) × List (NNF α))
   | [] => [([], [])]
   | c :: cs =>
     match mixedSplit c with
@@ -92,6 +96,10 @@ def branches : List (NNF α) → List (List (List (NNF.FairDisjunct α)) × List
     | some (stay, ds) =>
       (branches cs).map (fun b => (ds :: b.1, b.2)) ++
         if stay.isEmpty then [] else (branches cs).map fun b => (b.1, orAll stay :: b.2)
+
+private theorem exists_exists_and_eq_and {β : Type v} {γ : Type w} {f : β → γ} {p : β → Prop}
+    {q : γ → Prop} : (∃ c, (∃ b, p b ∧ f b = c) ∧ q c) ↔ ∃ b, p b ∧ q (f b) :=
+  ⟨fun ⟨_, ⟨b, hb, rfl⟩, hq⟩ => ⟨b, hb, hq⟩, fun ⟨b, hb, hq⟩ => ⟨_, ⟨b, hb, rfl⟩, hq⟩⟩
 
 theorem branches_correct (ξ : OmegaWord α) (cs : List (NNF α)) :
     (∀ c ∈ cs, c.satisfies ξ) ↔

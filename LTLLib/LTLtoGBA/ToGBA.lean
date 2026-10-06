@@ -1,3 +1,5 @@
+module
+
 /-
   Constructs a `GBA` from a finished GPVW95 (Gerth et al. 1995) expansion graph, i.e. the `ExpandState` produced by
   `createGraph`.
@@ -10,22 +12,24 @@
   - `constructGBA`: assembles the above into a `GBA`
 -/
 
-import LTLLib.GBA
-import LTLLib.LTLtoGBA.Expand
-import LTLLib.LTL
+public import LTLLib.GBA
+public import LTLLib.LTLtoGBA.Expand
+public import LTLLib.LTL
+
+public section
 
 namespace LTLLib
 
 variable {α} {S : Type v} [FSet (NNF α) S]
 
 /-- Collect all state names (the keys of the finished node graph). -/
-def buildStates (nodes : Std.HashMap Nat (ExpansionNode α S)) : Std.HashSet Nat :=
+@[expose] def buildStates (nodes : Std.HashMap Nat (ExpansionNode α S)) : Std.HashSet Nat :=
   nodes.fold (init := Std.HashSet.emptyWithCapacity nodes.size) fun acc name _ =>
     acc.insert name
 
 /-- Build the successor (adjacency) map: for each node q' and each predecessor p ∈ incoming(q'), add an
 edge p → q'. -/
-def buildSuccessors (nodes : Std.HashMap Nat (ExpansionNode α S))
+@[expose] def buildSuccessors (nodes : Std.HashMap Nat (ExpansionNode α S))
     : Std.HashMap Nat (Array Nat) :=
   nodes.fold (init := Std.HashMap.emptyWithCapacity nodes.size) fun succMap _ node =>
     node.incoming.fold (init := succMap) fun succMap predName =>
@@ -34,7 +38,7 @@ def buildSuccessors (nodes : Std.HashMap Nat (ExpansionNode α S))
 
 /-- Build acceptance sets from Until-subformulas: for each `(μ U η)`, `F_{μ,η} = {q | (μ U η) ∉ old(q) ∨ η ∈ old(q)}`
 (obligation absent or satisfied). -/
-def buildAcceptSets (nodes : Std.HashMap Nat (ExpansionNode α S))
+@[expose] def buildAcceptSets (nodes : Std.HashMap Nat (ExpansionNode α S))
     (untilSubs : List (NNF α × NNF α))
     : Array (Std.HashSet Nat) :=
   untilSubs.toArray.map fun (μ, η) =>
@@ -45,7 +49,7 @@ def buildAcceptSets (nodes : Std.HashMap Nat (ExpansionNode α S))
       else acc
 
 /-- Build labeling map: for each node, extract the positive and negative atomic propositions from its `old` set. -/
-def buildLabeling [BEq α] [Hashable α] (nodes : Std.HashMap Nat (ExpansionNode α S))
+@[expose] def buildLabeling [BEq α] [Hashable α] (nodes : Std.HashMap Nat (ExpansionNode α S))
     : Std.HashMap Nat (Std.HashSet α × Std.HashSet α) :=
   nodes.fold (init := Std.HashMap.emptyWithCapacity nodes.size) fun labelMap _ node =>
     let (pos, neg) := FSet.foldl
@@ -59,13 +63,13 @@ def buildLabeling [BEq α] [Hashable α] (nodes : Std.HashMap Nat (ExpansionNode
     labelMap.insert node.name (pos, neg)
 
 /-- Identify initial states: nodes whose `incoming` set contains `expandInit` (= 0). -/
-def buildInitialStates (nodes : Std.HashMap Nat (ExpansionNode α S)) : Std.HashSet Nat :=
+@[expose] def buildInitialStates (nodes : Std.HashMap Nat (ExpansionNode α S)) : Std.HashSet Nat :=
   nodes.fold (init := Std.HashSet.emptyWithCapacity 4) fun initSet _ node =>
     if node.incoming.contains expandInit then initSet.insert node.name
     else initSet
 
 /-- Construct a GBA from the expanded node graph and the original LTL formula. -/
-def constructGBA [BEq α] [Hashable α] (φ : NNF α) (expandResult : ExpandState α S) : GBA α :=
+@[expose] def constructGBA [BEq α] [Hashable α] (φ : NNF α) (expandResult : ExpandState α S) : GBA α :=
   let nodes := expandResult.nodes
   let untilSubs := φ.untilSubformulasDedup  -- one acceptance set per distinct Until-subformula
   {

@@ -1,3 +1,5 @@
+module
+
 /-
   Abstract automata acceptance definitions.
 
@@ -19,13 +21,14 @@
   - Degeneralization correctness
   - Canonical labeling
 -/
-import Lentil
-import LTLLib.LTL.Semantics
-import Mathlib.Order.Nat
+public import Lentil
+public import LTLLib.LTL.Semantics
+
+public section
 
 namespace LTLLib
 
-open TLA Classical
+open Lentil Classical
 
 /-! ## Proof-level automaton specification -/
 
@@ -48,21 +51,21 @@ namespace OASpec
 variable {State : Type u} {α : Type v} {k : Nat} (A : OASpec State α k)
 
 /-- An infinite run: initial state and valid transitions. -/
-def isRun (σ : exec State) : Prop :=
+@[expose] def isRun (σ : exec State) : Prop :=
   A.initial (σ 0) ∧ ∀ n, A.trans (σ n) (σ (n + 1))
 
 /-- A run is compatible with an ω-word if each state is label-compatible
     with the corresponding position. -/
-def runCompatible (σ : exec State) (ξ : OmegaWord α) : Prop :=
+@[expose] def runCompatible (σ : exec State) (ξ : OmegaWord α) : Prop :=
   ∀ n, A.labelCompat (σ n) (ξ n)
 
 /-- A run is accepting if it visits each acceptance set infinitely often. -/
-def isAcceptingRun (σ : exec State) : Prop :=
+@[expose] def isAcceptingRun (σ : exec State) : Prop :=
   ∀ i : Fin k, ∀ n, ∃ j, A.acceptSet i (σ (n + j))
 
 /-- The automaton accepts an ω-word if there exists a run that is valid,
     compatible, and accepting. -/
-def accepts (ξ : OmegaWord α) : Prop :=
+@[expose] def accepts (ξ : OmegaWord α) : Prop :=
   ∃ σ : exec State, A.isRun σ ∧ A.runCompatible σ ξ ∧ A.isAcceptingRun σ
 
 end OASpec
@@ -71,7 +74,7 @@ end OASpec
 
 /-- One-step counter update for degeneralization.
     Advances the counter when the current acceptance set is visited. -/
-noncomputable def OASpec.counterStep {State : Type u} {α : Type v} {k : Nat}
+@[expose] noncomputable def OASpec.counterStep {State : Type u} {α : Type v} {k : Nat}
     (A : OASpec State α k) (hk : k > 0) (q : State) (c : Fin k) :
     Fin k :=
   if A.acceptSet c q
@@ -79,7 +82,7 @@ noncomputable def OASpec.counterStep {State : Type u} {α : Type v} {k : Nat}
   else c
 
 /-- Counter sequence for the degeneralized run, starting at 0. -/
-noncomputable def OASpec.mkCounter {State : Type u} {α : Type v} {k : Nat}
+@[expose] noncomputable def OASpec.mkCounter {State : Type u} {α : Type v} {k : Nat}
     (A : OASpec State α k) (hk : k > 0) (σ : exec State) : Nat → Fin k
   | 0 => ⟨0, hk⟩
   | n + 1 => A.counterStep hk (σ n) (A.mkCounter hk σ n)
@@ -88,7 +91,7 @@ noncomputable def OASpec.mkCounter {State : Type u} {α : Type v} {k : Nat}
     are pairs `(q, c)` where `q` is the original state and `c : Fin k` is a counter that advances
     (mod k) when the current acceptance set is visited. The single acceptance set requires
     counter = 0 and the state in acceptance set 0. -/
-noncomputable def OASpec.degeneralize {State : Type u} {α : Type v} {k : Nat}
+@[expose] noncomputable def OASpec.degeneralize {State : Type u} {α : Type v} {k : Nat}
     (A : OASpec State α k) (hk : k > 0) :
     OASpec (State × Fin k) α 1 where
   trans := fun (q, c) (q', c') =>
@@ -136,10 +139,8 @@ private theorem counter_advances_from (σ : exec State) (n : Nat)
     (hvisit : ∃ j, A.acceptSet c (σ (n + j))) :
     ∃ m, n < m ∧
       A.mkCounter hk σ m = ⟨(c.val + 1) % k, Nat.mod_lt _ hk⟩ := by
-  let j := Nat.find hvisit
-  have hj_spec : A.acceptSet c (σ (n + j)) := Nat.find_spec hvisit
-  have hj_min : ∀ m, m < j → ¬ A.acceptSet c (σ (n + m)) :=
-    fun m hm => Nat.find_min hvisit hm
+  obtain ⟨j, -, hj_spec, hj_min⟩ :=
+    LentilLib.Nat.find_min (p := fun j => A.acceptSet c (σ (n + j))) _ hvisit.choose_spec
   have hstay : A.mkCounter hk σ (n + j) = c :=
     counter_stays_at A hk σ n j c hc (fun p hp1 hp2 => by
       have : p - n < j := by omega
@@ -165,14 +166,13 @@ private theorem counter_reaches_zero (σ : exec State) (n : Nat)
   | succ d ih =>
     intro n c hc hd
     by_cases h0 : c.val = 0
-    · exact ⟨n, le_refl n, by rw [hc]; exact h0⟩
+    · exact ⟨n, Nat.le_refl n, by rw [hc]; exact h0⟩
     · obtain ⟨m, hnm, hm⟩ := counter_advances_from A hk σ n c hc (hacc c n)
       let c' : Fin k := ⟨(c.val + 1) % k, Nat.mod_lt _ hk⟩
       by_cases h0' : c'.val = 0
       · exact ⟨m, by omega, by rw [hm]; exact h0'⟩
       · have hc'lt : c.val + 1 < k := by
           by_contra hge
-          push_neg at hge
           have hceq : c.val + 1 = k := by have := c.isLt; omega
           exact h0' (by simp only [c']; rw [hceq, Nat.mod_self])
         have hc'eq : c'.val = c.val + 1 := by
@@ -193,23 +193,21 @@ private theorem counter_advance_to_next (σ : exec State) (c d : Nat)
       A.mkCounter hk σ (p + 1) = ⟨(v.val + 1) % k, Nat.mod_lt _ hk⟩ := by
   have hexists : ∃ j, A.acceptSet v (σ (c + j)) := by
     by_contra h
-    push_neg at h
+    simp only [_root_.not_exists] at h
     have hstay := counter_stays_at A hk σ c (d - c) v hc (fun p hp1 hp2 => by
       have := h (p - c); rwa [show c + (p - c) = p by omega] at this)
     rw [show c + (d - c) = d by omega] at hstay
     have : v.val = 0 := by rw [← congrArg Fin.val hstay]; exact hd
     omega
-  let j₀ := Nat.find hexists
-  have hj0_spec := Nat.find_spec hexists
-  have hj0_min : ∀ q, q < j₀ → ¬ A.acceptSet v (σ (c + q)) :=
-    fun q hq => Nat.find_min hexists hq
+  obtain ⟨j₀, -, hj0_spec, hj0_min⟩ :=
+    LentilLib.Nat.find_min (p := fun j => A.acceptSet v (σ (c + j))) _ hexists.choose_spec
   have hstay : A.mkCounter hk σ (c + j₀) = v :=
     counter_stays_at A hk σ c j₀ v hc (fun p hp1 hp2 => by
       have := hj0_min (p - c) (by omega)
       rwa [show c + (p - c) = p by omega] at this)
   have hj0_bound : c + j₀ < d := by
     by_contra h
-    push_neg at h
+    rw [Nat.not_lt] at h
     have hstay_d := counter_stays_at A hk σ c (d - c) v hc (fun p hp1 hp2 => by
       have : p - c < j₀ := by omega
       have := hj0_min (p - c) this
@@ -246,7 +244,6 @@ private theorem degeneralize_forward {ξ : OmegaWord α}
       obtain ⟨j, hj⟩ := hacc_ba n
       refine ⟨j, ?_, ?_⟩
       · have h1 := hj.1
-        simp at h1
         rw [hcounter] at h1
         exact congrArg Fin.val h1
       · exact hj.2
@@ -267,13 +264,13 @@ private theorem degeneralize_forward {ξ : OmegaWord α}
         exact Fin.ext (Nat.mod_eq_of_lt h1k)
       obtain ⟨j₂, hm2_c0, _⟩ := hacc' (m₁ + 1)
       let m₂ := m₁ + 1 + j₂
-      suffices hsuff : ∀ w : Nat, (hw1 : 1 ≤ w) → (hwi : w ≤ i.val) →
+      suffices hsuff : ∀ w : Nat, 1 ≤ w → w ≤ i.val →
           (hwk : w < k) →
           ∃ p, m₁ + 1 ≤ p ∧ p < m₂ ∧
-            A.acceptSet ⟨w, by omega⟩ (σ_gba p) ∧
+            A.acceptSet ⟨w, hwk⟩ (σ_gba p) ∧
             A.mkCounter hk σ_gba (p + 1) =
               ⟨(w + 1) % k, Nat.mod_lt _ hk⟩ by
-        obtain ⟨p, hp1, _, hpacc, _⟩ := hsuff i.val (by omega) le_rfl i.isLt
+        obtain ⟨p, hp1, _, hpacc, _⟩ := hsuff i.val (by omega) (Nat.le_refl _) i.isLt
         exact ⟨p - n, by rw [show n + (p - n) = p by omega]; exact hpacc⟩
       intro w
       induction w with
@@ -311,11 +308,11 @@ private theorem degeneralize_backward {ξ : OmegaWord α}
   · intro i n
     obtain ⟨m, hnm, hm0⟩ := counter_reaches_zero A hk σ_gba n hacc
     have hvisit0 : ∃ j, A.acceptSet ⟨0, hk⟩ (σ_gba (m + j)) := hacc ⟨0, hk⟩ m
-    let j₀ := Nat.find hvisit0
-    have hj0_spec : A.acceptSet ⟨0, hk⟩ (σ_gba (m + j₀)) := Nat.find_spec hvisit0
+    obtain ⟨j₀, -, hj0_spec, hj0_min⟩ :=
+      LentilLib.Nat.find_min (p := fun j => A.acceptSet ⟨0, hk⟩ (σ_gba (m + j))) _ hvisit0.choose_spec
     have hstay : A.mkCounter hk σ_gba (m + j₀) = ⟨0, hk⟩ :=
       counter_stays_at A hk σ_gba m j₀ ⟨0, hk⟩ (Fin.ext hm0) (fun p hp1 hp2 => by
-        have := Nat.find_min hvisit0 (show p - m < j₀ by omega)
+        have := hj0_min (p - m) (show p - m < j₀ by omega)
         rwa [show m + (p - m) = p by omega] at this)
     refine ⟨m + j₀ - n, ?_⟩
     rw [show n + (m + j₀ - n) = m + j₀ by omega]
@@ -338,7 +335,7 @@ end DegeneralizationCorrectness
 
 /-- The canonical valuation at state `q`: true exactly on `q`'s positive
 atoms (per `labeling`), `False` everywhere if `q` isn't in `labeling`'s domain. -/
-def canonicalLabel {α : Type u} [BEq α] [Hashable α]
+@[expose] def canonicalLabel {α : Type u} [BEq α] [Hashable α]
     (labeling : Std.HashMap Nat (Std.HashSet α × Std.HashSet α)) (q : Nat) :
     α → Prop :=
   fun a => (labeling[q]?).elim False (fun p => p.1.contains a)

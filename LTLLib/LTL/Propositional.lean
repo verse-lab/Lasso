@@ -1,3 +1,5 @@
+module
+
 /-
   Propositional formulas over atoms, the fragment fairness assumptions are checked in.
 
@@ -27,11 +29,13 @@
   - NNF embedding
   - Recognising the propositional fragment
 -/
-import LTLLib.LTL.Semantics
+public import LTLLib.LTL.Semantics
+
+public section
 
 namespace LTLLib
 
-open TLA
+open Lentil
 
 /-! ## Propositional syntax -/
 
@@ -48,7 +52,7 @@ deriving Repr, Inhabited, DecidableEq, BEq, Hashable
 namespace BoolFormula
 
 /-- Negate, pushing the negation to the atoms so the result stays in the fragment. -/
-def neg {α} : BoolFormula α → BoolFormula α
+@[expose] def neg {α} : BoolFormula α → BoolFormula α
   | .tt => .ff
   | .ff => .tt
   | .prop a => .nprop a
@@ -57,14 +61,14 @@ def neg {α} : BoolFormula α → BoolFormula α
   | .or φ ψ => .and φ.neg ψ.neg
 
 /-- Conjunction of a list, `⊤` when empty. -/
-def conj {α} : List (BoolFormula α) → BoolFormula α
+@[expose] def conj {α} : List (BoolFormula α) → BoolFormula α
   | [] => .tt
   | [b] => b
   | b :: bs => .and b (conj bs)
 
 /-- Constant folding with idempotence and the complementary-literal identities, applied bottom-up so a nest
 of `⊤` collapses and so a region crossed with its own negation folds to `⊥`. -/
-def simplify {α} [DecidableEq α] : BoolFormula α → BoolFormula α
+@[expose] def simplify {α} [DecidableEq α] : BoolFormula α → BoolFormula α
   | .and φ ψ =>
     match simplify φ, simplify ψ with
     | .ff, _ | _, .ff => .ff
@@ -78,24 +82,24 @@ def simplify {α} [DecidableEq α] : BoolFormula α → BoolFormula α
   | φ => φ
 
 /-- Is this literally `⊤`? After folding, a disjunct with no real `FG` content answers yes. -/
-def isTrue {α} : BoolFormula α → Bool
+@[expose] def isTrue {α} : BoolFormula α → Bool
   | .tt => true
   | _ => false
 
 /-- Is this literally `⊥`? After folding, a region no state can satisfy answers yes. -/
-def isFalse {α} : BoolFormula α → Bool
+@[expose] def isFalse {α} : BoolFormula α → Bool
   | .ff => true
   | _ => false
 
 /-- The conjuncts of a formula, split at `∧`, so that `⊤` has none and an implication between two folded
 formulas can be read off as an inclusion of conjunct lists. -/
-def conjuncts {α} : BoolFormula α → List (BoolFormula α)
+@[expose] def conjuncts {α} : BoolFormula α → List (BoolFormula α)
   | .tt => []
   | .and φ ψ => φ.conjuncts ++ ψ.conjuncts
   | b => [b]
 
 /-- Pretty-print a propositional formula. -/
-def toString {α} [ToString α] : BoolFormula α → String
+@[expose] def toString {α} [ToString α] : BoolFormula α → String
   | .tt => "⊤"
   | .ff => "⊥"
   | .prop a => s!"{a}"
@@ -108,7 +112,7 @@ instance {α} [ToString α] : ToString (BoolFormula α) := ⟨BoolFormula.toStri
 /-! ## Semantics -/
 
 /-- Denotation against a valuation. -/
-def holds {α} (v : α → Prop) : BoolFormula α → Prop
+@[expose] def holds {α} (v : α → Prop) : BoolFormula α → Prop
   | .tt => True
   | .ff => False
   | .prop a => v a
@@ -169,7 +173,7 @@ variable {α : Type u} [BEq α] [Hashable α]
 
 /-- Executable denotation against a state label, under the closed-world reading that an atom holds exactly
 when it is in the label. -/
-def eval : BoolFormula α → Std.HashSet α → Bool
+@[expose] def eval : BoolFormula α → Std.HashSet α → Bool
   | .tt, _ => true
   | .ff, _ => false
   | .prop a, l => l.contains a
@@ -179,7 +183,7 @@ def eval : BoolFormula α → Std.HashSet α → Bool
 
 /-- The atoms the formula actually inspects. Used to decide, syntactically, that a formula cannot tell two
 letters apart — which is how a caller discharges `LSys.StateOnly` without reasoning semantically. -/
-def atoms : BoolFormula α → List α
+@[expose] def atoms : BoolFormula α → List α
   | .tt | .ff => []
   | .prop a | .nprop a => [a]
   | .and φ ψ | .or φ ψ => φ.atoms ++ ψ.atoms
@@ -215,7 +219,7 @@ theorem eval_of_isTrue {b : BoolFormula α} (h : b.isTrue = true) (l : Std.HashS
 /-! ## NNF embedding -/
 
 /-- Embed into `NNF`, the fragment is exactly the temporal-operator-free part. -/
-def toNNF {α} : BoolFormula α → NNF α
+@[expose] def toNNF {α} : BoolFormula α → NNF α
   | .tt => .tt
   | .ff => .ff
   | .prop a => .prop a
@@ -237,7 +241,7 @@ theorem satisfies_toNNF_drop {α} (ξ : OmegaWord α) (b : BoolFormula α) (k : 
   rw [satisfies_toNNF]; simp [exec.drop]
 
 /-- `□◇b`, the shape a propositional fairness conjunct takes. -/
-def alwaysEventually {α} (b : BoolFormula α) : NNF α := .always (.eventually b.toNNF)
+@[expose] def alwaysEventually {α} (b : BoolFormula α) : NNF α := .always (.eventually b.toNNF)
 
 /-- `□◇b` holds exactly when `b` holds at infinitely many positions. -/
 theorem satisfies_alwaysEventually {α} (ξ : OmegaWord α) (b : BoolFormula α) :
@@ -246,7 +250,7 @@ theorem satisfies_alwaysEventually {α} (ξ : OmegaWord α) (b : BoolFormula α)
     satisfies_toNNF_drop]
 
 /-- `◇□b`, the enabling half of a weak fairness assumption. -/
-def eventuallyAlways {α} (b : BoolFormula α) : NNF α := .eventually (.always b.toNNF)
+@[expose] def eventuallyAlways {α} (b : BoolFormula α) : NNF α := .eventually (.always b.toNNF)
 
 /-- `◇□b` holds exactly when `b` holds from some position onwards. -/
 theorem satisfies_eventuallyAlways {α} (ξ : OmegaWord α) (b : BoolFormula α) :
@@ -268,7 +272,7 @@ end BoolFormula
 namespace NNF
 
 /-- The partial inverse of `BoolFormula.toNNF`, `none` exactly when a temporal operator occurs. -/
-def asBool? {α} : NNF α → Option (BoolFormula α)
+@[expose] def asBool? {α} : NNF α → Option (BoolFormula α)
   | .tt => some .tt
   | .ff => some .ff
   | .prop a => some (.prop a)

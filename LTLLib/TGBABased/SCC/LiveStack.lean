@@ -1,3 +1,5 @@
+module
+
 /-
   The live/dead bookkeeping shared by the SCC-based emptiness checks: a stack of live states, its position map, and the
   dead set a closed component is flushed into. The invariant and the three `LawfulDFSOps` status laws are proved once here.
@@ -20,8 +22,10 @@
   - PUSH
   - The flush
 -/
-import Std
-import LTLLib.TGBABased.SCC.GenericDFS
+public import Std
+public import LTLLib.TGBABased.SCC.GenericDFS
+
+public section
 
 namespace LTLLib
 
@@ -39,11 +43,11 @@ theorem Array.getElem!_push_eq {α} [Inhabited α] {xs : Array α} {x : α} :
   rw [getElem!_pos (xs.push x) xs.size (by simp), Array.getElem_push_eq]
 
 /-- The status of `q`, read off `liveIndex` and `dead` alone. -/
-def liveStatusOf (liveIndex : Std.HashMap State Nat) (dead : Std.HashSet State) (q : State) : DFSStatus :=
+@[expose] def liveStatusOf (liveIndex : Std.HashMap State Nat) (dead : Std.HashSet State) (q : State) : DFSStatus :=
   if liveIndex.contains q then .live else if dead.contains q then .dead else .unknown
 
 /-- POP's flush loop: every state above `pos` leaves `live` and joins `dead`. -/
-def liveFlush (live : Array State) (liveIndex : Std.HashMap State Nat)
+@[expose] def liveFlush (live : Array State) (liveIndex : Std.HashMap State Nat)
     (dead : Std.HashSet State) (pos : Nat) :
     Array State × Std.HashMap State Nat × Std.HashSet State :=
   if live.size > pos then

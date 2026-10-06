@@ -1,7 +1,9 @@
+module
+
 /-
   Superseded: `StrongGraphComplete` is never discharged for `createGraph`'s actual output (see `LTLtoGBA/Completeness.lean`
-  for the property `createGraph` really establishes and the live proof chain). Kept for reference, nothing outside this
-  folder imports it.
+  for the property `createGraph` really establishes and the live proof chain). Kept for reference and checked by
+  `LTLLibTests.HistoricalTheorems`; not re-exported by the public library root.
 
   Completeness of the LTL-to-GBA construction: if ξ ⊨ φ and the node graph is complete, then the abstract automaton
   accepts ξ.
@@ -18,15 +20,17 @@
   - Top-level completeness
 -/
 
-import LTLLib.LTLtoGBA.Soundness
-import LTLLib.LTL.Semantics
-import LTLLib.LTLtoGBA.Invariants
-import LTLLib.LTLtoGBA.ToGBA
-import LTLLib.AbstractSpec.Acceptance
+public import LTLLib.LTLtoGBA.Soundness
+public import LTLLib.LTL.Semantics
+public import LTLLib.LTLtoGBA.Invariants
+public import LTLLib.LTLtoGBA.ToGBA
+public import LTLLib.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 
-open NNF TLA
+open NNF Lentil
 
 variable {α : Type u}
 
@@ -36,7 +40,7 @@ variable {α : Type u}
 expand algorithm explores all consistent branches of formula decomposition. -/
 
 /-- Graph completeness: every ξ ⊨ φ has a matching run through the node graph. -/
-def StrongGraphComplete (φ : NNF α) (nodes : NodeData α → Prop) : Prop :=
+@[expose] def StrongGraphComplete (φ : NNF α) (nodes : NodeData α → Prop) : Prop :=
   ∀ ξ : OmegaWord α, NNF.satisfies ξ φ →
     ∃ σ : Nat → NodeData α,
       (∀ n, nodes (σ n)) ∧ -- σ stays within the node graph
@@ -51,7 +55,7 @@ def StrongGraphComplete (φ : NNF α) (nodes : NodeData α → Prop) : Prop :=
 private theorem satisfies_until_iff (ξ : OmegaWord α) (μ η : NNF α) :
     NNF.satisfies ξ (.until μ η) ↔
     ∃ j, NNF.satisfies (ξ.drop j) η ∧ ∀ i, i < j → NNF.satisfies (ξ.drop i) μ := by
-  simp only [NNF.satisfies, NNF.toPred, tla_until]
+  exact NNF.satisfies_until ξ μ η
 
 /-- Characterize `NNF.satisfies` for prop. -/
 private theorem satisfies_prop_iff (ξ : OmegaWord α) (a : α) :
@@ -106,7 +110,6 @@ theorem expandOASpec_completeness_strong
         .trans (.until_right .refl) hsub
       -- (ξ.drop n).drop j = ξ.drop (n + j)
       have heta_sat' : NNF.satisfies (ξ.drop (n + j)) (untils[i]).2 := by
-        show (untils[i]).2.toPred (ξ.drop (n + j))
         rw [← exec.drop_drop]
         exact heta_sat
       have h_in_old := (h_old_iff (n + j) (untils[i]).2).mpr ⟨h_eta_sub, heta_sat'⟩
@@ -124,6 +127,7 @@ theorem expandOASpec_completeness_strong
 
 /-- Top-level completeness, instantiated with `createGraph`'s node set and `untilSubformulas`. -/
 theorem gba_abstract_completeness_strong
+    [BEq α] [Hashable α]
     {S : Type v} [FSet (NNF α) S] [BEq (NNF α)] [LawfulBEq (NNF α)]
     {φ : NNF α} {st : ExpandState α S}
     (h_complete : StrongGraphComplete φ st.toNodes)

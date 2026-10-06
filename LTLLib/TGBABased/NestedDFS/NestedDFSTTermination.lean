@@ -1,5 +1,7 @@
+module
+
 /-
-  Well-founded executable version of the edge-aware nested DFS, terminating by a `Set.ncard` measure, and the fuel bridge
+  Well-founded executable version of the edge-aware nested DFS, terminating by a `reachCount` measure, and the fuel bridge
   transporting the correctness theorems of `NestedDFSTCorrectness.lean` onto it.
 
   The inner DFS and its lemmas from `NestedDFSTermination.lean` are reused unchanged. `outerDFSTWF` follows `outerDFSLoopWF`,
@@ -21,8 +23,12 @@
   - Top-level `nestedDFST`, well-founded
   - Fuel ↔ well-founded bridge, top level
 -/
-import LTLLib.NestedDFS.NestedDFSTermination
-import LTLLib.TGBABased.NestedDFS.NestedDFSTCorrectness
+public import LTLLib.NestedDFS.NestedDFSTermination
+-- The TGBA termination proof reuses the private fuel bridge.
+import all LTLLib.NestedDFS.NestedDFSTermination
+public import LTLLib.TGBABased.NestedDFS.NestedDFSTCorrectness
+
+public section
 
 namespace LTLLib
 
@@ -101,7 +107,7 @@ def outerDFSTWF [LawfulHashable State] {initialStates : List State}
           ((frame.push succ hmemsuccs, edgeMarked, (expand succ).2.1.toList) :: stack')
           (pathStack ++ [succ]) st2
 termination_by
-  (({s | Reachable initialStates succs s} \ {x | st.outerVisited.contains x}).ncard,
+  (reachCount initialStates succs (fun x => st.outerVisited.contains x = false),
    pendingSum (stack.map Prod.fst) + stack.length)
 decreasing_by
   · exact Prod.Lex.right _ (by simp [pendingSum_cons, hrem, _hrest])
@@ -123,7 +129,7 @@ decreasing_by
     exact Prod.Lex.right _ (by simp [pendingSum_cons, RFrame.consumeOne, hrem])
   · exact Prod.Lex.right _ (by simp [pendingSum_cons, RFrame.consumeOne, hrem])
   · have hsucc_niv : st.outerVisited.contains succ = false := by simpa using _hvis
-    exact Prod.Lex.left _ _ (Reachable.ncard_diff_insert_lt fr
+    exact Prod.Lex.left _ _ (Reachable.reachCount_insert_lt fr
       (Reachable.step frame.hreach hmemsuccs) hsucc_niv)
 
 end OuterDFSTWellFounded
@@ -420,6 +426,7 @@ variable {initialStates : List State} [LawfulHashable State] (succs : State → 
   (fr : FiniteReach initialStates succs) (edgeMarks : State → State → Std.HashSet Nat)
   (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
 
+omit [BEq State] [Hashable State] [LawfulBEq State] [LawfulHashable State] in
 /-- The marks cached when a frame is pushed are exactly the marks of that state's outgoing edges.
 Immediate from `ExpandCoherent`, and the only thing the frame-cache invariant needs at a push. -/
 theorem expand_snd_toList (succs : State → Array State)
@@ -473,17 +480,17 @@ theorem outerDFST_fuel_eq_outerDFSTWF
       simp [innerVisited, Std.HashSet.contains_emptyWithCapacity]
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
       innerDFS_fuel_eq_innerDFSWF succs fr parentFrame.state ancestors
-        (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) frame.state frame.hreach innerVisited st
-        hiv hfin (le_refl _)
+        (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1) frame.state frame.hreach innerVisited st
+        hiv hfin (Nat.le_refl _)
     rw [hr] at heqC
     simp only [Prod.mk.injEq] at heqC
     obtain ⟨rfl, rfl, rfl⟩ := heqC
-    refine ⟨({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1 + 1,
+    refine ⟨reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1 + 1,
       .nonEmpty ancestors (parentFrame.state :: parentFrame.state :: cyclePath ++
         (pathStack.dropWhile (fun y => !(y == target))).dropLast.dropLast), st₁, ?_, hfin1, ?_⟩
     · simp only [List.map_cons, hrem]
       exact outerDFST_fuel_postorder_found succs edgeMarks
-        (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) frame.state parentFrame.state
+        (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1) frame.state parentFrame.state
         parentFrame.remaining snd (List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) tail)
         pathStack st cyclePath target iv₁ st₁ heq
     · unfold outerDFSTWF
@@ -495,20 +502,20 @@ theorem outerDFST_fuel_eq_outerDFSTWF
       simp [innerVisited, Std.HashSet.contains_emptyWithCapacity]
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
       innerDFS_fuel_eq_innerDFSWF succs fr parentFrame.state ancestors
-        (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) frame.state frame.hreach innerVisited st
-        hiv hfin (le_refl _)
+        (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1) frame.state frame.hreach innerVisited st
+        hiv hfin (Nat.le_refl _)
     rw [hr] at heqC
     simp only [Prod.mk.injEq] at heqC
     obtain ⟨rfl, rfl, rfl⟩ := heqC
     obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 (fun f hf => hmarks f (List.mem_cons_of_mem _ hf)) hfin1
     simp only [List.map_cons] at heq2
-    let m := max (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) fuel2
+    let m := max (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1) fuel2
     have heqm : innerDFS_fuel succs parentFrame.state ancestors m frame.state innerVisited st =
         some (none, iv₁, st₁) := by
-      rw [show m = (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) +
-          (m - (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1)) by simp only [m]; omega]
+      rw [show m = (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1) +
+          (m - (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1)) by simp only [m]; omega]
       exact innerDFS_fuel_add_preserves succs parentFrame.state ancestors _
-        (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) frame.state innerVisited st none iv₁ st₁ heq
+        (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1) frame.state innerVisited st none iv₁ st₁ heq
     have heq2m : outerDFST_fuel succs edgeMarks m
         ((parentFrame.state, parentFrame.remaining, snd) ::
           List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) tail) ancestors st₁ =
@@ -586,17 +593,17 @@ theorem outerDFST_fuel_eq_outerDFSTWF
       simp [innerVisited, Std.HashSet.contains_emptyWithCapacity]
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
       innerDFS_fuel_eq_innerDFSWF succs fr frame.state pathStack
-        (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) succ (Reachable.step frame.hreach hmemsuccs)
-        innerVisited st hiv hfin (le_refl _)
+        (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1) succ (Reachable.step frame.hreach hmemsuccs)
+        innerVisited st hiv hfin (Nat.le_refl _)
     rw [hr] at heqC
     simp only [Prod.mk.injEq] at heqC
     obtain ⟨rfl, rfl, rfl⟩ := heqC
-    refine ⟨({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1 + 1,
+    refine ⟨reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1 + 1,
       .nonEmpty pathStack (frame.state :: frame.state :: cyclePath ++
         (pathStack.dropWhile (fun y => !(y == target))).dropLast), st₁, ?_, hfin1, ?_⟩
     · simp only [List.map_cons, hrem]
       exact outerDFST_fuel_forward_found succs edgeMarks
-        (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) frame.state succ remainingTail marked
+        (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1) frame.state succ remainingTail marked
         (List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) rest) pathStack st hnb' hvis' hm'
         cyclePath target iv₁ st₁ heq
     · unfold outerDFSTWF
@@ -621,20 +628,20 @@ theorem outerDFST_fuel_eq_outerDFSTWF
       simp [innerVisited, Std.HashSet.contains_emptyWithCapacity]
     obtain ⟨result, iv₁, st₁, heq, hiv1, hfin1, heqC⟩ :=
       innerDFS_fuel_eq_innerDFSWF succs fr frame.state pathStack
-        (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) succ (Reachable.step frame.hreach hmemsuccs)
-        innerVisited st hiv hfin (le_refl _)
+        (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1) succ (Reachable.step frame.hreach hmemsuccs)
+        innerVisited st hiv hfin (Nat.le_refl _)
     rw [hr] at heqC
     simp only [Prod.mk.injEq] at heqC
     obtain ⟨rfl, rfl, rfl⟩ := heqC
     obtain ⟨fuel2, result2, st2, heq2, hfin2, heqC2⟩ := ih1 hmarks' hfin1
     simp only [stack', RFrame.consumeOne, List.map_cons] at heq2
-    let m := max (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) fuel2
+    let m := max (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1) fuel2
     have heqm : innerDFS_fuel succs frame.state pathStack m succ innerVisited st =
         some (none, iv₁, st₁) := by
-      rw [show m = (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) +
-          (m - (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1)) by simp only [m]; omega]
+      rw [show m = (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1) +
+          (m - (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1)) by simp only [m]; omega]
       exact innerDFS_fuel_add_preserves succs frame.state pathStack _
-        (({s | Reachable initialStates succs s} \ {x | innerVisited.contains x}).ncard + 1) succ innerVisited st none iv₁ st₁ heq
+        (reachCount initialStates succs (fun x => innerVisited.contains x = false) + 1) succ innerVisited st none iv₁ st₁ heq
     have heq2m : outerDFST_fuel succs edgeMarks m
         ((frame.state, remainingTail, marked) ::
           List.map (fun f => (f.1.state, f.1.remaining, f.2.1)) rest) pathStack st₁ =
@@ -712,7 +719,7 @@ section TopLevelWF
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- Well-founded top-level edge-aware nested DFS emptiness check. -/
-def nestedDFSTWF [LawfulHashable State] (succs : State → Array State)
+@[expose] def nestedDFSTWF [LawfulHashable State] (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State)
     (fr : FiniteReach initialStates succs) : EmptinessResult State :=

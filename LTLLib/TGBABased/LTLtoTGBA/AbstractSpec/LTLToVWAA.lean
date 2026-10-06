@@ -1,5 +1,7 @@
+module
+
 /-
-  The abstract LTL to VWAA construction, `[BKŘS12]` §5's δ without suspension, stated directly in `Prop` and `Finset`.
+  The abstract LTL to VWAA construction, `[BKŘS12]` §5's δ without suspension, stated directly in `Prop` and `FinSet`.
   States are all `NNF α` nodes rather than only `[TV21]`'s elementary subformulae, `rank` is formula size, and `until` and
   `release` self-loop to the formula itself, which very weakness allows.
 
@@ -36,20 +38,24 @@
   - Completeness
   - Soundness
 -/
-import LTLLib.LTL.Semantics
-import LTLLib.LTL.Subformulas
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAARuns
-import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAReduce
+public import LTLLib.LTL.Semantics
+public import LTLLib.LTL.Subformulas
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAA
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAARuns
+public import LTLLib.TGBABased.LTLtoTGBA.AbstractSpec.VWAAReduce
+meta import LTLLib.Tactic.Set
+public import LTLLib.Data.FinSet
+
+public section
 
 namespace LTLLib
 
-variable {α : Type u} [DecidableEq α]
+variable {α : Type u}
 
 /-! ## Rank -/
 
 /-- Formula size, the very weak rank (`[TV21]` Lemma 3's C2, in rank form). -/
-def NNF.rank : NNF α → Nat
+@[expose] def NNF.rank : NNF α → Nat
   | .tt | .ff | .prop _ | .nprop _ => 1
   | .next φ => φ.rank + 1
   | .and φ ψ | .or φ ψ | .until φ ψ | .release φ ψ => φ.rank + ψ.rank + 1
@@ -57,13 +63,13 @@ def NNF.rank : NNF α → Nat
 /-! ## The transition function -/
 
 /-- Whether `q` is an `until` node, the co-Büchi final condition of `[BKŘS12]` §5. -/
-def NNF.isUntil : NNF α → Prop
+@[expose] def NNF.isUntil : NNF α → Prop
   | .until _ _ => True
   | _ => False
 
 /-- `[BKŘS12]` §5's δ without suspension: `next ψ` targets `{ψ}`, and `until`/`release`'s self-loop targets the formula
 itself. -/
-def NNF.vwaaTrans : NNF α → List (((α → Prop) → Prop) × Finset (NNF α))
+@[expose] def NNF.vwaaTrans : NNF α → List (((α → Prop) → Prop) × FinSet (NNF α))
   | .tt => [(fun _ => True, ∅)]
   | .ff => []
   | .prop a => [(fun v => v a, ∅)]
@@ -79,7 +85,7 @@ def NNF.vwaaTrans : NNF α → List (((α → Prop) → Prop) × Finset (NNF α)
 /-! ## Very weakness -/
 
 /-- Every target of `vwaaTrans` is a (reflexive) subformula of the source. -/
-theorem NNF.vwaaTrans_subformula (q : NNF α) (g : (α → Prop) → Prop) (O : Finset (NNF α))
+theorem NNF.vwaaTrans_subformula (q : NNF α) (g : (α → Prop) → Prop) (O : FinSet (NNF α))
     (h : (g, O) ∈ q.vwaaTrans) (q' : NNF α) (hq' : q' ∈ O) : NNF.IsSubformula q' q := by
   induction q generalizing g O with
   | tt =>
@@ -95,13 +101,13 @@ theorem NNF.vwaaTrans_subformula (q : NNF α) (g : (α → Prop) → Prop) (O : 
   | next ψ =>
     simp only [NNF.vwaaTrans, List.mem_singleton] at h
     injection h with _ hO; subst hO
-    rw [Finset.mem_singleton] at hq'; subst hq'
+    rw [FinSet.mem_singleton] at hq'; subst hq'
     exact .next_sub .refl
   | and φ ψ ihφ ihψ =>
     simp only [NNF.vwaaTrans, List.mem_flatMap, List.mem_map] at h
     obtain ⟨⟨g1, t1⟩, h1, ⟨g2, t2⟩, h2, heq⟩ := h
     injection heq with _ hO; subst hO
-    rcases Finset.mem_union.mp hq' with hq' | hq'
+    rcases FinSet.mem_union.mp hq' with hq' | hq'
     · exact .and_left (ihφ g1 t1 h1 hq')
     · exact .and_right (ihψ g2 t2 h2 hq')
   | or φ ψ ihφ ihψ =>
@@ -115,27 +121,27 @@ theorem NNF.vwaaTrans_subformula (q : NNF α) (g : (α → Prop) → Prop) (O : 
     · exact .until_right (ihψ g O h hq')
     · injection heq with _ hOeq
       rw [← hOeq] at hq'
-      rcases Finset.mem_union.mp hq' with hq' | hq'
+      rcases FinSet.mem_union.mp hq' with hq' | hq'
       · exact .until_left (ihφ g1 t1 h1 hq')
-      · rw [Finset.mem_singleton] at hq'; subst hq'; exact .refl
+      · rw [FinSet.mem_singleton] at hq'; subst hq'; exact .refl
   | «release» φ ψ ihφ ihψ =>
     simp only [NNF.vwaaTrans, List.mem_flatMap, List.mem_map] at h
     obtain ⟨⟨g1, t1⟩, h1, ⟨g2, t2⟩, h2, heq⟩ := h
     injection heq with _ hOeq
     rw [← hOeq] at hq'
-    rcases Finset.mem_union.mp hq' with hq' | hq'
+    rcases FinSet.mem_union.mp hq' with hq' | hq'
     · exact .release_right (ihψ g1 t1 h1 hq')
     · rcases List.mem_append.mp h2 with h2 | h2
       · exact .release_left (ihφ g2 t2 h2 hq')
       · rw [List.mem_singleton] at h2
         injection h2 with _ hOeq2
         dsimp only at hq'
-        rw [hOeq2, Finset.mem_singleton] at hq'
+        rw [hOeq2, FinSet.mem_singleton] at hq'
         subst hq'
         exact .refl
 
 /-- Every successor of `q` in `q.vwaaTrans` is `q` itself or ranks strictly lower, `[TV21]` Lemma 3's C2. -/
-theorem NNF.vwaaTrans_veryWeak (q : NNF α) (g : (α → Prop) → Prop) (O : Finset (NNF α))
+theorem NNF.vwaaTrans_veryWeak (q : NNF α) (g : (α → Prop) → Prop) (O : FinSet (NNF α))
     (h : (g, O) ∈ q.vwaaTrans) (q' : NNF α) (hq' : q' ∈ O) : q' = q ∨ q'.rank < q.rank := by
   induction q generalizing g O with
   | tt =>
@@ -151,12 +157,12 @@ theorem NNF.vwaaTrans_veryWeak (q : NNF α) (g : (α → Prop) → Prop) (O : Fi
   | next ψ =>
     simp only [NNF.vwaaTrans, List.mem_singleton] at h
     injection h with _ hO; subst hO
-    right; rw [Finset.mem_singleton] at hq'; subst hq'; simp only [NNF.rank]; omega
+    right; rw [FinSet.mem_singleton] at hq'; subst hq'; simp only [NNF.rank]; omega
   | and φ ψ ihφ ihψ =>
     simp only [NNF.vwaaTrans, List.mem_flatMap, List.mem_map] at h
     obtain ⟨⟨g1, t1⟩, h1, ⟨g2, t2⟩, h2, heq⟩ := h
     injection heq with _ hO; subst hO
-    rcases Finset.mem_union.mp hq' with hq' | hq'
+    rcases FinSet.mem_union.mp hq' with hq' | hq'
     · rcases ihφ g1 t1 h1 hq' with rfl | hlt <;> (right; simp only [NNF.rank]; omega)
     · rcases ihψ g2 t2 h2 hq' with rfl | hlt <;> (right; simp only [NNF.rank]; omega)
   | or φ ψ ihφ ihψ =>
@@ -169,14 +175,14 @@ theorem NNF.vwaaTrans_veryWeak (q : NNF α) (g : (α → Prop) → Prop) (O : Fi
     rcases h with h | ⟨⟨g0, t0⟩, h0, heq⟩
     · rcases ihψ g O h hq' with rfl | hlt <;> (right; simp only [NNF.rank]; omega)
     · injection heq with _ hO; subst hO
-      rcases Finset.mem_union.mp hq' with hq' | hq'
+      rcases FinSet.mem_union.mp hq' with hq' | hq'
       · rcases ihφ g0 t0 h0 hq' with rfl | hlt <;> (right; simp only [NNF.rank]; omega)
       · left; simpa using hq'
   | «release» φ ψ ihφ ihψ =>
     simp only [NNF.vwaaTrans, List.mem_flatMap, List.mem_map] at h
     obtain ⟨⟨g1, t1⟩, h1, ⟨g2, t2⟩, h2, heq⟩ := h
     injection heq with _ hO; subst hO
-    rcases Finset.mem_union.mp hq' with hq' | hq'
+    rcases FinSet.mem_union.mp hq' with hq' | hq'
     · rcases ihψ g1 t1 h1 hq' with rfl | hlt <;> (right; simp only [NNF.rank]; omega)
     · rcases List.mem_append.mp h2 with h2 | h2
       · rcases ihφ g2 t2 h2 hq' with rfl | hlt <;> (right; simp only [NNF.rank]; omega)
@@ -187,7 +193,7 @@ theorem NNF.vwaaTrans_veryWeak (q : NNF α) (g : (α → Prop) → Prop) (O : Fi
 /-! ## The automaton -/
 
 /-- The VWAA of `φ`, with the single initial level `{φ}`. -/
-def ltlVWAA (φ : NNF α) : VWAA (NNF α) α where
+@[expose] def ltlVWAA (φ : NNF α) : VWAA (NNF α) α where
   trans := NNF.vwaaTrans
   initial := [{φ}]
   final := NNF.isUntil
@@ -199,7 +205,7 @@ theorem ltlVWAA_reachable_subformula (φ : NNF α) :
     ∀ q, VWAA.Reachable (ltlVWAA φ) {φ} q → NNF.IsSubformula q φ := by
   intro q hq
   induction hq with
-  | base q hq => rw [Finset.mem_singleton] at hq; subst hq; exact .refl
+  | base q hq => rw [FinSet.mem_singleton] at hq; subst hq; exact .refl
   | step p hp g O hgO q hq ih => exact (NNF.vwaaTrans_subformula p g O hgO q hq).trans ih
 
 /-! ## The canonical one-step choice -/
@@ -207,7 +213,7 @@ theorem ltlVWAA_reachable_subformula (φ : NNF α) :
 open Classical in
 /-- The canonical one-step transition choice, taking at `or`/`until`/`release` whichever alternative the word satisfies.
 `until`'s self-loop is taken only while its right operand does not hold. -/
-noncomputable def NNF.satTrans (ξ : OmegaWord α) : NNF α → ((α → Prop) → Prop) × Finset (NNF α)
+noncomputable def NNF.satTrans (ξ : OmegaWord α) : NNF α → ((α → Prop) → Prop) × FinSet (NNF α)
   | .tt => (fun _ => True, ∅)
   | .ff => (fun _ => True, ∅)
   | .prop a => (fun v => v a, ∅)
@@ -247,7 +253,7 @@ theorem NNF.satTrans_spec (q : NNF α) (ξ : OmegaWord α) (hq : q.satisfies ξ)
       exact List.mem_flatMap.mpr ⟨NNF.satTrans ξ φ, hmemφ, List.mem_map.mpr ⟨NNF.satTrans ξ ψ, hmemψ, rfl⟩⟩
     · intro q' hq'
       simp only [NNF.satTrans] at hq'
-      rcases Finset.mem_union.mp hq' with hq' | hq'
+      rcases FinSet.mem_union.mp hq' with hq' | hq'
       · exact hOφ q' hq'
       · exact hOψ q' hq'
   | or φ ψ ihφ ihψ =>
@@ -283,9 +289,9 @@ theorem NNF.satTrans_spec (q : NNF α) (ξ : OmegaWord α) (hq : q.satisfies ξ)
       · simp only [NNF.vwaaTrans]
         exact List.mem_append.mpr (Or.inr (List.mem_map.mpr ⟨NNF.satTrans ξ φ, hmem, rfl⟩))
       · intro q' hq'
-        rcases Finset.mem_union.mp hq' with hq' | hq'
+        rcases FinSet.mem_union.mp hq' with hq' | hq'
         · exact hO q' hq'
-        · rw [Finset.mem_singleton] at hq'; subst hq'
+        · rw [FinSet.mem_singleton] at hq'; subst hq'
           rw [NNF.satisfies_until]
           refine ⟨i - 1, ?_, ?_⟩
           · rw [NNF.satisfies_drop_drop]
@@ -310,7 +316,7 @@ theorem NNF.satTrans_spec (q : NNF α) (ξ : OmegaWord α) (hq : q.satisfies ξ)
         exact List.mem_flatMap.mpr ⟨NNF.satTrans ξ ψ, hmemψ,
           List.mem_map.mpr ⟨NNF.satTrans ξ φ, List.mem_append.mpr (Or.inl hmemφ), rfl⟩⟩
       · intro q' hq'
-        rcases Finset.mem_union.mp hq' with hq' | hq'
+        rcases FinSet.mem_union.mp hq' with hq' | hq'
         · exact hOψ q' hq'
         · exact hOφ q' hq'
     · rw [if_neg hφ0]
@@ -319,9 +325,9 @@ theorem NNF.satTrans_spec (q : NNF α) (ξ : OmegaWord α) (hq : q.satisfies ξ)
         exact List.mem_flatMap.mpr ⟨NNF.satTrans ξ ψ, hmemψ,
           List.mem_map.mpr ⟨(fun _ => True, {NNF.release φ ψ}), List.mem_append.mpr (Or.inr (by simp)), rfl⟩⟩
       · intro q' hq'
-        rcases Finset.mem_union.mp hq' with hq' | hq'
+        rcases FinSet.mem_union.mp hq' with hq' | hq'
         · exact hOψ q' hq'
-        · rw [Finset.mem_singleton] at hq'; subst hq'
+        · rw [FinSet.mem_singleton] at hq'; subst hq'
           rw [NNF.satisfies_release]
           intro j
           rcases hq (1 + j) with h | ⟨i', hi', hφi'⟩
@@ -340,7 +346,7 @@ theorem NNF.satTrans_spec (q : NNF α) (ξ : OmegaWord α) (hq : q.satisfies ξ)
 
 /-- The converse of `satTrans_spec`: a transition whose guard holds now and whose targets, self-loop included, hold one
 step later has its source satisfied now. -/
-theorem NNF.one_step_complete (q : NNF α) (ξ : OmegaWord α) (g : (α → Prop) → Prop) (O : Finset (NNF α))
+theorem NNF.one_step_complete (q : NNF α) (ξ : OmegaWord α) (g : (α → Prop) → Prop) (O : FinSet (NNF α))
     (hmem : (g, O) ∈ q.vwaaTrans) (hg : g (ξ 0)) (hO : ∀ q' ∈ O, q'.satisfies (ξ.drop 1)) :
     q.satisfies ξ := by
   induction q generalizing ξ g O with
@@ -359,8 +365,8 @@ theorem NNF.one_step_complete (q : NNF α) (ξ : OmegaWord α) (g : (α → Prop
     obtain ⟨⟨g1, O1⟩, hmem1, ⟨g2, O2⟩, hmem2, heq⟩ := hmem
     injection heq with hgeq hOeq; subst hgeq; subst hOeq
     rw [NNF.satisfies_and]
-    exact ⟨ihφ ξ g1 O1 hmem1 hg.1 fun q' hq' => hO q' (Finset.mem_union.mpr (Or.inl hq')),
-      ihψ ξ g2 O2 hmem2 hg.2 fun q' hq' => hO q' (Finset.mem_union.mpr (Or.inr hq'))⟩
+    exact ⟨ihφ ξ g1 O1 hmem1 hg.1 fun q' hq' => hO q' (FinSet.mem_union.mpr (Or.inl hq')),
+      ihψ ξ g2 O2 hmem2 hg.2 fun q' hq' => hO q' (FinSet.mem_union.mpr (Or.inr hq'))⟩
   | or φ ψ ihφ ihψ =>
     simp only [NNF.vwaaTrans, List.mem_append] at hmem
     rw [NNF.satisfies_or]
@@ -379,9 +385,9 @@ theorem NNF.one_step_complete (q : NNF α) (ξ : OmegaWord α) (g : (α → Prop
     · have hψ : ψ.satisfies ξ := ihψ ξ g O hmem hg hO
       exact ⟨0, by rwa [exec_drop_zero], fun j hj => absurd hj (by omega)⟩
     · injection heq with hgeq hOeq; subst hgeq; subst hOeq
-      have hO0 : ∀ q' ∈ O0, q'.satisfies (ξ.drop 1) := fun q' hq' => hO q' (Finset.mem_union.mpr (Or.inl hq'))
+      have hO0 : ∀ q' ∈ O0, q'.satisfies (ξ.drop 1) := fun q' hq' => hO q' (FinSet.mem_union.mpr (Or.inl hq'))
       have hquntil : (NNF.until φ ψ).satisfies (ξ.drop 1) :=
-        hO (NNF.until φ ψ) (Finset.mem_union.mpr (Or.inr (by simp)))
+        hO (NNF.until φ ψ) (FinSet.mem_union.mpr (Or.inr (by simp)))
       have hφ : φ.satisfies ξ := ihφ ξ g0 O0 hmem0 hg hO0
       rw [NNF.satisfies_until] at hquntil
       obtain ⟨i', hψi', hφlt'⟩ := hquntil
@@ -402,11 +408,11 @@ theorem NNF.one_step_complete (q : NNF α) (ξ : OmegaWord α) (g : (α → Prop
     obtain ⟨⟨g1, O1⟩, hmem1, ⟨g2, O2⟩, hmem2, heq⟩ := hmem
     injection heq with hgeq hOeq; subst hgeq; subst hOeq
     have hψ : ψ.satisfies ξ :=
-      ihψ ξ g1 O1 hmem1 hg.1 fun q' hq' => hO q' (Finset.mem_union.mpr (Or.inl hq'))
+      ihψ ξ g1 O1 hmem1 hg.1 fun q' hq' => hO q' (FinSet.mem_union.mpr (Or.inl hq'))
     rw [NNF.satisfies_release]
     rcases List.mem_append.mp hmem2 with hmem2 | hmem2
     · have hφ : φ.satisfies ξ :=
-        ihφ ξ g2 O2 hmem2 hg.2 fun q' hq' => hO q' (Finset.mem_union.mpr (Or.inr hq'))
+        ihφ ξ g2 O2 hmem2 hg.2 fun q' hq' => hO q' (FinSet.mem_union.mpr (Or.inr hq'))
       intro j
       rcases Nat.eq_zero_or_pos j with rfl | hjpos
       · left; rwa [exec_drop_zero]
@@ -414,7 +420,7 @@ theorem NNF.one_step_complete (q : NNF α) (ξ : OmegaWord α) (g : (α → Prop
     · simp only [List.mem_singleton] at hmem2
       injection hmem2 with _ hO2eq; subst hO2eq
       have hqrelease : (NNF.release φ ψ).satisfies (ξ.drop 1) :=
-        hO (NNF.release φ ψ) (Finset.mem_union.mpr (Or.inr (by simp)))
+        hO (NNF.release φ ψ) (FinSet.mem_union.mpr (Or.inr (by simp)))
       rw [NNF.satisfies_release] at hqrelease
       intro j
       rcases Nat.eq_zero_or_pos j with rfl | hjpos
@@ -433,13 +439,13 @@ theorem NNF.one_step_complete (q : NNF α) (ξ : OmegaWord α) (g : (α → Prop
 /-! ## Completeness -/
 
 /-- The levels of the run built by iterating `satTrans`'s choice from `{ψ}`. -/
-noncomputable def NNF.satLevel (ξ : OmegaWord α) (ψ : NNF α) : Nat → Finset (NNF α)
+noncomputable def NNF.satLevel (ξ : OmegaWord α) (ψ : NNF α) : Nat → FinSet (NNF α)
   | 0 => {ψ}
   | i + 1 => (NNF.satLevel ξ ψ i).biUnion fun q => (NNF.satTrans (ξ.drop i) q).2
 
 /-- The run built by iterating `satTrans`'s choice from `{ψ}`, `[TV21]` Lemma 5's expansion congruence turned
 into a run. -/
-noncomputable def NNF.satRun (ξ : OmegaWord α) (ψ : NNF α) : VWAA.Run (NNF α) where
+@[expose] noncomputable def NNF.satRun (ξ : OmegaWord α) (ψ : NNF α) : VWAA.Run (NNF α) where
   level := NNF.satLevel ξ ψ
   succ i q := (NNF.satTrans (ξ.drop i) q).2
 
@@ -450,11 +456,11 @@ theorem NNF.satRun_live (ξ : OmegaWord α) (ψ : NNF α) (hψ : ψ.satisfies ξ
   induction i with
   | zero =>
     intro q hq
-    simp only [NNF.satRun, NNF.satLevel, Finset.mem_singleton] at hq
+    simp only [NNF.satRun, NNF.satLevel, FinSet.mem_singleton] at hq
     subst hq; rwa [exec_drop_zero]
   | succ i ih =>
     intro q hq
-    simp only [NNF.satRun, NNF.satLevel, Finset.mem_biUnion] at hq
+    simp only [NNF.satRun, NNF.satLevel, FinSet.mem_biUnion] at hq
     obtain ⟨p, hp, hq⟩ := hq
     have hp' := ih p hp
     have hstep := (NNF.satTrans_spec p (ξ.drop i) hp').2.2 q hq
@@ -471,10 +477,10 @@ theorem NNF.satRun_validFrom (ξ : OmegaWord α) (ψ φ : NNF α) (hψ : ψ.sati
     exact ⟨(NNF.satTrans (ξ.drop i) q).1, hmem, hzero ▸ hg⟩
   succ_sub i q hq := by
     intro q' hq'
-    simp only [NNF.satRun, NNF.satLevel, Finset.mem_biUnion]
+    simp only [NNF.satRun, NNF.satLevel, FinSet.mem_biUnion]
     exact ⟨q, hq, hq'⟩
   no_orphan i q hq := by
-    simp only [NNF.satRun, NNF.satLevel, Finset.mem_biUnion] at hq
+    simp only [NNF.satRun, NNF.satLevel, FinSet.mem_biUnion] at hq
     obtain ⟨p, hp, hq⟩ := hq
     exact ⟨p, hp, hq⟩
 
@@ -517,7 +523,7 @@ theorem NNF.satRun_accepting (ξ : OmegaWord α) (ψ φ : NNF α) (hψ : ψ.sati
     · have hrk : (NNF.until φ' ψ').rank = ψ'.rank := by rw [heq]
       simp only [NNF.rank] at hrk; omega
     · simp only [NNF.rank] at hlt; omega
-  obtain ⟨i, hψi, -⟩ := (NNF.satisfies_until (ξ.drop N) φ' ψ').mp (hlive N le_rfl)
+  obtain ⟨i, hψi, -⟩ := (NNF.satisfies_until (ξ.drop N) φ' ψ').mp (hlive N (Nat.le_refl _))
   rw [NNF.satisfies_drop_drop] at hψi
   exact hnotψ (N + i) (by omega) hψi
 
@@ -531,7 +537,7 @@ theorem NNF.acceptsFrom_of_satisfies (ψ φ : NNF α) (ξ : OmegaWord α) (hψ :
 open Classical in
 /-- The `until` case of soundness: given soundness for lower ranks, an alive `until` state satisfies the word from its
 level on. -/
-theorem NNF.sound_until (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF α)} {ξ : OmegaWord α}
+theorem NNF.sound_until (φ : NNF α) {r : VWAA.Run (NNF α)} {S : FinSet (NNF α)} {ξ : OmegaWord α}
     (hv : r.ValidFrom (ltlVWAA φ) S ξ) (hacc : (ltlVWAA φ).AcceptingRun r) (φ' ψ' : NNF α)
     (hlower : ∀ q', q'.rank < (NNF.until φ' ψ').rank → ∀ j, q' ∈ r.level j → q'.satisfies (ξ.drop j))
     (i : Nat) (hi : NNF.until φ' ψ' ∈ r.level i) : (NNF.until φ' ψ').satisfies (ξ.drop i) := by
@@ -566,20 +572,20 @@ theorem NNF.sound_until (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF �
       injection heq with hgeq hOeq
       right
       have hqmem : NNF.until φ' ψ' ∈ r.succ j (NNF.until φ' ψ') := by
-        rw [← hOeq]; exact Finset.mem_union_right _ (Finset.mem_singleton_self _)
+        rw [← hOeq]; exact FinSet.mem_union_right _ (FinSet.mem_singleton_self _)
       refine ⟨hqmem, fun hnext => NNF.one_step_complete (NNF.until φ' ψ') (ξ.drop j) g
         (r.succ j (NNF.until φ' ψ')) hmem (hzero ▸ hg) ?_⟩
       intro q' hq'
       rw [← hOeq] at hq'
-      rcases Finset.mem_union.mp hq' with hq' | hq'
-      · have hqalive : q' ∈ r.level (j + 1) := hsub (hOeq ▸ Finset.mem_union_left _ hq')
+      rcases FinSet.mem_union.mp hq' with hq' | hq'
+      · have hqalive : q' ∈ r.level (j + 1) := hsub (hOeq ▸ FinSet.mem_union_left _ hq')
         have hrk : q'.rank < (NNF.until φ' ψ').rank := by
           rcases NNF.vwaaTrans_veryWeak φ' p.1 p.2 hp q' hq' with heq2 | hlt2
           · rw [heq2]; simp only [NNF.rank]; omega
           · simp only [NNF.rank] at hlt2 ⊢; omega
         have hsat := hlower q' hrk (j + 1) hqalive
         rwa [← NNF.satisfies_drop_drop] at hsat
-      · rw [Finset.mem_singleton] at hq'
+      · rw [FinSet.mem_singleton] at hq'
         rw [hq', NNF.satisfies_drop_drop]
         exact hnext
   have hnotforever : ¬ ∀ m, NNF.until φ' ψ' ∈ r.level (i + m) ∧
@@ -595,7 +601,7 @@ theorem NNF.sound_until (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF �
       · intro k
         show b (k + 1) ∈ r.succ k (b k)
         rcases Nat.lt_or_ge k i with hk | hk
-        · simp only [hb_def, if_pos hk.le, if_pos (show k + 1 ≤ i by omega)]
+        · simp only [hb_def, if_pos (Nat.le_of_lt hk), if_pos (show k + 1 ≤ i by omega)]
           exact hpstep k hk
         · rcases Nat.lt_or_ge i k with hk' | hk'
           · simp only [hb_def, if_neg (show ¬ k ≤ i by omega), if_neg (show ¬ k + 1 ≤ i by omega)]
@@ -605,7 +611,7 @@ theorem NNF.sound_until (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF �
             exact hboth.2
           · have hk'' : k = i := by omega
             subst hk''
-            simp only [hb_def, if_pos le_rfl, if_neg (show ¬ k + 1 ≤ k by omega), hpi]
+            simp only [hb_def, if_pos (Nat.le_refl _), if_neg (show ¬ k + 1 ≤ k by omega), hpi]
             have hboth := hforever 0
             simpa using hboth.2
     have hstab : VWAA.StabilizesAt b (NNF.until φ' ψ') := by
@@ -614,19 +620,21 @@ theorem NNF.sound_until (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF �
       rcases Nat.lt_or_ge i m with hm' | hm'
       · rw [if_neg (show ¬ m ≤ i by omega)]
       · have : m = i := by omega
-        rw [this, if_pos le_rfl, hpi]
+        rw [this, if_pos (Nat.le_refl _), hpi]
     exact (acceptingRun_iff hv).mp hacc b (NNF.until φ' ψ') hb hstab trivial
   rw [not_forall] at hnotforever
   obtain ⟨N, hNspec⟩ := hnotforever
   have hex : ∃ m, ¬ (NNF.until φ' ψ' ∈ r.level (i + m) ∧ NNF.until φ' ψ' ∈ r.succ (i + m) (NNF.until φ' ψ')) :=
     ⟨N, hNspec⟩
   clear hNspec N
-  set N := Nat.find hex with hNdef
+  obtain ⟨N, -, hNspec, hNmin⟩ := LentilLib.Nat.find_min
+    (p := fun m => ¬ (NNF.until φ' ψ' ∈ r.level (i + m) ∧ NNF.until φ' ψ' ∈ r.succ (i + m) (NNF.until φ' ψ')))
+    _ hex.choose_spec
   have hnotN_lt : ∀ k, k < N → NNF.until φ' ψ' ∈ r.level (i + k) ∧
       NNF.until φ' ψ' ∈ r.succ (i + k) (NNF.until φ' ψ') := by
     intro k hk
     by_contra hcon
-    exact Nat.find_min hex hk hcon
+    exact hNmin k hk hcon
   have halive : ∀ m', m' ≤ N → NNF.until φ' ψ' ∈ r.level (i + m') := by
     intro m'
     induction m' with
@@ -640,10 +648,10 @@ theorem NNF.sound_until (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF �
       have hnext := hv.succ_sub (i + k) (NNF.until φ' ψ') hkalive hboth.2
       have heqidx : i + (k + 1) = i + k + 1 := by omega
       rwa [heqidx]
-  have hNalive : NNF.until φ' ψ' ∈ r.level (i + N) := halive N le_rfl
+  have hNalive : NNF.until φ' ψ' ∈ r.level (i + N) := halive N (Nat.le_refl _)
   have hNnotloop : NNF.until φ' ψ' ∉ r.succ (i + N) (NNF.until φ' ψ') := by
     intro h
-    exact Nat.find_spec hex ⟨hNalive, h⟩
+    exact hNspec ⟨hNalive, h⟩
   have hsatN : (NNF.until φ' ψ').satisfies (ξ.drop (i + N)) := by
     rcases hstep_cases (i + N) hNalive with ⟨_, hsat⟩ | ⟨hloopmem, -⟩
     · exact hsat
@@ -666,13 +674,13 @@ theorem NNF.sound_until (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF �
         have := himp hnext
         have heqidx2 : i + (N - k - 1) = i + N - (k + 1) := by omega
         rwa [heqidx2] at this
-  have hfinal := hback N le_rfl
+  have hfinal := hback N (Nat.le_refl _)
   have heqidxN : i + N - N = i := by omega
   rwa [heqidxN] at hfinal
 
 /-- The `release` case of soundness: given soundness for lower ranks, an alive `release` state satisfies the word from its
 level on. -/
-theorem NNF.sound_release (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF α)} {ξ : OmegaWord α}
+theorem NNF.sound_release (φ : NNF α) {r : VWAA.Run (NNF α)} {S : FinSet (NNF α)} {ξ : OmegaWord α}
     (hv : r.ValidFrom (ltlVWAA φ) S ξ) (φ' ψ' : NNF α)
     (hlower : ∀ q', q'.rank < (NNF.release φ' ψ').rank → ∀ j, q' ∈ r.level j → q'.satisfies (ξ.drop j))
     (i : Nat) (hi : NNF.release φ' ψ' ∈ r.level i) : (NNF.release φ' ψ').satisfies (ξ.drop i) := by
@@ -694,7 +702,7 @@ theorem NNF.sound_release (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF
     have hψsat : ψ'.satisfies (ξ.drop j) := by
       apply NNF.one_step_complete ψ' (ξ.drop j) p.1 p.2 hp hg1
       intro q' hq'
-      have hqalive : q' ∈ r.level (j + 1) := hsub (hOeq ▸ Finset.mem_union_left _ hq')
+      have hqalive : q' ∈ r.level (j + 1) := hsub (hOeq ▸ FinSet.mem_union_left _ hq')
       have hrk : q'.rank < (NNF.release φ' ψ').rank := by
         rcases NNF.vwaaTrans_veryWeak ψ' p.1 p.2 hp q' hq' with heq2 | hlt2
         · rw [heq2]; simp only [NNF.rank]; omega
@@ -706,7 +714,7 @@ theorem NNF.sound_release (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF
     · left
       apply NNF.one_step_complete φ' (ξ.drop j) q2.1 q2.2 hq2' hg2
       intro q' hq'
-      have hqalive : q' ∈ r.level (j + 1) := hsub (hOeq ▸ Finset.mem_union_right _ hq')
+      have hqalive : q' ∈ r.level (j + 1) := hsub (hOeq ▸ FinSet.mem_union_right _ hq')
       have hrk : q'.rank < (NNF.release φ' ψ').rank := by
         rcases NNF.vwaaTrans_veryWeak φ' q2.1 q2.2 hq2' q' hq' with heq2 | hlt2
         · rw [heq2]; simp only [NNF.rank]; omega
@@ -717,7 +725,7 @@ theorem NNF.sound_release (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF
       rw [List.mem_singleton] at hq2'
       have hqmem : NNF.release φ' ψ' ∈ r.succ j (NNF.release φ' ψ') := by
         rw [← hOeq, hq2']
-        exact Finset.mem_union_right _ (Finset.mem_singleton_self _)
+        exact FinSet.mem_union_right _ (FinSet.mem_singleton_self _)
       exact hsub hqmem
   have hQ : ∀ j', (NNF.release φ' ψ' ∈ r.level (i + j') ∧ ψ'.satisfies (ξ.drop (i + j'))) ∨
       ∃ k, k < j' ∧ φ'.satisfies (ξ.drop (i + k)) := by
@@ -745,17 +753,17 @@ theorem NNF.sound_release (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF
   · right; exact ⟨k, hk, by rwa [NNF.satisfies_drop_drop]⟩
 
 /-- Soundness: every state alive on a level of an accepting run satisfies the word from that level on. -/
-theorem NNF.sound (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF α)} {ξ : OmegaWord α}
+theorem NNF.sound (φ : NNF α) {r : VWAA.Run (NNF α)} {S : FinSet (NNF α)} {ξ : OmegaWord α}
     (hv : r.ValidFrom (ltlVWAA φ) S ξ) (hacc : (ltlVWAA φ).AcceptingRun r) :
     ∀ q i, q ∈ r.level i → q.satisfies (ξ.drop i) := by
   have main : ∀ n q, q.rank ≤ n → ∀ i, q ∈ r.level i → q.satisfies (ξ.drop i) := by
     intro n
-    induction n using Nat.strong_induction_on with
+    induction n using Nat.strongRecOn with
     | _ n IH =>
       intro q hqn i hqi
       have hlower : ∀ q', q'.rank < q.rank → ∀ j, q' ∈ r.level j → q'.satisfies (ξ.drop j) := by
         intro q' hq'rank j hq'j
-        exact IH q'.rank (by omega) q' le_rfl j hq'j
+        exact IH q'.rank (by omega) q' (Nat.le_refl _) j hq'j
       have hzero : (ξ.drop i) 0 = ξ i := by show ξ (0 + i) = ξ i; rw [Nat.zero_add]
       cases q with
       | tt => rw [NNF.satisfies_tt]; trivial
@@ -783,15 +791,15 @@ theorem NNF.sound (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF α)} {�
         apply NNF.one_step_complete (NNF.and φ' ψ') (ξ.drop i) g (r.succ i (NNF.and φ' ψ')) hmem (hzero ▸ hg)
         intro q' hq'
         rw [← hOeq] at hq'
-        rcases Finset.mem_union.mp hq' with hq' | hq'
-        · have hqalive : q' ∈ r.level (i + 1) := hsub (hOeq ▸ Finset.mem_union_left _ hq')
+        rcases FinSet.mem_union.mp hq' with hq' | hq'
+        · have hqalive : q' ∈ r.level (i + 1) := hsub (hOeq ▸ FinSet.mem_union_left _ hq')
           have hrk : q'.rank < (NNF.and φ' ψ').rank := by
             rcases NNF.vwaaTrans_veryWeak φ' p.1 p.2 hp q' hq' with heq2 | hlt2
             · rw [heq2]; simp only [NNF.rank]; omega
             · simp only [NNF.rank] at hlt2 ⊢; omega
           have hsat := hlower q' hrk (i + 1) hqalive
           rwa [← NNF.satisfies_drop_drop] at hsat
-        · have hqalive : q' ∈ r.level (i + 1) := hsub (hOeq ▸ Finset.mem_union_right _ hq')
+        · have hqalive : q' ∈ r.level (i + 1) := hsub (hOeq ▸ FinSet.mem_union_right _ hq')
           have hrk : q'.rank < (NNF.and φ' ψ').rank := by
             rcases NNF.vwaaTrans_veryWeak ψ' p2.1 p2.2 hp2 q' hq' with heq2 | hlt2
             · rw [heq2]; simp only [NNF.rank]; omega
@@ -822,21 +830,21 @@ theorem NNF.sound (φ : NNF α) {r : VWAA.Run (NNF α)} {S : Finset (NNF α)} {�
         have hsub := hv.succ_sub i (NNF.next ψ') hqi
         have hmem' := List.mem_singleton.mp hmem
         injection hmem' with _ hOeq
-        have hqalive : ψ' ∈ r.level (i + 1) := hsub (hOeq ▸ Finset.mem_singleton_self ψ')
+        have hqalive : ψ' ∈ r.level (i + 1) := hsub (hOeq ▸ FinSet.mem_singleton_self ψ')
         have hrk : ψ'.rank < (NNF.next ψ').rank := by simp only [NNF.rank]; omega
         rw [NNF.satisfies_next, NNF.satisfies_drop_drop]
         exact hlower ψ' hrk (i + 1) hqalive
       | «until» φ' ψ' => exact NNF.sound_until φ hv hacc φ' ψ' hlower i hqi
       | «release» φ' ψ' => exact NNF.sound_release φ hv φ' ψ' hlower i hqi
   intro q i hqi
-  exact main q.rank q le_rfl i hqi
+  exact main q.rank q (Nat.le_refl _) i hqi
 
 /-- `ltlVWAA` accepts `ξ` from `{ψ}` exactly when `ψ` is satisfied, the correctness of `[BKŘS12]` §5's construction. -/
 theorem NNF.ltlVWAA_correct (φ ψ : NNF α) (ξ : OmegaWord α) :
     (ltlVWAA φ).AcceptsFrom {ψ} ξ ↔ ψ.satisfies ξ := by
   constructor
   · rintro ⟨r, hv, hacc⟩
-    exact NNF.sound φ hv hacc ψ 0 (by simpa using hv.init ▸ Finset.mem_singleton_self ψ)
+    exact NNF.sound φ hv hacc ψ 0 (by simpa using hv.init ▸ FinSet.mem_singleton_self ψ)
   · exact NNF.acceptsFrom_of_satisfies ψ φ ξ
 
 end LTLLib

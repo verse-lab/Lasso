@@ -1,3 +1,5 @@
+module
+
 /-
   End-to-end model checking: system × LTL formula φ → does the system satisfy φ?
 
@@ -16,17 +18,20 @@
   - Soundness
   - Completeness
 -/
-import LTLLib.LTLtoGBA.Correctness
-import LTLLib.DegeneralBridge
-import LTLLib.LTLtoGBA.ExpandTermination
-import LTLLib.Product
+public import LTLLib.LTLtoGBA.Correctness
+public import LTLLib.DegeneralBridge
+public import LTLLib.LTLtoGBA.ExpandTermination
+public import LTLLib.Product
+meta import LTLLib.Tactic.Set
+
+public section
 
 namespace LTLLib
 
 variable {α : Type u} {S : Type w} [FSet (NNF α) S]
   {SysState : Type v} [BEq SysState] [Hashable SysState] [LawfulBEq SysState]
   [LawfulHashable SysState]
-  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [DecidableEq α]
+  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
 
 /-! ## Model checking -/
 
@@ -38,7 +43,7 @@ check itself is supplied via an algorithm-agnostic `checker : EmptinessChecker` 
 
 `.empty` means `sys ⊨ φ` whereas `.nonEmpty stem loop` witnesses a run of `sys` violating `φ`, given by
 `(system state, ¬φ-automaton state)` pairs along `stem`/`loop`. -/
-def modelCheck (φ : Formula α) (sysInit : List SysState)
+@[expose] def modelCheck (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc)
     (checker : EmptinessChecker (SysState × BAState) := nestedDFSChecker) :
@@ -56,7 +61,7 @@ def modelCheck (φ : Formula α) (sysInit : List SysState)
 
 /-! ## Helper: unfolding modelCheck -/
 
-omit [LawfulHashable SysState] [LawfulBEq α] [LawfulHashable α] [DecidableEq α] in
+omit [LawfulHashable SysState] [LawfulBEq α] [LawfulHashable α] in
 theorem modelCheck_eq (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit sysSucc)

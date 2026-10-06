@@ -1,3 +1,5 @@
+module
+
 /-
   Bridge between the computational `constructGBA` (HashMap-based, states = `Nat`) and the abstract `expandOASpec`
   (predicate-based, states = `NodeData`), showing they accept the same ω-words. This lets soundness/completeness
@@ -27,9 +29,11 @@
   - Canonical labeling for constructGBA
 -/
 
-import LTLLib.LTLtoGBA.Invariants
-import LTLLib.LTLtoGBA.ToGBA
-import LTLLib.AbstractSpec.Acceptance
+public import LTLLib.LTLtoGBA.Invariants
+public import LTLLib.LTLtoGBA.ToGBA
+public import LTLLib.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 
@@ -324,7 +328,7 @@ theorem ExpandState.liftNode_mem_toNodes (st : ExpandState α S) (q : Nat)
   · exact fun h => ⟨node, hq, h⟩
 
 /-- Name consistency: nodes are stored at their own name as key. -/
-def NameConsistent (st : ExpandState α S) : Prop :=
+@[expose] def NameConsistent (st : ExpandState α S) : Prop :=
   ∀ (k : Nat) (node : ExpansionNode α S), st.nodes[k]? = some node → node.name = k
 
 variable [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
@@ -466,6 +470,7 @@ theorem buildLabeling_neg_correct
 
 /-! ### Accept-set correctness -/
 
+set_option backward.isDefEq.respectTransparency false in
 omit [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] in
 /-- `buildAcceptSets[i]` contains `q` iff node `q` either lacks the `i`-th until-formula in `old`, or has that
 formula's right operand in `old`. -/

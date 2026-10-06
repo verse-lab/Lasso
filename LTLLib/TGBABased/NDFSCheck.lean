@@ -1,3 +1,5 @@
+module
+
 /-
   Model checking a system against a degeneralized TGBA product, searched by the transition-based Nested DFS, no
   fairness. The `¬φ`-automaton comes from `ltl3ba` (`LTLtoTGBA/Pipeline.lean`). `nestedDFSTWF` is sound only for a
@@ -17,12 +19,14 @@
   - Soundness
   - Completeness
 -/
-import LTLLib.LTL.Semantics
-import LTLLib.Product
-import LTLLib.TGBABased.Degeneralization.DegeneralBridge
-import LTLLib.TGBABased.Degeneralization.TBAProduct
-import LTLLib.TGBABased.LTLtoTGBA.Pipeline
-import LTLLib.TGBABased.NestedDFS.NestedDFSTTermination
+public import LTLLib.LTL.Semantics
+public import LTLLib.Product
+public import LTLLib.TGBABased.Degeneralization.DegeneralBridge
+public import LTLLib.TGBABased.Degeneralization.TBAProduct
+public import LTLLib.TGBABased.LTLtoTGBA.Pipeline
+public import LTLLib.TGBABased.NestedDFS.NestedDFSTTermination
+
+public section
 
 namespace LTLLib
 
@@ -31,8 +35,9 @@ variable {α : Type u} {SysState : Type v} [BEq SysState] [Hashable SysState] [L
 
 /-! ## Checker obligations -/
 
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- The degeneralized product's `FiniteReach` witness. -/
-def modelCheckTBA_finiteReach (φ : Formula α) (sysInit : List SysState)
+theorem modelCheckTBA_finiteReach (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit (LSys.targets sysSucc)) {tgba : TGBA α} (htg : ltl3ba (φ.toNNF false) = some tgba) :
     FiniteReach (TBAProduct.initialStates tgba.degeneralize sysInit)
@@ -43,7 +48,7 @@ def modelCheckTBA_finiteReach (φ : Formula α) (sysInit : List SysState)
 
 /-- Does `sys` satisfy `φ`? `.empty` means it does, `.nonEmpty stem loop` witnesses a violating run as
 `(system state, TBA state)` pairs. `sysFR` is needed only for the proofs. -/
-def modelCheckTBA (φ : Formula α) (sysInit : List SysState)
+@[expose] def modelCheckTBA (φ : Formula α) (sysInit : List SysState)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysFR : FiniteReach sysInit (LSys.targets sysSucc)) :
     EmptinessResult (SysState × TBAState) :=
@@ -60,7 +65,7 @@ def modelCheckTBA (φ : Formula α) (sysInit : List SysState)
   | none => .empty 0
 
 /-- `modelCheckTBA` over one system callback. §15 -/
-def modelCheckTBAOfStep (φ : Formula α) (sysInit : List SysState)
+@[expose] def modelCheckTBAOfStep (φ : Formula α) (sysInit : List SysState)
     (sysStep : LSys.StepFn α SysState)
     (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1)) :
     EmptinessResult (SysState × TBAState) :=

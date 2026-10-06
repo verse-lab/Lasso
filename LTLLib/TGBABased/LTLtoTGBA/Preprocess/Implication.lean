@@ -1,3 +1,5 @@
+module
+
 /-
   Syntactic implication between NNF formulas: `[SB00]` §3's relation with duals, case for case `[LTL2BA-1.3]`'s
   `implies`, plus `[BKŘS12]` §4's three `X`-rules. The equality test is plain structural equality rather than
@@ -22,7 +24,9 @@
   - Syntactic implication
   - Soundness
 -/
-import LTLLib.LTL.FairClass
+public import LTLLib.LTL.FairClass
+
+public section
 
 namespace LTLLib
 
@@ -31,7 +35,7 @@ variable {α : Type u}
 /-! ## Node count -/
 
 /-- Node count, `synImpl`'s termination measure (`sizeOf` is proof-only, not compiled). -/
-def NNF.size : NNF α → Nat
+@[expose] def NNF.size : NNF α → Nat
   | .tt | .ff | .prop _ | .nprop _ => 1
   | .next φ => φ.size + 1
   | .and φ ψ | .or φ ψ | .until φ ψ | .release φ ψ => φ.size + ψ.size + 1
@@ -65,7 +69,7 @@ theorem NNF.eq_of_isF {φ : NNF α} (h : φ.isF = true) : ∃ ψ, φ = .until .t
 variable [BEq α]
 
 /-- `a` syntactically implies `b`. -/
-def synImpl (a b : NNF α) : Bool :=
+@[expose] def synImpl (a b : NNF α) : Bool :=
   a == b ||
   NNF.isTop b ||
   NNF.isBot a ||
@@ -190,7 +194,7 @@ theorem synImpl_sound (a b : NNF α) (h : synImpl a b = true) (ξ : OmegaWord α
       refine (NNF.satisfies_next ξ b1).mpr (synImpl_sound _ b1 h.2 _ ?_)
       refine (NNF.satisfies_release _ .ff a').mpr fun j => Or.inl ?_
       rcases (NNF.satisfies_release ξ .ff a').mp ha (1 + j) with h2 | ⟨i, -, hff⟩
-      · rwa [TLA.exec.drop_drop]
+      · rwa [Lentil.exec.drop_drop]
       · exact hff.elim
     · exact absurd h (by simp)
   · -- a = X a1 and b = F b', which a1's implication one step later witnesses
@@ -200,7 +204,7 @@ theorem synImpl_sound (a b : NNF α) (h : synImpl a b = true) (ξ : OmegaWord α
       obtain ⟨b', rfl⟩ := NNF.eq_of_isF h.1
       have h1 := synImpl_sound a1 _ h.2 _ ((NNF.satisfies_next ξ a1).mp ha)
       obtain ⟨i, hi, -⟩ := (NNF.satisfies_until _ .tt b').mp h1
-      refine (NNF.satisfies_until ξ .tt b').mpr ⟨1 + i, by rw [TLA.exec.drop_drop] at hi; exact hi, fun _ _ => trivial⟩
+      refine (NNF.satisfies_until ξ .tt b').mpr ⟨1 + i, by rw [Lentil.exec.drop_drop] at hi; exact hi, fun _ _ => trivial⟩
     · exact absurd h (by simp)
   · -- X against X
     split at h

@@ -1,3 +1,5 @@
+module
+
 /-
   What it means for an SCC to satisfy a hoisted fairness assumption, which is Streett acceptance stated on a strongly
   connected set rather than on a run. A hoisted conjunct arrives as a list of options, an option being a region `FG l`
@@ -38,8 +40,10 @@
   - Pruning a candidate
   - From a fair run to a fair SCC
 -/
-import LTLLib.TGBABased.AbstractSpec.Pumping
-import LTLLib.TGBABased.AbstractSpec.SCCTheory
+public import LTLLib.TGBABased.AbstractSpec.Pumping
+public import LTLLib.TGBABased.AbstractSpec.SCCTheory
+
+public section
 
 namespace LTLLib
 
@@ -63,20 +67,20 @@ structure StreettSpec (State : Type u) (L : Type w) where
 /-! ## Availability -/
 
 /-- The option's region holds at every state of `B`, which is `FG l` on a cycle that stays inside `B`. -/
-def StreettOption.regionHolds (opt : StreettOption L) (label : State → L) (B : Std.HashSet State) : Prop :=
+@[expose] def StreettOption.regionHolds (opt : StreettOption L) (label : State → L) (B : Std.HashSet State) : Prop :=
   ∀ s ∈ B, opt.region (label s) = true
 
 /-- Every one of the option's marks holds somewhere in `B`, which is `GF g` on a cycle covering `B`. -/
-def StreettOption.marksPresent (opt : StreettOption L) (label : State → L) (B : Std.HashSet State) : Prop :=
+@[expose] def StreettOption.marksPresent (opt : StreettOption L) (label : State → L) (B : Std.HashSet State) : Prop :=
   ∀ g ∈ opt.marks, ∃ s ∈ B, g (label s) = true
 
 /-- [LSFZ16, Definition 3] for one option. -/
-def StreettOption.availableIn (opt : StreettOption L) (label : State → L) (B : Std.HashSet State) : Prop :=
+@[expose] def StreettOption.availableIn (opt : StreettOption L) (label : State → L) (B : Std.HashSet State) : Prop :=
   opt.regionHolds label B ∧ opt.marksPresent label B
 
 /-- Every conjunct is satisfied by one of its options, which is the decomposed form of "some crossed disjunct
 is accepting for `B`". -/
-def StreettSpec.accepting (spec : StreettSpec State L) (B : Std.HashSet State) : Prop :=
+@[expose] def StreettSpec.accepting (spec : StreettSpec State L) (B : Std.HashSet State) : Prop :=
   ∀ c ∈ spec.conjuncts, ∃ opt ∈ c, opt.availableIn spec.label B
 
 /-! ## Flattening
@@ -100,7 +104,7 @@ def flattenOpts (cs : Array (Array (StreettOption L))) : Array (StreettOption L)
   flattenAux cs 0 #[] #[0]
 
 /-- The spec's options in walk order, paired with the position each conjunct begins at. -/
-def StreettSpec.flatten (spec : StreettSpec State L) : Array (StreettOption L) × Array Nat :=
+@[expose] def StreettSpec.flatten (spec : StreettSpec State L) : Array (StreettOption L) × Array Nat :=
   flattenOpts spec.conjuncts
 
 private theorem flattenAux_spec (cs : Array (Array (StreettOption L))) :
@@ -268,7 +272,7 @@ structure FairSCC (initialStates : List State) (succs : State → Array State)
   fair : spec.accepting scc
 
 /-- The underlying `AcceptingSCC`. -/
-def FairSCC.toAcceptingSCC {initialStates : List State} {succs : State → Array State}
+@[expose] def FairSCC.toAcceptingSCC {initialStates : List State} {succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {spec : StreettSpec State L}
     (A : FairSCC initialStates succs edgeMarks spec) :
     AcceptingSCC initialStates succs edgeMarks spec.numMarks :=
@@ -277,7 +281,7 @@ def FairSCC.toAcceptingSCC {initialStates : List State} {succs : State → Array
 /-! ## Pruning a candidate -/
 
 /-- The part of a candidate the option's region admits, which is what a prune step recurses on. -/
-def StreettOption.prune [LawfulHashable State] (opt : StreettOption L) (label : State → L)
+@[expose] def StreettOption.prune [LawfulHashable State] (opt : StreettOption L) (label : State → L)
     (C : Std.HashSet State) : Std.HashSet State :=
   C.filter fun s => opt.region (label s)
 
@@ -295,7 +299,7 @@ theorem StreettOption.mem_prune [LawfulBEq State] [LawfulHashable State] {opt : 
 
 /-- A fair SCC is a fair SCC of any candidate that contains it, the graph being restricted to that candidate.
 `g` is the graph it was found in, which only has to admit ambient edges. -/
-def FairSCC.restrict {initialStates : List State} {g succs : State → Array State}
+@[expose] def FairSCC.restrict {initialStates : List State} {g succs : State → Array State}
     {edgeMarks : State → State → Std.HashSet Nat} {spec : StreettSpec State L}
     (A : FairSCC initialStates g edgeMarks spec) (hg : ∀ a b, b ∈ g a → b ∈ succs a)
     {D : Std.HashSet State} (hsub : ∀ s ∈ A.scc, s ∈ D) :
@@ -333,8 +337,8 @@ private theorem exists_common_threshold {β : Type u₂} (f : β → Nat → Pro
     obtain ⟨N₂, hN₂⟩ := exists_common_threshold f l fun x hx => h x (by simp [hx])
     refine ⟨max N₁ N₂, fun x hx n hn => ?_⟩
     rcases List.mem_cons.mp hx with rfl | hx
-    · exact hN₁ n (le_trans (le_max_left _ _) hn)
-    · exact hN₂ x hx n (le_trans (le_max_right _ _) hn)
+    · exact hN₁ n (Nat.le_trans (Nat.le_max_left _ _) hn)
+    · exact hN₂ x hx n (Nat.le_trans (Nat.le_max_right _ _) hn)
 
 /-- A run that covers the property marks and satisfies every conjunct settles into a `FairSCC`, [LSFZ16, Theorem 2]
 read one conjunct at a time. -/
