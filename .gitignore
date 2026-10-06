@@ -1,2 +1,15 @@
 /.lake
 .DS_Store
+
+# TLC scratch, recreated on every run
+LTLLib/Examples/states/
+
+**/tmp/**
+*.md
+*.json
+**/benchmarks/**
+**/Benchmark/**
+*.cfg
+*.tla
+# scratch copies kept while a migration is in flight
+scratchpad/

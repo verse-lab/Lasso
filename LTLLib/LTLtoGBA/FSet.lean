@@ -1,79 +1,69 @@
-/-
-  Abstract finite set interface for the LTL-to-GBA construction.
+module
 
-  Defines `FSet`, a typeclass capturing the set operations and laws needed
-  by the expand algorithm and its correctness proofs. Instances are provided
-  for `Std.HashSet` and `Std.TreeSet`, allowing the implementation to be
-  swapped without changing the algorithm or proofs.
+/-
+  Abstract finite set interface for the LTL-to-GBA construction, letting the expand algorithm and its correctness proofs
+  be agnostic to the concrete set container.
+
+  Defines:
+  - `FSet`: typeclass of set operations (`empty`, `insert`, `contains`, `foldl`, `all`, `toList`) and their laws
+  - `FSet.contains_insert`, `FSet.setEq`/`setEq_correct`: derived helpers, including mutual-containment set equality
+  - `FSet.setEq_perm`, `FSet.foldl_toList_eq_of_setEq`: a right-commutative fold over `toList` is a function of
+    the set, not of `toList`'s implementation-defined order
+  - `instFSetHashSet`, `instFSetTreeSet`: instances for `Std.HashSet` and `Std.TreeSet`
+
+  ## Sections
+  - Order-independent folds
+  - `Std.HashSet` instance
+  - `Std.TreeSet` instance
 -/
 
-import Std
+public import Std
 import Std.Data.TreeSet.Lemmas
+import Batteries.Data.List.Perm
+
+public section
 
 namespace LTLLib
 
-/-- Abstract finite set with element type `α` and container type `S`.
-
-**Operations** (all needed by the GBA expand algorithm):
-- `empty`, `insert`, `contains` — basic set operations
-- `foldl` — left fold over elements (used in `mergeIncoming`, successor creation)
-- `all` — universal predicate check (used in `sameSignature`)
-- `toList` — conversion to list (for proofs only)
-
-**Laws** (all needed by the correctness proofs in `Invariants.lean`):
-- `contains_empty`, `contains_insert_self`, `contains_insert_other` —
-  containment behavior
-- `foldl_eq_foldl_toList` — connects fold to list fold (for inductive proofs)
-- `all_eq_toList_all` — connects `all` to `List.all` (for `sameSignature` proofs)
-- `mem_toList_iff` — connects list membership to `contains` -/
+/-- Abstract finite set with element type `α` and container type `S`. -/
 class FSet (α : outParam (Type u)) (S : Type v) where
-  /-- Empty set. -/
   empty : S
-  /-- Insert an element. -/
   insert : S → α → S
-  /-- Membership test. -/
   contains : S → α → Bool
-  /-- Left fold over elements. Iteration order is implementation-defined. -/
+  -- Iteration order is implementation-defined.
   foldl {β : Type w} : (β → α → β) → β → S → β
-  /-- Check if all elements satisfy a predicate. -/
   all : S → (α → Bool) → Bool
-  /-- Convert to list (for proofs). Order is implementation-defined. -/
+  -- For proofs, order is implementation-defined.
   toList : S → List α
 
-  /-- Empty set contains nothing. -/
   contains_empty (a : α) : contains empty a = false
-  /-- Inserting makes the element contained. -/
   contains_insert_self (a : α) (s : S) : contains (insert s a) a = true
-  /-- Inserting a different element preserves containment. -/
   contains_insert_other (a b : α) (s : S) : a ≠ b →
     contains (insert s b) a = contains s a
-  /-- `foldl` on the set equals `List.foldl` on its `toList`. -/
   foldl_eq_foldl_toList {β : Type w} (f : β → α → β) (init : β) (s : S) :
     foldl f init s = (toList s).foldl f init
-  /-- `all` on the set equals `List.all` on its `toList`. -/
   all_eq_toList_all (s : S) (p : α → Bool) :
     all s p = (toList s).all p
-  /-- `toList` membership is equivalent to `contains`. -/
   mem_toList_iff (a : α) (s : S) : a ∈ toList s ↔ contains s a = true
+  toList_nodup (s : S) : (toList s).Nodup
 
 namespace FSet
 
 variable {α : Type u} {S : Type v} [FSet α S]
 
-/-- Combined `contains_insert` law (requires `LawfulBEq`).
-Matches the form of `Std.HashSet.contains_insert`. -/
+/-- Matches the form of `Std.HashSet.contains_insert`. -/
 theorem contains_insert [BEq α] [LawfulBEq α] (a b : α) (s : S) :
     FSet.contains (FSet.insert s b) a = (a == b || FSet.contains s a) := by
   by_cases h : a = b
   · subst h; simp [FSet.contains_insert_self]
   · simp [FSet.contains_insert_other _ _ _ h, beq_iff_eq, h]
 
-/-- Set equality via mutual containment.
-With `Std.TreeSet`, this can be replaced by the built-in `BEq` instance
-for better performance (structural comparison on sorted trees). -/
-def setEq (s₁ s₂ : S) : Bool :=
+/-- Set equality via mutual containment. With `Std.TreeSet`, this could use the built-in `BEq`
+instance instead, for better performance (structural comparison on sorted trees). -/
+@[expose] def setEq (s₁ s₂ : S) : Bool :=
   FSet.all s₁ (FSet.contains s₂ ·) && FSet.all s₂ (FSet.contains s₁ ·)
 
+/-- `setEq` is correct: it returns true iff the two sets contain the same elements. -/
 theorem setEq_correct (s₁ s₂ : S) :
     setEq s₁ s₂ = true ↔
       (∀ a, FSet.contains s₁ a = true → FSet.contains s₂ a = true) ∧
@@ -87,15 +77,42 @@ theorem setEq_correct (s₁ s₂ : S) :
     exact ⟨fun a ha => h1 a ((FSet.mem_toList_iff a s₁).mp ha),
            fun a ha => h2 a ((FSet.mem_toList_iff a s₂).mp ha)⟩
 
+/-! ## Order-independent folds -/
+
+/-- Two set-equal `FSet`s have permuted `toList`s. -/
+theorem setEq_perm {s₁ s₂ : S} (h : setEq s₁ s₂ = true) : (toList s₁).Perm (toList s₂) :=
+  have hmem : ∀ a, a ∈ toList s₁ ↔ a ∈ toList s₂ := fun a => by
+    rw [FSet.mem_toList_iff, FSet.mem_toList_iff]
+    exact ⟨(setEq_correct s₁ s₂).mp h |>.1 a, (setEq_correct s₁ s₂).mp h |>.2 a⟩
+  (List.subperm_of_subset (FSet.toList_nodup s₁) fun _ hx => (hmem _).mp hx).antisymm
+    (List.subperm_of_subset (FSet.toList_nodup s₂) fun _ hx => (hmem _).mpr hx)
+
+private theorem foldl_eq_of_perm {β : Type w} {f : β → α → β}
+    (hf : ∀ (b : β) (x y : α), f (f b x) y = f (f b y) x)
+    {l₁ l₂ : List α} (hp : l₁.Perm l₂) (init : β) :
+    l₁.foldl f init = l₂.foldl f init := by
+  induction hp generalizing init with
+  | nil => rfl
+  | cons x _ ih => exact ih _
+  | swap x y l => simp only [List.foldl_cons, hf]
+  | trans _ _ ih₁ ih₂ => exact (ih₁ init).trans (ih₂ init)
+
+/-- A right-commutative fold over `toList` is determined by the set, so it does not depend on `toList`'s
+implementation-defined order. This is what makes a hash over the elements usable as a set signature.
+Stated over `toList` rather than `FSet.foldl` so that it pins no universe for the class's fold. -/
+theorem foldl_toList_eq_of_setEq {β : Type w} (f : β → α → β)
+    (hf : ∀ (b : β) (x y : α), f (f b x) y = f (f b y) x)
+    (init : β) {s₁ s₂ : S} (h : setEq s₁ s₂ = true) :
+    (toList s₁).foldl f init = (toList s₂).foldl f init :=
+  foldl_eq_of_perm hf (setEq_perm h) init
+
 end FSet
 
 /-! ## `Std.HashSet` instance
 
-Requires `[BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]`.
-
-Individual operations are O(1) amortized. No canonical `BEq`/`Hashable`
-instance on the set type itself (internal layout depends on insertion order),
-so `findDuplicate` cannot easily use hash-based signature lookup. -/
+Individual operations are O(1) amortized. There is no canonical `BEq`/`Hashable` instance on the set type
+itself, since the internal layout depends on insertion order, which is why a set signature has to be built
+from a commutative fold over the elements (`foldl_toList_eq_of_setEq`) rather than from the container. -/
 
 instance instFSetHashSet [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] :
     FSet α (Std.HashSet α) where
@@ -114,21 +131,14 @@ instance instFSetHashSet [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable �
   all_eq_toList_all s p := by simp [Std.HashSet.all]
   mem_toList_iff a s := by
     rw [Std.HashSet.mem_toList, Std.HashSet.contains_iff_mem]
+  toList_nodup s := by
+    have := Std.HashSet.distinct_toList (m := s)
+    simpa [List.Nodup, beq_iff_eq] using this
 
 /-! ## `Std.TreeSet` instance
 
-Requires `[Ord α] [Std.TransOrd α] [Std.LawfulEqOrd α]`.
-
-Individual operations are O(log n). The key advantage is that `Std.TreeSet`
-has a canonical `BEq` instance (structural equality on sorted trees), enabling
-efficient `findDuplicate` via signature-based lookup:
-
-```
--- With TreeSet, (old, next) pairs can be used as map keys:
-signatureMap : Std.TreeMap (Std.TreeSet (NNF α) × Std.TreeSet (NNF α)) Nat
-```
-
-This reduces `findDuplicate` from O(|nodes| · |φ|) to O(|φ| log |φ|) per call. -/
+Individual operations are O(log n). Unlike `Std.HashSet`, `Std.TreeSet` has a canonical `BEq` instance,
+structural equality on sorted trees, so set equality could use it directly instead of mutual containment. -/
 
 instance instFSetTreeSet [Ord α] [Std.TransOrd α] [Std.LawfulEqOrd α] :
     FSet α (Std.TreeSet α) where
@@ -158,10 +168,11 @@ instance instFSetTreeSet [Ord α] [Std.TransOrd α] [Std.LawfulEqOrd α] :
     unfold Std.TreeSet.toList Std.TreeMap.keys Std.DTreeMap.keys
     rw [Std.DTreeMap.Internal.Impl.all_eq_all_toListModel,
         Std.DTreeMap.Internal.Impl.keys_eq_keys]
-    induction s.inner.inner.inner.toListModel with
-    | nil => rfl
-    | cons x xs ih => simp [Std.Internal.List.keys, List.all_cons, ih]
+    simp only [Std.Internal.List.keys_eq_map, List.all_map, Function.comp_def]
   mem_toList_iff a s := by
     rw [Std.TreeSet.mem_toList, Std.TreeSet.contains_iff_mem]
+  toList_nodup s := by
+    have := Std.TreeSet.distinct_toList (t := s)
+    simpa [List.Nodup, Std.LawfulEqOrd.compare_beq_iff_eq] using this
 
 end LTLLib

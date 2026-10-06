@@ -1,124 +1,384 @@
 # LTLLib
 
-A standalone Lean 4 library for LTL (Linear Temporal Logic) model checking infrastructure. Provides the full pipeline from LTL formulas to Generalized/Standard Büchi Automata construction, and nested DFS emptiness checking.
+A standalone Lean 4 library for LTL (Linear Temporal Logic) model-checking infrastructure. Provides the full, formally verified pipeline from LTL formulas to Büchi automata, plus a verified nested-DFS emptiness/liveness check, composed end-to-end into two total, machine-checked decision procedures: model checking a system against an LTL property, and standalone LTL satisfiability.
 
-The core algorithm (LTL-to-GBA via Gerth et al.) is ported from the verified Isabelle/HOL formalization in [LTL_to_GBA](https://www.isa-afp.org/entries/LTL_to_GBA.html), part of the CAVA model checking framework.
+The core LTL-to-GBA algorithm (Gerth et al.) is ported from the verified Isabelle/HOL formalization in [LTL_to_GBA](https://www.isa-afp.org/entries/LTL_to_GBA.html), part of the CAVA model-checking framework.
 
-## Proof Status
+## Contents
 
-**~5805 lines, 0 sorry.** The following correctness theorems are proved:
+- [LTLLib](#ltllib)
+  - [Contents](#contents)
+  - [Building and testing](#building-and-testing)
+  - [LTL to BA translation](#ltl-to-ba-translation)
+    - [Top-level results](#top-level-results)
+    - [Correctness link in the chain](#correctness-link-in-the-chain)
+    - [Algorithm pipeline](#algorithm-pipeline)
+  - [Model checking](#model-checking)
+    - [Top-level results](#top-level-results-1)
+    - [Example usage](#example-usage)
+    - [Termination: `FiniteReach`](#termination-finitereach)
+    - [Correctness link in the chain](#correctness-link-in-the-chain-1)
+    - [Algorithm pipeline](#algorithm-pipeline-1)
+    - [Terminal states](#terminal-states)
+  - [Satisfiability](#satisfiability)
+    - [Top-level results](#top-level-results-2)
+    - [Example usage](#example-usage-1)
+    - [Algorithm pipeline](#algorithm-pipeline-2)
+    - [Correctness link in the chain](#correctness-link-in-the-chain-2)
+  - [Proof status](#proof-status)
+  - [File organization](#file-organization)
+    - [Module descriptions](#module-descriptions)
 
-| Theorem | Statement | File |
-|---------|-----------|------|
-| `toNNF_correct` | NNF compilation preserves semantics | `LTL/Semantics.lean` |
-| `createGraph_spec` | Graph expansion satisfies structural invariants | `LTLtoGBA/Invariants.lean` |
-| `expandOASpec_soundness` | Abstract GBA accepts ξ → ξ ⊨ φ | `LTLtoGBA/Soundness.lean` |
-| `expandOASpec_completeness` | ξ ⊨ φ → abstract GBA accepts ξ (modulo `GraphComplete`) | `LTLtoGBA/Completeness.lean` |
-| `constructGBA_iff_expandOASpec` | Computational GBA ↔ abstract GBA | `LTLtoGBA/Bridge.lean` |
-| `degeneralize_correct` | Proof-level degeneralization preserves language | `Acceptance.lean` |
-| `degeneralize_bridge` | Computational BA ↔ proof-level degeneralization | `DegeneralBridge.lean` |
-| `ba_hasAcceptingRun_of_lasso` | Valid lasso → BA has accepting run | `OutputVerify.lean` |
-| `ba_hasAcceptingRun_of_ndfs_output` | nestedDFS output → BA has accepting run | `OutputVerify.lean` |
+## Building and testing
 
-**Remaining for end-to-end**: Nested DFS completeness (`empty → no accepting run`, Phase 5b) and optionally `GraphComplete` (Phase 4.3).
+Install [Elan](https://github.com/leanprover/elan) and use the toolchain pinned in
+`lean-toolchain`. Full verification also requires Git and Python 3.9 or newer:
 
-## File Organization
-
-```
-LTLLib/
-  LTL.lean                    -- Re-exports LTL/Syntax.lean and Semantics.lean
-  LTL/
-    Syntax.lean                -- Formula (user-facing) + NNF (internal IR) + toNNF
-    Semantics.lean             -- LTL/NNF denotational semantics via Lentil TLA
-    Subformulas.lean           -- Subformula closure and Until-subformula extraction
-    Fairness.lean              -- Weak/strong fairness combinators encoded as LTL
-  GBA.lean                     -- Generalized Büchi Automaton type + WellFormed predicate
-  BA.lean                      -- Standard Büchi Automaton type + GBA degeneralization
-  Acceptance.lean              -- Proof-level automata specs + degeneralization correctness
-  DegeneralBridge.lean         -- Bridge: computational BA ↔ proof-level degeneralization
-  LTLtoGBA/
-    FSet.lean                  -- Abstract finite set typeclass (HashSet/TreeSet instances)
-    Node.lean                  -- GBANode record for graph construction
-    Expand.lean                -- Gerth et al. expand/createGraph algorithm
-    Construction.lean          -- GBA construction from expanded node graph
-    Invariants.lean            -- Structural invariants of the expand algorithm
-    Soundness.lean             -- Soundness: GBA accepts ξ → ξ ⊨ φ
-    Completeness.lean          -- Completeness: ξ ⊨ φ → GBA accepts ξ (modulo GraphComplete)
-    Bridge.lean                -- Bridge: computational GBA ↔ abstract automaton
-  NestedDFS.lean               -- Generic nested DFS emptiness check (CVWY algorithm)
-  Lasso.lean                   -- Abstract lasso theory (ValidLasso, lassoRun)
-  OutputVerify.lean            -- Bridge: nestedDFS output → ValidLasso → accepting run
+```sh
+python3 scripts/verify.py
 ```
 
-### Module Descriptions
+Use this command for full verification. It checks source coverage, then builds the main library,
+tests, examples and retained historical proofs. By default it prints coverage and the final result;
+build and test logs are shown on failure. Any coverage, compilation, test assertion or axiom-guard
+failure, warning, or Lean panic produces a nonzero exit status, including panics replayed from
+Lake's build cache. Add `--verbose` to stream all build and test output. A successful run reports:
 
-**`LTL.lean`** — Re-exports `LTL/Syntax.lean` and `LTL/Semantics.lean`. Import this to get both formula types and their semantics.
+```text
+Source coverage: PASS (150/150 Lean files)
+Building library and tests...
+Library build: PASS
+Tests, examples and historical proofs: PASS
+Axiom checks: PASS
+Warnings: 0; panics: 0
+```
 
-**`LTL/Syntax.lean`** — Defines both formula types and the conversion between them:
-- `NNF α` — Internal NNF (Negative Normal Form) IR where negation only appears at the atomic level (`prop`/`nprop`). Provides `neg`, `eventually`, `always`, `implies`. Corresponds to `'a ltlr` / `'a frml` in the CAVA LTL framework. This is the representation consumed by the GBA pipeline.
-- `Formula α` — User-facing syntax with the full set of standard operators: `not`, `implies`, `iff`, `eventually`, `always`, etc. Corresponds to `'a ltln` in the CAVA framework.
-- `Formula.toNNF` — NNF compilation with a `pos : Bool` polarity parameter. Pushes negation to atoms, desugars derived operators. Corresponds to `ltln_to_ltlr`.
+| Command | Scope |
+|---|---|
+| `lake build` | Main library and proofs imported by `LTLLib.lean` |
+| `python3 scripts/verify.py` | Full verification of all Lean sources, tests, examples and historical proofs |
 
-**`LTL/Subformulas.lean`** — Computes the subformula closure (`subformulas`) and extracts Until-subformulas as pairs (`untilSubformulas`). Corresponds to `subfrmlsr` and `until_frmlsr` in the CAVA framework. Used for defining acceptance conditions (one set per Until-subformula).
+## LTL to BA translation
 
-**`LTL/Semantics.lean`** — Denotational semantics for NNF and Formula types, built on the Lentil TLA library. Defines `NNF.toPred`, `NNF.satisfies`, `Formula.directSatisfies`, and proves `NNF.neg_correct` (negation correctness) and `Formula.toNNF_correct` (NNF compilation correctness). Also defines `tla_release` (the release temporal operator).
+Compiles an LTL formula into a Standard Büchi Automaton over its atoms. This is the shared core beneath both [Model checking](#model-checking) (runs it on `¬φ`) and [Satisfiability](#satisfiability) (runs it on `φ` directly).
 
-**`LTL/Fairness.lean`** — Encodes weak fairness (justice) and strong fairness (compassion) as standard LTL formulas: `weakFairness enabled taken = □◇(¬enabled ∨ taken)` and `strongFairness enabled taken = □(□¬enabled ∨ ◇taken)`. Also provides combinators for conjunctions of fairness constraints and checking properties under fairness assumptions.
+### Top-level results
 
-**`Acceptance.lean`** — Proof-level automaton specification `OASpec` (unified for GBA/BA with k acceptance sets). Includes `OASpec.degeneralize` (counter-cycling construction), the sorry-free `degeneralize_correct` theorem proving language equivalence, and `GBA.toSpec`/`BA.toSpec` bridges from computational to proof-level automata.
+```lean
+theorem constructGBA_correct {φ : NNF α} {st : ExpandState α S}
+    (hcg : createGraph φ = some st) (ξ : OmegaWord α) :
+    (constructGBA φ st).toSpec.accepts ξ ↔ NNF.satisfies ξ φ
 
-**`DegeneralBridge.lean`** — Proves that the computational `BA` produced by `GBA.degeneralize` and the proof-level `OASpec.degeneralize` accept the same ω-words. Key theorem: `degeneralize_bridge`. Uses double-fold HashMap reasoning (outer over states, inner over acceptance counter values).
+theorem degeneralize_accepts_any (gba : GBA α) (hwf : gba.WellFormed) (ξ : OmegaWord α) :
+    gba.degeneralize.toSpec.accepts ξ ↔ gba.toSpec.accepts ξ
+```
 
-**`GBA.lean`** — The `GBA α` structure representing a Generalized Büchi Automaton with states, initial states, successor map, labeling (positive/negative propositions per state), and multiple acceptance sets. Includes `GBA.WellFormed` predicate. Corresponds to `create_gba_from_nodes` output in `LTL_to_GBA.thy`.
+### Correctness link in the chain
 
-**`BA.lean`** — The `BA α` structure for a standard (single acceptance set) Büchi Automaton, and `GBA.degeneralize` which converts a GBA to a BA. States become `BAState = (gbaState, acceptIdx)` pairs. Accepting states are `{(q, 0) | q ∈ F_0}`. Standard construction from Baier & Katoen, Section 4.3.3.
+| Correctness link | Theorem | File |
+|---|---|---|
+| `expand`/`createGraph` terminate on every input | `createGraph_term` | `LTLtoGBA/ExpandTermination.lean` |
+| Graph expansion satisfies its structural invariants | `createGraph_spec` | `LTLtoGBA/Invariants.lean` |
+| Expansion graph is exhaustive (drives completeness) | `createGraph_graphComplete` | `LTLtoGBA/Completeness.lean` |
+| Computational GBA accepts exactly the models of `φ` | `constructGBA_correct` | `LTLtoGBA/Correctness.lean` |
+| `constructGBA`'s output is well-formed | `constructGBA_wellFormed` | `LTLtoGBA/Bridge.lean` |
+| GBA degeneralization preserves language, any `numAcceptSets` | `degeneralize_accepts_any` | `DegeneralBridge.lean` |
 
-**`LTLtoGBA/FSet.lean`** — Abstract finite set typeclass `FSet α S` with operations (`empty`, `insert`, `contains`, `foldl`, `all`, `toList`) and correctness laws. Instances for `Std.HashSet` and `Std.TreeSet`. Allows swapping set implementations without changing algorithms or proofs.
+### Algorithm pipeline
 
-**`LTLtoGBA/Node.lean`** — The `GBANode α S` record used during graph construction, parametrized by an abstract set type `S` (via `FSet`). Fields: `name` (unique ID), `incoming` (predecessor nodes), `new` (formulas to expand), `old` (expanded formulas), `next` (next-state obligations). Corresponds to `'a node` in `LTL_to_GBA.thy`.
+```
+ψ (in NNF)     (NNF α, internal IR — φ for satisfiability, ¬φ for model checking)
+    │
+    ▼  createGraph                ✓ totality proved (createGraph_term); ExpandSpec proved (createGraph_spec)
+Node graph (ExpandState)
+    │
+    ▼  constructGBA               ✓ accepts ξ ↔ ξ ⊨ ψ, unconditional (constructGBA_correct)
+Generalized Büchi Automaton (GBA)
+    │
+    ▼  GBA.degeneralize            ✓ accepts ξ ↔ GBA accepts ξ, unconditional, any k (degeneralize_accepts_any)
+Standard Büchi Automaton (BA)
+```
 
-**`LTLtoGBA/Expand.lean`** — The core Gerth et al. algorithm. `expand` is a recursive worklist procedure that decomposes LTL formulas into a graph of nodes. `createGraph` is the entry point. Corresponds to `expand_body` / `expand` / `create_graph` in `LTL_to_GBA.thy`.
+## Model checking
 
-**`LTLtoGBA/Construction.lean`** — Assembles a `GBA` from the expanded node graph: builds successor map from incoming edges, acceptance sets from Until-subformulas, and labeling from atomic propositions. Corresponds to `create_gba_from_nodes`, `build_succ`, `build_F`, and `pn_map` in `LTL_to_GBA.thy` / `LTL_to_GBA_impl.thy`.
+Check an external system (given as initial states, a successor function, and a state-labeling function — no bundled record type, exactly what an on-the-fly checker needs) against an LTL property. `modelCheck` negates the property, builds its automaton, forms the product against the system *on-the-fly*, and runs a verified emptiness check.
 
-**`LTLtoGBA/Invariants.lean`** — Structural invariants of the expand algorithm, proved via `partial_correctness` induction. Defines `ExpandSpec` with 11 properties (literal consistency, no false, propagation rules for and/or/next/until/release, successor inheritance, initial formula containment). Main theorem: `createGraph_spec` proves `createGraph φ = some st → ExpandSpec φ st`.
+### Top-level results
 
-**`LTLtoGBA/Soundness.lean`** — Soundness of the abstract GBA: `expandOASpec_soundness` proves that if the abstract automaton accepts ξ, then ξ ⊨ φ. Core lemma `old_implies_satisfied` (L4_8) by structural induction. Also defines `expandOASpec` (abstract automaton bypassing HashMap reasoning).
+```lean
+theorem modelCheck_empty_unsat (φ : Formula α) (sysInit) (sysSucc) (sysLabel)
+    (sysFR : FiniteReach sysInit sysSucc) (checker : EmptinessChecker (SysState × BAState))
+    {n : Nat} (h : modelCheck (S := S) φ sysInit sysSucc sysLabel sysFR checker = .empty n) :
+    ∀ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ →
+      Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ
 
-**`LTLtoGBA/Completeness.lean`** — Completeness of the abstract GBA: `expandOASpec_completeness` proves that if ξ ⊨ φ (and `GraphComplete` holds), then the abstract automaton accepts ξ. The `GraphComplete` hypothesis is not yet proved from `createGraph`.
+theorem modelCheck_nonEmpty_sat (φ : Formula α) (sysInit) (sysSucc) (sysLabel)
+    (sysFR : FiniteReach sysInit sysSucc) (checker : EmptinessChecker (SysState × BAState))
+    {stem loop : List (SysState × BAState)}
+    (h : modelCheck (S := S) φ sysInit sysSucc sysLabel sysFR checker = .nonEmpty stem loop) :
+    ∃ τ : Nat → SysState, (Sys.toSpec sysSucc sysInit sysLabel).isRun τ ∧
+      ¬ Formula.directSatisfies (fun i a => a ∈ sysLabel (τ i)) φ
+```
 
-**`LTLtoGBA/Bridge.lean`** — Proves `constructGBA_iff_expandOASpec`: the computational `GBA` (built by `constructGBA` using HashMaps) and the abstract `expandOASpec` accept the same words. Reasoning about `HashMap.fold` in `buildSuccessors`/`buildAcceptSets`/`buildLabeling`/`buildInitialStates`.
+Both are proven for *any* `checker : EmptinessChecker`, not fixed to the default nested-DFS one.
 
-**`NestedDFS.lean`** — Generic Courcoubetis-Vardi-Wolper-Yannakakis (CVWY) nested DFS algorithm for detecting accepting cycles. Parameterized by state type, successor function, and accepting predicate. Returns either `empty` (property holds) or `nonEmpty stem loop` (lasso-shaped counterexample). Uses explicit stack for the outer DFS and recursive inner DFS with the `innerFinished` optimization.
+### Example usage
 
-**`Lasso.lean`** — Abstract lasso theory for Büchi automata. Defines `lassoRun` (infinite run from stem + cycle lists), `ValidLasso` (structure capturing validity conditions: initial state, transition chains, overlap, cycle back-edge, acceptance). Proves `run_isRun` (valid transitions), `run_isAccepting` (infinitely often accepting), and `accepts_of_validLasso`. Modular arithmetic reasoning handles cycle wrapping.
+```lean
+open LTLLib
 
-**`OutputVerify.lean`** — Bridges computational nestedDFS output to the abstract `ValidLasso` theory. `ba_hasAcceptingRun_of_lasso` takes `Array.contains`/`BA.isAccepting` checks and constructs a `ValidLasso` for `BA.toSpec`. `ba_hasAcceptingRun_of_ndfs_output` handles the raw nestedDFS output format where `loop = [seed, ...seed]` and the actual cycle is `loop.tail`.
+inductive Light where | red | green | yellow
+deriving BEq, Hashable, Repr, Inhabited, DecidableEq, Fintype
 
-## Algorithm Pipeline
+def lightSucc : Light → Array Light
+  | .red => #[.green] | .green => #[.yellow] | .yellow => #[.red]
+
+def lightLabel : Light → Std.HashSet String
+  | .green => {"green"} | _ => ∅
+
+def lightInit : List Light := [.red]
+abbrev S := Std.HashSet (NNF String)
+def lightFR : FiniteReach lightInit lightSucc := Set.toFinite _
+
+def ψ : Formula String := .always (.eventually (.atom "green"))
+
+#eval modelCheck (S := S) ψ lightInit lightSucc lightLabel lightFR
+-- .empty _  (the light does turn green infinitely often)
+```
+
+The full runnable file — `LawfulBEq`/`LawfulHashable`/`ToString` instances included — is `LTLLibTests/Examples/ModelCheckExample.lean`; `LTLLibTests/Examples/ModelCheckCounterExample.lean` shows the `.nonEmpty` (violation) side.
+
+### Termination: `FiniteReach`
+
+`modelCheck` needs one proof from the caller: `sysFR : FiniteReach sysInit sysSucc`, that the system's reachable state set is finite. It's a bare `Prop` existence certificate (`{s | Reachable sysInit sysSucc s}.Finite`) — no `HashSet` witness, no data touched at runtime. `Product.finiteReach` lifts it to the product graph automatically, so the caller never reasons about the product directly:
+- system finite by construction (a `Fintype` state type): `Set.toFinite _`
+- otherwise: exhibit a concrete finite superset and `Set.Finite.subset`
+
+### Correctness link in the chain
+
+| Correctness link | Theorem | File |
+|---|---|---|
+| Negating `φ` preserves semantics | `Formula.toNNF_correct_neg` | `LTL/Semantics.lean` |
+| `¬φ`'s GBA accepts exactly `¬φ`'s models | `constructGBA_correct` | `LTLtoGBA/Correctness.lean` |
+| Degeneralized BA preserves language | `degeneralize_accepts_any` | `DegeneralBridge.lean` |
+| Product run ↔ system run + BA-language witness | `Product.gsp_correct1` / `gsp_correct2` | `Product.lean` |
+| Product accepting cycle → concrete accepting run | `AcceptingCycle.toValidLassoProduct` | `Product.lean` |
+| Accepting run ⟹ accepting cycle exists (pumping) | `exists_acceptingCycle_of_run` | `NestedDFS/NestedDFSTermination.lean` |
+| Emptiness check sound + complete vs. `AcceptingCycle` | `EmptinessChecker.nonEmpty_valid` / `.empty_no_cycle` | `AbstractSpec/EmptinessCheck.lean` |
+| Everything composed into system-level model checking | `modelCheck_empty_unsat` / `modelCheck_nonEmpty_sat` | `ModelCheck.lean` |
+
+### Algorithm pipeline
+
+```
+LTL property φ  (Formula α)
+    │
+    ▼  negate + toNNF                 ✓ proved correct (Formula.toNNF_correct_neg)
+¬φ (in NNF)
+    │
+    ▼  createGraph → constructGBA     ✓ accepts ξ ↔ ξ ⊨ ¬φ, unconditional (constructGBA_correct)
+GBA for ¬φ
+    │
+    ▼  GBA.degeneralize                ✓ accepts ξ ↔ GBA accepts ξ, unconditional, any k (degeneralize_accepts_any)
+BA for ¬φ
+    │
+    ▼  Product.getSuccessors / initialStates / isAccepting  ✓ product run ↔ system run (gsp_correct1/2)
+Product graph  (SysState × BAState), built on-the-fly
+    │
+    ▼  checker.check   (nestedDFSWF by default)          ✓ sound + complete vs. AcceptingCycle
+EmptinessResult (SysState × BAState)
+    .empty n            → sys ⊨ φ
+    .nonEmpty stem loop → a real run of sys violating φ, witnessed by
+                           (system state, ¬φ-automaton state) pairs
+```
+
+The first two stages are the [LTL to BA translation](#ltl-to-ba-translation) shared with satisfiability.
+
+If a different emptiness-check algorithm suits your system better than nested DFS, `modelCheck` takes an optional `checker : EmptinessChecker (SysState × BAState) := nestedDFSChecker` parameter — any instance works, with no other change to the call.
+
+### Terminal states
+
+LTL/Büchi semantics are defined over *infinite* words, so every state needs at least one successor; a terminal state is read as "the system stays there forever". A `sysSucc` that returns `#[]` for some reachable state breaks that silently — `modelCheck` just under-reports, missing any counterexample whose violation only manifests by the system stalling there.
+
+`Product.getSuccessors` fixes this automatically via `Product.totalizeSucc`: any state with no outgoing edges gets a self-loop before the product is ever built. Systems that are already total pay nothing extra — `totalizeSucc` is a no-op on them. See `LTLLibTests/Examples/ModelCheckTerminalStateExample.lean` for a worked failure/fix example.
+
+## Satisfiability
+
+Decide whether an LTL formula is satisfiable, with a witness trace if so — no external system needed.
+
+### Top-level results
+
+```lean
+theorem fullPipeline_empty_unsat (φ : NNF α) {n : Nat}
+    (h : fullPipeline φ = .empty n) :
+    ∀ ξ : OmegaWord α, ¬ NNF.satisfies ξ φ
+
+theorem fullPipeline_nonEmpty_sat (φ : NNF α) {stem loop : List BAState}
+    (h : fullPipeline φ = .nonEmpty stem loop) :
+    ∃ ξ : OmegaWord α, NNF.satisfies ξ φ
+```
+
+`fullPipeline` is a genuine, computable `def`, defined for every formula (`createGraph_term` guarantees it) — no external setup needed.
+
+### Example usage
+
+```lean
+open LTLLib
+
+abbrev Prop' := String
+
+/-- □◇a ∧ □◇¬a: a holds infinitely often, and fails infinitely often. -/
+def φ : Formula Prop' :=
+  .and (.always (.eventually (.atom "a"))) (.always (.eventually (.not (.atom "a"))))
+
+#eval report φ
+-- satisfiable
+-- stem: {} → {} → {a} → {} → {a} → {a} → {}
+-- loop: {} → {} → {a} → {} → {a} → {a} ⟲ (repeats forever)
+```
+
+`report` (`LTLLibTests/Examples/SatisfiabilityExample.lean`) calls `fullPipeline` for the verdict and, for `.nonEmpty`, renders the witness lasso's atoms at each step by looking them up in the same automaton's own labeling — see the file for `report`/`showRun` and the `.empty` (unsatisfiable) case.
+
+### Algorithm pipeline
 
 ```
 LTL formula φ  (Formula α, user-facing syntax)
     │
-    ▼  toNNF                     ✓ proved correct
-φ (in NNF)     (NNF α, internal IR)
+    ▼  toNNF                     ✓ proved correct (Formula.toNNF_correct)
+φ (in NNF)     (NNF α, internal IR — the type every stage below consumes)
     │
-    ▼  neg
-¬φ (in NNF)
-    │
-    ▼  createGraph                ✓ ExpandSpec proved
+    ▼  createGraph                ✓ totality proved (createGraph_term); ExpandSpec proved (createGraph_spec)
 Node graph (ExpandState)
     │
-    ▼  constructGBA               ✓ bridge proved (↔ expandOASpec)
+    ▼  constructGBA               ✓ accepts ξ ↔ ξ ⊨ φ, unconditional (constructGBA_correct)
 Generalized Büchi Automaton (GBA)
     │
-    ▼  degeneralize               ✓ bridge proved (↔ OASpec.degeneralize)
+    ▼  GBA.degeneralize            ✓ accepts ξ ↔ GBA accepts ξ, unconditional, any k (degeneralize_accepts_any)
 Standard Büchi Automaton (BA)
     │
-    ▼  nestedDFS (on product with system)
-EmptinessResult: empty | nonEmpty stem loop
+    ▼  nestedDFSWF                 ✓ total, sound + complete (nestedDFSWF_empty_no_cycle / _nonEmpty_valid)
+EmptinessResult: empty exploredStates | nonEmpty stem loop
 ```
 
-## Isabelle Correspondence
+### Correctness link in the chain
 
-Each definition includes comments referencing its counterpart in the Isabelle/HOL formalization (`LTL_to_GBA.thy`, `LTL_to_GBA_impl.thy`, and the CAVA LTL framework).
+| Correctness link | Theorem | File |
+|---|---|---|
+| NNF compilation preserves semantics | `Formula.toNNF_correct` | `LTL/Semantics.lean` |
+| `expand`/`createGraph` terminate on every input | `createGraph_term` | `LTLtoGBA/ExpandTermination.lean` |
+| Graph expansion satisfies its structural invariants | `createGraph_spec` | `LTLtoGBA/Invariants.lean` |
+| Expansion graph is exhaustive (drives completeness) | `createGraph_graphComplete` | `LTLtoGBA/Completeness.lean` |
+| Computational GBA accepts exactly the models of `φ` | `constructGBA_correct` | `LTLtoGBA/Correctness.lean` |
+| `constructGBA`'s output is well-formed | `constructGBA_wellFormed` | `LTLtoGBA/Bridge.lean` |
+| GBA degeneralization preserves language, any `numAcceptSets` | `degeneralize_accepts_any` | `DegeneralBridge.lean` |
+| `innerDFS`/`outerDFSLoop`/`nestedDFS` are total, well-founded | `nestedDFSWF` | `NestedDFS/NestedDFSTermination.lean` |
+| `nestedDFSWF` soundness (`.nonEmpty` → genuine accepting cycle) | `nestedDFSWF_nonEmpty_valid` | `NestedDFS/NestedDFSTermination.lean` |
+| `nestedDFSWF` completeness (`.empty` → no accepting cycle) | `nestedDFSWF_empty_no_cycle` | `NestedDFS/NestedDFSTermination.lean` |
+| Accepting run ⟹ accepting cycle exists (pumping lemma) | `exists_acceptingCycle_of_run` | `NestedDFS/NestedDFSTermination.lean` |
+| Everything composed into one satisfiability decision procedure | `fullPipeline_empty_unsat` / `fullPipeline_nonEmpty_sat` | `Satisfiability.lean` |
+
+## Proof status
+
+Every top-level theorem is fully proven: 0 `sorry`, 0 axioms, no admitted hypotheses, no side conditions beyond the formula (or system) itself. Both decision procedures are genuine, computable `def`s — not gated behind an axiom or an unfinished proof.
+
+- `fullPipeline_empty_unsat` / `fullPipeline_nonEmpty_sat` — satisfiability (`Satisfiability.lean`)
+- `modelCheck_empty_unsat` / `modelCheck_nonEmpty_sat` — model checking (`ModelCheck.lean`)
+
+## File organization
+
+```
+LTLLib/
+  LTL.lean
+  LTL/
+    Syntax.lean
+    Semantics.lean
+    Subformulas.lean
+    Fairness.lean
+  GBA.lean
+  BA.lean
+  AbstractSpec/
+    Acceptance.lean
+    EmptinessCheck.lean
+    Lasso.lean
+  DegeneralBridge.lean
+  LTLtoGBA/
+    FSet.lean
+    Node.lean
+    Expand.lean
+    ExpandTermination.lean
+    Construction.lean
+    Invariants.lean
+    Soundness.lean
+    Bridge.lean
+    Completeness.lean
+    Correctness.lean
+  NestedDFS/
+    NestedDFSCorrectness.lean
+    NestedDFSTermination.lean
+  Satisfiability.lean
+  Product.lean
+  ModelCheck.lean
+LTLLibTests/
+  ModuleSystem.lean
+  GuardAxioms.lean
+  HistoricalTheorems.lean
+  Examples/          -- worked usage examples, referenced above
+  TGBABased/
+    Degeneralization.lean
+    NestedDFS.lean
+    LTLtoTGBA/       -- translation tests and test-only helpers
+    ...             -- TGBA tests and shared test utilities
+```
+
+### Module descriptions
+
+**`LTL.lean`** — Re-exports `LTL/Syntax.lean` and `LTL/Semantics.lean`.
+
+**`LTL/Syntax.lean`** — `Formula α` (user-facing syntax) and `NNF α` (internal negation-normal-form IR); `Formula.toNNF` compiles between them.
+
+**`LTL/Subformulas.lean`** — Subformula closure and Until-subformula extraction; used for acceptance-set construction and `expand`'s termination measure.
+
+**`LTL/Semantics.lean`** — Denotational semantics for `NNF`/`Formula`, built on the Lentil TLA library; `Formula.toNNF_correct`.
+
+**`LTL/Fairness.lean`** — Weak/strong fairness (justice/compassion) encoded as LTL formulas.
+
+**`GBA.lean`** — The `GBA α` structure and `GBA.WellFormed`.
+
+**`BA.lean`** — The `BA α` structure, `GBA.degeneralize`, `BA.WellFormed`, and the `AcceptingCycle → ValidLasso` bridge for `BA.toSpec`.
+
+**`AbstractSpec/Acceptance.lean`** — `OASpec` (unified GBA/BA proof-level spec), `OASpec.degeneralize`, `canonicalLabel`.
+
+**`AbstractSpec/EmptinessCheck.lean`** — `EmptinessResult`, `AcceptingCycle`, `FiniteReach`, and the algorithm-agnostic `EmptinessChecker` contract.
+
+**`AbstractSpec/Lasso.lean`** — `ValidLasso`/`lassoRun`: a stem+cycle witness constructs a genuine accepting run.
+
+**`DegeneralBridge.lean`** — Bridges computational `GBA.degeneralize` to the abstract `OASpec.degeneralize`, for any number of acceptance sets.
+
+**`LTLtoGBA/FSet.lean`** — Abstract finite-set typeclass, with `Std.HashSet`/`Std.TreeSet` instances.
+
+**`LTLtoGBA/Node.lean`** — `GBANode`, the record used during graph construction.
+
+**`LTLtoGBA/Expand.lean`** — The Gerth et al. `expand`/`createGraph` algorithm.
+
+**`LTLtoGBA/ExpandTermination.lean`** — Totality of `expand`/`createGraph`.
+
+**`LTLtoGBA/Construction.lean`** — Assembles a `GBA` from the expanded node graph.
+
+**`LTLtoGBA/Invariants.lean`** — Structural invariants of the expand algorithm (`ExpandSpec`, `createGraph_spec`).
+
+**`LTLtoGBA/Soundness.lean`** — GBA accepts `ξ` ⟹ `ξ ⊨ φ`.
+
+**`LTLtoGBA/Bridge.lean`** — Computational GBA ↔ abstract automaton; `constructGBA_wellFormed`.
+
+**`LTLtoGBA/Completeness.lean`** — Proves `GraphComplete` unconditionally from `createGraph` itself (GPVW95); `ξ ⊨ φ` ⟹ GBA accepts `ξ`.
+
+**`LTLtoGBA/Correctness.lean`** — Combines soundness + completeness into the unconditional `constructGBA_correct`.
+
+**`NestedDFS/NestedDFSCorrectness.lean`** — Fuel-indexed nested DFS, proven sound and complete against `AcceptingCycle`.
+
+**`NestedDFS/NestedDFSTermination.lean`** — The executable well-founded `nestedDFSWF`, bridged to the fuel version above; `nestedDFSChecker`; the pumping lemma `exists_acceptingCycle_of_run`.
+
+**`Satisfiability.lean`** — `fullPipeline`, plus `fullPipeline_empty_unsat`/`fullPipeline_nonEmpty_sat`.
+
+**`Product.lean`** — On-the-fly product between an external system and a `BA`, including terminal-state totalization and the `AcceptingCycle → ValidLasso` bridge for `Product.toSpec`.
+
+**`ModelCheck.lean`** — `modelCheck`, plus `modelCheck_empty_unsat`/`modelCheck_nonEmpty_sat`.

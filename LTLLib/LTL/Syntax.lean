@@ -1,63 +1,53 @@
+module
+
 /-
   LTL formula syntax: both the user-facing type and the internal NNF IR.
 
   Two representations:
   - `Formula α`: User-facing syntax with the full set of standard LTL operators
     (`not`, `implies`, `iff`, `eventually`, `always`, etc.).
-    Corresponds to `'a ltln` in the CAVA LTL framework.
 
   - `NNF α`: Internal Negative Normal Form representation where
     negation only appears at the atomic level (`nprop`). This is the IR consumed
     by the GBA construction pipeline.
-    Corresponds to `'a ltlr` / `'a frml` in the CAVA LTL framework.
 
-  `Formula.toNNF` compiles the user-facing syntax to NNF.
-  Corresponds to `ltln_to_ltlr` in the CAVA framework.
+  `Formula.toNNF` compiles the user-facing syntax to NNF and `NNF.toFormula` embeds it back, `toNNF true`
+  being a left inverse. `NNF.splitConj` splits at the top-level conjunctions, which fairness routing runs
+  after `toNNF` so that a conjunction written under a negation splits too.
+
+  Sections:
+  - User-facing syntax
+  - NNF (internal IR)
+  - NNF normalization
 -/
 
+
+public section
 namespace LTLLib
 
 /-! ## User-facing syntax -/
 
-/-- LTL formula with the standard set of operators.
-
-This is the user-facing type. Use `toNNF` to compile to the internal
-`NNF` representation before passing to the GBA pipeline.
-
-Corresponds to `'a ltln` in the CAVA LTL framework. -/
+/-- LTL formula with the standard set of operators (the user-facing surface syntax). -/
 inductive Formula (α : Type u) where
-  /-- Constant true. -/
   | tt : Formula α
-  /-- Constant false. -/
   | ff : Formula α
-  /-- Atomic proposition. -/
   | atom (a : α) : Formula α
-  /-- Negation. -/
   | not (φ : Formula α) : Formula α
-  /-- Conjunction. -/
   | and (φ ψ : Formula α) : Formula α
-  /-- Disjunction. -/
   | or (φ ψ : Formula α) : Formula α
-  /-- Implication. -/
   | implies (φ ψ : Formula α) : Formula α
-  /-- Biconditional. -/
   | iff (φ ψ : Formula α) : Formula α
-  /-- Next (X). -/
-  | next (φ : Formula α) : Formula α
-  /-- Until (U). -/
-  | until (φ ψ : Formula α) : Formula α
-  /-- Release (R), dual of Until: φ R ψ ≡ ¬(¬φ U ¬ψ). -/
-  | release (φ ψ : Formula α) : Formula α
-  /-- Eventually (◇φ) = true U φ. -/
-  | eventually (φ : Formula α) : Formula α
-  /-- Always (□φ) = false R φ. -/
-  | always (φ : Formula α) : Formula α
+  | next (φ : Formula α) : Formula α  -- X
+  | until (φ ψ : Formula α) : Formula α  -- U
+  | release (φ ψ : Formula α) : Formula α  -- R, dual of Until: φ R ψ ≡ ¬(¬φ U ¬ψ)
+  | eventually (φ : Formula α) : Formula α  -- ◇φ = tt U φ
+  | always (φ : Formula α) : Formula α  -- □φ = ff R φ
 deriving Repr, Inhabited, DecidableEq, BEq, Hashable
 
 namespace Formula
 
 /-- Pretty-print an LTL formula. -/
-def toString [ToString α] : Formula α → String
+@[expose] def toString {α} [ToString α] : Formula α → String
   | .tt => "⊤"
   | .ff => "⊥"
   | .atom a => s!"{a}"
@@ -72,48 +62,44 @@ def toString [ToString α] : Formula α → String
   | .eventually φ => s!"◇({φ.toString})"
   | .always φ => s!"□({φ.toString})"
 
-instance [ToString α] : ToString (Formula α) := ⟨Formula.toString⟩
+instance {α} [ToString α] : ToString (Formula α) := ⟨Formula.toString⟩
+
+/-- Conjunction of a list, `⊤` when empty. -/
+@[expose] def conj {α} : List (Formula α) → Formula α
+  | [] => .tt
+  | [φ] => φ
+  | φ :: φs => .and φ (conj φs)
+
+/-- `φ` under a list of assumptions, `φ` itself when there are none so an empty assumption costs nothing. -/
+@[expose] def assuming {α} (ψs : List (Formula α)) (φ : Formula α) : Formula α :=
+  match ψs with
+  | [] => φ
+  | _ => .implies (conj ψs) φ
 
 end Formula
 
 /-! ## NNF (internal IR) -/
 
-/-- LTL formula in Negative Normal Form (NNF).
-Parametrized by the type of atomic propositions `α`.
-
-This is the internal representation consumed by the GBA pipeline.
-Negation only appears at the atomic level (`prop` vs `nprop`).
-
-Corresponds to `'a ltlr` in the CAVA LTL framework, used as `'a frml`
-in LTL_to_GBA.thy (line 98). -/
+/-- LTL formula in Negative Normal Form: negation appears only at the atomic level (`prop`/`nprop`). -/
 inductive NNF (α : Type u) where
-  /-- Constant true. Corresponds to `true_ltlr` / `True⁼`. -/
   | tt : NNF α
-  /-- Constant false. Corresponds to `false_ltlr` / `False⁼`. -/
   | ff : NNF α
-  /-- Positive atomic proposition. Corresponds to `prop_ltlr` / `prop⁼(q)`. -/
   | prop (a : α) : NNF α
-  /-- Negated atomic proposition. Corresponds to `nprop_ltlr` / `nprop⁼(q)`. -/
   | nprop (a : α) : NNF α
-  /-- Conjunction. Corresponds to `and_ltlr` / `ν and⁼ μ`. -/
   | and (φ ψ : NNF α) : NNF α
-  /-- Disjunction. Corresponds to `or_ltlr` / `ν or⁼ μ`. -/
   | or (φ ψ : NNF α) : NNF α
-  /-- Next (X). Corresponds to `next_ltlr` / `X⁼ ν`. -/
-  | next (φ : NNF α) : NNF α
-  /-- Until (U). Corresponds to `until_ltlr` / `μ U⁼ η`. -/
-  | until (φ ψ : NNF α) : NNF α
-  /-- Release (R), dual of Until. Corresponds to `release_ltlr` / `μ R⁼ η`. -/
-  | release (φ ψ : NNF α) : NNF α
+  | next (φ : NNF α) : NNF α  -- X
+  | until (φ ψ : NNF α) : NNF α  -- U
+  | release (φ ψ : NNF α) : NNF α  -- R, dual of Until
 deriving Repr, Inhabited, DecidableEq, BEq, Hashable
 
-instance [BEq α] [LawfulBEq α] : LawfulBEq (NNF α) where
+instance {α} [BEq α] [LawfulBEq α] : LawfulBEq (NNF α) where
   rfl := by intro a ; induction a <;> simp [BEq.beq, instBEqNNF.beq] at * <;> grind
   eq_of_beq := by
     intro a ; induction a <;> intro b <;> cases b <;> try solve | simp [BEq.beq, instBEqNNF.beq]
     all_goals simp [BEq.beq, instBEqNNF.beq] at * ; try grind
 
-instance [BEq α] [Hashable α] [inst : LawfulHashable α] : LawfulHashable (NNF α) where
+instance {α} [BEq α] [Hashable α] [inst : LawfulHashable α] : LawfulHashable (NNF α) where
   hash_eq := by
     intro a ; induction a <;> intro b <;> cases b <;> try solve | simp [BEq.beq, instBEqNNF.beq]
     all_goals simp [BEq.beq, instBEqNNF.beq, hash, instHashableNNF.hash] at * ; try grind
@@ -121,14 +107,8 @@ instance [BEq α] [Hashable α] [inst : LawfulHashable α] : LawfulHashable (NNF
 
 namespace NNF
 
-/-- Negate an LTL formula, pushing negation inward to maintain NNF.
-
-Corresponds to `not⁼` / `not_ltlr` in the CAVA LTL framework.
-Uses De Morgan laws and temporal duality:
-  ¬(φ U ψ) = (¬φ) R (¬ψ)
-  ¬(φ R ψ) = (¬φ) U (¬ψ)
-  ¬(X φ)   = X (¬φ) -/
-def neg : NNF α → NNF α
+/-- Negate a formula, pushing negation inward to stay in NNF (De Morgan + temporal duality). -/
+@[expose] def neg {α} : NNF α → NNF α
   | .tt => .ff
   | .ff => .tt
   | .prop a => .nprop a
@@ -136,20 +116,38 @@ def neg : NNF α → NNF α
   | .and φ ψ => .or φ.neg ψ.neg
   | .or φ ψ => .and φ.neg ψ.neg
   | .next φ => .next φ.neg
-  | .until φ ψ => .release φ.neg ψ.neg
-  | .release φ ψ => .until φ.neg ψ.neg
+  | .until φ ψ => .release φ.neg ψ.neg  -- ¬(φ U ψ) = ¬φ R ¬ψ
+  | .release φ ψ => .until φ.neg ψ.neg  -- ¬(φ R ψ) = ¬φ U ¬ψ
 
 /-- Eventually (◇φ) = true U φ. -/
-def eventually (φ : NNF α) : NNF α := .until .tt φ
+@[expose] def eventually {α} (φ : NNF α) : NNF α := .until .tt φ
 
 /-- Always (□φ) = false R φ. -/
-def always (φ : NNF α) : NNF α := .release .ff φ
+@[expose] def always {α} (φ : NNF α) : NNF α := .release .ff φ
 
 /-- Implication φ → ψ = ¬φ ∨ ψ (in NNF). -/
-def implies (φ ψ : NNF α) : NNF α := .or φ.neg ψ
+@[expose] def implies {α} (φ ψ : NNF α) : NNF α := .or φ.neg ψ
+
+/-- Embed back into the surface syntax, so a formula recovered from NNF can re-enter the translator. -/
+@[expose] def toFormula {α} : NNF α → Formula α
+  | .tt => .tt
+  | .ff => .ff
+  | .prop a => .atom a
+  | .nprop a => .not (.atom a)
+  | .and φ ψ => .and φ.toFormula ψ.toFormula
+  | .or φ ψ => .or φ.toFormula ψ.toFormula
+  | .next φ => .next φ.toFormula
+  | .until φ ψ => .until φ.toFormula ψ.toFormula
+  | .release φ ψ => .release φ.toFormula ψ.toFormula
+
+/-- Split at the top-level conjunctions. Run on the NNF rather than the surface formula, so a conjunction
+written as `¬(¬φ ∨ ¬ψ)` splits as well. -/
+@[expose] def splitConj {α} : NNF α → List (NNF α)
+  | .and φ ψ => splitConj φ ++ splitConj ψ
+  | φ => [φ]
 
 /-- Pretty-print an NNF formula. -/
-def toString [ToString α] : NNF α → String
+@[expose] def toString {α} [ToString α] : NNF α → String
   | .tt => "⊤"
   | .ff => "⊥"
   | .prop a => s!"{a}"
@@ -160,7 +158,7 @@ def toString [ToString α] : NNF α → String
   | .until φ ψ => s!"({φ.toString} U {ψ.toString})"
   | .release φ ψ => s!"({φ.toString} R {ψ.toString})"
 
-instance [ToString α] : ToString (NNF α) := ⟨NNF.toString⟩
+instance {α} [ToString α] : ToString (NNF α) := ⟨NNF.toString⟩
 
 end NNF
 
@@ -168,16 +166,10 @@ end NNF
 
 namespace Formula
 
-/-- Convert a surface LTL formula to Negative Normal Form.
-
-Pushes negation inward to the atomic level using De Morgan laws and
-temporal duality. Also desugars `implies`, `iff`, `eventually`, `always`.
-
-The `pos` parameter tracks polarity: `true` = positive context,
-`false` = negative context (under an odd number of negations).
-
-Corresponds to `ltln_to_ltlr` in the CAVA LTL framework. -/
-def toNNF (pos : Bool) : Formula α → NNF α
+/-- Convert a surface formula to NNF: pushes negations inward via De Morgan and temporal duality,
+and desugars `implies`/`iff`/`eventually`/`always`. `pos` tracks polarity (`false` under an odd
+number of negations). -/
+@[expose] def toNNF {α} (pos : Bool) : Formula α → NNF α
   | .tt => if pos then .tt else .ff
   | .ff => if pos then .ff else .tt
   | .atom a => if pos then .prop a else .nprop a
@@ -209,5 +201,9 @@ def toNNF (pos : Bool) : Formula α → NNF α
     else .until .tt (toNNF false φ)
 
 end Formula
+
+/-- `toNNF true` undoes the embedding, so a kept conjunct reaches the tableau exactly as it left it. -/
+theorem NNF.toNNF_toFormula {α} (φ : NNF α) : φ.toFormula.toNNF true = φ := by
+  induction φ <;> simp [NNF.toFormula, Formula.toNNF, *]
 
 end LTLLib

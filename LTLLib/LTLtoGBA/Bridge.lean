@@ -1,25 +1,39 @@
+module
+
 /-
-  Bridge between computational `constructGBA` and abstract `expandOASpec`.
+  Bridge between the computational `constructGBA` (HashMap-based, states = `Nat`) and the abstract `expandOASpec`
+  (predicate-based, states = `NodeData`), showing they accept the same ω-words. This lets soundness/completeness
+  proved for `expandOASpec` transfer to `constructGBA`'s actual output (see `Correctness.lean` for the combined result).
 
-  Shows that the computational GBA (HashMap-based, states = Nat) and the
-  abstract automaton (predicate-based, states = NodeData) accept the same
-  ω-words, enabling the end-to-end correctness chain:
+  Defines:
+  - `ExpandState.liftNode`: lifts a computational node name to its `NodeData`
+  - `NameConsistent`: invariant that `st.nodes` stores each node at its own name
 
-  Direction 1 (for counterexample certification / GBA soundness):
-    GBA.toSpec accepts ξ → expandOASpec accepts ξ → ξ ⊨ φ
+  Proves, for `createGraph φ = some st`:
+  - `constructGBA_iff_expandOASpec`: `constructGBA` and `expandOASpec` accept the same words
+  - `constructGBA_wellFormed`: initial/successor states of `constructGBA` are always known states
+  - `constructGBA_canonicalLabel_compat`: `canonicalLabel` on `constructGBA`'s labeling satisfies `labelCompat`
 
-  Direction 2 (for property-holds certification / GBA completeness):
-    ξ ⊨ φ → expandOASpec accepts ξ → GBA.toSpec accepts ξ
-
-  The key technical challenge is connecting HashMap-based build functions
-  (buildSuccessors, buildInitialStates, buildLabeling, buildAcceptSets)
-  to the abstract NodeData predicates.
+  ## Sections
+  - Generic fold helpers
+  - Build function correctness
+  - Node lifting
+  - Labeling correctness
+  - Accept-set correctness
+  - Name consistency from createGraph
+  - Literal consistency from createGraph
+  - Direction 1: GBA.toSpec accepts → expandOASpec accepts
+  - Direction 2: expandOASpec accepts → GBA.toSpec accepts
+  - Combined bridge
+  - Well-formedness of constructGBA
+  - Canonical labeling for constructGBA
 -/
 
-import LTLLib.LTLtoGBA.Soundness
-import LTLLib.LTLtoGBA.Completeness
-import LTLLib.LTLtoGBA.Construction
-import LTLLib.Acceptance
+public import LTLLib.LTLtoGBA.Invariants
+public import LTLLib.LTLtoGBA.ToGBA
+public import LTLLib.AbstractSpec.Acceptance
+
+public section
 
 namespace LTLLib
 
@@ -27,15 +41,11 @@ open NNF
 
 variable {α : Type u} {S : Type v}
 
-/-! ### Node lifting
-
-Lift a node name (Nat) to a NodeData by looking up in the ExpandState.
-The predicates existentially quantify over the HashMap entry, so they
-automatically become False when the node doesn't exist. -/
+/-! ### Generic fold helpers -/
 
 /-- Pairwise distinct keys imply pairwise distinct names (when name = key). -/
 private theorem pairwise_name_of_pairwise_key
-    {l : List (Nat × GBANode α S)}
+    {l : List (Nat × ExpansionNode α S)}
     (h_distinct : l.Pairwise (fun a b => (a.1 == b.1) = false))
     (h_names : ∀ x ∈ l, x.2.name = x.1) :
     l.Pairwise (fun a b => (a.2.name == b.2.name) = false) := by
@@ -48,11 +58,8 @@ private theorem pairwise_name_of_pairwise_key
       exact h_distinct.1 a ha,
     ih h_distinct.2 (fun x hx => h_names x (.tail _ hx))⟩
 
-/-! ### Generic fold helpers -/
-
-/-- Folding conditional inserts over a list into a HashSet:
-    the result contains `q` iff `init` already contained it or some
-    list element satisfies `p` and maps to `q` via `f`. -/
+/-- Folding conditional inserts over a list into a HashSet: the result contains `q` iff `init` already contained it
+    or some list element satisfies `p` and maps to `q` via `f`. -/
 private theorem HashSet_foldl_insert_contains
     [BEq γ] [Hashable γ] [LawfulBEq γ] [LawfulHashable γ]
     (l : List β) (p : β → Bool) (f : β → γ) (init : Std.HashSet γ) (q : γ) :
@@ -67,6 +74,43 @@ private theorem HashSet_foldl_insert_contains
       rw [ih]; simp only [Std.HashSet.contains_insert, hp, Bool.true_and]; ac_rfl
     · next hp =>
       rw [ih]; simp only [Bool.not_eq_true] at hp; simp [hp]
+
+/-- Folding unconditional inserts over a list into a HashSet: the result contains `q` iff `init` already contained it
+    or some list element maps to `q` via `f`. Unconditional special case of `HashSet_foldl_insert_contains`. -/
+private theorem HashSet_foldl_insert_contains'
+    [BEq γ] [Hashable γ] [LawfulBEq γ] [LawfulHashable γ]
+    (l : List β) (f : β → γ) (init : Std.HashSet γ) (q : γ) :
+    (l.foldl (fun acc x => acc.insert (f x)) init).contains q =
+      (init.contains q || l.any (fun x => f x == q)) := by
+  induction l generalizing init with
+  | nil => simp
+  | cons hd tl ih =>
+    simp only [List.foldl_cons, List.any_cons, ih, Std.HashSet.contains_insert]
+    ac_rfl
+
+/-! ### Build function correctness
+
+These lemmas connect the computational build functions to the abstract predicates they compute.
+
+**Key invariant**: nodes are stored by their name, i.e., `st.nodes[k]? = some node → node.name = k`. -/
+
+/-- `buildStates` contains `q` iff `q` is a key of `nodeMap` (i.e. `q` has a stored node). -/
+theorem buildStates_mem_iff
+    {nodeMap : Std.HashMap Nat (ExpansionNode α S)} (q : Nat) :
+    (buildStates nodeMap).contains q = true ↔ nodeMap.contains q = true := by
+  simp only [buildStates, Std.HashMap.fold_eq_foldl_toList]
+  rw [HashSet_foldl_insert_contains' _ Prod.fst]
+  simp only [Std.HashSet.contains_emptyWithCapacity, Bool.false_or, List.any_eq_true,
+    beq_iff_eq]
+  constructor
+  · rintro ⟨⟨k, nd⟩, hmem, rfl⟩
+    have hk := Std.HashMap.mem_toList_iff_getElem?_eq_some.mp hmem
+    rw [Std.HashMap.contains_eq_isSome_getElem?, hk]
+    rfl
+  · intro hcontains
+    rw [Std.HashMap.contains_eq_isSome_getElem?] at hcontains
+    obtain ⟨nd, hnd⟩ := Option.isSome_iff_exists.mp hcontains
+    exact ⟨(q, nd), Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hnd, rfl⟩
 
 /-- Folding inserts into a HashMap: keys not in the list fall back to `init`. -/
 private theorem HashMap_foldl_insert_not_mem
@@ -115,8 +159,7 @@ private theorem List_any_false_of_key_ne
     simp only [this, Bool.and_false, Bool.false_or]
     exact ih (fun x hx => h x (List.mem_cons_of_mem _ hx))
 
-/-- For a list with distinct keys, `any` with a key equality check reduces to
-    the predicate at the unique matching element. -/
+/-- For a list with distinct keys, `any` with a key equality check reduces to the predicate at the unique matching element. -/
 private theorem List_any_beq_unique
     [BEq γ] [LawfulBEq γ]
     (l : List (γ × δ)) (p : δ → Bool) (q : γ) (v : δ)
@@ -138,8 +181,7 @@ private theorem List_any_beq_unique
       simp only [h1, Bool.and_false, Bool.false_or]
       exact ih hmem_tl h_pw_tl
 
-/-- Inner fold for buildSuccessors: characterizes membership after processing
-    a list of predecessor names. -/
+/-- Inner fold for buildSuccessors: characterizes membership after processing a list of predecessor names. -/
 private theorem inner_fold_mem
     (l : List Nat) (nodeName : Nat)
     (succMap : Std.HashMap Nat (Array Nat)) (q q' : Nat) :
@@ -195,18 +237,10 @@ private theorem HashMap_foldl_insert_gen
     | tail _ hmem_tl =>
       exact ih _ hmem_tl h_pw_tl
 
-/-! ### Build function correctness
-
-These lemmas connect the computational build functions (which use HashMap.fold)
-to the abstract predicates. They are the core of the bridge.
-
-**Key invariant**: nodes are stored by their name, i.e.,
-`st.nodes[k]? = some node → node.name = k`. -/
-
 /-- buildInitialStates contains q iff some node with name q has expandInit in incoming. -/
 theorem buildInitialStates_correct
-    {nodeMap : Std.HashMap Nat (GBANode α S)}
-    (hname : ∀ k (node : GBANode α S), nodeMap[k]? = some node → node.name = k)
+    {nodeMap : Std.HashMap Nat (ExpansionNode α S)}
+    (hname : ∀ k (node : ExpansionNode α S), nodeMap[k]? = some node → node.name = k)
     (q : Nat) :
     (buildInitialStates nodeMap).contains q = true ↔
       ∃ node, nodeMap[q]? = some node ∧ node.incoming.contains expandInit = true := by
@@ -230,17 +264,16 @@ theorem buildInitialStates_correct
     refine ⟨⟨q, node⟩, Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hq, ?_⟩
     simp [hinc, hname q node hq]
 
-/-- q' ∈ getSuccessors q (via buildSuccessors) iff some node with name q'
-    has q in its incoming set. -/
+/-- q' ∈ getSuccessors q (via buildSuccessors) iff some node with name q' has q in its incoming set. -/
 theorem buildSuccessors_mem_iff
-    {nodeMap : Std.HashMap Nat (GBANode α S)}
-    (hname : ∀ k (node : GBANode α S), nodeMap[k]? = some node → node.name = k)
+    {nodeMap : Std.HashMap Nat (ExpansionNode α S)}
+    (hname : ∀ k (node : ExpansionNode α S), nodeMap[k]? = some node → node.name = k)
     (q q' : Nat) :
     q' ∈ (buildSuccessors nodeMap)[q]?.getD #[] ↔
       ∃ node, nodeMap[q']? = some node ∧ node.incoming.contains q = true := by
   simp only [buildSuccessors, Std.HashMap.fold_eq_foldl_toList, Std.HashSet.fold_eq_foldl_toList]
   -- Prove invariant for the outer fold
-  suffices h : ∀ (l : List (Nat × GBANode α S)) (init : Std.HashMap Nat (Array Nat)),
+  suffices h : ∀ (l : List (Nat × ExpansionNode α S)) (init : Std.HashMap Nat (Array Nat)),
       (∀ x ∈ l, x.2.name = x.1) →
       (q' ∈ (l.foldl (fun succMap (_, node) =>
         node.incoming.toList.foldl (fun succMap predName =>
@@ -271,6 +304,10 @@ theorem buildSuccessors_mem_iff
 
 variable [FSet (NNF α) S]
 
+/-! ### Node lifting
+
+Lift a node name (Nat) to a NodeData by looking up in the ExpandState. -/
+
 /-- Lift a node name to its abstract NodeData representation. -/
 noncomputable def ExpandState.liftNode (st : ExpandState α S) (q : Nat) : NodeData α where
   name := q
@@ -280,7 +317,7 @@ noncomputable def ExpandState.liftNode (st : ExpandState α S) (q : Nat) : NodeD
 
 /-- If the node exists in the HashMap, the lifted NodeData is in toNodes. -/
 theorem ExpandState.liftNode_mem_toNodes (st : ExpandState α S) (q : Nat)
-    {node : GBANode α S} (hq : st.nodes[q]? = some node) :
+    {node : ExpansionNode α S} (hq : st.nodes[q]? = some node) :
     st.toNodes (st.liftNode q) := by
   refine ⟨node, hq, ?_, ?_, ?_⟩ <;> intro x <;> simp only [liftNode] <;> constructor
   · rintro ⟨n, hn, hk⟩; rw [hq] at hn; cases hn; assumption
@@ -291,10 +328,14 @@ theorem ExpandState.liftNode_mem_toNodes (st : ExpandState α S) (q : Nat)
   · exact fun h => ⟨node, hq, h⟩
 
 /-- Name consistency: nodes are stored at their own name as key. -/
-def NameConsistent (st : ExpandState α S) : Prop :=
-  ∀ (k : Nat) (node : GBANode α S), st.nodes[k]? = some node → node.name = k
+@[expose] def NameConsistent (st : ExpandState α S) : Prop :=
+  ∀ (k : Nat) (node : ExpansionNode α S), st.nodes[k]? = some node → node.name = k
 
 variable [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+
+/-! ### Labeling correctness
+
+`buildLabeling` computes each node's positive/negative atom sets and these lemmas connect it to `node.old`. -/
 
 /-- The list fold for labeling: `.1` tracks positive atoms. -/
 private theorem labeling_list_fold_fst
@@ -354,7 +395,7 @@ private theorem labeling_list_fold_snd
 
 /-- Compute the labeling (positive, negative atom sets) for a single node. -/
 private def computeNodeLabeling [BEq α] [Hashable α] [FSet (NNF α) S]
-    (node : GBANode α S) : Std.HashSet α × Std.HashSet α :=
+    (node : ExpansionNode α S) : Std.HashSet α × Std.HashSet α :=
   (FSet.toList node.old).foldl
     (fun (pos, neg) (formula : NNF α) =>
       match formula with
@@ -366,9 +407,9 @@ private def computeNodeLabeling [BEq α] [Hashable α] [FSet (NNF α) S]
 omit [LawfulBEq α] [LawfulHashable α] in
 /-- Helper: buildLabeling at q equals the value computed from the node at q. -/
 private theorem buildLabeling_eq
-    {nodeMap : Std.HashMap Nat (GBANode α S)}
-    (hname : ∀ k (node : GBANode α S), nodeMap[k]? = some node → node.name = k)
-    {q : Nat} {node : GBANode α S} (hq : nodeMap[q]? = some node) :
+    {nodeMap : Std.HashMap Nat (ExpansionNode α S)}
+    (hname : ∀ k (node : ExpansionNode α S), nodeMap[k]? = some node → node.name = k)
+    {q : Nat} {node : ExpansionNode α S} (hq : nodeMap[q]? = some node) :
     (buildLabeling nodeMap)[q]? = some (computeNodeLabeling node) := by
   simp only [buildLabeling, Std.HashMap.fold_eq_foldl_toList, FSet.foldl_eq_foldl_toList]
   have hmem := Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hq
@@ -382,19 +423,20 @@ private theorem buildLabeling_eq
     _ ⟨q, node⟩ hmem (by simp [hname q node hq]) h_pw
 
 omit [LawfulBEq α] [LawfulHashable α] in
+/-- `buildLabeling` is defined at every key that has a stored node. -/
 theorem buildLabeling_some
-    {nodeMap : Std.HashMap Nat (GBANode α S)}
-    (hname : ∀ k (node : GBANode α S), nodeMap[k]? = some node → node.name = k)
-    {q : Nat} {node : GBANode α S} (hq : nodeMap[q]? = some node) :
+    {nodeMap : Std.HashMap Nat (ExpansionNode α S)}
+    (hname : ∀ k (node : ExpansionNode α S), nodeMap[k]? = some node → node.name = k)
+    {q : Nat} {node : ExpansionNode α S} (hq : nodeMap[q]? = some node) :
     ∃ pos neg, (buildLabeling nodeMap)[q]? = some (pos, neg) := by
   rw [buildLabeling_eq hname hq]
   exact ⟨_, _, rfl⟩
 
 /-- buildLabeling at q: positive atoms match node.old. -/
 theorem buildLabeling_pos_correct
-    {nodeMap : Std.HashMap Nat (GBANode α S)}
-    (hname : ∀ k (node : GBANode α S), nodeMap[k]? = some node → node.name = k)
-    {q : Nat} {node : GBANode α S} (hq : nodeMap[q]? = some node)
+    {nodeMap : Std.HashMap Nat (ExpansionNode α S)}
+    (hname : ∀ k (node : ExpansionNode α S), nodeMap[k]? = some node → node.name = k)
+    {q : Nat} {node : ExpansionNode α S} (hq : nodeMap[q]? = some node)
     {pos neg : Std.HashSet α} (hlab : (buildLabeling nodeMap)[q]? = some (pos, neg))
     (a : α) :
     pos.contains a = FSet.contains node.old (.prop a) := by
@@ -410,9 +452,9 @@ theorem buildLabeling_pos_correct
 
 /-- buildLabeling at q: negative atoms match node.old. -/
 theorem buildLabeling_neg_correct
-    {nodeMap : Std.HashMap Nat (GBANode α S)}
-    (hname : ∀ k (node : GBANode α S), nodeMap[k]? = some node → node.name = k)
-    {q : Nat} {node : GBANode α S} (hq : nodeMap[q]? = some node)
+    {nodeMap : Std.HashMap Nat (ExpansionNode α S)}
+    (hname : ∀ k (node : ExpansionNode α S), nodeMap[k]? = some node → node.name = k)
+    {q : Nat} {node : ExpansionNode α S} (hq : nodeMap[q]? = some node)
     {pos neg : Std.HashSet α} (hlab : (buildLabeling nodeMap)[q]? = some (pos, neg))
     (a : α) :
     neg.contains a = FSet.contains node.old (.nprop a) := by
@@ -426,13 +468,16 @@ theorem buildLabeling_neg_correct
   simp only [Std.HashSet.contains_emptyWithCapacity, Bool.false_eq_true, false_or]
   exact FSet.mem_toList_iff (.nprop a) node.old
 
+/-! ### Accept-set correctness -/
+
 omit [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] in
-/-- buildAcceptSets at index i corresponds to untilSubs[i]. -/
+/-- `buildAcceptSets[i]` contains `q` iff node `q` either lacks the `i`-th until-formula in `old`, or has that
+formula's right operand in `old`. -/
 theorem buildAcceptSets_correct
-    {nodeMap : Std.HashMap Nat (GBANode α S)}
-    (hname : ∀ k (node : GBANode α S), nodeMap[k]? = some node → node.name = k)
+    {nodeMap : Std.HashMap Nat (ExpansionNode α S)}
+    (hname : ∀ k (node : ExpansionNode α S), nodeMap[k]? = some node → node.name = k)
     (untilSubs : List (NNF α × NNF α))
-    (i : Fin untilSubs.length) {q : Nat} {node : GBANode α S}
+    (i : Fin untilSubs.length) {q : Nat} {node : ExpansionNode α S}
     (hq : nodeMap[q]? = some node) :
     let asets := buildAcceptSets nodeMap untilSubs
     let hi : i.val < asets.size := by
@@ -441,10 +486,10 @@ theorem buildAcceptSets_correct
       (!FSet.contains node.old (NNF.until (untilSubs[i]).1 (untilSubs[i]).2) ||
         FSet.contains node.old (untilSubs[i]).2) := by
   intro asets hi
-  dsimp only [asets, buildAcceptSets]
+  dsimp only [asets, buildAcceptSets] at hi ⊢
   rw [Array.getElem_map]
-  simp only [List.getElem_toArray]
   rw [Std.HashMap.fold_eq_foldl_toList, HashSet_foldl_insert_contains]
+  simp only [List.getElem_toArray]
   simp only [Std.HashSet.contains_emptyWithCapacity, Bool.false_or]
   have hmem := Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hq
   apply Bool.eq_iff_iff.mpr
@@ -464,7 +509,7 @@ theorem buildAcceptSets_correct
 omit [LawfulBEq α] [LawfulHashable α] in
 /-- numAcceptSets of constructGBA equals untilSubformulas length. -/
 theorem constructGBA_numAcceptSets (φ : NNF α) (st : ExpandState α S) :
-    (constructGBA φ st).numAcceptSets = φ.untilSubformulas.length := by
+    (constructGBA φ st).numAcceptSets = φ.untilSubformulasDedup.length := by
   unfold constructGBA GBA.numAcceptSets buildAcceptSets
   simp
 
@@ -475,11 +520,14 @@ private theorem GBA.isAccepting_eq_contains [BEq α'] [Hashable α']
   unfold GBA.isAccepting
   rw [Array.getElem?_eq_getElem hi]
 
+variable [Hashable (NNF α)]
+
 /-! ### Name consistency from createGraph -/
 
-omit [FSet (NNF α) S] [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] in
+omit [FSet (NNF α) S] [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] [Hashable (NNF α)] in
+/-- `mergeIncoming` preserves name consistency. -/
 private theorem nameConsistent_mergeIncoming
-    {st : ExpandState α S} {node : GBANode α S} {targetName : Nat}
+    {st : ExpandState α S} {node : ExpansionNode α S} {targetName : Nat}
     (h_nc : NameConsistent st) :
     NameConsistent (mergeIncoming st node targetName) := by
   unfold mergeIncoming; split
@@ -503,7 +551,8 @@ theorem createGraph_nameConsistent (φ : NNF α)
     obtain rfl := Option.some.inj hcg
     show NameConsistent finalState
     have h_init : NameConsistent
-        ({ nextName := 2, nodes := Std.HashMap.emptyWithCapacity 16 } : ExpandState α S) := by
+        ({ nextName := 2, nodes := Std.HashMap.emptyWithCapacity 16,
+            index := Std.HashMap.emptyWithCapacity 16 } : ExpandState α S) := by
       intro k n hk; simp at hk
     revert h_init
     apply expand.partial_correctness
@@ -546,7 +595,7 @@ theorem createGraph_nameConsistent (φ : NNF α)
         -- Nondet case remains
         rename_i _ _ h_nondet
         revert hr; intro hr
-        -- hr should have the do-notation form; try to case-split on first expand_ih
+        -- Nondeterministic step: split on the intermediate state produced by the first recursive call
         cases h_branch1 : expand_ih
             { name := node.name, incoming := node.incoming,
               new := addToNew
@@ -564,17 +613,43 @@ theorem createGraph_nameConsistent (φ : NNF α)
           exact ih _ _ _ _ hr h1
   · nomatch hcg
 
+/-! ### Literal consistency from createGraph -/
+
+omit [Hashable α] [LawfulHashable α] in
+/-- A finished node's `old` set never contains both `prop a` and `nprop a`. -/
+theorem createGraph_literal_consistent (φ : NNF α) {st : ExpandState α S}
+    (hcg : createGraph φ = some st) {q : Nat} {node : ExpansionNode α S}
+    (hnode : st.nodes[q]? = some node) (a : α)
+    (hp : FSet.contains node.old (.prop a) = true)
+    (hn : FSet.contains node.old (.nprop a) = true) : False := by
+  have hspec := createGraph_spec φ hcg
+  have hmem := ExpandState.liftNode_mem_toNodes st q hnode
+  have hp' : (st.liftNode q).old (.prop a) := ⟨node, hnode, hp⟩
+  have hn' : (st.liftNode q).old (.nprop a) := ⟨node, hnode, hn⟩
+  exact hspec.literal_consistent (st.liftNode q) hmem a hp' hn'
+
+/-- The positive/negative atom sets `buildLabeling` computes for a `createGraph` node are always disjoint. -/
+theorem buildLabeling_disjoint (φ : NNF α) {st : ExpandState α S}
+    (hcg : createGraph φ = some st) {q : Nat} {node : ExpansionNode α S}
+    (hnode : st.nodes[q]? = some node)
+    {pos neg : Std.HashSet α} (hlab : (buildLabeling st.nodes)[q]? = some (pos, neg))
+    (a : α) (hpos : pos.contains a = true) (hneg : neg.contains a = true) : False := by
+  have hname := createGraph_nameConsistent φ hcg
+  rw [buildLabeling_pos_correct hname hnode hlab a] at hpos
+  rw [buildLabeling_neg_correct hname hnode hlab a] at hneg
+  exact createGraph_literal_consistent φ hcg hnode a hpos hneg
+
 /-! ### Direction 1: GBA.toSpec accepts → expandOASpec accepts
 
-Given a run σ : Nat → Nat in the computational GBA, lift it to
-σ' : Nat → NodeData α in the abstract automaton. -/
+Given a run σ : Nat → Nat in the computational GBA, lift it to σ' : Nat → NodeData α in the abstract automaton. -/
 
+/-- Every word `constructGBA` accepts is also accepted by `expandOASpec`. -/
 theorem constructGBA_toSpec_refines_expandOASpec
     {φ : NNF α} {st : ExpandState α S}
     (hcg : createGraph φ = some st)
     {ξ : OmegaWord α}
     (hacc : (constructGBA φ st).toSpec.accepts ξ) :
-    (expandOASpec φ st.toNodes φ.untilSubformulas).accepts ξ := by
+    (expandOASpec φ st.toNodes φ.untilSubformulasDedup).accepts ξ := by
   obtain ⟨σ, hrun, hcompat, haccRun⟩ := hacc
   have hname := createGraph_nameConsistent φ hcg
   -- Show each σ n corresponds to an actual node in st.nodes
@@ -641,7 +716,7 @@ theorem constructGBA_toSpec_refines_expandOASpec
     obtain ⟨j, hj⟩ := haccRun ⟨i.val, by rw [hnum]; exact i.isLt⟩ n
     refine ⟨j, ?_⟩
     obtain ⟨node, hnode⟩ := h_exists (n + j)
-    have hacc_eq := buildAcceptSets_correct hname φ.untilSubformulas i hnode
+    have hacc_eq := buildAcceptSets_correct hname φ.untilSubformulasDedup i hnode
     -- Convert hj from GBA.isAccepting to raw boolean
     simp only [GBA.toSpec] at hj
     have hi_gba : i.val < (constructGBA φ st).acceptSets.size := by
@@ -664,18 +739,21 @@ theorem constructGBA_toSpec_refines_expandOASpec
       right
       exact ⟨node, hnode, h⟩
 
-/-! ### Direction 2: expandOASpec accepts → GBA.toSpec accepts -/
+/-! ### Direction 2: expandOASpec accepts → GBA.toSpec accepts
 
+Given a run σ : Nat → NodeData α in the abstract automaton, project it to σ' : Nat → Nat in the computational GBA. -/
+
+/-- Every word `expandOASpec` accepts is also accepted by `constructGBA`. -/
 theorem expandOASpec_refines_constructGBA_toSpec
     {φ : NNF α} {st : ExpandState α S}
     (hcg : createGraph φ = some st)
     {ξ : OmegaWord α}
-    (hacc : (expandOASpec φ st.toNodes φ.untilSubformulas).accepts ξ) :
+    (hacc : (expandOASpec φ st.toNodes φ.untilSubformulasDedup).accepts ξ) :
     (constructGBA φ st).toSpec.accepts ξ := by
   obtain ⟨σ, hrun, hcompat, haccRun⟩ := hacc
   have hname := createGraph_nameConsistent φ hcg
-  -- Each σ n is in st.toNodes, so there's a corresponding GBANode
-  have h_node : ∀ n, ∃ node : GBANode α S,
+  -- Each σ n is in st.toNodes, so there's a corresponding ExpansionNode
+  have h_node : ∀ n, ∃ node : ExpansionNode α S,
       st.nodes[(σ n).name]? = some node ∧
       (∀ k, (σ n).incoming k ↔ node.incoming.contains k) ∧
       (∀ ψ, (σ n).old ψ ↔ FSet.contains node.old ψ) ∧
@@ -720,17 +798,17 @@ theorem expandOASpec_refines_constructGBA_toSpec
   · -- isAcceptingRun
     intro i n
     have hnum := constructGBA_numAcceptSets φ st
-    let i' : Fin φ.untilSubformulas.length := ⟨i.val, hnum ▸ i.isLt⟩
+    let i' : Fin φ.untilSubformulasDedup.length := ⟨i.val, hnum ▸ i.isLt⟩
     obtain ⟨j, hj⟩ := haccRun i' n
     refine ⟨j, ?_⟩
     obtain ⟨node, hnode, _, hold_iff, _⟩ := h_node (n + j)
     simp only [expandOASpec] at hj
     -- First prove the boolean expression
     have hbool : (!FSet.contains node.old
-        (.until (φ.untilSubformulas[i']).1 (φ.untilSubformulas[i']).2) ||
-        FSet.contains node.old (φ.untilSubformulas[i']).2) = true := by
+        (.until (φ.untilSubformulasDedup[i']).1 (φ.untilSubformulasDedup[i']).2) ||
+        FSet.contains node.old (φ.untilSubformulasDedup[i']).2) = true := by
       cases hU : FSet.contains node.old
-          (.until (φ.untilSubformulas[i']).1 (φ.untilSubformulas[i']).2) with
+          (.until (φ.untilSubformulasDedup[i']).1 (φ.untilSubformulasDedup[i']).2) with
       | false => simp
       | true =>
         simp only [Bool.not_true, Bool.false_or]
@@ -744,7 +822,7 @@ theorem expandOASpec_refines_constructGBA_toSpec
       simp only [constructGBA, buildAcceptSets, Array.size_map]; exact i'.isLt
     rw [GBA.isAccepting_eq_contains _ hi_gba]
     simp only [constructGBA]
-    have hacc_eq := buildAcceptSets_correct hname φ.untilSubformulas i' hnode
+    have hacc_eq := buildAcceptSets_correct hname φ.untilSubformulasDedup i' hnode
     dsimp only [] at hacc_eq
     rw [hacc_eq]
     exact hbool
@@ -757,21 +835,50 @@ theorem constructGBA_iff_expandOASpec
     (hcg : createGraph φ = some st)
     (ξ : OmegaWord α) :
     (constructGBA φ st).toSpec.accepts ξ ↔
-      (expandOASpec φ st.toNodes φ.untilSubformulas).accepts ξ :=
+      (expandOASpec φ st.toNodes φ.untilSubformulasDedup).accepts ξ :=
   ⟨constructGBA_toSpec_refines_expandOASpec hcg,
    expandOASpec_refines_constructGBA_toSpec hcg⟩
 
-/-! ### End-to-end GBA correctness -/
+/-! ### Well-formedness of constructGBA -/
 
-/-- The computational GBA accepts exactly the words satisfying φ.
-    Combines the bridge with expandOASpec_correct. -/
-theorem constructGBA_correct
-    {φ : NNF α} {st : ExpandState α S}
-    (hcg : createGraph φ = some st)
-    (h_complete : GraphComplete φ st.toNodes)
-    (ξ : OmegaWord α) :
-    (constructGBA φ st).toSpec.accepts ξ ↔ NNF.satisfies ξ φ := by
-  rw [constructGBA_iff_expandOASpec hcg]
-  exact gba_abstract_correct hcg h_complete ξ
+omit [LawfulBEq α] [LawfulHashable α] in
+/-- `constructGBA`'s output is well-formed: initial states and successors of known states are themselves known states. -/
+theorem constructGBA_wellFormed {φ : NNF α} {st : ExpandState α S}
+    (hcg : createGraph φ = some st) :
+    (constructGBA φ st).WellFormed := by
+  have hname := createGraph_nameConsistent φ hcg
+  have hcontains : ∀ {q : Nat} {node : ExpansionNode α S}, st.nodes[q]? = some node →
+      (constructGBA φ st).states.contains q = true := by
+    intro q node hq
+    simp only [constructGBA]
+    rw [buildStates_mem_iff, Std.HashMap.contains_eq_isSome_getElem?, hq]; rfl
+  refine ⟨?_, ?_⟩
+  · -- initial_mem
+    intro q hq
+    simp only [GBA.isInitial, constructGBA] at hq
+    obtain ⟨node, hnode, _⟩ := (buildInitialStates_correct hname q).mp hq
+    exact hcontains hnode
+  · -- succ_mem
+    intro q q' _ hq'
+    simp only [GBA.getSuccessors, constructGBA] at hq'
+    obtain ⟨node, hnode, _⟩ := (buildSuccessors_mem_iff hname q q').mp hq'
+    exact hcontains hnode
+
+/-! ### Canonical labeling for constructGBA -/
+
+/-- `canonicalLabel`, applied to `constructGBA`'s own `labeling` map, always satisfies `labelCompat` at any state
+    with a stored node. -/
+theorem constructGBA_canonicalLabel_compat (φ : NNF α) {st : ExpandState α S}
+    (hcg : createGraph φ = some st) {q : Nat} {node : ExpansionNode α S}
+    (hnode : st.nodes[q]? = some node) :
+    (constructGBA φ st).toSpec.labelCompat q
+      (canonicalLabel (constructGBA φ st).labeling q) := by
+  have hname := createGraph_nameConsistent φ hcg
+  obtain ⟨pos, neg, hlab⟩ := buildLabeling_some hname hnode
+  have hlab' : (constructGBA φ st).labeling[q]? = some (pos, neg) := by
+    simp only [constructGBA]; exact hlab
+  show (GBA.toSpec (constructGBA φ st)).labelCompat q _
+  simp only [GBA.toSpec, hlab']
+  exact canonicalLabel_compat hlab' (buildLabeling_disjoint φ hcg hnode hlab)
 
 end LTLLib
