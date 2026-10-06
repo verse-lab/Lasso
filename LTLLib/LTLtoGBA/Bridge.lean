@@ -470,7 +470,6 @@ theorem buildLabeling_neg_correct
 
 /-! ### Accept-set correctness -/
 
-set_option backward.isDefEq.respectTransparency false in
 omit [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α] in
 /-- `buildAcceptSets[i]` contains `q` iff node `q` either lacks the `i`-th until-formula in `old`, or has that
 formula's right operand in `old`. -/
@@ -487,10 +486,10 @@ theorem buildAcceptSets_correct
       (!FSet.contains node.old (NNF.until (untilSubs[i]).1 (untilSubs[i]).2) ||
         FSet.contains node.old (untilSubs[i]).2) := by
   intro asets hi
-  dsimp only [asets, buildAcceptSets]
+  dsimp only [asets, buildAcceptSets] at hi ⊢
   rw [Array.getElem_map]
-  simp only [List.getElem_toArray]
   rw [Std.HashMap.fold_eq_foldl_toList, HashSet_foldl_insert_contains]
+  simp only [List.getElem_toArray]
   simp only [Std.HashSet.contains_emptyWithCapacity, Bool.false_or]
   have hmem := Std.HashMap.mem_toList_iff_getElem?_eq_some.mpr hq
   apply Bool.eq_iff_iff.mpr
