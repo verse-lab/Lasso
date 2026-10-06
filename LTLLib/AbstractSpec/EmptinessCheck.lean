@@ -5,6 +5,7 @@ module
 
   Key definitions:
   - `EmptinessResult`: Outcome of a check (empty, or a witnessing stem/loop)
+  - `EmptinessResult.map`: rename the states of a result, with `map_eq_empty`/`map_eq_nonEmpty` inverting it
   - `AcceptingCycle`: Lasso witness of non-emptiness over a graph
   - `Reachable`/`FiniteReach`: Canonical reachability and its finiteness hypothesis
   - `reachCount`: termination measure counting reachable states with a property
@@ -43,6 +44,29 @@ inductive EmptinessResult (State : Type u) where
   -- `loop`: cycle from the accepting state back to itself (inclusive on both ends).
   | nonEmpty (stem : List State) (loop : List State)
 deriving Repr, Inhabited
+
+/-- Rename the states of a result, leaving the verdict alone. Used where two searches answer the same
+question in different products and a caller has to report in one of them: a route that latches a region
+into its product state answers in `P × Bool`, and `map Prod.fst` projects the latch away. -/
+@[expose] def EmptinessResult.map {P : Type u} {Q : Type v} (f : P → Q) :
+    EmptinessResult P → EmptinessResult Q
+  | .empty n => .empty n
+  | .nonEmpty stem loop => .nonEmpty (stem.map f) (loop.map f)
+
+/-- `map` does not invent a verdict: an `.empty` image comes from an `.empty`, with the same count. -/
+theorem EmptinessResult.map_eq_empty {P : Type u} {Q : Type v} {f : P → Q}
+    {r : EmptinessResult P} {n : Nat} (h : r.map f = .empty n) : r = .empty n := by
+  cases r with
+  | empty m => simpa [EmptinessResult.map] using h
+  | nonEmpty stem loop => simp [EmptinessResult.map] at h
+
+/-- The other direction: a `.nonEmpty` image comes from a `.nonEmpty`, whose witness is the preimage. -/
+theorem EmptinessResult.map_eq_nonEmpty {P : Type u} {Q : Type v} {f : P → Q}
+    {r : EmptinessResult P} {stem loop : List Q} (h : r.map f = .nonEmpty stem loop) :
+    ∃ stem' loop', r = .nonEmpty stem' loop' := by
+  cases r with
+  | empty n => simp [EmptinessResult.map] at h
+  | nonEmpty stem' loop' => exact ⟨stem', loop', rfl⟩
 
 /-! ## Accepting cycle definition -/
 

@@ -22,6 +22,9 @@ module
     (`modelCheckUnderFairnessRehoistPrune`)
   - `modelCheckFair`: the default and fastest, the prune with disjunctive hoisting, a kept conjunct `ψ ∨ γ` with a flattenable
     fairness `γ` decided by one prune run per choice of side (`modelCheckUnderFairnessDisjunctiveHoist`)
+  - `modelCheckFairRoutedOfStep`: `modelCheckFair` with the fallback to `modelCheckFairFNFCross` made for the caller,
+    which supplies only the predicate marking the atoms a step may contribute (`pruneApplicable` in
+    `Fairness/FairPipeline.lean`). This is the entry point a front end should call.
 
   Proves, for each mode `m`:
   - `m_empty_unsat`: (Soundness) an `.empty` result means every run of `sys` satisfies `φ`
@@ -35,6 +38,7 @@ module
   - Fairness, fair normal form pruned
   - Fairness, default
   - The fused entry points
+  - Fairness, routed
 -/
 public import LTLLib.TGBABased.DijkstraCheck
 public import LTLLib.TGBABased.Fairness.FairPipeline
@@ -460,6 +464,74 @@ theorem modelCheckFairFNFCrossOfStep_empty_unsat
   modelCheckFairFNFCross_empty_unsat φ sysInit _ _ sysFR h
 
 end FairFNFCross
+
+section FairRouted
+
+variable [Inhabited SysState] [DecidableEq α]
+
+/-- **The default entry point under fairness, with the route chosen for the caller.**
+
+`modelCheckFairOfStep` (the prune) is the faster route but its witness contract needs every hoisted
+region to be decidable from the source state. `edgeAtom` marks the atoms a *step* may contribute, which is
+all a caller has to supply: `pruneApplicable` then tests the regions each branch of the prune actually
+receives, and a property that puts one of those atoms inside a hoisted `◇□` falls back to
+`modelCheckFairFNFCrossOfStep` (the crossing), which decides such a region by latching it into the product.
+A system with no edge atoms passes `fun _ => false` and always takes the prune.
+
+Both routes answer the same question in different products — the crossing's state carries the latch — so
+the latch is projected away and both report in `SysState × Nat`. -/
+@[expose] def modelCheckFairRoutedOfStep (edgeAtom : α → Bool) : EmptinessResult (SysState × Nat) :=
+  if pruneApplicable edgeAtom φ then
+    modelCheckFairOfStep φ sysInit sysStep
+  else
+    (modelCheckFairFNFCrossOfStep φ sysInit sysStep).map Prod.fst
+
+variable [LawfulBEq α] [LawfulHashable α]
+
+/-- An `.empty` result means every real run of `sys` satisfies `φ`, whichever route ran. Soundness needs
+nothing of `edgeAtom`: the prune's `.empty` verdict is sound unconditionally (`modelCheckPruneSplit`). -/
+theorem modelCheckFairRoutedOfStep_empty_unsat [LawfulHashable SysState] (edgeAtom : α → Bool)
+    (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1)) {n : Nat}
+    (h : modelCheckFairRoutedOfStep φ sysInit sysStep edgeAtom = .empty n) :
+    ∀ ρ : Nat → LSys.Edge α SysState,
+      (LSys.toSpec (fun s => (sysStep s).1) sysInit (fun s => (sysStep s).2)).isRun ρ →
+      Formula.directSatisfies (LSys.valuation (fun s => (sysStep s).2) ρ) φ := by
+  rw [modelCheckFairRoutedOfStep] at h
+  split at h
+  · exact modelCheckFairOfStep_empty_unsat φ sysInit sysStep sysFR h
+  · exact modelCheckFairFNFCrossOfStep_empty_unsat φ sysInit sysStep sysFR
+      (EmptinessResult.map_eq_empty h)
+
+/-- A `.nonEmpty` result yields a concrete run of `sys` violating `φ`, whichever route ran. This is the
+half that needs `edgeAtom` to be honest about the system: `hsteps` says every atom a step contributes is
+one `edgeAtom` marks, which is what makes the prune branch's guard meaningful.
+
+`sysFR` is owed **only if the route falls back**. The prune validates a reported lasso with
+`streettCheck_nonEmpty_valid`, which has no finiteness hypothesis, so `modelCheckFairOfStep_nonEmpty_sat`
+needs none either; the crossing validates through `TEmptinessChecker.nonEmpty_valid`, whose `FiniteReach`
+is a field of the contract. Stating the certificate as a consequence of `pruneApplicable … = false` keeps
+this theorem exactly as strong as the prune's on every property the prune decides, which is the common
+case; a caller holding an unconditional certificate passes `fun _ => sysFR`. -/
+theorem modelCheckFairRoutedOfStep_nonEmpty_sat [LawfulHashable SysState] (edgeAtom : α → Bool)
+    (hsteps : ∀ s, ∀ st ∈ LSys.totalize (fun s => (sysStep s).1) s, ∀ a ∈ st.1, edgeAtom a = true)
+    (sysFR : pruneApplicable edgeAtom φ = false →
+      FiniteReach sysInit (LSys.targets fun s => (sysStep s).1))
+    {stem loop : List (SysState × Nat)}
+    (h : modelCheckFairRoutedOfStep φ sysInit sysStep edgeAtom = .nonEmpty stem loop) :
+    ∃ ρ : Nat → LSys.Edge α SysState,
+      (LSys.toSpec (fun s => (sysStep s).1) sysInit (fun s => (sysStep s).2)).isRun ρ ∧
+      ¬ Formula.directSatisfies (LSys.valuation (fun s => (sysStep s).2) ρ) φ := by
+  rw [modelCheckFairRoutedOfStep] at h
+  split at h
+  · rename_i hprune
+    exact modelCheckFairOfStep_nonEmpty_sat φ sysInit sysStep
+      (stateOnly_of_pruneApplicable hsteps hprune) h
+  · rename_i hcross
+    obtain ⟨stem', loop', hx⟩ := EmptinessResult.map_eq_nonEmpty h
+    exact modelCheckFairFNFCrossOfStep_nonEmpty_sat φ sysInit sysStep
+      (sysFR (by simpa using hcross)) hx
+
+end FairRouted
 
 end OfStep
 

@@ -11,16 +11,21 @@ module
   - `modelCheckUnderFairnessRehoistPrune`: hoist, re-hoist, then the hoisted conjuncts decided per SCC
   - `modelCheckUnderFairnessDisjunctiveHoist`: the prune route with disjunctive hoisting, one prune run per combination
     of sides of the kept mixed conjuncts
+  - `fairHoist`, `fairPruneSplits`, `fairCrossSplit`: the split each default route derives, read off without running it
+  - `pruneApplicable`: can the prune decide `φ`, given which atoms a step may contribute
 
   Proves:
   - `firstNonEmpty_empty`, `firstNonEmpty_nonEmpty`: what an exhausted and a stopped fold say about the runs
   - `…_empty_unsat` (Soundness) and `…_nonEmpty_sat` (Completeness) for each route: an `.empty` result means every run
     satisfies `φ`, a `.nonEmpty` result yields a run violating `φ`
+  - `stateOnly_of_pruneApplicable`: `pruneApplicable` discharges the disjunctive-hoist route's witness hypothesis
 
   Sections:
   - Deciding a list of runs
   - Re-hoisting routes
   - Crossing the sides of mixed conjuncts
+    - The split, read off without running the search
+    - Choosing between the prune and the crossing
 -/
 public import LTLLib.AbstractSpec.EmptinessCheck
 public import LTLLib.LTL.FairNormalForm
@@ -245,6 +250,64 @@ conjuncts (`branches`) is one prune run, and the first counterexample of any run
   let rehoisted := rehoist split.2
   firstNonEmpty (fun b => modelCheckPruneSplit (keptProperty b.2) (split.1 ++ rehoisted.1 ++ b.1)
     sysInit sysSucc sysLabel) (branches rehoisted.2)
+
+/-! ### The split, read off without running the search
+
+The two default routes — `modelCheckUnderFairnessDisjunctiveHoist` (the prune) and
+`modelCheckUnderFairnessRehoistCross` (the crossing) — hoist through the same two passes and differ only
+in what they do with the result. Naming that shared prefix once lets a caller *decide between* the routes,
+and *report* what either will run, without re-deriving the hoisting. Both uses need the split a route
+actually passes to `modelCheckPruneSplit`, not the output of the first `hoistFairness`: the routes hoist
+differently and disjunctive hoisting *adds* options after the first split (`EdgeLabels.md` §12.6 step 6). -/
+
+/-- The hoist both default routes share: every hoisted normal form, re-hoisted ones included, paired with
+the conjuncts left for the translator. -/
+@[expose] def fairHoist (φ : Formula α) : List (List (NNF.FairDisjunct α)) × List (NNF α) :=
+  let split := hoistFairness (φ.toNNF false).splitConj
+  let rehoisted := rehoist split.2
+  (split.1 ++ rehoisted.1, rehoisted.2)
+
+/-- What `modelCheckUnderFairnessDisjunctiveHoist` hands `modelCheckPruneSplit`, one entry per branch:
+the conjuncts kept for the translator (`keptProperty` assembles them) and the regions the prune decides
+per SCC. One prune run each. -/
+@[expose] def fairPruneSplits (φ : Formula α) :
+    List (List (NNF α) × List (List (NNF.FairDisjunct α))) :=
+  (branches (fairHoist φ).2).map fun b => (b.2, (fairHoist φ).1 ++ b.1)
+
+/-- What `modelCheckUnderFairnessRehoistCross` crosses: the kept conjuncts, and the crossed disjuncts, one
+latched check each. The crossing does not branch, so there is a single split. -/
+@[expose] def fairCrossSplit (φ : Formula α) : List (NNF α) × List (NNF.FairDisjunct α) :=
+  ((fairHoist φ).2, NNF.crossAllDNF (fairHoist φ).1)
+
+/-! ### Choosing between the prune and the crossing
+
+`modelCheckPruneSplit`'s witness contract asks that every hoisted region be `LSys.StateOnly`
+(`FairRouter.lean`'s `regionsAvoid`, `EdgeLabels.md` §12.4). A caller does not establish that
+semantically: it knows which atoms a *step* may contribute — in Veil, exactly the `taken(…)` indices —
+and the test is that no region the prune receives mentions one. All-or-nothing: any edge atom in any
+region of any branch sends the whole check to the crossing. A per-conjunct hybrid is strictly better and
+strictly more machinery; build it only if a real model asks for it. -/
+
+/-- Can the prune decide `φ`, given that `edgeAtom` marks every atom a step may contribute? Decidable, and
+tested against the regions each branch of the prune route actually receives. -/
+def pruneApplicable (edgeAtom : α → Bool) (φ : Formula α) : Bool :=
+  (fairPruneSplits φ).all fun s => regionsAvoid edgeAtom s.2
+
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState] in
+/-- The syntactic discharge of `modelCheckUnderFairnessDisjunctiveHoist_nonEmpty_sat`'s hypothesis: with
+every atom a step contributes marked by `edgeAtom`, `pruneApplicable` gives `StateOnly` for every region
+every branch hands the prune. -/
+theorem stateOnly_of_pruneApplicable [LawfulBEq α] [LawfulHashable α] {edgeAtom : α → Bool}
+    {φ : Formula α} {sysSucc : SysState → Array (LStep α SysState)}
+    {sysLabel : SysState → Std.HashSet α}
+    (hsteps : ∀ s, ∀ st ∈ LSys.totalize sysSucc s, ∀ a ∈ st.1, edgeAtom a = true)
+    (h : pruneApplicable edgeAtom φ = true) :
+    ∀ b ∈ branches (rehoist (hoistFairness (φ.toNNF false).splitConj).2).2,
+      ∀ ds ∈ (hoistFairness (φ.toNNF false).splitConj).1 ++
+          (rehoist (hoistFairness (φ.toNNF false).splitConj).2).1 ++ b.1,
+      ∀ d ∈ ds, LSys.StateOnly sysSucc sysLabel d.1.eval := by
+  intro b hb
+  exact stateOnly_of_regionsAvoid hsteps (List.all_eq_true.mp h _ (List.mem_map_of_mem hb))
 
 section Correctness
 

@@ -210,10 +210,14 @@ end Split
 /-! ## Choosing between the prune and the crossing
 
 The prune's witness contract asks that every hoisted region be `LSys.StateOnly` (`EdgeLabels.md` §12.4).
-A caller does not check that semantically: it knows which atoms a *step* may contribute — in Veil, exactly
-the `T(…)` indices — and checks that no region mentions one. That is a decidable test on the regions the
-route actually hands the prune, which is the only reliable place to apply it: the routes hoist
-differently, and disjunctive hoisting *adds* options after the first split (§12.6, step 6). -/
+That is not checked semantically: a caller knows which atoms a *step* may contribute — in Veil, exactly
+the `T(…)` indices — and the test is that no region mentions one. It has to be applied to the regions the
+route actually hands the prune, which the routes derive differently and disjunctive hoisting *adds* to
+after the first split (§12.6 step 6, §19).
+
+These are the two primitives. The decision built from them is `pruneApplicable` in
+`Fairness/FairPipeline.lean`, where the split it tests is defined, and the entry point that acts on it is
+`modelCheckFairRoutedOfStep` in `TGBABased/ModelCheck.lean`. -/
 
 section Routing
 
