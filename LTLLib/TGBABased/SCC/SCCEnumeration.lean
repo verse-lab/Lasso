@@ -154,10 +154,8 @@ structure LowlinkLawful (ops : DFSOps State) (V : LowlinkView ops) : Prop where
 the state that flushed it. -/
 abbrev EnumAux (ops : DFSOps State) := ops.Aux × Array (Std.HashSet State × ops.Aux)
 
--- `implicit_reducible` so that `Aux` and `Position` read through the wrapper at `instances`
--- transparency, which is what Lean checks implicit arguments at since v4.32.
 /-- The refinement's operations, recording every closed frame and never reporting. -/
-@[expose, implicit_reducible] def enumOps (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
+@[expose] def enumOps (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
   Aux := EnumAux ops
   Position := ops.Position
   initAux := (ops.initAux, #[])
@@ -193,11 +191,9 @@ def enumRun (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array 
 
 /-! ## Snapshot-free recording -/
 
--- `implicit_reducible` so that `Aux` and `Position` read through the wrapper at `instances`
--- transparency, which is what Lean checks implicit arguments at since v4.32.
 /-- The recording wrapper without the snapshot beside each set, which compiled code runs so that POP updates the
 refinement's state in place. -/
-@[expose, implicit_reducible] def enumOpsFast (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
+@[expose] def enumOpsFast (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
   Aux := ops.Aux × Array (Std.HashSet State)
   Position := ops.Position
   initAux := (ops.initAux, #[])
@@ -341,6 +337,7 @@ theorem dfsGo_enumOpsFast (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (su
       cases hr
   · exact dfsGo_enumOpsFast_of_some ops V succs edgeMarks expand aux stack r h
 
+set_option backward.isDefEq.respectTransparency false in
 theorem dfsFromRoot_enumOpsFast (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (aux : (enumOps ops V).Aux) (q0 : State) :

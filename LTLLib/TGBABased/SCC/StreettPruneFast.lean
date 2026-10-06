@@ -243,9 +243,7 @@ route calls `liveFlush`. -/
 
 /-! ## The `DFSOps` instance and the drivers -/
 
--- `implicit_reducible` so that `Aux` and `Position` read through the wrapper at `instances`
--- transparency, which is what Lean checks implicit arguments at since v4.32.
-@[expose, implicit_reducible] def streettOpsF [Inhabited State] [LawfulBEq State] [LawfulHashable State]
+@[expose] def streettOpsF [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (curRegions : Nat) : DFSOps State where
   Aux := StreettAuxF State
   Position := Nat
@@ -1388,6 +1386,7 @@ theorem streettPop_succOpts [Inhabited State] (cs : CompiledSpec State L) (cr : 
 
 /-! ### The generic driver, in lockstep -/
 
+set_option backward.isDefEq.respectTransparency false in
 /-- The fast run's `dfsGo` returns what the proved run's `dfsGo` returns, projected. -/
 theorem dfsGo_lockstep [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hwf : cs.WF) (cr : Nat)
@@ -1524,6 +1523,7 @@ theorem dfsGo_lockstep [Inhabited State] [LawfulBEq State] [LawfulHashable State
         | false =>
           exact ih auxF' restF rF hr hinv' rest hrest
 
+set_option backward.isDefEq.respectTransparency false in
 /-- The converse: the proved run's `dfsGo` converging forces the fast run's to, with the related result.
 Needed because `dfsFromRoot` and `genericDFS` fall back on `getD` when a run returns `none`, so the two
 runs have to agree on divergence as well. -/
@@ -1770,6 +1770,7 @@ theorem dfsGo_witOK [Inhabited State] [LawfulBEq State] [LawfulHashable State]
 
 /-! ### The root, the outer loop, and the run -/
 
+set_option backward.isDefEq.respectTransparency false in
 theorem dfsFromRoot_eq [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hwf : cs.WF) (cr : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
@@ -1812,6 +1813,7 @@ theorem dfsFromRoot_eq [Inhabited State] [LawfulBEq State] [LawfulHashable State
     simp only [Option.map_some, Option.getD_some]
     exact ⟨by first | rfl | trivial, fun hn => hinvr rF hF hn⟩
 
+set_option backward.isDefEq.respectTransparency false in
 theorem dfsFromRoot_witOK [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hwf : cs.WF) (cr : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)

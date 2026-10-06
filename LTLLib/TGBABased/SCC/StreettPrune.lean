@@ -1992,10 +1992,8 @@ def streettSccHint [LawfulBEq State] [LawfulHashable State] (aux : StreettAux St
     Std.HashSet State :=
   aux.witness.foldl (init := Std.HashSet.emptyWithCapacity aux.witness.size) fun h s => h.insert s
 
--- `implicit_reducible` so that `Aux` and `Position` read through the wrapper at `instances`
--- transparency, which is what Lean checks implicit arguments at since v4.32.
 /-- Tarjan refined with the prune's own POP, the property marks arriving in `acc`. -/
-@[expose, implicit_reducible] def streettOps [Inhabited State] [LawfulBEq State] [LawfulHashable State]
+@[expose] def streettOps [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (curRegions : Nat) : DFSOps State where
   Aux := StreettAux State
   Position := Nat

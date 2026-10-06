@@ -1931,9 +1931,7 @@ theorem dijkstraSccHint_eq_top_range [Inhabited State] (aux : DijkstraAux State)
     unfold DijkstraAux.rangeStart
     rw [hr]
 
--- `implicit_reducible` so that `Aux` and `Position` read through the wrapper at `instances`
--- transparency, which is what Lean checks implicit arguments at since v4.32.
-@[expose, implicit_reducible] def dijkstraOps (numMarks : Nat) : DFSOps State where
+@[expose] def dijkstraOps (numMarks : Nat) : DFSOps State where
   Aux := DijkstraAux State
   Position := Nat
   initAux := dijkstraInitAux
@@ -2200,6 +2198,7 @@ private theorem dijkstraGetStatus_live_of_pos [Inhabited State] [LawfulBEq State
   simp [Std.HashMap.contains_eq_isSome_getElem?, hfwd]
 
 set_option maxHeartbeats 4000000 in
+set_option backward.isDefEq.respectTransparency false in
 /-- Through a `dfsGo` run, `dead` stays disjoint from every `AcceptingSCC`, a run without a witness ends idle, and a
 reported hint is an accepting SCC. -/
 theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [Inhabited State]
