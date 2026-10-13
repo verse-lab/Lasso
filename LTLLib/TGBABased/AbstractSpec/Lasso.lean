@@ -10,12 +10,15 @@ module
   - `tlassoRun`, `TValidLasso`: the run of a lasso and its validity conditions
   - `TEdgeWitness`: a concrete edge for every `succs`-step and every `edgeMarks`-witnessed mark
   - `stemEdges`, `lapFor`, `TAcceptingCycle.cycleE`: the stem and the cycle lifted to edges, one lap per mark
+  - `lassoAt`: the `i`-th state of the sequence a stem and a cycle describe
 
   Proves:
   - `TValidLasso.accepts_of_validLasso`: a valid lasso with compatible labeling implies the automaton accepts
   - `TAcceptingCycle.toTValidLassoOf`: a `TAcceptingCycle` yields a `TValidLasso` for any `TOASpec` with an edge witness
   - `cycleE_endpoints_mem`: every edge of `cycleE` realizes some cyclic step of the cycle
   - `TValidLasso.run_src_hits_cycle`: every cycle state is the source of arbitrarily late run positions
+  - `cycleE_src`: edge `j` of `cycleE` leaves the cycle's state `j` modulo its length
+  - `TRegionCycle.toTValidLasso_run_src`: the run of a region cycle passes through exactly its states
 
   Sections:
   - Lasso run construction
@@ -1082,6 +1085,87 @@ theorem TRegionCycle.toTValidLasso {A : TOASpec State Edge α k}
     rw [stemEdges_last_dst Ws rc.stem hschain h
       (List.ne_nil_of_length_pos (by have := rc.stem_nonempty; omega)), hchead hcne]
     exact rc.overlap
+
+/-! ## The states a lasso run passes through -/
+
+/-- The length of `cycleE` is a multiple of the cycle's: one lap per mark, or one pass when there are none. -/
+theorem cycleE_length_dvd (W : TEdgeWitness A succs edgeMarks)
+    (ac : TAcceptingCycle initialStates succs edgeMarks k) :
+    ac.cycle.length ∣ (ac.cycleE W).length := by
+  have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos (by have := ac.cycle_nonempty; omega)
+  by_cases hk : k = 0
+  · unfold TAcceptingCycle.cycleE
+    rw [dif_pos hk, stemEdges_length]
+    simp
+  · rw [TAcceptingCycle.cycleE_eq_flatMap W ac hne hk,
+      flatMap_uniform_length _ _ _ (fun i hi => cycleLapAt_length W ac hne i hi)]
+    exact Nat.dvd_mul_left _ _
+
+/-- Edge `j` of `cycleE` leaves the cycle's state `j % ac.cycle.length`: every lap walks the cycle from its head. -/
+theorem cycleE_src (W : TEdgeWitness A succs edgeMarks)
+    (ac : TAcceptingCycle initialStates succs edgeMarks k) (j : Nat) (hj : j < (ac.cycleE W).length) :
+    A.src ((ac.cycleE W)[j]'hj) =
+      ac.cycle[j % ac.cycle.length]'(Nat.mod_lt _ (by have := ac.cycle_nonempty; omega)) := by
+  have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos (by have := ac.cycle_nonempty; omega)
+  have hL : 0 < ac.cycle.length := by have := ac.cycle_nonempty; omega
+  by_cases hk : k = 0
+  · have hE : ac.cycleE W = stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne]) := by
+      unfold TAcceptingCycle.cycleE; rw [dif_pos hk]
+    have hj' : j < (stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne])).length := hE ▸ hj
+    have hjL : j < ac.cycle.length := by
+      rw [stemEdges_length] at hj'; simpa using hj'
+    rw [List.getElem_of_eq hE hj, stemEdges_getElem W.stepEdge _ j (by simp; omega) hj',
+      (W.stepEdge_spec (cycleClosed_chain ac j (by simp; omega))).2.1]
+    simp [List.getElem_append_left hjL, Nat.mod_eq_of_lt hjL]
+  · have hE := TAcceptingCycle.cycleE_eq_flatMap W ac hne hk
+    have hflen : ∀ i, i < k → (cycleLapAt W ac hne i).length = ac.cycle.length :=
+      fun i hi => cycleLapAt_length W ac hne i hi
+    have hlen : (ac.cycleE W).length = k * ac.cycle.length := by
+      rw [hE]; exact flatMap_uniform_length _ _ _ hflen
+    have hm : j / ac.cycle.length < k := Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm]; omega)
+    have hr : j % ac.cycle.length < ac.cycle.length := Nat.mod_lt _ hL
+    obtain ⟨hidx, heq⟩ := flatMap_uniform_getElem (cycleLapAt W ac hne) ac.cycle.length k
+      (j / ac.cycle.length) (j % ac.cycle.length) hflen hm hr
+    have hstep : (ac.cycleE W)[j]'hj = (cycleLapAt W ac hne (j / ac.cycle.length))[j % ac.cycle.length]'
+        (by rw [hflen _ hm]; exact hr) := by
+      rw [← heq, List.getElem_of_eq hE hj]
+      congr 1
+      exact (Nat.div_add_mod' j ac.cycle.length).symm
+    rw [hstep, List.getElem_of_eq (cycleLapAt_eq W ac hne _ hm)]
+    have hcov := (ac.cycle_covers_marks (j / ac.cycle.length) hm).choose_spec.choose_spec
+    exact (lapFor_src_dst W ac hne _ _ (j / ac.cycle.length) hm hcov _ hr _).1
+
+/-- The `i`-th state of the infinite sequence a stem and a cycle describe: `stem`, whose last state is `cycle`'s
+first, then `cycle` repeated forever. -/
+@[expose] def lassoAt {State : Type u} (stem cycle : List State) (i : Nat) : Option State :=
+  if i + 1 < stem.length then stem[i]? else cycle[(i + 1 - stem.length) % cycle.length]?
+
+theorem lassoAt_map {State : Type u} {State' : Type u'} (f : State → State') (stem cycle : List State)
+    (i : Nat) : lassoAt (stem.map f) (cycle.map f) i = (lassoAt stem cycle i).map f := by
+  unfold lassoAt
+  simp only [List.length_map]
+  split <;> simp
+
+/-- The run of a region cycle's lasso passes through exactly its states: `rc.stem`, then `rc.cycle` repeated. -/
+theorem TRegionCycle.toTValidLasso_run_src {A : TOASpec State Edge α k}
+    {succsR : State → Array State} {edgeMarksR : State → State → Std.HashSet Nat}
+    (Ws : TEdgeWitness A succs edgeMarks) (Wc : TEdgeWitness A succsR edgeMarksR)
+    (hinit : ∀ {s}, s ∈ initialStates → A.initial s)
+    (rc : TRegionCycle initialStates succs succsR edgeMarks edgeMarksR k) (n : Nat) :
+    lassoAt rc.stem rc.cycle n = some (A.src ((rc.toTValidLasso Ws Wc hinit).run n)) := by
+  have hsl := stemEdges_length Ws.stepEdge rc.stem
+  have hs1 := rc.stem_nonempty
+  by_cases hn : n + 1 < rc.stem.length
+  · have hnE : n < (stemEdges Ws.stepEdge rc.stem).length := by omega
+    rw [TValidLasso.run_eq_stem _ n hnE, stemEdges_getElem Ws.stepEdge rc.stem n hn hnE,
+      (Ws.stepEdge_spec (rc.stem_chain n hn)).2.1]
+    simp [lassoAt, hn]
+  · have hnE : ¬ n < (stemEdges Ws.stepEdge rc.stem).length := by omega
+    rw [TValidLasso.run_eq_cycle _ n hnE, cycleE_src Wc rc.cycleAc, ← List.getElem?_eq_getElem,
+      Nat.mod_mod_of_dvd _ (cycleE_length_dvd Wc rc.cycleAc)]
+    have hidx : n + 1 - rc.stem.length = n - (stemEdges Ws.stepEdge rc.stem).length := by omega
+    simp only [lassoAt, hn, if_false, hidx]
+    rfl
 
 end Bridge
 

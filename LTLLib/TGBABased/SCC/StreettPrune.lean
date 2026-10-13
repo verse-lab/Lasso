@@ -874,10 +874,10 @@ termination_by hi - o
 /-- The option a conjunct is reported with: one the candidate has already committed when it has one,
 otherwise the first available one.
 
-The preference is what makes the report branch reachable at all. A conjunct whose committed option is
-available is *exact* — the candidate's region already entails that option's, so the scan's per-option
-verdict for it is a verdict at the conjunction — and preferring it stops the search from blaming a
-conjunct it has already paid for, which is what bounds the recursion. -/
+A committed available option is *exact*: the candidate's region already entails that option's, so the
+scan's per-option verdict for it is a verdict at the conjunction. The preference only chooses the options
+recorded beside a report. Whether to report or blame is `firstUnsatisfied`'s decision, and what bounds the
+recursion is `blamed_bit_new`. -/
 private def selectPref (cs : CompiledSpec State L) (bits regionAlive marksSeen : Nat) (o hi : Nat) :
     Option Nat :=
   (selectCommitted cs bits regionAlive marksSeen o hi).or (selectOne cs regionAlive marksSeen o hi)
@@ -913,10 +913,6 @@ termination_by cs.conjunctStart.size - 1 - i
 Only the first such conjunct branches, since a fair subgraph has to satisfy it through one of its options. -/
 def firstUnsatisfied (cs : CompiledSpec State L) (regionAlive marksSeen : Nat) : Option (Array Nat) :=
   firstUnsatFrom cs regionAlive marksSeen 0
-
--- the live options of the first conjunct from `i` on with no *committed* available option
-
-
 
 /-! ## What the scan decides -/
 
@@ -1807,7 +1803,8 @@ theorem firstUnsatisfied_some_blames {cs : CompiledSpec State L}
   exact blamedBlock_blames hwf live lo hB hjn hmem
 
 
-/-- Either blame reason names a conjunct and covers every option of it whose marks are witnessed. -/
+/-- The blame names a conjunct and covers every option of it whose marks are witnessed. `firstUnsatisfied` is
+the only blame reason, so this is `firstUnsatisfied_some_blames`. -/
 theorem blamed_some_blames {cs : CompiledSpec State L}
     {succs : State → Array State}
     (hwf : cs.WF) (live : Array State) (lo : Nat) {B : Std.HashSet State}
@@ -1841,7 +1838,7 @@ private theorem firstUnsatisfied_opt_lt {cs : CompiledSpec State L} (hwf : cs.WF
 
 
 omit [Hashable State] [LawfulBEq State] [LawfulHashable State] in
-/-- Either blame reason names only compiled options. -/
+/-- The blame names only compiled options. -/
 private theorem blamed_opt_lt {cs : CompiledSpec State L} (hwf : cs.WF) {ra ms : Nat}
     {opts : Array Nat} (hfu : firstUnsatisfied cs ra ms = some opts)
     {o : Nat} (ho : o ∈ opts) : o < cs.numOptions :=
@@ -1872,11 +1869,10 @@ private theorem committed_region_bit {cs : CompiledSpec State L} {curRegions : N
 omit [LawfulHashable State] in
 /-- The blamed option's bit was not already conjoined into the candidate the search ran on.
 
-Both blame reasons give the same thing, and for the same reason: the option's marks are present, so
-`optionAvailable` can only have failed on its region bit, and `committed_region_bit` says a committed
-option's region bit does not fail. This replaces the old "the queued candidate is a proper subset"
-argument: an *edge* prune need not drop a state, so what strictly decreases is the number of options
-still unconjoined — see `Candidate.measure_lt`. -/
+The option's marks are present, so `optionAvailable` can only have failed on its region bit, and
+`committed_region_bit` says a committed option's region bit does not fail. This replaces the old "the queued
+candidate is a proper subset" argument: an *edge* prune need not drop a state, so what strictly decreases is
+the number of options still unconjoined — see `Candidate.measure_lt`. -/
 private theorem blamed_bit_new {cs : CompiledSpec State L} {curRegions : Nat}
     {succs : State → Array State}
     (hwf : cs.WF) (hmono : cs.spec.Mono) (hres : LePred (regionOf cs curRegions) cs.restrict)

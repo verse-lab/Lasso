@@ -178,7 +178,8 @@ theorem modelCheckFairFNFCross_nonEmpty_sat (φ : Formula α) (sysInit : List Sy
     (sysFR : FiniteReach sysInit (LSys.targets sysSucc)) {stem loop : List ((SysState × Nat) × Bool)}
     (h : modelCheckFairFNFCross φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
-      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ :=
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map (·.1.1) = some (ρ n).1) :=
   modelCheckUnderFairnessRehoistCross_nonEmpty_sat φ sysInit sysSucc sysLabel sysFR dijkstraTChecker
     dijkstraTChecker h
 
@@ -208,7 +209,8 @@ theorem modelCheckFairFNFPrune_nonEmpty_sat (φ : Formula α) (sysInit : List Sy
     {stem loop : List (SysState × Nat)}
     (h : modelCheckFairFNFPrune φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
-      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ :=
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map Prod.fst = some (ρ n).1) :=
   modelCheckUnderFairnessRehoistPrune_nonEmpty_sat φ sysInit sysSucc sysLabel hstate h
 
 /-! ## Fairness, default -/
@@ -239,7 +241,8 @@ theorem modelCheckFair_nonEmpty_sat (φ : Formula α) (sysInit : List SysState)
     {stem loop : List (SysState × Nat)}
     (h : modelCheckFair φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
-      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ :=
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map Prod.fst = some (ρ n).1) :=
   modelCheckUnderFairnessDisjunctiveHoist_nonEmpty_sat φ sysInit sysSucc sysLabel hstate h
 
 end Modes
@@ -295,7 +298,8 @@ theorem modelCheckFairOfStep_nonEmpty_sat [LawfulHashable SysState]
     (h : modelCheckFairOfStep φ sysInit sysStep = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState,
       (LSys.toSpec (fun s => (sysStep s).1) sysInit (fun s => (sysStep s).2)).isRun ρ ∧
-      ¬ Formula.directSatisfies (LSys.valuation (fun s => (sysStep s).2) ρ) φ :=
+      ¬ Formula.directSatisfies (LSys.valuation (fun s => (sysStep s).2) ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map Prod.fst = some (ρ n).1) :=
   modelCheckFair_nonEmpty_sat φ sysInit _ _ hstate h
 
 end Fair
@@ -331,7 +335,8 @@ theorem modelCheckFairFNFPruneOfStep_nonEmpty_sat
     (h : modelCheckFairFNFPruneOfStep φ sysInit sysStep = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState,
       (LSys.toSpec (fun s => (sysStep s).1) sysInit (fun s => (sysStep s).2)).isRun ρ ∧
-      ¬ Formula.directSatisfies (LSys.valuation (fun s => (sysStep s).2) ρ) φ :=
+      ¬ Formula.directSatisfies (LSys.valuation (fun s => (sysStep s).2) ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map Prod.fst = some (ρ n).1) :=
   modelCheckFairFNFPrune_nonEmpty_sat φ sysInit _ _ hstate h
 
 end FairFNFPrune
@@ -452,7 +457,8 @@ theorem modelCheckFairFNFCrossOfStep_nonEmpty_sat
     (h : modelCheckFairFNFCrossOfStep φ sysInit sysStep = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState,
       (LSys.toSpec (fun s => (sysStep s).1) sysInit (fun s => (sysStep s).2)).isRun ρ ∧
-      ¬ Formula.directSatisfies (LSys.valuation (fun s => (sysStep s).2) ρ) φ :=
+      ¬ Formula.directSatisfies (LSys.valuation (fun s => (sysStep s).2) ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map (·.1.1) = some (ρ n).1) :=
   modelCheckFairFNFCross_nonEmpty_sat φ sysInit _ _ sysFR h
 
 theorem modelCheckFairFNFCrossOfStep_empty_unsat
@@ -520,7 +526,8 @@ theorem modelCheckFairRoutedOfStep_nonEmpty_sat [LawfulHashable SysState] (edgeA
     (h : modelCheckFairRoutedOfStep φ sysInit sysStep edgeAtom = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState,
       (LSys.toSpec (fun s => (sysStep s).1) sysInit (fun s => (sysStep s).2)).isRun ρ ∧
-      ¬ Formula.directSatisfies (LSys.valuation (fun s => (sysStep s).2) ρ) φ := by
+      ¬ Formula.directSatisfies (LSys.valuation (fun s => (sysStep s).2) ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map Prod.fst = some (ρ n).1) := by
   rw [modelCheckFairRoutedOfStep] at h
   split at h
   · rename_i hprune
@@ -528,8 +535,15 @@ theorem modelCheckFairRoutedOfStep_nonEmpty_sat [LawfulHashable SysState] (edgeA
       (stateOnly_of_pruneApplicable hsteps hprune) h
   · rename_i hcross
     obtain ⟨stem', loop', hx⟩ := EmptinessResult.map_eq_nonEmpty h
-    exact modelCheckFairFNFCrossOfStep_nonEmpty_sat φ sysInit sysStep
+    obtain ⟨ρ, hρ, hviol, hstates⟩ := modelCheckFairFNFCrossOfStep_nonEmpty_sat φ sysInit sysStep
       (sysFR (by simpa using hcross)) hx
+    -- the reported lists are the crossing's with the latch bit dropped
+    rw [hx] at h
+    simp only [EmptinessResult.map, EmptinessResult.nonEmpty.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    refine ⟨ρ, hρ, hviol, fun n => ?_⟩
+    rw [← List.map_tail, lassoAt_map, Option.map_map]
+    exact hstates n
 
 end FairRouted
 

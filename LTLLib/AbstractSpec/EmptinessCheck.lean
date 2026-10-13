@@ -40,8 +40,10 @@ inductive EmptinessResult (State : Type u) where
   -- No accepting cycle found: the automaton's language is empty.
   | empty (exploredStates : Nat)
   -- An accepting cycle was found: the automaton's language is non-empty.
-  -- `stem`: path from an initial state to the accepting state (inclusive).
-  -- `loop`: cycle from the accepting state back to itself (inclusive on both ends).
+  -- `stem`: path from an initial state to the accepting state `q` (inclusive).
+  -- `loop`: `q :: cycle`, where `cycle` starts at `q` and its last state steps back to `q`
+  --   (`AcceptingCycle`, whose `cycle` the checkers' contracts equate with `loop.tail`). The run is
+  --   `stem`, then `loop.tail` repeated, the two sharing `q` (`lassoRun`).
   | nonEmpty (stem : List State) (loop : List State)
 deriving Repr, Inhabited
 

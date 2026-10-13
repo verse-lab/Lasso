@@ -16,7 +16,8 @@ module
   - `gsp_correct1Fair`, `gsp_correct2Fair`: the two directions of the extended product's correctness, acceptance also
     meaning every conjunct holds infinitely often
   - `exists_TAcceptingCycle_of_acceptingRunFair`: an accepting run of the extended product yields a lasso
-  - `exists_run_of_TRegionCycle`: a region cycle yields a counterexample run whose tail stays inside the region
+  - `exists_run_of_TRegionCycle`: a region cycle yields a counterexample run whose tail stays inside the region,
+    and which passes through exactly the region cycle's states
 
   Sections:
   - Fairness marks
@@ -840,7 +841,8 @@ set_option maxHeartbeats 1000000 in
 omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- The counterexample a region cycle describes: one labelled system run the automaton accepts, satisfying
 every conjunct infinitely often, and whose tail reads only letters the restriction admits. That last part is
-`◇□` over *letters*, which is what an edge-indexed `FG` means. -/
+`◇□` over *letters*, which is what an edge-indexed `FG` means. The run passes through exactly the region
+cycle's system states: `rc.stem`, then `rc.cycle` repeated. -/
 theorem exists_run_of_TRegionCycle [LawfulBEq α] [BEq SysState] [Hashable SysState] [LawfulBEq SysState] (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysInit : List SysState) (extra : List (BoolFormula α)) (keep : Std.HashSet α → Bool)
@@ -852,14 +854,19 @@ theorem exists_run_of_TRegionCycle [LawfulBEq α] [BEq SysState] [Hashable SysSt
       tgba.toSpec.accepts (LSys.valuation sysLabel ρ) ∧
       (∀ i, i < extra.length → ∀ n, ∃ j,
         (fairConj extra i).eval (LSys.letter (sysLabel (ρ (n + j)).1) (ρ (n + j)).2.1) = true) ∧
-      (∃ N, ∀ n, N ≤ n → keep (LSys.letter (sysLabel (ρ n).1) (ρ n).2.1) = true) := by
+      (∃ N, ∀ n, N ≤ n → keep (LSys.letter (sysLabel (ρ n).1) (ρ n).2.1) = true) ∧
+      (∀ n, (lassoAt rc.stem rc.cycle n).map Prod.fst = some (ρ n).1) := by
   have hlasso := rc.toTValidLasso (edgeWitnessFair tgba sysSucc sysLabel sysInit extra hbound)
     (edgeWitnessFairKept tgba sysSucc sysLabel keep sysInit extra hbound) (fun hs => hs)
   obtain ⟨hρrun, hlang, hfair⟩ := gsp_correct1Fair tgba sysSucc sysLabel sysInit extra
     hlasso.run_isRun hlasso.run_isAccepting
   refine ⟨_, hρrun, hlang, hfair, ⟨(stemEdges
     (edgeWitnessFair tgba sysSucc sysLabel sysInit extra hbound).stepEdge rc.stem).length,
-    fun n hn => ?_⟩⟩
+    fun n hn => ?_⟩, fun n => ?_⟩
+  swap
+  · rw [TRegionCycle.toTValidLasso_run_src (edgeWitnessFair tgba sysSucc sysLabel sysInit extra hbound)
+      (edgeWitnessFairKept tgba sysSucc sysLabel keep sysInit extra hbound) (fun hs => hs) rc n]
+    rfl
   -- past the stem the run walks `cycleE` of the *restricted* witness, whose edges read kept letters
   rw [hlasso.run_eq_cycle n (by omega)]
   refine cycleE_forall (edgeWitnessFairKept tgba sysSucc sysLabel keep sysInit extra hbound) rc.cycleAc

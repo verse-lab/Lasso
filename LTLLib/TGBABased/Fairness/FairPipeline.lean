@@ -150,15 +150,16 @@ theorem modelCheckUnderFairnessRehoistPrune_nonEmpty_sat (φ : Formula α)
     {stem loop : List (SysState × Nat)}
     (h : modelCheckUnderFairnessRehoistPrune φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
-      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
-  obtain ⟨ρ, hτ, hdss, hviol⟩ :=
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map Prod.fst = some (ρ n).1) := by
+  obtain ⟨ρ, hτ, hdss, hviol, hstates⟩ :=
     modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
   -- the violated goal is the kept conjuncts negated, so they all hold on this run
   have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   refine ⟨ρ, hτ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
     ((hoistFairness_correct _ (φ.toNNF false).splitConj).mpr
       ⟨fun ds hds => hdss ds (List.mem_append_left _ hds), (rehoist_correct _ _).mpr
-        ⟨fun ds hds => hdss ds (List.mem_append_right _ hds), hkept⟩⟩))⟩
+        ⟨fun ds hds => hdss ds (List.mem_append_right _ hds), hkept⟩⟩)), hstates⟩
 
 end Correctness
 
@@ -228,14 +229,15 @@ theorem modelCheckUnderFairnessRehoistCross_nonEmpty_sat (φ : Formula α)
     (h : modelCheckUnderFairnessRehoistCross φ sysInit sysSucc sysLabel checker sysChecker
       = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
-      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
-  obtain ⟨ρ, hρ, hdss, hviol⟩ :=
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map (·.1.1) = some (ρ n).1) := by
+  obtain ⟨ρ, hρ, hdss, hviol, hstates⟩ :=
     modelCheckCrossSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel sysFR checker sysChecker h
   have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   refine ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
     ((hoistFairness_correct _ (φ.toNNF false).splitConj).mpr
       ⟨fun ds hds => hdss ds (List.mem_append_left _ hds), (rehoist_correct _ _).mpr
-        ⟨fun ds hds => hdss ds (List.mem_append_right _ hds), hkept⟩⟩))⟩
+        ⟨fun ds hds => hdss ds (List.mem_append_right _ hds), hkept⟩⟩)), hstates⟩
 
 end Correctness
 
@@ -348,9 +350,10 @@ theorem modelCheckUnderFairnessDisjunctiveHoist_nonEmpty_sat (φ : Formula α)
     {stem loop : List (SysState × Nat)}
     (h : modelCheckUnderFairnessDisjunctiveHoist φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
-      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map Prod.fst = some (ρ n).1) := by
   obtain ⟨b, hb, hfb⟩ := firstNonEmpty_nonEmpty h
-  obtain ⟨τ, hτ, hdss, hviol⟩ :=
+  obtain ⟨τ, hτ, hdss, hviol, hstates⟩ :=
     modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel (hstate b hb) hfb
   -- the violated goal is the branch's kept conjuncts negated, so they all hold on this run
   have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
@@ -359,7 +362,7 @@ theorem modelCheckUnderFairnessDisjunctiveHoist_nonEmpty_sat (φ : Formula α)
   refine ⟨τ, hτ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
     ((hoistFairness_correct _ (φ.toNNF false).splitConj).mpr
       ⟨fun ds hds => hdss ds (List.mem_append_left _ (List.mem_append_left _ hds)), (rehoist_correct _ _).mpr
-        ⟨fun ds hds => hdss ds (List.mem_append_left _ (List.mem_append_right _ hds)), hkept'⟩⟩))⟩
+        ⟨fun ds hds => hdss ds (List.mem_append_left _ (List.mem_append_right _ hds)), hkept'⟩⟩)), hstates⟩
 
 end Correctness
 

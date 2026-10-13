@@ -509,11 +509,12 @@ theorem modelCheckCrossSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
     (h : modelCheckCrossSplit kept dss sysInit sysSucc sysLabel checker sysChecker = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       (∀ ds ∈ dss, ∃ d ∈ ds, NNF.FairDisjunct.holds (LSys.valuation sysLabel ρ) d) ∧
-      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) kept := by
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) kept ∧
+      (∀ n, (lassoAt stem loop.tail n).map (·.1.1) = some (ρ n).1) := by
   obtain ⟨d, hd, hcall⟩ := checkDisjuncts_nonEmpty h
-  obtain ⟨ρ, hρ, hfg, hgf, hviol⟩ := modelCheckTGBADisjunctFast_nonEmpty_sat _ d.1 d.2
+  obtain ⟨ρ, hρ, hfg, hgf, hviol, hstates⟩ := modelCheckTGBADisjunctFast_nonEmpty_sat _ d.1 d.2
     sysInit sysSucc sysLabel sysFR checker sysChecker hcall
-  exact ⟨ρ, hρ, (NNF.holds_crossAllDNF _ _).mp ⟨d, hd, hfg, hgf⟩, hviol⟩
+  exact ⟨ρ, hρ, (NNF.holds_crossAllDNF _ _).mp ⟨d, hd, hfg, hgf⟩, hviol, hstates⟩
 
 set_option maxHeartbeats 1000000 in
 /-- Completeness of the prune with the split given: a reported witness is a run satisfying every hoisted conjunct through one of its options and violating the kept property.
@@ -530,10 +531,11 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
     (h : modelCheckPruneSplit kept dss sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       (∀ ds ∈ dss, ∃ d ∈ ds, NNF.FairDisjunct.holds (LSys.valuation sysLabel ρ) d) ∧
-      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) kept := by
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) kept ∧
+      (∀ n, (lassoAt stem loop.tail n).map Prod.fst = some (ρ n).1) := by
   obtain ⟨tgba, htg⟩ := Option.isSome_iff_exists.mp (ltl3ba_isSome (kept.toNNF false))
   rw [modelCheckPruneSplit_eq kept dss sysInit sysSucc sysLabel htg] at h
-  obtain ⟨bits, ac, -, hcyc, hfair⟩ := streettCheck_nonEmpty_valid _ (CompiledSpec.of_wf _) _ _ _ _ h
+  obtain ⟨bits, ac, hstem, hcyc, hfair⟩ := streettCheck_nonEmpty_valid _ (CompiledSpec.of_wf _) _ _ _ _ h
   set cs := (CompiledSpec.of (streettRSpecOf tgba sysSucc sysLabel dss)).atBits bits with hcs
   have hcsspec : cs.spec = streettRSpecOf tgba sysSucc sysLabel dss := rfl
   have hmono : cs.spec.Mono :=
@@ -593,7 +595,7 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
         (mem_cycleEdges_iff.mpr ⟨i, hi, rfl⟩))
   have hcycsrc : ∀ p ∈ ac.cycle, r (sysLabel p.1) = true := by rw [hcyc]; exact hrsrc
   -- The reported cycle, read in the region-restricted graph with the selected marks.
-  have rc : TRegionCycle (TGBAProduct.initialStates tgba sysInit)
+  let rc : TRegionCycle (TGBAProduct.initialStates tgba sysInit)
       (TGBAProduct.getSuccessors tgba sysSucc sysLabel)
       (TGBAProduct.keptSuccs tgba sysSucc sysLabel r)
       (TGBAProduct.edgeMarksFair tgba sysSucc sysLabel extra)
@@ -658,10 +660,14 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
         simp only [TGBAProduct.fairKeep, Bool.and_eq_true, hgi]
         exact ⟨LSys.mem_of_stateOnly hrstate (hcycsrc _ (List.getElem_mem hi)) hst',
           (Bool.and_eq_true _ _).mp hkeep |>.2⟩
-  obtain ⟨ρ, hρrun, hlang, hfairρ, hregionρ⟩ := TGBAProduct.exists_run_of_TRegionCycle tgba
+  obtain ⟨ρ, hρrun, hlang, hfairρ, hregionρ, hstates⟩ := TGBAProduct.exists_run_of_TRegionCycle tgba
     sysSucc sysLabel sysInit extra r (ltl3ba_marks_lt _ htg) rc
   refine ⟨ρ, hρrun, fun ds hds => ⟨sel ds hds, hmem ds hds, ?_, ?_⟩,
-    fun hsat => (Formula.toNNF_correct_neg _ kept).mpr ((ltl3ba_accepts _ htg _).mp hlang) hsat⟩
+    fun hsat => (Formula.toNNF_correct_neg _ kept).mpr ((ltl3ba_accepts _ htg _).mp hlang) hsat,
+    fun n => ?_⟩
+  rotate_left 2
+  · -- the region cycle is the reported lasso
+    rw [← hstates n, ← hstem, ← hcyc]
   · -- the region: `◇□ r` on the run's letters, and `r` implies each selected option's region
     obtain ⟨N, hN⟩ := hregionρ
     refine (TGBAProduct.eventuallyAlways_iff_indexed_run (sel ds hds).1 sysLabel ρ).mpr ⟨N, fun n hn => ?_⟩
@@ -747,7 +753,7 @@ theorem modelCheckUnderFairness_nonEmpty_sat (φ : Formula α)
     (h : modelCheckUnderFairness φ sysInit sysSucc sysLabel checker sysChecker = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
-  obtain ⟨ρ, hρ, hdss, hviol⟩ := modelCheckCrossSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel sysFR checker
+  obtain ⟨ρ, hρ, hdss, hviol, -⟩ := modelCheckCrossSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel sysFR checker
     sysChecker h
   -- the violated goal is the kept conjuncts negated, so they all hold on this run
   have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
@@ -779,7 +785,7 @@ theorem modelCheckUnderFairnessPrune_nonEmpty_sat (φ : Formula α)
     (h : modelCheckUnderFairnessPrune φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
-  obtain ⟨ρ, hρ, hdss, hviol⟩ :=
+  obtain ⟨ρ, hρ, hdss, hviol, -⟩ :=
     modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
   -- the violated goal is the kept conjuncts negated, so they all hold on this run
   have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
@@ -811,7 +817,7 @@ theorem modelCheckUnderFairnessFlat_nonEmpty_sat (φ : Formula α)
     (h : modelCheckUnderFairnessFlat φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
-  obtain ⟨ρ, hρ, hdss, hviol⟩ :=
+  obtain ⟨ρ, hρ, hdss, hviol, -⟩ :=
     modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
   have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
   exact ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr

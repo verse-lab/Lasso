@@ -226,7 +226,8 @@ theorem modelCheckTGBADisjunct_empty_unsat [DecidableEq α] (φ : Formula α) (f
 /-! ## Completeness -/
 
 set_option maxHeartbeats 1000000 in
-/-- A `.nonEmpty` result yields one run of `sys` that satisfies the disjunct and violates `φ`. -/
+/-- A `.nonEmpty` result yields one run of `sys` that satisfies the disjunct and violates `φ`, and that
+passes through exactly the reported states: `stem`, then `loop.tail` repeated. -/
 theorem modelCheckTGBADisjunct_nonEmpty_sat [DecidableEq α] (φ : Formula α) (fg : BoolFormula α)
     (gfs : List (BoolFormula α)) (sysInit : List SysState)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
@@ -238,10 +239,11 @@ theorem modelCheckTGBADisjunct_nonEmpty_sat [DecidableEq α] (φ : Formula α) (
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       (BoolFormula.eventuallyAlways fg).satisfies (LSys.valuation sysLabel ρ) ∧
       (∀ b ∈ gfs, (BoolFormula.alwaysEventually b).satisfies (LSys.valuation sysLabel ρ)) ∧
-      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map (·.1.1) = some (ρ n).1) := by
   obtain ⟨tgba, htg⟩ := Option.isSome_iff_exists.mp (ltl3ba_isSome (φ.toNNF false))
   rw [modelCheckTGBADisjunct_eq φ fg gfs sysInit sysSucc sysLabel checker htg] at h
-  obtain ⟨ac, -, -⟩ := checker.nonEmpty_valid
+  obtain ⟨ac, hstem, hcycle⟩ := checker.nonEmpty_valid
     (latch_finiteReach (TGBAProduct.keptSuccs_sub tgba sysSucc sysLabel fg.eval) fg.isTrue
       (modelCheckTGBA_finiteReach φ sysInit sysSucc sysLabel sysFR htg))
     (latchExpand_coherent (TGBAProduct.expandFair_coherent tgba sysSucc sysLabel gfs)
@@ -249,7 +251,7 @@ theorem modelCheckTGBADisjunct_nonEmpty_sat [DecidableEq α] (φ : Formula α) (
       (tgba.numAcceptSets + gfs.length))
     (fun p q m hm =>
       modelCheckTGBADisjunct_marksBound φ sysSucc sysLabel gfs htg p q m fg.eval hm) h
-  obtain ⟨ρ, hρrun, hlang, hfair, hregion⟩ := TGBAProduct.exists_run_of_TRegionCycle _
+  obtain ⟨ρ, hρrun, hlang, hfair, hregion, hstates⟩ := TGBAProduct.exists_run_of_TRegionCycle _
     sysSucc sysLabel sysInit gfs fg.eval (ltl3ba_marks_lt _ htg)
     (latch_sound (TGBAProduct.keptSuccs_sub tgba sysSucc sysLabel fg.eval)
       (fun _ _ m hm =>
@@ -257,9 +259,15 @@ theorem modelCheckTGBADisjunct_nonEmpty_sat [DecidableEq α] (φ : Formula α) (
       (fun _ _ m hm => TGBAProduct.keptEdgeMarksFair_lt tgba sysSucc sysLabel
         (ltl3ba_marks_lt _ htg) fg.eval gfs _ _ m hm) ac)
   -- both halves of the disjunct are already stated on the letters the run reads, which is its valuation
-  exact ⟨ρ, hρrun, (TGBAProduct.eventuallyAlways_iff_indexed_run fg sysLabel ρ).mpr hregion,
+  refine ⟨ρ, hρrun, (TGBAProduct.eventuallyAlways_iff_indexed_run fg sysLabel ρ).mpr hregion,
     (TGBAProduct.fair_iff_indexed_run gfs sysLabel ρ).mpr hfair,
-    fun hsat => (Formula.toNNF_correct_neg _ φ).mpr ((ltl3ba_accepts _ htg _).mp hlang) hsat⟩
+    fun hsat => (Formula.toNNF_correct_neg _ φ).mpr ((ltl3ba_accepts _ htg _).mp hlang) hsat,
+    fun n => ?_⟩
+  -- the region cycle is the reported lasso with the latch bit dropped
+  rw [← hstates n, ← hstem, ← hcycle]
+  show _ = (lassoAt (ac.stem.map Prod.fst) (ac.cycle.map Prod.fst) n).map Prod.fst
+  rw [lassoAt_map, Option.map_map]
+  rfl
 
 end Correctness
 
@@ -511,7 +519,8 @@ theorem modelCheckTGBADisjunctFast_nonEmpty_sat [DecidableEq α] (φ : Formula �
     ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
       (BoolFormula.eventuallyAlways fg).satisfies (LSys.valuation sysLabel ρ) ∧
       (∀ b ∈ gfs, (BoolFormula.alwaysEventually b).satisfies (LSys.valuation sysLabel ρ)) ∧
-      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map (·.1.1) = some (ρ n).1) := by
   rw [modelCheckTGBADisjunctFast] at h
   split at h
   · exact modelCheckTGBADisjunct_nonEmpty_sat φ fg gfs sysInit sysSucc sysLabel sysFR

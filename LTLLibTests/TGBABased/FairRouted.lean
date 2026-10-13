@@ -107,7 +107,8 @@ theorem nonEmpty_sat_without_finiteReach
     (h : modelCheckFairRoutedOfStep gfTkImpliesG init trap isTk = .nonEmpty stem loop) :
     ∃ ρ : Nat → LSys.Edge String Nat,
       (LSys.toSpec (fun s => (trap s).1) init (fun s => (trap s).2)).isRun ρ ∧
-      ¬ Formula.directSatisfies (LSys.valuation (fun s => (trap s).2) ρ) gfTkImpliesG :=
+      ¬ Formula.directSatisfies (LSys.valuation (fun s => (trap s).2) ρ) gfTkImpliesG ∧
+      (∀ n, (lassoAt stem loop.tail n).map Prod.fst = some (ρ n).1) :=
   modelCheckFairRoutedOfStep_nonEmpty_sat gfTkImpliesG init trap isTk steps_isTk
     (fun hfalse => absurd hfalse (by rw [hprune]; decide)) h
 
