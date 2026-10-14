@@ -221,7 +221,7 @@ route calls `liveFlush`. -/
           liveOpts.foldl (init := pending) fun ps o =>
             let C : Candidate State := ⟨sccSetOf live step.pos, curRegions ||| (1 <<< o)⟩
             if C.states.isEmpty || curRegions.testBit o then ps else ps.push C
-        match firstUnsatisfied cs regionAlive marksSeen with
+        match firstUnsatisfied cs curRegions regionAlive marksSeen with
         | none =>
           let wit' := live.extract step.pos live.size
           -- the witness's successors, the same slice of the retained arrays (§13.26)
@@ -1348,7 +1348,7 @@ theorem streettPopF_spec [Inhabited State] [LawfulBEq State] [LawfulHashable Sta
       · rw [if_pos hacc, if_pos hacc]
         exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hwit⟩
       · rw [if_neg hacc, if_neg hacc, hscan]
-        cases hfu : firstUnsatisfied cs (scanFrame cs succs live step.pos).1
+        cases hfu : firstUnsatisfied cs cr (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with
         | none => exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hnew⟩
         | some liveOpts => exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hwit⟩

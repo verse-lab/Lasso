@@ -7,7 +7,8 @@ module
   Every counterexample of the prune must project to a real lasso of the system whose cycle satisfies every hoisted
   conjunct through one of its options, so a cycle covering the property's marks but missing the assumption's fails.
   Hand-built cases pin a verdict only reachable by recursing into a sub-SCC, and the explored count of an `.empty`
-  answer, which must be the sum over every search the prune runs.
+  answer, which must be the sum over every search the prune runs. A hub with `k` spokes bounds the searches when one conjunct
+  has `k` options with both a region and a mark.
 
   Sections:
   - Generated models
@@ -16,6 +17,7 @@ module
   - Agreement
   - Hand-built cases
   - Explored counts
+  - One branch per conjunct and path
 -/
 import LTLLib.TGBABased.Fairness.FairRouter
 import LTLLibTests.TGBABased.TestUtil
@@ -190,6 +192,30 @@ def accTotal : Nat :=
   | .empty n => n
   | .nonEmpty _ _ => 0
 
+/-! ## One branch per conjunct and path
+
+`hubSucc k` is a hub `0` with `k` spokes `1+2j ⇄ 2+2j`, each returning to the hub from `1+2j`, every state labelled by its own
+number. The negated property `⋀ⱼ (GF (2+2j) → GF (1+2j))` is one conjunct with an option `FG ¬(1+2j) ∧ GF (2+2j)` per spoke.
+Each branch loses its own spoke's mark, so the prune runs at most `k + 1` searches of at most `2k + 1` states. -/
+
+def hubSucc (k : Nat) (s : Nat) : Array Nat :=
+  if s == 0 then #[0] ++ (Array.range k).map (1 + 2 * ·)
+  else if s % 2 == 1 then #[s + 1, 0] else #[s - 1]
+
+def hubLabel (s : Nat) : Std.HashSet String := {toString s}
+
+def hubProperty (k : Nat) : Formula String :=
+  Formula.conj ((List.range k).map fun j =>
+    .implies (gf (.atom (toString (2 + 2 * j)))) (gf (.atom (toString (1 + 2 * j)))))
+
+def hubPrune (k : Nat) : EmptinessResult (Nat × Nat) :=
+  modelCheckUnderFairnessPrune (hubProperty k) [0] (LSys.unlabelled (hubSucc k)) hubLabel
+
+def hubExplored (k : Nat) : Nat :=
+  match hubPrune k with
+  | .empty n => n
+  | .nonEmpty _ _ => 0
+
 def report : IO Unit :=
   verdict "the SCC prune against the disjunct crossing" do
     let a ← check s!"{cases.length} generated cases agree on emptiness" (cases.all agrees)
@@ -215,7 +241,10 @@ def report : IO Unit :=
     let h ← check "the pruned candidate really is searched" (accParts.2 > 0)
     let i ← check "the reported count is the sum over every search"
       (accTotal == accParts.1 + accParts.2)
-    return [a, b, c, d, e, f, g, h, i]
+    IO.println s!"  explored on the hub with 5 spokes: {hubExplored 5}"
+    let j ← check "a conjunct with 5 options is branched on once per path, 6 searches of at most 11 states"
+      (isEmptyResult (hubPrune 5) && hubExplored 5 ≤ 6 * 11)
+    return [a, b, c, d, e, f, g, h, i, j]
 
 #eval report
 

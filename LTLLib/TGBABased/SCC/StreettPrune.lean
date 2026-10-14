@@ -8,14 +8,17 @@ module
   assumption when every conjunct has an option available in it ([LSFZ16, Definition 3] per conjunct). A maximal SCC that
   fails can still contain a passing sub-SCC, so a failing conjunct with options that fail only on their regions sends the
   SCC back through the same search with that option's region conjoined, which is [EL87]'s prune. Only the first failing
-  conjunct branches, since any fair subgraph satisfies it through one of its options.
+  conjunct branches, since any fair subgraph satisfies it through one of its options, and it branches only once on any
+path: once an option of it is conjoined, a fair subgraph satisfying it through another option lies in that option's
+sibling branch.
 
   ```
   check(r, B):                                  -- B a maximal SCC of the r-restricted subgraph
     if B covers the property marks and every conjunct has an available option:  report B
     if B misses a property mark:  discard B     -- marks are monotone downward
     let i be the first conjunct with no available option
-    live := its options whose marks are all witnessed in B, minus those already conjoined into r
+    if an option of i is already conjoined into r then discard B   -- its marks are missing in B
+    live := its options whose marks are all witnessed in B
     if live = ∅ then discard B                  -- no subgraph can satisfy conjunct i either
     for each option opt in live:  check(r ∧ opt.region, B)
   ```
@@ -41,14 +44,16 @@ module
   Proves:
   - `optionAvailable_iff_availableIn`: the edge scan decides `RStreettSpec.AvailableWith`'s per-option condition
   - `firstUnsatisfied_none_accepting`, `firstUnsatisfied_some_blames`: the per-conjunct test decides availability on the
-    flushed SCC, and names a conjunct with every option of it whose marks are witnessed
+    flushed SCC, and names a conjunct with every option of it whose marks are witnessed, or with a committed option
+    whose marks are not
   - `blamed_bit_new`: a blamed option's bit was not already conjoined, so skipping such options loses nothing
   - `Candidate.measure_lt`, `pruneLoop_defined`: the prune terminates, on the bitmask deficit alone
   - `streettCheck_nonEmpty_valid`: a reported stem and cycle is an accepting cycle whose *edges* satisfy every conjunct
   - `streettRun_found`: a reported counterexample lies in an internally connected SCC covering every property mark,
     reached by the reported stem, and the options recorded beside it cover every conjunct
   - `streettRun_none_pass`, `pruneLoop_none_refuted`: a search that reports nothing blames a conjunct for every maximal
-    SCC covering the property marks and queues its pruned candidates, and a queue drained without a report is refuted
+    SCC covering the property marks and, unless it is committed to an option of that conjunct, queues its pruned candidates,
+    and a queue drained without a report is refuted
   - `streettCheck_empty_refutes`: an `.empty` answer refutes the whole graph in the sense of `RRefutedFrom`
   - `streettCheck_empty_no_fairSCC`: an `.empty` answer rules out every `RFairSCC`, on [SLDP09]'s recursion proved in
     `AbstractSpec/StreettPruneSpec.lean`
@@ -56,7 +61,8 @@ module
   References:
   - [SLDP09] Sun, Liu, Dong, Pang. PAT: Towards Flexible Verification under Fairness. CAV 2009.
   - [LSFZ16] Li, Song, Feng, Zhang. Verify LTL with Fairness Assumptions Efficiently. arXiv:1606.08116, 2016.
-  - [EL87] Emerson, Lei. Efficient model checking in fragments of the propositional mu-calculus. LICS 1986.
+  - [EL87] Emerson, Lei. Modalities for model checking: branching time logic strikes back. Sci. Comput. Program.
+    8(3), 1987.
   - [RDKP13] Renault, Duret-Lutz, Kordon, Poitrenaud. Three SCC-based Emptiness Checks for GBA. LPAR-19, 2013.
   - [CCLMT18] Chen, Cohen, Lévy, Merz, Théry. Formal Proofs of Tarjan's Algorithm in Why3, Coq, and Isabelle.
     arXiv:1810.11979, 2018.
@@ -118,10 +124,7 @@ structure CompiledSpec (State : Type u) (L : Type w) where
   is joint with those commitments rather than per-option (`EdgeLabels.md` §6.3, §12). The top-level
   search compiles at `⊤`, where this is a no-op and `onEdgesIn` is `onEdges`. -/
   restrict : L → Bool
-  /-- The same region as a bitmask over `letterOptions`. Carrying both is what lets the report-time
-  validator establish `restrict ⊑ opt.region` for a recorded option *syntactically*, by `regionOf_le`,
-  rather than as a semantic side condition. -/
-  restrictBits : Nat
+  restrictBits : Nat  -- the same region as a bitmask over `letterOptions`, so every report is stated at `atBits` of one
 
 /-- Entry `i` of `prefixSums ns 0 #[0]` totals the first `i` entries of `ns`, the last entry being the total. -/
 def prefixSums (ns : Array Nat) (i : Nat) (out : Array Nat) : Array Nat :=
@@ -309,6 +312,15 @@ omit [BEq State] in
 theorem regionOf_le {cs : CompiledSpec State L} {bits o : Nat} (ho : o < cs.numOptions)
     (hbit : bits.testBit o = true) : LePred (regionOf cs bits) (cs.letterOptions[o]!).region :=
   fun _ hl => regionOf_eq_true.mp hl o ho hbit
+
+/-- The options a bitmask commits to. -/
+def committedOpts (cs : CompiledSpec State L) (bits : Nat) : List (StreettOption L) :=
+  (List.range cs.numOptions).filterMap fun k => if bits.testBit k then some cs.letterOptions[k]! else none
+
+omit [BEq State] [Hashable State] in
+theorem mem_committedOpts {cs : CompiledSpec State L} {bits : Nat} {x : StreettOption L} :
+    x ∈ committedOpts cs bits ↔ ∃ k < cs.numOptions, bits.testBit k = true ∧ cs.letterOptions[k]! = x := by
+  simp only [committedOpts, List.mem_filterMap, List.mem_range, Option.ite_none_right_eq_some, Option.some.injEq]
 
 omit [BEq State] in
 /-- The empty bitmask is the top region. -/
@@ -545,6 +557,10 @@ omit [Hashable State] in
     (cs.atBits bits).spec = cs.spec := rfl
 
 omit [Hashable State] in
+@[simp] theorem CompiledSpec.atBits_letterOptions (cs : CompiledSpec State L) (bits : Nat) :
+    (cs.atBits bits).letterOptions = cs.letterOptions := rfl
+
+omit [Hashable State] in
 @[simp] theorem CompiledSpec.atBits_restrict (cs : CompiledSpec State L) (bits : Nat) :
     (cs.atBits bits).restrict = regionOf cs bits := rfl
 
@@ -735,13 +751,8 @@ theorem Candidate.graph_mono {cs : CompiledSpec State L} {spec : RStreettSpec St
     ⟨hcompat.succs_mono (Candidate.region_mono hbits) a b h1,
      Std.HashSet.mem_iff_contains.mp (hst b (Std.HashSet.mem_iff_contains.mpr h2))⟩
 
-/-- The measure the prune loop decreases: how many of the spec's options are still unconjoined.
-
-This is a plain `Nat`, not the lexicographic pair the design sketch called for. The pair was there because
-an edge prune need not drop a state, so the state count alone cannot carry termination — but by
-`blamed_bit_new` a queued candidate *always* gains a bit the search did not already have, so the first
-component strictly drops at every queue step and the second is never needed. Bounded by `numOptions`,
-which is fixed by the spec. -/
+/-- The measure the prune loop decreases: how many of the spec's options are still unconjoined. An edge prune need not drop a
+state, but every queued candidate gains an option bit its search lacked (`StreettWF.pending_fresh`), so this alone decreases. -/
 @[expose] def Candidate.measure (cs : CompiledSpec State L) (c : Candidate State) : Nat :=
   cs.numOptions - (List.range cs.numOptions).countP fun o => c.regions.testBit o
 
@@ -862,6 +873,11 @@ private def liveOptionsIn (cs : CompiledSpec State L) (marksSeen : Nat) (o hi : 
   else acc
 termination_by hi - o
 
+-- whether `bits` commits to an option of `[o, hi)`
+private def anyBitIn (bits : Nat) (o hi : Nat) : Bool :=
+  if o < hi then bits.testBit o || anyBitIn bits (o + 1) hi else false
+termination_by hi - o
+
 -- the first available option in `[o, hi)` the candidate has already committed to
 private def selectCommitted (cs : CompiledSpec State L) (bits regionAlive marksSeen : Nat)
     (o hi : Nat) : Option Nat :=
@@ -871,13 +887,9 @@ private def selectCommitted (cs : CompiledSpec State L) (bits regionAlive marksS
   else none
 termination_by hi - o
 
-/-- The option a conjunct is reported with: one the candidate has already committed when it has one,
-otherwise the first available one.
-
-A committed available option is *exact*: the candidate's region already entails that option's, so the
-scan's per-option verdict for it is a verdict at the conjunction. The preference only chooses the options
-recorded beside a report. Whether to report or blame is `firstUnsatisfied`'s decision, and what bounds the
-recursion is `blamed_bit_new`. -/
+/-- The option a conjunct is reported with: one the candidate has already committed to when it has one, otherwise the first
+available one. A committed available option is exact, the candidate's region already entailing that option's, so the scan's
+per-option verdict for it is a verdict at the conjunction. The preference only chooses the options recorded beside a report. -/
 private def selectPref (cs : CompiledSpec State L) (bits regionAlive marksSeen : Nat) (o hi : Nat) :
     Option Nat :=
   (selectCommitted cs bits regionAlive marksSeen o hi).or (selectOne cs regionAlive marksSeen o hi)
@@ -899,20 +911,24 @@ cover. -/
 def selectedOptions (cs : CompiledSpec State L) (bits regionAlive marksSeen : Nat) : Array Nat :=
   selectFrom cs bits regionAlive marksSeen 0 #[]
 
--- the live options of the first conjunct from `i` on with no available option
-private def firstUnsatFrom (cs : CompiledSpec State L) (regionAlive marksSeen : Nat) (i : Nat) :
+-- the live options of the first conjunct from `i` on with no available option, `some #[]` if `bits` commits to one of its options
+private def firstUnsatFrom (cs : CompiledSpec State L) (bits regionAlive marksSeen : Nat) (i : Nat) :
     Option (Array Nat) :=
   if i < cs.conjunctStart.size - 1 then
     if (selectOne cs regionAlive marksSeen cs.conjunctStart[i]! cs.conjunctStart[i + 1]!).isSome then
-      firstUnsatFrom cs regionAlive marksSeen (i + 1)
+      firstUnsatFrom cs bits regionAlive marksSeen (i + 1)
+    else if anyBitIn bits cs.conjunctStart[i]! cs.conjunctStart[i + 1]! then some #[]
     else some (liveOptionsIn cs marksSeen cs.conjunctStart[i]! cs.conjunctStart[i + 1]! #[])
   else none
 termination_by cs.conjunctStart.size - 1 - i
 
 /-- The live options of the first conjunct with no available option, `none` when every conjunct is satisfied.
-Only the first such conjunct branches, since a fair subgraph has to satisfy it through one of its options. -/
-def firstUnsatisfied (cs : CompiledSpec State L) (regionAlive marksSeen : Nat) : Option (Array Nat) :=
-  firstUnsatFrom cs regionAlive marksSeen 0
+Only the first such conjunct branches, since a fair subgraph has to satisfy it through one of its options. A
+conjunct the candidate has already committed to (`bits`) branches no further and gives `some #[]`, since its committed
+option's region holds by restriction, so its marks are missing, and each of its other options that was live where it
+branched was searched by a sibling. -/
+def firstUnsatisfied (cs : CompiledSpec State L) (bits regionAlive marksSeen : Nat) : Option (Array Nat) :=
+  firstUnsatFrom cs bits regionAlive marksSeen 0
 
 /-! ## What the scan decides -/
 
@@ -1264,14 +1280,35 @@ private theorem mem_liveOptionsIn {cs : CompiledSpec State L} {ms hi : Nat} :
       · exact hp
       · omega
 
+private theorem anyBitIn_eq_true_iff {bits : Nat} :
+    ∀ {o hi : Nat}, anyBitIn bits o hi = true ↔ ∃ k, o ≤ k ∧ k < hi ∧ bits.testBit k = true := by
+  intro o hi
+  induction o using anyBitIn.induct (hi := hi) with
+  | case1 x hx ih =>
+    rw [anyBitIn, if_pos hx, Bool.or_eq_true, ih]
+    constructor
+    · rintro (h | ⟨k, h1, h2, h3⟩)
+      · exact ⟨x, Nat.le_refl _, hx, h⟩
+      · exact ⟨k, by omega, h2, h3⟩
+    · rintro ⟨k, h1, h2, h3⟩
+      rcases Nat.eq_or_lt_of_le h1 with rfl | hlt
+      · exact Or.inl h3
+      · exact Or.inr ⟨k, hlt, h2, h3⟩
+  | case2 x hx =>
+    rw [anyBitIn, if_neg hx]
+    simp only [Bool.false_eq_true, false_iff, not_exists, not_and]
+    intro k h1 h2
+    omega
+
 omit [BEq State] in
-private theorem firstUnsatFrom_eq_none {cs : CompiledSpec State L} {ra ms : Nat} :
-    ∀ i, firstUnsatFrom cs ra ms i = none →
+private theorem firstUnsatFrom_eq_none {cs : CompiledSpec State L} {bits ra ms : Nat} :
+    ∀ i, firstUnsatFrom cs bits ra ms i = none →
       ∀ j, i ≤ j → j < cs.conjunctStart.size - 1 →
         ∃ o, cs.conjunctStart[j]! ≤ o ∧ o < cs.conjunctStart[j + 1]! ∧
           optionAvailable cs ra ms o = true := by
   intro i
-  induction i using firstUnsatFrom.induct (cs := cs) (regionAlive := ra) (marksSeen := ms) with
+  induction i using firstUnsatFrom.induct (cs := cs) (bits := bits) (regionAlive := ra)
+    (marksSeen := ms) with
   | case1 x hx hsome ih =>
     intro h j hj hjn
     rw [firstUnsatFrom, if_pos hx, if_pos hsome] at h
@@ -1279,32 +1316,46 @@ private theorem firstUnsatFrom_eq_none {cs : CompiledSpec State L} {ra ms : Nat}
     · obtain ⟨o, ho⟩ := Option.isSome_iff_exists.mp hsome
       exact ⟨o, selectOne_eq_some _ _ ho⟩
     · exact ih h j hlt hjn
-  | case2 x hx hnone =>
+  | case2 x hx hnone hcom =>
     intro h _ _ _
-    rw [firstUnsatFrom, if_pos hx, if_neg hnone] at h
+    rw [firstUnsatFrom, if_pos hx, if_neg hnone, if_pos hcom] at h
     exact absurd h (by simp)
-  | case3 x hx =>
+  | case3 x hx hnone hcom =>
+    intro h _ _ _
+    rw [firstUnsatFrom, if_pos hx, if_neg hnone, if_neg hcom] at h
+    exact absurd h (by simp)
+  | case4 x hx =>
     intro _ j hj hjn
     omega
 
 omit [BEq State] in
-private theorem firstUnsatFrom_eq_some {cs : CompiledSpec State L} {ra ms : Nat} :
-    ∀ i opts, firstUnsatFrom cs ra ms i = some opts →
+private theorem firstUnsatFrom_eq_some {cs : CompiledSpec State L} {bits ra ms : Nat} :
+    ∀ i opts, firstUnsatFrom cs bits ra ms i = some opts →
       ∃ j, i ≤ j ∧ j < cs.conjunctStart.size - 1 ∧
         (∀ o, cs.conjunctStart[j]! ≤ o → o < cs.conjunctStart[j + 1]! →
           optionAvailable cs ra ms o = false) ∧
-        ∀ p, p ∈ opts ↔ cs.conjunctStart[j]! ≤ p ∧ p < cs.conjunctStart[j + 1]! ∧
-          optionLive cs ms p = true := by
+        ∀ p, p ∈ opts ↔ anyBitIn bits cs.conjunctStart[j]! cs.conjunctStart[j + 1]! = false ∧
+          cs.conjunctStart[j]! ≤ p ∧ p < cs.conjunctStart[j + 1]! ∧ optionLive cs ms p = true := by
   intro i
-  induction i using firstUnsatFrom.induct (cs := cs) (regionAlive := ra) (marksSeen := ms) with
+  induction i using firstUnsatFrom.induct (cs := cs) (bits := bits) (regionAlive := ra)
+    (marksSeen := ms) with
   | case1 x hx hsome ih =>
     intro opts h
     rw [firstUnsatFrom, if_pos hx, if_pos hsome] at h
     obtain ⟨j, h1, h2, h3, h4⟩ := ih opts h
     exact ⟨j, Nat.le_of_succ_le h1, h2, h3, h4⟩
-  | case2 x hx hnone =>
+  | case2 x hx hnone hcom =>
     intro opts h
-    rw [firstUnsatFrom, if_pos hx, if_neg hnone] at h
+    rw [firstUnsatFrom, if_pos hx, if_neg hnone, if_pos hcom] at h
+    obtain rfl : (#[] : Array Nat) = opts := by simpa using h
+    refine ⟨x, Nat.le_refl _, hx, ?_, fun p => ?_⟩
+    · have := selectOne_eq_none (cs := cs) (ra := ra) (ms := ms)
+        (hi := cs.conjunctStart[x + 1]!) cs.conjunctStart[x]!
+      exact this.mp (Option.not_isSome_iff_eq_none.mp (by simpa using hnone))
+    · simp [hcom]
+  | case3 x hx hnone hcom =>
+    intro opts h
+    rw [firstUnsatFrom, if_pos hx, if_neg hnone, if_neg hcom] at h
     obtain rfl : liveOptionsIn cs ms cs.conjunctStart[x]! cs.conjunctStart[x + 1]! #[] = opts := by
       simpa using h
     refine ⟨x, Nat.le_refl _, hx, ?_, fun p => ?_⟩
@@ -1312,11 +1363,22 @@ private theorem firstUnsatFrom_eq_some {cs : CompiledSpec State L} {ra ms : Nat}
         (hi := cs.conjunctStart[x + 1]!) cs.conjunctStart[x]!
       exact this.mp (Option.not_isSome_iff_eq_none.mp (by simpa using hnone))
     · rw [mem_liveOptionsIn]
-      simp
-  | case3 x hx =>
+      simp [hcom]
+  | case4 x hx =>
     intro opts h
     rw [firstUnsatFrom, if_neg hx] at h
     exact absurd h (by simp)
+
+omit [BEq State] in
+/-- A blamed option's bit is not set in the candidate's bitmask. -/
+private theorem blamed_bit_new {cs : CompiledSpec State L} {curRegions ra ms : Nat} {opts : Array Nat} {o : Nat}
+    (hfu : firstUnsatisfied cs curRegions ra ms = some opts) (ho : o ∈ opts) : curRegions.testBit o = false := by
+  obtain ⟨j, _, _, _, hmem⟩ := firstUnsatFrom_eq_some 0 opts hfu
+  obtain ⟨hany, hlo, hhi, _⟩ := (hmem o).mp ho
+  cases hb : curRegions.testBit o
+  · rfl
+  · rw [anyBitIn_eq_true_iff.mpr ⟨o, hlo, hhi, hb⟩] at hany
+    exact Bool.noConfusion hany
 
 omit [BEq State] in
 private theorem selectCommitted_eq_some {cs : CompiledSpec State L} {bits ra ms hi : Nat} :
@@ -1511,7 +1573,7 @@ theorem selectedOptions_available (cs : CompiledSpec State L) (bits ra ms : Nat)
 
 /-- When no conjunct is unsatisfied, `selectedOptions` holds an available option of every conjunct. -/
 private theorem selectedOptions_covers {cs : CompiledSpec State L} (hwf : cs.WF) (bits ra ms : Nat)
-    (h : firstUnsatisfied cs ra ms = none) :
+    (h : firstUnsatisfied cs bits ra ms = none) :
     ∀ i < cs.spec.conjuncts.size, ∃ o ∈ selectedOptions cs bits ra ms,
       cs.conjunctStart[i]! ≤ o ∧ o < cs.conjunctStart[i + 1]! ∧
         optionAvailable cs ra ms o = true ∧
@@ -1715,10 +1777,10 @@ theorem optionAvailable_iff_availableIn {cs : CompiledSpec State L}
 
 /-- No unsatisfied conjunct means the flushed set is available with the options the scan selected. -/
 theorem firstUnsatisfied_none_accepting {cs : CompiledSpec State L}
-    {succs : State → Array State}
+    {succs : State → Array State} {bits : Nat}
     (hwf : cs.WF) (live : Array State) (lo : Nat) {B : Std.HashSet State}
     (hB : ∀ s, s ∈ B ↔ s ∈ live.toList.drop lo)
-    (h : firstUnsatisfied cs (scanFrame cs succs live lo).1 (scanFrame cs succs live lo).2 = none) :
+    (h : firstUnsatisfied cs bits (scanFrame cs succs live lo).1 (scanFrame cs succs live lo).2 = none) :
     ∀ c ∈ cs.spec.conjuncts, ∃ opt ∈ c,
       (∀ s ∈ B, ∀ t ∈ B, t ∈ succs s →
         t ∈ cs.spec.regionSuccs (fun l => cs.restrict l && opt.region l) s) ∧
@@ -1785,40 +1847,6 @@ theorem blamedBlock_blames {cs : CompiledSpec State L}
     · rw [hwf.option_region j hj k hk', hget]
     · rw [hwf.option_marks j hj k hk', hget]
 
-/-- The blamed conjunct of an unsatisfied scan, together with every option of it whose marks are
-witnessed. -/
-theorem firstUnsatisfied_some_blames {cs : CompiledSpec State L}
-    {succs : State → Array State}
-    (hwf : cs.WF) (live : Array State) (lo : Nat) {B : Std.HashSet State}
-    (hB : ∀ s, s ∈ B ↔ s ∈ live.toList.drop lo) {opts : Array Nat}
-    (h : firstUnsatisfied cs (scanFrame cs succs live lo).1 (scanFrame cs succs live lo).2
-      = some opts) :
-    ∃ c ∈ cs.spec.conjuncts, (∀ o ∈ opts, o < cs.numOptions) ∧
-      ∀ opt ∈ c, (∀ g ∈ opt.marks, ∃ s ∈ B, ∃ t ∈ B, t ∈ succs s ∧
-          t ∈ cs.spec.regionSuccs (fun l => cs.restrict l && opt.region l && g l) s) →
-        ∃ o ∈ opts, cs.letterOptions[o]! = opt ∧
-          cs.regions[o]! = (opt.onEdgesIn cs.spec cs.restrict).region ∧
-          cs.optMarks[o]! = (opt.onEdgesIn cs.spec cs.restrict).marks := by
-  obtain ⟨j, _, hjn, _, hmem⟩ := firstUnsatFrom_eq_some 0 opts h
-  exact blamedBlock_blames hwf live lo hB hjn hmem
-
-
-/-- The blame names a conjunct and covers every option of it whose marks are witnessed. `firstUnsatisfied` is
-the only blame reason, so this is `firstUnsatisfied_some_blames`. -/
-theorem blamed_some_blames {cs : CompiledSpec State L}
-    {succs : State → Array State}
-    (hwf : cs.WF) (live : Array State) (lo : Nat) {B : Std.HashSet State}
-    (hB : ∀ s, s ∈ B ↔ s ∈ live.toList.drop lo) {opts : Array Nat}
-    (h : firstUnsatisfied cs (scanFrame cs succs live lo).1 (scanFrame cs succs live lo).2
-        = some opts) :
-    ∃ c ∈ cs.spec.conjuncts, (∀ o ∈ opts, o < cs.numOptions) ∧
-      ∀ opt ∈ c, (∀ g ∈ opt.marks, ∃ s ∈ B, ∃ t ∈ B, t ∈ succs s ∧
-          t ∈ cs.spec.regionSuccs (fun l => cs.restrict l && opt.region l && g l) s) →
-        ∃ o ∈ opts, cs.letterOptions[o]! = opt ∧
-          cs.regions[o]! = (opt.onEdgesIn cs.spec cs.restrict).region ∧
-          cs.optMarks[o]! = (opt.onEdgesIn cs.spec cs.restrict).marks := by
-  exact firstUnsatisfied_some_blames hwf live lo hB h
-
 end SetOfRange
 
 section Decrease
@@ -1826,11 +1854,11 @@ variable [LawfulBEq State] [LawfulHashable State]
 
 omit [Hashable State] [LawfulBEq State] [LawfulHashable State] in
 /-- Every option the scan blames is one of the compiled options. -/
-private theorem firstUnsatisfied_opt_lt {cs : CompiledSpec State L} (hwf : cs.WF) {ra ms : Nat}
-    {opts : Array Nat} (hfu : firstUnsatisfied cs ra ms = some opts) {o : Nat} (ho : o ∈ opts) :
+private theorem firstUnsatisfied_opt_lt {cs : CompiledSpec State L} (hwf : cs.WF) {bits ra ms : Nat}
+    {opts : Array Nat} (hfu : firstUnsatisfied cs bits ra ms = some opts) {o : Nat} (ho : o ∈ opts) :
     o < cs.numOptions := by
   obtain ⟨j, _, hjn, _, hmem⟩ := firstUnsatFrom_eq_some 0 opts hfu
-  obtain ⟨hlo, hhi, _⟩ := (hmem o).mp ho
+  obtain ⟨_, hlo, hhi, _⟩ := (hmem o).mp ho
   have hj : j < cs.spec.conjuncts.size := by rw [hwf.conjunctStart_size] at hjn; omega
   have h1 := hwf.start_mono cs.spec.conjuncts.size (Nat.le_refl _) (j + 1) hj
   have h2 := hwf.numOptions_eq
@@ -1839,8 +1867,8 @@ private theorem firstUnsatisfied_opt_lt {cs : CompiledSpec State L} (hwf : cs.WF
 
 omit [Hashable State] [LawfulBEq State] [LawfulHashable State] in
 /-- The blame names only compiled options. -/
-private theorem blamed_opt_lt {cs : CompiledSpec State L} (hwf : cs.WF) {ra ms : Nat}
-    {opts : Array Nat} (hfu : firstUnsatisfied cs ra ms = some opts)
+private theorem blamed_opt_lt {cs : CompiledSpec State L} (hwf : cs.WF) {bits ra ms : Nat}
+    {opts : Array Nat} (hfu : firstUnsatisfied cs bits ra ms = some opts)
     {o : Nat} (ho : o ∈ opts) : o < cs.numOptions :=
   firstUnsatisfied_opt_lt hwf hfu ho
 
@@ -1866,47 +1894,79 @@ private theorem committed_region_bit {cs : CompiledSpec State L} {curRegions : N
   rw [scanFrame, scanLetters_fst_testBit cs _ _ ho]
   exact hall
 
-omit [LawfulHashable State] in
-/-- The blamed option's bit was not already conjoined into the candidate the search ran on.
-
-The option's marks are present, so `optionAvailable` can only have failed on its region bit, and
-`committed_region_bit` says a committed option's region bit does not fail. This replaces the old "the queued
-candidate is a proper subset" argument: an *edge* prune need not drop a state, so what strictly decreases is
-the number of options still unconjoined — see `Candidate.measure_lt`. -/
-private theorem blamed_bit_new {cs : CompiledSpec State L} {curRegions : Nat}
+/-- The blamed conjunct of an unsatisfied scan. Either the candidate has already committed to an option of it,
+whose marks are then not all witnessed, or the blame covers every option of it whose marks are witnessed. -/
+theorem firstUnsatisfied_some_blames {cs : CompiledSpec State L} {curRegions : Nat}
     {succs : State → Array State}
     (hwf : cs.WF) (hmono : cs.spec.Mono) (hres : LePred (regionOf cs curRegions) cs.restrict)
     (hgraph : ∀ s t, t ∈ succs s → t ∈ cs.spec.regionSuccs (regionOf cs curRegions) s)
-    (live : Array State) (lo : Nat) {opts : Array Nat} {o : Nat}
-    (hfu : firstUnsatisfied cs (scanFrame cs succs live lo).1 (scanFrame cs succs live lo).2
-        = some opts)
-    (ho : o ∈ opts) : curRegions.testBit o = false := by
-  -- in both branches: the option's marks are present, and its availability failed
-  have key : ∃ j, j < cs.conjunctStart.size - 1 ∧
-      cs.conjunctStart[j]! ≤ o ∧ o < cs.conjunctStart[j + 1]! ∧
-      optionLive cs (scanFrame cs succs live lo).2 o = true ∧
-      (curRegions.testBit o = true →
-        optionAvailable cs (scanFrame cs succs live lo).1 (scanFrame cs succs live lo).2 o = false) := by
-    obtain ⟨j, _, hjn, hnotavail, hmem⟩ := firstUnsatFrom_eq_some 0 opts hfu
-    obtain ⟨hlo, hhi, hlive⟩ := (hmem o).mp ho
-    exact ⟨j, hjn, hlo, hhi, hlive, fun _ => hnotavail o hlo hhi⟩
-  obtain ⟨j, hjn, hlo, hhi, hlive, hnav⟩ := key
+    (live : Array State) (lo : Nat) {B : Std.HashSet State}
+    (hB : ∀ s, s ∈ B ↔ s ∈ live.toList.drop lo) {opts : Array Nat}
+    (h : firstUnsatisfied cs curRegions (scanFrame cs succs live lo).1 (scanFrame cs succs live lo).2
+      = some opts) :
+    ∃ c ∈ cs.spec.conjuncts, (∀ o ∈ opts, o < cs.numOptions) ∧
+      ((∃ k < cs.numOptions, curRegions.testBit k = true ∧ cs.letterOptions[k]! ∈ c ∧
+          ¬ ∀ g ∈ (cs.letterOptions[k]!).marks, ∃ s ∈ B, ∃ t ∈ B, t ∈ succs s ∧
+            t ∈ cs.spec.regionSuccs
+              (fun l => cs.restrict l && (cs.letterOptions[k]!).region l && g l) s) ∨
+        ∀ opt ∈ c, (∀ g ∈ opt.marks, ∃ s ∈ B, ∃ t ∈ B, t ∈ succs s ∧
+            t ∈ cs.spec.regionSuccs (fun l => cs.restrict l && opt.region l && g l) s) →
+          ∃ o ∈ opts, cs.letterOptions[o]! = opt ∧
+            cs.regions[o]! = (opt.onEdgesIn cs.spec cs.restrict).region ∧
+            cs.optMarks[o]! = (opt.onEdgesIn cs.spec cs.restrict).marks) := by
+  obtain ⟨j, _, hjn, hnotavail, hmem⟩ := firstUnsatFrom_eq_some 0 opts h
+  rcases hany : anyBitIn curRegions cs.conjunctStart[j]! cs.conjunctStart[j + 1]! with _ | _
+  · obtain ⟨c, hc, hlt, hall⟩ := blamedBlock_blames hwf live lo hB hjn
+      fun p => (hmem p).trans ⟨fun hp => hp.2, fun hp => ⟨hany, hp⟩⟩
+    exact ⟨c, hc, hlt, Or.inr hall⟩
+  -- a committed option's region bit survives the scan, so it is unavailable on its marks
+  obtain ⟨k, hlo, hhi, hbit⟩ := anyBitIn_eq_true_iff.mp hany
   have hj : j < cs.spec.conjuncts.size := by rw [hwf.conjunctStart_size] at hjn; omega
-  have ho' : o < cs.numOptions := by
-    have h1 := hwf.start_mono cs.spec.conjuncts.size (Nat.le_refl _) (j + 1) hj
-    have h2 := hwf.numOptions_eq
-    omega
-  by_contra hcon
-  have hset : curRegions.testBit o = true := by
-    cases hb : curRegions.testBit o
-    · exact absurd hb hcon
-    · rfl
-  have hbit : (scanFrame cs succs live lo).1.testBit o = false := by
-    have := hnav hset
-    rw [optionAvailable, hlive, Bool.and_true] at this
-    exact this
-  rw [committed_region_bit hwf hmono hres hgraph live lo ho' hset] at hbit
-  exact Bool.noConfusion hbit
+  have hce : cs.spec.conjuncts[j]! = cs.spec.conjuncts[j] := getElem!_pos _ j hj
+  have hstep := hwf.start_succ j hj
+  obtain ⟨k, rfl⟩ : ∃ k', k = cs.conjunctStart[j]! + k' := ⟨k - cs.conjunctStart[j]!, by omega⟩
+  have hk : k < (cs.spec.conjuncts[j]!).size := by omega
+  have hkn := hwf.option_lt hj hk
+  have hst : ∀ s, s ∈ live.toList.drop lo ↔ s ∈ sccSetOf live lo := fun s => mem_sccSet.symm
+  have hBS : ∀ s, s ∈ B ↔ s ∈ sccSetOf live lo := fun s => (hB s).trans (hst s)
+  refine ⟨cs.spec.conjuncts[j]!, by rw [hce]; exact Array.getElem_mem _,
+    fun o ho => Bool.noConfusion (hany.symm.trans ((hmem o).mp ho).1),
+    Or.inl ⟨_, hkn, hbit, ?_, fun hpres => ?_⟩⟩
+  · have hk2 : k < (cs.spec.conjuncts[j]).size := by rwa [hce] at hk
+    rw [hwf.letter_option j hj k hk, hce, getElem!_option _ _ hk2]
+    exact Array.getElem_mem _
+  · rw [hwf.letter_option j hj k hk] at hpres
+    have hlive : optionLive cs (scanFrame cs succs live lo).2 (cs.conjunctStart[j]! + k) = true := by
+      rw [scanFrame, optionLive_letters cs hwf _ _ hkn, hwf.option_marks j hj k hk,
+        optionMarks_onEdges _ (sccSetOf live lo) (live.toList.drop lo) hst]
+      intro g hg
+      obtain ⟨s, hs, t, ht, hsucc, hgt⟩ := hpres g hg
+      exact ⟨s, (hBS s).mp hs, t, (hBS t).mp ht, hsucc, hgt⟩
+    have hav := hnotavail _ hlo hhi
+    rw [optionAvailable, committed_region_bit hwf hmono hres hgraph live lo hkn hbit, hlive] at hav
+    exact Bool.noConfusion hav
+
+/-- The blame names a conjunct. `firstUnsatisfied` is the only blame reason, so this is
+`firstUnsatisfied_some_blames`. -/
+theorem blamed_some_blames {cs : CompiledSpec State L} {curRegions : Nat}
+    {succs : State → Array State}
+    (hwf : cs.WF) (hmono : cs.spec.Mono) (hres : LePred (regionOf cs curRegions) cs.restrict)
+    (hgraph : ∀ s t, t ∈ succs s → t ∈ cs.spec.regionSuccs (regionOf cs curRegions) s)
+    (live : Array State) (lo : Nat) {B : Std.HashSet State}
+    (hB : ∀ s, s ∈ B ↔ s ∈ live.toList.drop lo) {opts : Array Nat}
+    (h : firstUnsatisfied cs curRegions (scanFrame cs succs live lo).1 (scanFrame cs succs live lo).2
+      = some opts) :
+    ∃ c ∈ cs.spec.conjuncts, (∀ o ∈ opts, o < cs.numOptions) ∧
+      ((∃ k < cs.numOptions, curRegions.testBit k = true ∧ cs.letterOptions[k]! ∈ c ∧
+          ¬ ∀ g ∈ (cs.letterOptions[k]!).marks, ∃ s ∈ B, ∃ t ∈ B, t ∈ succs s ∧
+            t ∈ cs.spec.regionSuccs
+              (fun l => cs.restrict l && (cs.letterOptions[k]!).region l && g l) s) ∨
+        ∀ opt ∈ c, (∀ g ∈ opt.marks, ∃ s ∈ B, ∃ t ∈ B, t ∈ succs s ∧
+            t ∈ cs.spec.regionSuccs (fun l => cs.restrict l && opt.region l && g l) s) →
+          ∃ o ∈ opts, cs.letterOptions[o]! = opt ∧
+            cs.regions[o]! = (opt.onEdgesIn cs.spec cs.restrict).region ∧
+            cs.optMarks[o]! = (opt.onEdgesIn cs.spec cs.restrict).marks) :=
+  firstUnsatisfied_some_blames hwf hmono hres hgraph live lo hB h
 
 end Decrease
 
@@ -1951,15 +2011,14 @@ is always flushed, whether it passes, is discarded, or is queued for pruning. -/
       else
         -- the scan walks the closing SCC's internal *edges*, not its states
         let (regionAlive, marksSeen) := scanFrame cs succs live step.pos
-        -- An edge prune need not drop a state, so a blamed candidate keeps the SCC and gains a region
-        -- bit. Options already conjoined are skipped, which makes the bit a candidate gains *fresh by
-        -- construction* — that is what carries termination, without any hypothesis about the graph the
-        -- search ran on. `blamed_bit_new` and `uncommitted_bit_new` say skipping them loses nothing.
+        -- An edge prune need not drop a state, so a blamed candidate keeps the SCC and gains a region bit. Options already
+        -- conjoined are skipped, so that bit is fresh by construction, and termination needs no hypothesis about the graph
+        -- the search ran on. `blamed_bit_new` says the skip drops no blamed option.
         let blame : Array Nat → Array (Candidate State) := fun liveOpts =>
           liveOpts.foldl (init := pending) fun ps o =>
             let C : Candidate State := ⟨sccSetOf live step.pos, curRegions ||| (1 <<< o)⟩
             if C.states.isEmpty || curRegions.testBit o then ps else ps.push C
-        match firstUnsatisfied cs regionAlive marksSeen with
+        match firstUnsatisfied cs curRegions regionAlive marksSeen with
         | none =>
           -- Every conjunct has an available option, so the SCC is reported. Jointness of the selection
           -- is guaranteed by the *caller*: `LSys.StateOnly` regions hold at the source state and so keep
@@ -2042,7 +2101,7 @@ private theorem streettPop_triple [Inhabited State] (cs : CompiledSpec State L) 
   · by_cases h : ll = step.pos
     · by_cases hacc : acc != fullAccMask cs.numMarks
       · exact Or.inr (by simp only [streettPop, hb, if_pos h, if_pos hacc])
-      · rcases hfu : firstUnsatisfied cs (scanFrame cs succs live step.pos).1
+      · rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with _ | opts
         · exact Or.inr (by simp only [streettPop, hb, if_pos h, if_neg hacc, hfu])
         · exact Or.inr (by simp only [streettPop, hb, if_pos h, if_neg hacc, hfu])
@@ -2057,7 +2116,7 @@ private theorem streettPop_eq_true [Inhabited State] {cs : CompiledSpec State L}
     {aux aux' : StreettAux State} {step : DFSStep State Nat} (h : streettPop cs curRegions succs aux step = (aux', true)) :
     aux.dstack.back? = some (step.pos, fullAccMask cs.numMarks) ∧
       aux'.witness = aux.live.extract step.pos aux.live.size ∧
-      firstUnsatisfied cs (scanFrame cs succs aux.live step.pos).1 (scanFrame cs succs aux.live step.pos).2 = none ∧
+      firstUnsatisfied cs curRegions (scanFrame cs succs aux.live step.pos).1 (scanFrame cs succs aux.live step.pos).2 = none ∧
       aux'.witnessOpts =
         selectedOptions cs curRegions (scanFrame cs succs aux.live step.pos).1
           (scanFrame cs succs aux.live step.pos).2 := by
@@ -2072,7 +2131,7 @@ private theorem streettPop_eq_true [Inhabited State] {cs : CompiledSpec State L}
     · by_cases hacc : acc != fullAccMask cs.numMarks
       · simp only [streettPop, hb, if_pos hll, if_pos hacc, Bool.false_eq_true] at h2
       · have hacc' : acc = fullAccMask cs.numMarks := by simpa using hacc
-        rcases hfu : firstUnsatisfied cs (scanFrame cs succs live step.pos).1
+        rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with _ | opts
         · exact ⟨by simp only [hll, hacc'],
             by simp only [streettPop, hb, if_pos hll, if_neg hacc, hfu], rfl,
@@ -2121,7 +2180,7 @@ private theorem streettPop_pending [Inhabited State] (cs : CompiledSpec State L)
     (aux : StreettAux State) (step : DFSStep State Nat) (P : Candidate State)
     (hP : P ∈ (streettPop cs curRegions succs aux step).1.pending) :
     P ∈ aux.pending ∨ ∃ opts o,
-      firstUnsatisfied cs (scanFrame cs succs aux.live step.pos).1
+      firstUnsatisfied cs curRegions (scanFrame cs succs aux.live step.pos).1
           (scanFrame cs succs aux.live step.pos).2 = some opts ∧ o ∈ opts ∧
       curRegions.testBit o = false ∧
       P = ⟨sccSetOf aux.live step.pos, curRegions ||| (1 <<< o)⟩ := by
@@ -2131,7 +2190,7 @@ private theorem streettPop_pending [Inhabited State] (cs : CompiledSpec State L)
   · by_cases h : ll = step.pos
     · by_cases hacc : acc != fullAccMask cs.numMarks
       · exact Or.inl (by simpa only [streettPop, hb, if_pos h, if_pos hacc] using hP)
-      · rcases hfu : firstUnsatisfied cs (scanFrame cs succs live step.pos).1
+      · rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with _ | opts
         · exact Or.inl (by simpa only [streettPop, hb, if_pos h, if_neg hacc, hfu] using hP)
         · simp only [streettPop, hb, if_pos h, if_neg hacc, hfu] at hP
@@ -2161,14 +2220,8 @@ private theorem streettPop_touched_mono [Inhabited State] [LawfulBEq State] [Law
     rw [h1, h3]
     exact liveFlush_touched_mono step.pos aux.live aux.liveIndex aux.dead s h
 
-/-- The prune's search invariant: `LiveWF` on the live bookkeeping, and every queued candidate drawn from
-the states touched so far.
-
-The old form also demanded that each queued candidate be a *proper* subset, which carried termination. That
-is false once regions restrict edges — a prune step need drop no state — and it could not be stated here
-anyway: `LawfulDFSOps.wf_pop` quantifies over every graph, while the replacement fact (the queued bitmask
-gains a bit) holds only for the graph the search actually runs on. It is proved separately, in
-`streettRun_pending_fresh`, from `blamed_bit_new`. -/
+/-- The prune's search invariant: `LiveWF` on the live bookkeeping, every queued candidate drawn from the states touched so far,
+and every queued candidate carrying the search's bitmask plus one option it lacked, which bounds the prune. -/
 structure StreettWF [Inhabited State] (cs : CompiledSpec State L) (curRegions : Nat)
     (aux : StreettAux State) : Prop where
   live : LiveWF aux.live aux.liveIndex
@@ -2297,7 +2350,7 @@ theorem streettLowlinkLawful [Inhabited State] [LawfulBEq State] [LawfulHashable
     refine ⟨?_, ?_, ?_⟩
     · by_cases hacc : acc != fullAccMask cs.numMarks
       · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_pos hacc]; rfl
-      · rcases hfu : firstUnsatisfied cs (scanFrame cs succs live step.pos).1
+      · rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with _ | opts
         · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_neg hacc, hfu]
           rfl
@@ -2374,7 +2427,7 @@ private theorem streettPop_pending_mono [Inhabited State] (cs : CompiledSpec Sta
   · by_cases h : ll = step.pos
     · by_cases hacc : acc != fullAccMask cs.numMarks
       · simpa only [streettPop, hb, if_pos h, if_pos hacc] using hP
-      · rcases hfu : firstUnsatisfied cs (scanFrame cs succs live step.pos).1
+      · rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with _ | opts
         · simpa only [streettPop, hb, if_pos h, if_neg hacc, hfu] using hP
         · simp only [streettPop, hb, if_pos h, if_neg hacc, hfu]
@@ -2408,7 +2461,7 @@ private theorem streettPop_queues [Inhabited State] [LawfulBEq State] [LawfulHas
     (hfull : (streettView cs curRegions).accAt aux 0 = fullAccMask cs.numMarks)
     (h : streettPop cs curRegions succs aux step = (aux', false)) :
     ∃ opts,
-      firstUnsatisfied cs (scanFrame cs succs aux.live step.pos).1
+      firstUnsatisfied cs curRegions (scanFrame cs succs aux.live step.pos).1
           (scanFrame cs succs aux.live step.pos).2 = some opts ∧
       ∀ o ∈ opts, (sccSetOf aux.live step.pos).isEmpty = true ∨ curRegions.testBit o = true ∨
         (⟨sccSetOf aux.live step.pos, curRegions ||| (1 <<< o)⟩ : Candidate State)
@@ -2429,7 +2482,7 @@ private theorem streettPop_queues [Inhabited State] [LawfulBEq State] [LawfulHas
   have hacc0 : acc = fullAccMask cs.numMarks := hx2
   subst hll hacc0
   have hacc : ¬ ((fullAccMask cs.numMarks != fullAccMask cs.numMarks) = true) := by simp
-  rcases hfu : firstUnsatisfied cs (scanFrame cs succs live step.pos).1 (scanFrame cs succs live step.pos).2
+  rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1 (scanFrame cs succs live step.pos).2
     with _ | opts
   · simp only [streettPop, hb', if_neg hacc, hfu] at h2
     exact absurd h2 (by simp)
@@ -2495,7 +2548,7 @@ the front, so the deepest prune is finished first and a witness is reached witho
     -- since an edge its region excludes is not one the recorded options admit
     | some (anchor, _) => some (some (anchor, aux.witness, aux.witnessOpts, c), explored')
     | none => pruneLoop cs rspec explored' (aux.pending.toList ++ rest)
-partial_fixpoint -- terminating because every queued candidate is strictly smaller than the SCC that queued it
+partial_fixpoint -- terminating because every queued candidate has a smaller measure than the one that queued it
 
 private theorem pruneLoop_cons_found (cs : CompiledSpec State L) (rspec : RStreettSpec State L)
     (e : Nat) (c : Candidate State) (rest : List (Candidate State))
@@ -2686,21 +2739,12 @@ theorem mem_cycleEdges_iff [Inhabited State] {l : List State} {e : State × Stat
     e ∈ cycleEdges l ↔ ∃ i < l.length, e = (l[i]!, l[(i + 1) % l.length]!) := by
   simp [cycleEdges, List.mem_map, List.mem_range, eq_comm]
 
-/-- The fair test decided on a reported cycle, read on its *edges* and inside the reporting candidate's
-own region.
-
-Two things differ from a per-conjunct reading, and together they are what make this a decision procedure
-for `RStreettSpec.AvailableWith` rather than for the over-approximation the scan computes.
-
-- Only options the candidate has **already committed** count. `regionOf_le` then gives
-  `cs.restrict ⊑ opt.region` for each of them, so the whole selection is witnessed by the *single*
-  letter predicate `cs.restrict` — which is exactly what `AvailableWith` asks for, and what a reading
-  that answered each conjunct at its own region cannot deliver (`EdgeLabels.md` §12.1).
-- Region and marks are read off `cs.regions`/`cs.optMarks`, which at a candidate's compiled spec are
-  already conjoined with `cs.restrict`, so a mark and its region are answered on one realization.
-
-`streettPop` reports only when every conjunct has a committed available option, so this check passes on
-every genuine find (`buildResult_ne_empty`) and a failure degrades to `.empty`. -/
+/-- The fair test decided on a reported cycle, read on its edges inside the reporting candidate's own region: every cycle edge has
+a realization in `cs.restrict`, and every conjunct has an option whose region admits every cycle edge and each of whose marks a
+cycle edge carries. `cs.regions` and `cs.optMarks` are already conjoined with `cs.restrict`, so a mark and its region are answered
+on one realization. Jointness across conjuncts is the caller's `LSys.StateOnly` obligation (`EdgeLabels.md` §17). `streettPop`
+reports only when every conjunct has an available option, so this check passes on every genuine find (`buildResult_ne_empty`),
+and a failure degrades to `.empty`. -/
 def CompiledSpec.fairCycleOpts (cs : CompiledSpec State L) (edges : List (State × State)) : Bool :=
   -- every cycle edge has a realization inside the candidate's region, stated once rather than per
   -- conjunct: it is what makes the cycle a cycle *of the restricted graph*, and it has to hold even
@@ -3255,19 +3299,15 @@ private theorem buildResult_ne_empty (cs : CompiledSpec State L) (hcs : cs.WF)
   | nil => exact hne rfl
   | cons x xs => simp [hvalid, hfair] at hres
 
-/-- A search that reports nothing blames a conjunct for every maximal SCC covering the property marks, and
-has queued the pruned candidate of every option of that conjunct whose marks are witnessed, unless that
-candidate is empty.
+/-- A search that reports nothing blames a conjunct for every maximal SCC covering the property marks. Either the candidate is
+committed to an option of that conjunct whose marks are not witnessed, or it has queued the pruned candidate of every option of the
+conjunct whose marks are witnessed, unless that candidate is empty, and the queued candidate commits to the candidate's options and
+the new one only.
 
-Three things changed when the regions moved onto edges (`EdgeLabels.md` §6.5):
-
-- the hypothesis is the *edge-wise* mark condition — a pair internal to `M`, joined by an edge of the graph
-  the search ran on, with one realization satisfying both the option's region and the mark;
-- the queued candidate keeps all of `M` and gains a region bit, since an edge prune drops no state, so what
-  is returned is a membership equality rather than a pruned subset;
-- `hgraph` says the search's graph already lies inside the region its bitmask denotes. That is what
-  `blamed_bit_new` needs to rule out the middle branch of `streettPop_queues`: `streettPop` skips options
-  already conjoined, and on such a graph the scan could not have blamed one. -/
+The marks are read on edges, a pair internal to `M` joined by an edge of the graph the search ran on, with one realization satisfying
+both the option's region and the mark (`EdgeLabels.md` §6.5). The queued candidate keeps all of `M` and gains a region bit. `hgraph`
+says the search's graph lies inside the region its bitmask denotes, so a committed option's region bit survives the scan, and a
+committed option of the blamed conjunct is missing its marks. -/
 theorem streettRun_none_pass (cs : CompiledSpec State L) (hcs : cs.WF) (curRegions : Nat)
     (hmono : cs.spec.Mono) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
@@ -3280,24 +3320,38 @@ theorem streettRun_none_pass (cs : CompiledSpec State L) (hcs : cs.WF) (curRegio
     ∃ (sccs : List (Std.HashSet State)) (pick : Std.HashSet State → Array (StreettOption L)),
       SCCEnumerationSound initialStates succs sccs ∧
       (∀ M ∈ sccs, AcceptingMarks succs edgeMarks cs.numMarks M → pick M ∈ cs.spec.conjuncts) ∧
-      ∀ M ∈ sccs, AcceptingMarks succs edgeMarks cs.numMarks M → ∀ opt ∈ pick M,
-        (∀ g ∈ opt.marks, ∃ s ∈ M, ∃ t ∈ M, t ∈ succs s ∧
-            t ∈ cs.spec.regionSuccs (fun l => cs.restrict l && opt.region l && g l) s) →
-          (∀ s, s ∉ M) ∨
-            ∃ P ∈ (streettRun cs curRegions succs edgeMarks expand initialStates).2.pending,
-              (∀ s, s ∈ P.states ↔ s ∈ M) ∧
-              P.region cs = fun l => regionOf cs curRegions l && opt.region l := by
+      ∀ M ∈ sccs, AcceptingMarks succs edgeMarks cs.numMarks M →
+        (∃ k < cs.numOptions, curRegions.testBit k = true ∧ cs.letterOptions[k]! ∈ pick M ∧
+          ¬ ∀ g ∈ (cs.letterOptions[k]!).marks, ∃ s ∈ M, ∃ t ∈ M, t ∈ succs s ∧
+            t ∈ cs.spec.regionSuccs
+              (fun l => cs.restrict l && (cs.letterOptions[k]!).region l && g l) s) ∨
+        ∀ opt ∈ pick M,
+          (∀ g ∈ opt.marks, ∃ s ∈ M, ∃ t ∈ M, t ∈ succs s ∧
+              t ∈ cs.spec.regionSuccs (fun l => cs.restrict l && opt.region l && g l) s) →
+            (∀ s, s ∉ M) ∨
+              ∃ P ∈ (streettRun cs curRegions succs edgeMarks expand initialStates).2.pending,
+                (∀ s, s ∈ P.states ↔ s ∈ M) ∧
+                P.region cs = (fun l => regionOf cs curRegions l && opt.region l) ∧
+                ∀ k < cs.numOptions, P.regions.testBit k = true →
+                  curRegions.testBit k = true ∨ cs.letterOptions[k]! = opt := by
   have hrec := enumRun_recordedAt (streettOps cs curRegions) (streettView cs curRegions) (streettLowlinkLawful cs curRegions)
     (streettLawful cs curRegions hcs) streettInitAux_wf (streettMonotone cs curRegions) succs edgeMarks expand hexp initialStates fr hnone
   have hblame : ∀ M, ∃ c : Array (StreettOption L),
       M ∈ enumSCCs (streettOps cs curRegions) (streettView cs curRegions) succs edgeMarks expand initialStates →
-      AcceptingMarks succs edgeMarks cs.numMarks M → c ∈ cs.spec.conjuncts ∧ ∀ opt ∈ c,
-        (∀ g ∈ opt.marks, ∃ s ∈ M, ∃ t ∈ M, t ∈ succs s ∧
-            t ∈ cs.spec.regionSuccs (fun l => cs.restrict l && opt.region l && g l) s) →
-          (∀ s, s ∉ M) ∨
-            ∃ P ∈ (streettRun cs curRegions succs edgeMarks expand initialStates).2.pending,
-              (∀ s, s ∈ P.states ↔ s ∈ M) ∧
-              P.region cs = fun l => regionOf cs curRegions l && opt.region l := by
+      AcceptingMarks succs edgeMarks cs.numMarks M → c ∈ cs.spec.conjuncts ∧
+        ((∃ k < cs.numOptions, curRegions.testBit k = true ∧ cs.letterOptions[k]! ∈ c ∧
+          ¬ ∀ g ∈ (cs.letterOptions[k]!).marks, ∃ s ∈ M, ∃ t ∈ M, t ∈ succs s ∧
+            t ∈ cs.spec.regionSuccs
+              (fun l => cs.restrict l && (cs.letterOptions[k]!).region l && g l) s) ∨
+        ∀ opt ∈ c,
+          (∀ g ∈ opt.marks, ∃ s ∈ M, ∃ t ∈ M, t ∈ succs s ∧
+              t ∈ cs.spec.regionSuccs (fun l => cs.restrict l && opt.region l && g l) s) →
+            (∀ s, s ∉ M) ∨
+              ∃ P ∈ (streettRun cs curRegions succs edgeMarks expand initialStates).2.pending,
+                (∀ s, s ∈ P.states ↔ s ∈ M) ∧
+                P.region cs = (fun l => regionOf cs curRegions l && opt.region l) ∧
+                ∀ k < cs.numOptions, P.regions.testBit k = true →
+                  curRegions.testBit k = true ∨ cs.letterOptions[k]! = opt) := by
     intro M
     by_cases hM : M ∈ enumSCCs (streettOps cs curRegions) (streettView cs curRegions) succs edgeMarks expand initialStates ∧
       AcceptingMarks succs edgeMarks cs.numMarks M
@@ -3318,21 +3372,28 @@ theorem streettRun_none_pass (cs : CompiledSpec State L) (hcs : cs.WF) (curRegio
       exact mem_sccSet
     have hmemsc : ∀ s, s ∈ sccSetOf ((streettView cs curRegions).live p.2) step.pos ↔ s ∈ p.1 :=
       fun s => mem_sccSet.trans (hB s).symm
-    have hfu' : firstUnsatisfied cs (scanFrame cs succs ((streettView cs curRegions).live p.2) step.pos).1
+    have hfu' : firstUnsatisfied cs curRegions
+          (scanFrame cs succs ((streettView cs curRegions).live p.2) step.pos).1
           (scanFrame cs succs ((streettView cs curRegions).live p.2) step.pos).2 = some opts := hfu
-    obtain ⟨c, hc, hoptlt, hcover⟩ := blamed_some_blames hcs _ _ hB hfu'
-    refine ⟨c, fun _ _ => ⟨hc, fun opt hopt hpres => ?_⟩⟩
+    obtain ⟨c, hc, hoptlt, hcover⟩ := blamed_some_blames hcs hmono hres hgraph _ _ hB hfu'
+    refine ⟨c, fun _ _ => ⟨hc, ?_⟩⟩
+    rcases hcover with hcom | hcover
+    · exact Or.inl hcom
+    refine Or.inr fun opt hopt hpres => ?_
     obtain ⟨o, ho, hlet, -, -⟩ := hcover opt hopt hpres
     -- the blamed option was not already conjoined, so `streettPop` did not skip it
-    have hofresh : curRegions.testBit o = false := blamed_bit_new hcs hmono hres hgraph _ _ hfu' ho
+    have hofresh : curRegions.testBit o = false := blamed_bit_new hfu' ho
     rcases hq o ho with hempty | hbit | hin
     · refine Or.inl fun s hs => ?_
       rw [Std.HashSet.isEmpty_iff_forall_not_mem] at hempty
       exact hempty s ((hmemsc s).mpr hs)
     · exact absurd hbit (by rw [hofresh]; simp)
-    · refine Or.inr ⟨_, hR _ hin, hmemsc, ?_⟩
-      show regionOf cs (curRegions ||| (1 <<< o)) = _
-      rw [regionOf_or_shift (hoptlt o ho), hlet]
+    · refine Or.inr ⟨_, hR _ hin, hmemsc, ?_, fun k _ hk => ?_⟩
+      · show regionOf cs (curRegions ||| (1 <<< o)) = _
+        rw [regionOf_or_shift (hoptlt o ho), hlet]
+      · rcases testBit_or_shift.mp hk with hk' | rfl
+        · exact Or.inl hk'
+        · exact Or.inr hlet
   obtain ⟨pick, hpick⟩ := Classical.axiomOfChoice hblame
   exact ⟨enumSCCs (streettOps cs curRegions) (streettView cs curRegions) succs edgeMarks expand initialStates, pick,
     streettSCCs_sound cs hcs curRegions succs edgeMarks expand hexp initialStates fr,
@@ -3357,16 +3418,15 @@ theorem regionMarks_lt {cs : CompiledSpec State L} {succs : State → Array Stat
     ∀ s t, ∀ m ∈ cs.spec.regionMarks r s t, m < cs.numMarks :=
   fun s t m hm => hmarksBound s t m (hcompat.marks_sub r s t m hm)
 
-/-- A queue the prune drains without a report holds only refuted candidates.
-
-The candidate is refuted *at its own region*: `RRefuted` is indexed by the letter restriction, and a
-candidate's restriction is the conjunction its bitmask denotes. -/
+/-- A queue the prune drains without a report holds only refuted candidates, each at its own region and with its own commitments,
+the conjunction and the options its bitmask denotes. -/
 theorem pruneLoop_none_refuted (cs : CompiledSpec State L) (hcs : cs.WF) (hmono : cs.spec.Mono)
     (hrm : ∀ (r : L → Bool) s t, ∀ m ∈ cs.spec.regionMarks r s t, m < cs.numMarks) :
     ∀ e q r, pruneLoop cs cs.spec e q = some r → r.1 = none →
-      ∀ C ∈ q, RRefuted cs.spec (C.region cs) C.states := by
+      ∀ C ∈ q, RRefuted cs.spec (committedOpts cs C.regions) (C.region cs) C.states := by
   refine pruneLoop.partial_correctness cs cs.spec
-    (fun _ q r => r.1 = none → ∀ C ∈ q, RRefuted cs.spec (C.region cs) C.states) ?_
+    (fun _ q r => r.1 = none →
+      ∀ C ∈ q, RRefuted cs.spec (committedOpts cs C.regions) (C.region cs) C.states) ?_
   intro f ih e q r hr hnone
   cases q with
   | nil => intro C hC; simp at hC
@@ -3380,7 +3440,7 @@ theorem pruneLoop_none_refuted (cs : CompiledSpec State L) (hcs : cs.WF) (hmono 
       simp [hrun] at hr
       have hall := ih _ _ r hr hnone
       have hpend : ∀ P ∈ (candidateRun cs cs.spec C).2.pending,
-          RRefuted cs.spec (P.region cs) P.states :=
+          RRefuted cs.spec (committedOpts cs P.regions) (P.region cs) P.states :=
         fun P hP => hall P (List.mem_append_left _ (by simpa using hP))
       intro D hD
       rcases List.mem_cons.mp hD with rfl | hD'
@@ -3397,21 +3457,31 @@ theorem pruneLoop_none_refuted (cs : CompiledSpec State L) (hcs : cs.WF) (hmono 
         have hMsub : ∀ M ∈ sccs, ∀ s ∈ M, s ∈ D.states :=
           fun M hM s hs => mem_of_reachable_sccSuccs (henum.1 M hM s hs)
         simp only [CompiledSpec.atBits_numMarks, CompiledSpec.atBits_restrict,
-          CompiledSpec.atBits_spec, regionOf_atBits, Candidate.region_atBits] at hpick hrecq
+          CompiledSpec.atBits_spec, CompiledSpec.atBits_numOptions, CompiledSpec.atBits_letterOptions,
+          regionOf_atBits, Candidate.region_atBits] at hpick hrecq
         refine .pass sccs pick henum (fun M hM hA => hpick M hM (by rwa [hcs.numMarks_eq]))
-          (fun M hM hA opt hopt hpres => ?_)
+          (fun M hM hA hguard opt hopt hpres => ?_)
         -- the abstract mark condition names an edge of the candidate's own graph
-        have hpres' : ∀ g ∈ opt.marks, ∃ s ∈ M, ∃ t ∈ M, t ∈ D.graph cs cs.spec s ∧
-            t ∈ cs.spec.regionSuccs
-              (fun l => Candidate.region cs D l && opt.region l && g l) s := by
-          intro g hg
-          obtain ⟨s, hs, t, ht, hst⟩ := hpres g hg
+        have hpres' : ∀ o : StreettOption L, cs.spec.OptMarksIn (D.region cs) o M →
+            ∀ g ∈ o.marks, ∃ s ∈ M, ∃ t ∈ M, t ∈ D.graph cs cs.spec s ∧
+              t ∈ cs.spec.regionSuccs (fun l => Candidate.region cs D l && o.region l && g l) s := by
+          intro o ho g hg
+          obtain ⟨s, hs, t, ht, hst⟩ := ho g hg
           refine ⟨s, hs, t, ht, Array.mem_filter.mpr ⟨hmono.succs_mono (fun l hl => ?_) s t hst,
             Std.HashSet.mem_iff_contains.mp (hMsub M hM t ht)⟩, hst⟩
           exact (Bool.and_eq_true _ _ |>.mp (Bool.and_eq_true _ _ |>.mp hl).1).1
-        rcases hrecq M hM (by rwa [hcs.numMarks_eq]) opt hopt hpres' with hempty | ⟨P, hP, hPm, hPr⟩
-        · exact RRefuted.of_empty hempty
-        · exact hPr ▸ (hpend P hP).congr hPm
+        rcases hrecq M hM (by rwa [hcs.numMarks_eq]) with ⟨k, hk, hbit, hkM, hmiss⟩ | hcover
+        -- the guard witnesses the marks of a committed option of the blamed conjunct
+        · exact absurd (hpres' _ (hguard _ (mem_committedOpts.mpr ⟨k, hk, hbit, rfl⟩) hkM)) hmiss
+        · rcases hcover opt hopt (hpres' opt hpres) with hempty | ⟨P, hP, hPm, hPr, hPbits⟩
+          · exact RRefuted.of_empty hempty
+          -- the queued candidate commits to the candidate's options and to `opt`
+          · have hsub : ∀ o ∈ committedOpts cs P.regions, o ∈ opt :: committedOpts cs D.regions := by
+              intro o ho
+              obtain ⟨k, hk, hbit, rfl⟩ := mem_committedOpts.mp ho
+              exact List.mem_cons.mpr
+                ((hPbits k hk hbit).symm.imp_right fun hD => mem_committedOpts.mpr ⟨k, hk, hD, rfl⟩)
+            exact hPr ▸ ((hpend P hP).congr hPm).mono hsub
       · exact hall D (List.mem_append_right _ hD')
 
 /-- When the whole-graph search reports nothing and the prune drains its queue without a report, the whole graph
@@ -3454,9 +3524,16 @@ theorem refutedFrom_of_none (cs : CompiledSpec State L) (hcs : cs.WF)
     rw [regionOf_zero]
     funext l
     simp
-  rcases hrecq M hM (by rwa [hcs.numMarks_eq]) opt hopt hpres' with hempty | ⟨P, hP, hPm, hPr⟩
-  · exact RRefuted.of_empty hempty
-  · exact hreg ▸ hPr ▸ (hpend P (by simpa using hP)).congr hPm
+  -- the empty bitmask commits to nothing, so the queued candidate commits to `opt` alone
+  rcases hrecq M hM (by rwa [hcs.numMarks_eq]) with ⟨k, -, hbit, -⟩ | hcover
+  · exact absurd hbit (by simp)
+  · rcases hcover opt hopt hpres' with hempty | ⟨P, hP, hPm, hPr, hPbits⟩
+    · exact RRefuted.of_empty hempty
+    · have hsub : ∀ o ∈ committedOpts cs P.regions, o ∈ [opt] := by
+        intro o ho
+        obtain ⟨k, hk, hbit, rfl⟩ := mem_committedOpts.mp ho
+        exact List.mem_singleton.mpr ((hPbits k hk hbit).resolve_left (by simp))
+      exact hreg ▸ hPr ▸ ((hpend P (by simpa using hP)).congr hPm).mono hsub
 
 /-- A search that reports nothing leaves every reachable state dead. -/
 theorem streettRun_none_dead (cs : CompiledSpec State L) (hcs : cs.WF) (succs : State → Array State)

@@ -113,7 +113,7 @@ example (cs : CompiledSpec State L) (curRegions : Nat) (succs edgeMarks) (aux) (
   have hll' : ll = step.pos := by simpa using hll
   by_cases hacc : acc != fullAccMask cs.numMarks
   · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_pos hacc]; rfl
-  · rcases hfu : firstUnsatisfied cs (scanFrame cs succs live step.pos).1
+  · rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1
         (scanFrame cs succs live step.pos).2 with _ | opts
     · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_neg hacc, hfu]; rfl
     · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_neg hacc, hfu]; rfl
