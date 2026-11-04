@@ -32,9 +32,9 @@ module
   is hoisted with them, which is why two conjuncts are hoisted rather than one.
 -/
 import LTLLib
-import LTLLib.TGBABased.LTLtoTGBA.Pipeline
-meta import LTLLib.TGBABased.LTLtoTGBA.Pipeline
-meta import LTLLib.TGBABased.Fairness.FairRouter
+import LTLLib.LTLtoTGBA.Pipeline
+meta import LTLLib.LTLtoTGBA.Pipeline
+meta import LTLLib.Fairness.FairRouter
 
 namespace LTLLib.Tests.Examples.DeMorganSplit
 

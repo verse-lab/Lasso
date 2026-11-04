@@ -58,8 +58,9 @@ module
   - Outer DFS invariants
   - Main correctness theorem
 -/
-public import LTLLib.AbstractSpec.EmptinessCheck
 public import LTLLib.AbstractSpec.GraphPaths
+public import LTLLib.AbstractSpec.OEmptinessCheck
+public import LTLLib.AbstractSpec.Reachability
 
 public section
 

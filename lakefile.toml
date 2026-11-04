@@ -22,20 +22,20 @@ globs = ["LTLLibTests.+"]
 
 [[lean_exe]]
 name = "tgbabench"
-root = "LTLLib.TGBABased.Benchmark.PipelineBench"
+root = "LTLLib.Benchmark.PipelineBench"
 
 [[lean_exe]]
 name = "fairbench"
-root = "LTLLib.TGBABased.Benchmark.FairnessBench"
+root = "LTLLib.Benchmark.FairnessBench"
 
 [[lean_exe]]
 name = "fairmatrix"
-root = "LTLLib.TGBABased.Benchmark.FairnessMatrix"
+root = "LTLLib.Benchmark.FairnessMatrix"
 
 [[lean_exe]]
 name = "simpbench"
-root = "LTLLib.TGBABased.Benchmark.SimplifyBench"
+root = "LTLLib.Benchmark.SimplifyBench"
 
 [[lean_exe]]
 name = "ltl3bench"
-root = "LTLLib.TGBABased.LTLtoTGBA.Benchmark.TranslationBench"
+root = "LTLLib.LTLtoTGBA.Benchmark.TranslationBench"

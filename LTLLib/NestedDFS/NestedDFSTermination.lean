@@ -34,11 +34,9 @@ module
   - Top-level `nestedDFS`, well-founded
   - Fuel ↔ well-founded bridge, top level
   - `nestedDFSWF` as an `EmptinessChecker` instance
-  - Packaging a `FiniteReach` witness from `BA.WellFormed`
   - From an accepting run to an `AcceptingCycle`
 -/
 public import LTLLib.NestedDFS.NestedDFSCorrectness
-public import LTLLib.BA
 
 public section
 
@@ -1503,23 +1501,6 @@ variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
     nestedDFSWF_empty_no_cycle succs fr isAccepting n h
 
 end EmptinessCheckerInterface
-
-/-! ## Packaging a `FiniteReach` witness from `BA.WellFormed` -/
-
-section BAFiniteReach
-
-variable {α : Type u} [BEq α] [Hashable α]
-
-/-- A well-formed `BA`'s own state set is a `FiniteReach` witness for its `getSuccessors` function. -/
-theorem BA.finiteReach (ba : BA α) (hwf : ba.WellFormed) :
-    FiniteReach ba.initialStates.toList ba.getSuccessors := by
-  refine ⟨ba.states.toList, fun s hs => Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr ?_)⟩
-  induction hs with
-  | base hi =>
-    exact hwf.initial_mem _ (Std.HashSet.mem_iff_contains.mp (Std.HashSet.mem_toList.mp hi))
-  | step _ hmem ih => exact hwf.succ_mem _ _ ih hmem
-
-end BAFiniteReach
 
 /-! ## From an accepting run to an `AcceptingCycle` -/
 

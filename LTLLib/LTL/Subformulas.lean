@@ -5,13 +5,14 @@ module
 
   - `IsSubformula` relation + transitive closure
   - Generic fold (`NNF.fold`) and derived operations (`subformulas`, `untilSubformulas`)
-  - `untilSubformulasDedup`: the Until-subformula list `constructGBA` builds acceptance sets from, one entry per distinct `.until`
+  - `untilSubformulasDedup`: the Until-subformulas, one entry per distinct `.until`, which is one generalized acceptance set each
 
   Sections:
   - Subformula relation
   - Subformula folding
   - untilSubformulas completeness
   - untilSubformulasDedup completeness
+  - subformulasDedup completeness
 -/
 
 public import Std
@@ -91,8 +92,7 @@ private abbrev untilFoldFn (α : Type u) :=
   fun (acc : List (NNF α × NNF α)) (f : NNF α) =>
     match f with | .until a b => (a, b) :: acc | _ => acc
 
-/-- Extract all Until-subformulas as (left, right) pairs.
-Used for defining acceptance conditions: one accepting set per Until-subformula. -/
+/-- Extract all Until-subformulas as `(left, right)` pairs, one generalized acceptance set each. -/
 def untilSubformulas {α} (φ : NNF α) : List (NNF α × NNF α) :=
   φ.fold (untilFoldFn α) []
 
@@ -108,8 +108,8 @@ private abbrev untilDedupFn (α : Type u) [BEq α] [Hashable α] :
       else ((a, b) :: st.1, st.2.insert (.until a b))
     | _ => st
 
-/-- Deduplicated Until-subformulas: one `(left, right)` pair per distinct `.until` subformula.
-For GBA construction, a repeated `.until` would otherwise cost a redundant acceptance set. -/
+/-- Deduplicated Until-subformulas: one `(left, right)` pair per distinct `.until` subformula, a repeated
+one costing a redundant acceptance set. -/
 def untilSubformulasDedup {α} [BEq α] [Hashable α] (φ : NNF α) : List (NNF α × NNF α) :=
   (φ.fold (untilDedupFn α) ([], Std.HashSet.emptyWithCapacity 8)).1
 

@@ -1,101 +1,114 @@
 module
 
 /-
-  End-to-end pipeline for satisfiability:
-  LTL formula φ → satisfiability decision.
+  End-to-end satisfiability of an LTL formula. Translates with `ltl3ba` (`LTLtoTGBA/Pipeline.lean`) and runs
+  `dijkstraCheck` on the automaton's consistent part, with no degeneralization and no product. The check reads only the
+  graph, so the transitions no valuation takes are dropped first (`TGBA.consistentPart`), after which every accepting
+  cycle is read by some word.
+
+  Defines:
+  - `tgbaPipeline`: the decision procedure
+
+  Proves:
+  - `tgbaPipeline_nonEmpty_sat`: a `.nonEmpty` result yields a concrete `ξ` satisfying `φ`
+  - `tgbaPipeline_empty_unsat`: an `.empty` result certifies `φ` unsatisfiable
+
+  Sections:
+  - The pipeline
+  - Checker obligations
+  - Satisfiability
+  - Unsatisfiability
 -/
-public import LTLLib.LTLtoGBA.Correctness
-public import LTLLib.DegeneralBridge
-public import LTLLib.LTLtoGBA.ExpandTermination
-public import LTLLib.NestedDFS.NestedDFSTermination
-meta import LTLLib.Tactic.Set
+public import LTLLib.LTL.Semantics
+public import LTLLib.TGBA
+public import LTLLib.LTLtoTGBA.Pipeline
+public import LTLLib.SCC.DijkstraSCC
 
 public section
 
 namespace LTLLib
 
-variable {α : Type u} {S : Type v} [FSet (NNF α) S]
-  [BEq α] [Hashable α] [LawfulBEq α] [LawfulHashable α]
+variable {α : Type u} [BEq α] [Hashable α]
 
-/-- Chain `createGraph → constructGBA → GBA.degeneralize → nestedDFSWF` -/
-@[expose] def fullPipeline (φ : NNF α) : EmptinessResult BAState :=
-  match hcg : createGraph (S := S) φ with
-  | some st =>
-    let gba := constructGBA φ st
-    let ba := gba.degeneralize
-    let hbawf := degeneralize_wellFormed_any gba (constructGBA_wellFormed hcg)
-    nestedDFSWF ba.getSuccessors ba.initialStates.toList (ba.finiteReach hbawf) ba.isAccepting
+/-! ## The pipeline -/
+
+/-- Decide `φ`'s satisfiability. The `none` branch is unreachable by `ltl3ba_isSome`. -/
+@[expose] def tgbaPipeline (φ : NNF α) : EmptinessResult Nat :=
+  match ltl3ba φ with
+  | some tgba =>
+    let c := tgba.consistentPart
+    -- satisfiability walks the automaton alone, where the marks are already a cheap table lookup
+    dijkstraCheck c.succStates c.initialStates.toList c.cachedEdgeMarks
+      (fun q => (c.succStates q, (c.succStates q).map (c.cachedEdgeMarks q), #[])) c.numAcceptSets
   | none => .empty 0
 
-omit [LawfulBEq α] [LawfulHashable α] in
-/-- `fullPipeline` restated with the `createGraph` result exposed as `st`. -/
-theorem fullPipeline_eq (φ : NNF α) {st : ExpandState α S} (hcg : createGraph φ = some st) :
-    fullPipeline (S := S) φ =
-      nestedDFSWF (constructGBA φ st).degeneralize.getSuccessors
-        (constructGBA φ st).degeneralize.initialStates.toList
-        ((constructGBA φ st).degeneralize.finiteReach
-          (degeneralize_wellFormed_any (constructGBA φ st) (constructGBA_wellFormed hcg)))
-        (constructGBA φ st).degeneralize.isAccepting := by
-  unfold fullPipeline
+theorem tgbaPipeline_eq (φ : NNF α) {tgba : TGBA α} (htg : ltl3ba φ = some tgba) :
+    tgbaPipeline φ =
+      dijkstraCheck tgba.consistentPart.succStates tgba.consistentPart.initialStates.toList
+        tgba.consistentPart.cachedEdgeMarks
+        (fun q => (tgba.consistentPart.succStates q,
+          (tgba.consistentPart.succStates q).map (tgba.consistentPart.cachedEdgeMarks q), #[]))
+        tgba.consistentPart.numAcceptSets := by
+  unfold tgbaPipeline
   split
-  next st' hcg' =>
-    obtain rfl : st' = st := Option.some.inj (hcg'.symm.trans hcg)
+  next tgba' htg' =>
+    obtain rfl : tgba' = tgba := Option.some.inj (htg'.symm.trans htg)
     rfl
-  next hcg' => exact absurd (hcg'.symm.trans hcg) (by simp)
+  next htg' => exact absurd (htg'.symm.trans htg) (by simp)
 
-/-- `.nonEmpty` case: `fullPipeline` reports a genuine `ξ` satisfying `φ`. -/
-theorem fullPipeline_nonEmpty_sat (φ : NNF α) {stem loop : List BAState}
-    (h : fullPipeline (S := S) φ = .nonEmpty stem loop) :
+/-! ## Checker obligations -/
+
+private theorem cached_iff_edgeMarks (tgba : TGBA α) (q q' m : Nat) :
+    m ∈ tgba.cachedEdgeMarks q q' ↔ m ∈ tgba.edgeMarks q q' := by
+  simp only [Std.HashSet.mem_iff_contains]
+  exact tgba.cachedEdgeMarks_contains_iff q q' m
+
+variable [LawfulBEq α] [LawfulHashable α]
+
+private theorem cached_marksBound (φ : NNF α) {tgba : TGBA α} (htg : ltl3ba φ = some tgba) (q q' m : Nat)
+    (hm : m ∈ tgba.consistentPart.cachedEdgeMarks q q') : m < tgba.consistentPart.numAcceptSets :=
+  TGBA.edgeMarks_lt _ (fun q t ht => by
+      rw [TGBA.getSuccessors_consistentPart] at ht
+      exact ltl3ba_marks_lt φ htg q t (Array.mem_filter.mp ht).1)
+    q q' m ((cached_iff_edgeMarks _ q q' m).mp hm)
+
+variable [DecidableEq α]
+
+/-! ## Satisfiability -/
+
+/-- A `.nonEmpty` result yields a `ξ` satisfying `φ`. -/
+theorem tgbaPipeline_nonEmpty_sat (φ : NNF α) {stem loop : List Nat} (h : tgbaPipeline φ = .nonEmpty stem loop) :
     ∃ ξ : OmegaWord α, NNF.satisfies ξ φ := by
-  obtain ⟨st, hcg, _⟩ := createGraph_term (S := S) φ
-  rw [fullPipeline_eq φ hcg] at h
-  set gba := constructGBA φ st with hgba
-  set ba := gba.degeneralize with hba
-  have hwf := constructGBA_wellFormed hcg
-  have hbawf := degeneralize_wellFormed_any gba hwf
-  obtain ⟨ac, _, _⟩ := nestedDFSWF_nonEmpty_valid ba.getSuccessors
-    (ba.finiteReach hbawf) ba.isAccepting stem loop h
-  set ξ : OmegaWord α := fun n => canonicalLabel ba.labeling (ac.toValidLasso.run n).gbaState
-    with hξ
-  have hcompat : ∀ n, ba.toSpec.labelCompat (ac.toValidLasso.run n) (ξ n) := by
-    intro n
-    have hm := ac.run_states_mem hbawf n
-    have h1 := degeneralize_states_gbaState_mem_any gba (ac.toValidLasso.run n) hm
-    have h2 : st.nodes.contains (ac.toValidLasso.run n).gbaState = true := by
-      have h1' := h1
-      simp only [hgba, constructGBA] at h1'
-      exact (buildStates_mem_iff (ac.toValidLasso.run n).gbaState).mp h1'
-    rw [Std.HashMap.contains_eq_isSome_getElem?] at h2
-    obtain ⟨node, hnode⟩ := Option.isSome_iff_exists.mp h2
-    exact degeneralize_canonicalLabel_compat gba (ac.toValidLasso.run n)
-      (constructGBA_canonicalLabel_compat φ hcg hnode)
-  exact ⟨ξ, (constructGBA_correct hcg ξ).mp
-    ((degeneralize_accepts_any gba hwf ξ).mp
-      (ac.toValidLasso.accepts_of_validLasso hcompat))⟩
+  obtain ⟨tgba, htg⟩ := Option.isSome_iff_exists.mp (ltl3ba_isSome φ)
+  rw [tgbaPipeline_eq φ htg] at h
+  have hwf := TGBA.consistentPart_wellFormed (ltl3ba_wellFormed φ htg)
+  obtain ⟨ac, -, -⟩ := dijkstraCheck_nonEmpty_valid tgba.consistentPart.numAcceptSets
+    tgba.consistentPart.succStates tgba.consistentPart.cachedEdgeMarks
+    (fun q => (tgba.consistentPart.succStates q,
+      (tgba.consistentPart.succStates q).map (tgba.consistentPart.cachedEdgeMarks q), #[])) (fun _ => rfl)
+    tgba.consistentPart.initialStates.toList
+    (cached_marksBound φ htg) (tgba.consistentPart.finiteReach hwf) h
+  obtain ⟨ξ, hacc⟩ := tgba.accepts_of_consistentPart_cycle
+    (ac.congr_edgeMarks fun s t m => cached_iff_edgeMarks _ s t m)
+  exact ⟨ξ, (ltl3ba_accepts φ htg ξ).mp hacc⟩
 
-/-- `.empty` case: `fullPipeline` correctly certifies `φ`'s unsatisfiability. -/
-theorem fullPipeline_empty_unsat (φ : NNF α) {n : Nat}
-    (h : fullPipeline (S := S) φ = .empty n) :
+/-! ## Unsatisfiability -/
+
+/-- An `.empty` result certifies `φ` unsatisfiable. -/
+theorem tgbaPipeline_empty_unsat (φ : NNF α) {n : Nat} (h : tgbaPipeline φ = .empty n) :
     ∀ ξ : OmegaWord α, ¬ NNF.satisfies ξ φ := by
   intro ξ hξ
-  obtain ⟨st, hcg, _⟩ := createGraph_term (S := S) φ
-  rw [fullPipeline_eq φ hcg] at h
-  set gba := constructGBA φ st with hgba
-  set ba := gba.degeneralize with hba
-  have hwf := constructGBA_wellFormed hcg
-  have hbawf := degeneralize_wellFormed_any gba hwf
-  have hgba_acc : gba.toSpec.accepts ξ := (constructGBA_correct hcg ξ).mpr hξ
-  have hba_acc : ba.toSpec.accepts ξ := (degeneralize_accepts_any gba hwf ξ).mpr hgba_acc
-  obtain ⟨σ, hrun, _, hacc⟩ := hba_acc
-  have hcyc : ∃ _ac : AcceptingCycle ba.initialStates.toList ba.getSuccessors ba.isAccepting, True :=
-    -- Need pumping lemma to bridge "some `ξ` satisfies `φ`" (word level) to "an `AcceptingCycle` exists" (graph level)
-    exists_acceptingCycle_of_run (ba.finiteReach hbawf)
-      (Std.HashSet.mem_toList.mpr (Std.HashSet.mem_iff_contains.mpr hrun.1))
-      hrun.2
-      (fun N => by
-        obtain ⟨j, hj⟩ := hacc ⟨0, Nat.one_pos⟩ N
-        exact ⟨N + j, by omega, hj⟩)
-  exact nestedDFSWF_empty_no_cycle ba.getSuccessors (ba.finiteReach hbawf)
-    ba.isAccepting n h hcyc
+  obtain ⟨tgba, htg⟩ := Option.isSome_iff_exists.mp (ltl3ba_isSome φ)
+  rw [tgbaPipeline_eq φ htg] at h
+  have hwf := TGBA.consistentPart_wellFormed (ltl3ba_wellFormed φ htg)
+  obtain ⟨σ, hrun, -, hacc⟩ := (tgba.consistentPart_accepts ξ).mpr ((ltl3ba_accepts φ htg ξ).mpr hξ)
+  obtain ⟨ac, -⟩ := TGBA.exists_TAcceptingCycle_of_acceptingRun _ hwf hrun hacc
+  exact dijkstraCheck_empty_no_cycle tgba.consistentPart.numAcceptSets tgba.consistentPart.succStates
+    tgba.consistentPart.cachedEdgeMarks
+    (fun q => (tgba.consistentPart.succStates q,
+      (tgba.consistentPart.succStates q).map (tgba.consistentPart.cachedEdgeMarks q), #[])) (fun _ => rfl)
+    tgba.consistentPart.initialStates.toList (cached_marksBound φ htg)
+    (tgba.consistentPart.finiteReach hwf) h
+    ⟨ac.congr_edgeMarks (fun s t m => (cached_iff_edgeMarks _ s t m).symm), trivial⟩
 
 end LTLLib

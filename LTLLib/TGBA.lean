@@ -30,10 +30,10 @@ module
 -/
 
 public import Std
-public import LTLLib.TGBABased.AbstractSpec.Acceptance
-public import LTLLib.TGBABased.AbstractSpec.EmptinessCheck
-public import LTLLib.TGBABased.AbstractSpec.Lasso
-public import LTLLib.TGBABased.AbstractSpec.Pumping
+public import LTLLib.AbstractSpec.Acceptance
+public import LTLLib.AbstractSpec.EmptinessCheck
+public import LTLLib.AbstractSpec.Lasso
+public import LTLLib.AbstractSpec.Pumping
 public import LTLLib.AbstractSpec.GraphPaths
 
 public section

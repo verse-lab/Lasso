@@ -91,7 +91,7 @@ def build(verbose=False):
         print(f"Verification failed: Lake exited with code {returncode}", file=sys.stderr)
     else:
         print("Library build: PASS", flush=True)
-        print("Tests, examples and historical proofs: PASS", flush=True)
+        print("Tests and examples: PASS", flush=True)
         print("Axiom checks: PASS", flush=True)
         print("Warnings: 0; panics: 0", flush=True)
     return returncode or int(saw_panic)
