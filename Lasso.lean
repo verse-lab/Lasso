@@ -20,6 +20,7 @@ public import Lasso.LTL.FairClass
 public import Lasso.LTL.FairNormalForm
 public import Lasso.LTL.Fairness
 public import Lasso.LTL.Semantics
+public import Lasso.LTL.Notation
 
 -- generic graph and reachability infrastructure
 public import Lasso.AbstractSpec.GraphPaths

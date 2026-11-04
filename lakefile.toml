@@ -6,7 +6,7 @@ testDriver = "LassoTests"
 [[require]]
 name = "lentil"
 git = "https://github.com/verse-lab/Lentil.git"
-rev = "6a28e7d20bf9319ca083e4dffd587bd668553396"
+rev = "4b336806735fa80c9a6073c33afdb9cb0360edb8"
 
 [[require]]
 name = "batteries"
