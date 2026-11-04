@@ -2,7 +2,7 @@
 .DS_Store
 
 # TLC scratch, recreated on every run
-LTLLib/Examples/states/
+Lasso/Examples/states/
 
 **/tmp/**
 *.md

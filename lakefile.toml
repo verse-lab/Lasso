@@ -1,7 +1,7 @@
-name = "LTLLib"
+name = "Lasso"
 version = "0.1.0"
-defaultTargets = ["LTLLib"]
-testDriver = "LTLLibTests"
+defaultTargets = ["Lasso"]
+testDriver = "LassoTests"
 
 [[require]]
 name = "lentil"
@@ -14,28 +14,28 @@ git = "https://github.com/leanprover-community/batteries"
 rev = "v4.32.0"
 
 [[lean_lib]]
-name = "LTLLib"
+name = "Lasso"
 
 [[lean_lib]]
-name = "LTLLibTests"
-globs = ["LTLLibTests.+"]
+name = "LassoTests"
+globs = ["LassoTests.+"]
 
 [[lean_exe]]
 name = "tgbabench"
-root = "LTLLib.Benchmark.PipelineBench"
+root = "Lasso.Benchmark.PipelineBench"
 
 [[lean_exe]]
 name = "fairbench"
-root = "LTLLib.Benchmark.FairnessBench"
+root = "Lasso.Benchmark.FairnessBench"
 
 [[lean_exe]]
 name = "fairmatrix"
-root = "LTLLib.Benchmark.FairnessMatrix"
+root = "Lasso.Benchmark.FairnessMatrix"
 
 [[lean_exe]]
 name = "simpbench"
-root = "LTLLib.Benchmark.SimplifyBench"
+root = "Lasso.Benchmark.SimplifyBench"
 
 [[lean_exe]]
 name = "ltl3bench"
-root = "LTLLib.LTLtoTGBA.Benchmark.TranslationBench"
+root = "Lasso.LTLtoTGBA.Benchmark.TranslationBench"

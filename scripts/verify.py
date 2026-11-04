@@ -10,7 +10,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 # The same list drives both the coverage audit and the actual build.
-TARGETS = ("LTLLib", "LTLLibTests")
+TARGETS = ("Lasso", "LassoTests")
 LAKE = ("lake", "--no-cache", "--no-ansi")
 
 

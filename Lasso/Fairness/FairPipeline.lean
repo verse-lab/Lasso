@@ -1,0 +1,395 @@
+module
+
+/-
+  The fairness routes built on `FairRouter.lean`'s split-level searches (`modelCheckCrossSplit`, `modelCheckPruneSplit`)
+  with re-hoisting and disjunctive hoisting. The negated property is split and hoisted as `FairRouter.lean` does, `rehoist`
+  (`Rehoist.lean`) runs on what is left, and the final kept property goes to `ltl3ba`.
+
+  Defines:
+  - `firstNonEmpty`: decide a list of runs, stopping at the first counterexample
+  - `modelCheckUnderFairnessRehoistCross`: hoist, re-hoist, then one latched check per crossed disjunct
+  - `modelCheckUnderFairnessRehoistPrune`: hoist, re-hoist, then the hoisted conjuncts decided per SCC
+  - `modelCheckUnderFairnessDisjunctiveHoist`: the prune route with disjunctive hoisting, one prune run per combination
+    of sides of the kept mixed conjuncts
+  - `fairHoist`, `fairPruneSplits`, `fairCrossSplit`: the split each default route derives, read off without running it
+  - `pruneApplicable`: can the prune decide `φ`, given which atoms a step may contribute
+
+  Proves:
+  - `firstNonEmpty_empty`, `firstNonEmpty_nonEmpty`: what an exhausted and a stopped fold say about the runs
+  - `…_empty_unsat` (Soundness) and `…_nonEmpty_sat` (Completeness) for each route: an `.empty` result means every run
+    satisfies `φ`, a `.nonEmpty` result yields a run violating `φ`
+  - `stateOnly_of_pruneApplicable`: `pruneApplicable` discharges the disjunctive-hoist route's witness hypothesis
+
+  Sections:
+  - Deciding a list of runs
+  - Re-hoisting routes
+  - Crossing the sides of mixed conjuncts
+    - The split, read off without running the search
+    - Choosing between the prune and the crossing
+  - The same pipelines, from one system callback
+-/
+public import Lasso.AbstractSpec.Reachability
+public import Lasso.LTL.FairNormalForm
+public import Lasso.LTL.Propositional
+public import Lasso.LTL.Semantics
+public import Lasso.AbstractSpec.StreettSCC
+public import Lasso.Fairness.DisjunctiveHoist
+public import Lasso.Fairness.FairProduct
+public import Lasso.Fairness.FairRouter
+public import Lasso.Fairness.Rehoist
+public import Lasso.LTLtoTGBA.Pipeline
+public import Lasso.Product
+public import Lasso.SCC.StreettPrune
+
+public section
+
+namespace Lasso
+
+variable {α : Type u} {SysState : Type v} [BEq SysState] [Hashable SysState] [LawfulBEq SysState]
+  [Inhabited SysState] [BEq α] [Hashable α]
+
+/-! ## Deciding a list of runs -/
+
+section FirstNonEmpty
+
+variable {β : Type w} {P : Type w'}
+
+/-- Decide every item, stopping at the first counterexample, and sum the explored-state counts of an exhausted list. -/
+def firstNonEmpty (f : β → EmptinessResult P) : List β → EmptinessResult P
+  | [] => .empty 0
+  | b :: bs =>
+    match f b with
+    | .nonEmpty stem loop => .nonEmpty stem loop
+    | .empty n =>
+      match firstNonEmpty f bs with
+      | .nonEmpty stem loop => .nonEmpty stem loop
+      | .empty m => .empty (n + m)
+
+/-- An `.empty` verdict means every run in the list came back `.empty`. -/
+theorem firstNonEmpty_empty {f : β → EmptinessResult P} :
+    ∀ {bs : List β} {n : Nat}, firstNonEmpty f bs = .empty n → ∀ b ∈ bs, ∃ m, f b = .empty m := by
+  intro bs
+  induction bs with
+  | nil => simp
+  | cons b bs ih =>
+    intro n h e he
+    rw [firstNonEmpty] at h
+    split at h
+    · simp at h
+    · next n' hfb =>
+      split at h
+      · simp at h
+      · next m hrec =>
+        rcases List.mem_cons.mp he with rfl | hm
+        · exact ⟨n', hfb⟩
+        · exact ih hrec e hm
+
+/-- A `.nonEmpty` verdict is some run's own witness, unchanged. -/
+theorem firstNonEmpty_nonEmpty {f : β → EmptinessResult P} :
+    ∀ {bs : List β} {stem loop : List P},
+      firstNonEmpty f bs = .nonEmpty stem loop → ∃ b ∈ bs, f b = .nonEmpty stem loop := by
+  intro bs
+  induction bs with
+  | nil => simp [firstNonEmpty]
+  | cons b bs ih =>
+    intro stem loop h
+    rw [firstNonEmpty] at h
+    split at h
+    · next s l hfb =>
+      cases h
+      exact ⟨b, by simp, hfb⟩
+    · next n' hfb =>
+      split at h
+      · next s l hrec =>
+        cases h
+        obtain ⟨e, he, hfe⟩ := ih hrec
+        exact ⟨e, by simp [he], hfe⟩
+      · simp at h
+
+end FirstNonEmpty
+
+variable [DecidableEq α]
+
+/-! ## Re-hoisting routes -/
+
+/-- Does `sys` satisfy `φ` on every run? The negated property is split and hoisted exactly as
+`modelCheckUnderFairnessPrune`, `rehoist` runs on what is left before it reaches `ltl3ba`. -/
+@[expose] def modelCheckUnderFairnessRehoistPrune (φ : Formula α)
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α) : EmptinessResult (SysState × Nat) :=
+  let split := hoistFairness (φ.toNNF false).splitConj
+  let rehoisted := rehoist split.2
+  modelCheckPruneSplit (keptProperty rehoisted.2) (split.1 ++ rehoisted.1) sysInit sysSucc sysLabel
+
+section Correctness
+
+variable [LawfulBEq α] [LawfulHashable α]
+
+/-- Soundness: an `.empty` result means every run of `sys` satisfies `φ`. -/
+theorem modelCheckUnderFairnessRehoistPrune_empty_unsat [LawfulHashable SysState] (φ : Formula α)
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    {n : Nat} (h : modelCheckUnderFairnessRehoistPrune φ sysInit sysSucc sysLabel = .empty n) :
+    ∀ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ →
+      Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
+  intro ρ hρ
+  by_contra hviol
+  obtain ⟨hdss, hkept⟩ :=
+    (hoistFairness_correct (LSys.valuation sysLabel ρ) (φ.toNNF false).splitConj).mp
+      ((NNF.satisfies_splitConj _ _).mp ((Formula.toNNF_correct_neg _ φ).mp hviol))
+  obtain ⟨hdss', hkept'⟩ := (rehoist_correct _ _).mp hkept
+  exact (directSatisfies_keptProperty _ _).mp
+    (modelCheckPruneSplit_empty_unsat _ _ sysInit sysSucc sysLabel sysFR h ρ hρ
+      fun ds hds => (List.mem_append.mp hds).elim (hdss ds) (hdss' ds)) hkept'
+
+/-- Completeness: a `.nonEmpty` result yields one run of `sys` that violates `φ`. -/
+theorem modelCheckUnderFairnessRehoistPrune_nonEmpty_sat (φ : Formula α)
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α)
+    (hstate : ∀ ds ∈ (hoistFairness (φ.toNNF false).splitConj).1 ++
+        (rehoist (hoistFairness (φ.toNNF false).splitConj).2).1,
+      ∀ d ∈ ds, LSys.StateOnly sysSucc sysLabel d.1.eval)
+    {stem loop : List (SysState × Nat)}
+    (h : modelCheckUnderFairnessRehoistPrune φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
+    ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map Prod.fst = some (ρ n).1) := by
+  obtain ⟨ρ, hτ, hdss, hviol, hstates⟩ :=
+    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel hstate h
+  -- the violated goal is the kept conjuncts negated, so they all hold on this run
+  have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
+  refine ⟨ρ, hτ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
+    ((hoistFairness_correct _ (φ.toNNF false).splitConj).mpr
+      ⟨fun ds hds => hdss ds (List.mem_append_left _ hds), (rehoist_correct _ _).mpr
+        ⟨fun ds hds => hdss ds (List.mem_append_right _ hds), hkept⟩⟩)), hstates⟩
+
+end Correctness
+
+/-- The crossing on the same split as `modelCheckUnderFairnessRehoistPrune`: hoisted, re-hoisted, and then one
+latched check per crossed disjunct instead of the prune.
+
+Reads a labelled system, so a hoisted fairness may mention an edge atom. A system with no edge atoms is
+passed as `LSys.unlabelled sysSucc`. -/
+@[expose] def modelCheckUnderFairnessRehoistCross (φ : Formula α)
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α)
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
+    (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
+    EmptinessResult ((SysState × Nat) × Bool) :=
+  let split := hoistFairness (φ.toNNF false).splitConj
+  let rehoisted := rehoist split.2
+  modelCheckCrossSplit (keptProperty rehoisted.2) (split.1 ++ rehoisted.1) sysInit sysSucc sysLabel checker
+    sysChecker
+
+/-- `modelCheckUnderFairnessRehoistCross` over one system callback. -/
+@[expose] def modelCheckUnderFairnessRehoistCrossOfStep (φ : Formula α)
+    (sysInit : List SysState) (sysStep : LSys.StepFn α SysState)
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool) := dijkstraTChecker)
+    (sysChecker : TEmptinessChecker (SysState × Bool) := dijkstraTChecker) :
+    EmptinessResult ((SysState × Nat) × Bool) :=
+  let split := hoistFairness (φ.toNNF false).splitConj
+  let rehoisted := rehoist split.2
+  modelCheckCrossSplitOfStep (keptProperty rehoisted.2) (split.1 ++ rehoisted.1) sysInit sysStep
+    checker sysChecker
+
+theorem modelCheckUnderFairnessRehoistCrossOfStep_eq (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool))
+    (sysChecker : TEmptinessChecker (SysState × Bool)) :
+    modelCheckUnderFairnessRehoistCrossOfStep φ sysInit (fun s => (sysSucc s, sysLabel s)) checker sysChecker
+      = modelCheckUnderFairnessRehoistCross φ sysInit sysSucc sysLabel checker sysChecker :=
+  rfl
+
+section Correctness
+
+variable [LawfulBEq α] [LawfulHashable α]
+
+/-- Soundness of the re-hoisting crossing: an `.empty` result means every run of `sys` satisfies `φ`. -/
+theorem modelCheckUnderFairnessRehoistCross_empty_unsat (φ : Formula α)
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool)) (sysChecker : TEmptinessChecker (SysState × Bool))
+    {n : Nat} (h : modelCheckUnderFairnessRehoistCross φ sysInit sysSucc sysLabel checker sysChecker = .empty n) :
+    ∀ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ →
+      Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
+  intro ρ hρ
+  by_contra hviol
+  obtain ⟨hdss, hkept⟩ :=
+    (hoistFairness_correct (LSys.valuation sysLabel ρ) (φ.toNNF false).splitConj).mp
+      ((NNF.satisfies_splitConj _ _).mp ((Formula.toNNF_correct_neg _ φ).mp hviol))
+  obtain ⟨hdss', hkept'⟩ := (rehoist_correct _ _).mp hkept
+  exact (directSatisfies_keptProperty _ _).mp
+    (modelCheckCrossSplit_empty_unsat _ _ sysInit sysSucc sysLabel sysFR checker sysChecker h ρ hρ
+      fun ds hds => (List.mem_append.mp hds).elim (hdss ds) (hdss' ds)) hkept'
+
+/-- Completeness of the re-hoisting crossing: a `.nonEmpty` result yields one run of `sys` that violates `φ`. -/
+theorem modelCheckUnderFairnessRehoistCross_nonEmpty_sat (φ : Formula α)
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    (checker : TEmptinessChecker ((SysState × Nat) × Bool)) (sysChecker : TEmptinessChecker (SysState × Bool))
+    {stem loop : List ((SysState × Nat) × Bool)}
+    (h : modelCheckUnderFairnessRehoistCross φ sysInit sysSucc sysLabel checker sysChecker
+      = .nonEmpty stem loop) :
+    ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map (·.1.1) = some (ρ n).1) := by
+  obtain ⟨ρ, hρ, hdss, hviol, hstates⟩ :=
+    modelCheckCrossSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel sysFR checker sysChecker h
+  have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
+  refine ⟨ρ, hρ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
+    ((hoistFairness_correct _ (φ.toNNF false).splitConj).mpr
+      ⟨fun ds hds => hdss ds (List.mem_append_left _ hds), (rehoist_correct _ _).mpr
+        ⟨fun ds hds => hdss ds (List.mem_append_right _ hds), hkept⟩⟩)), hstates⟩
+
+end Correctness
+
+/-! ## Crossing the sides of mixed conjuncts -/
+
+/-- `modelCheckUnderFairnessRehoistPrune` with disjunctive hoisting: every combination of sides of the kept mixed
+conjuncts (`branches`) is one prune run, and the first counterexample of any run is the answer. -/
+@[expose] def modelCheckUnderFairnessDisjunctiveHoist (φ : Formula α)
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α) : EmptinessResult (SysState × Nat) :=
+  let split := hoistFairness (φ.toNNF false).splitConj
+  let rehoisted := rehoist split.2
+  firstNonEmpty (fun b => modelCheckPruneSplit (keptProperty b.2) (split.1 ++ rehoisted.1 ++ b.1)
+    sysInit sysSucc sysLabel) (branches rehoisted.2)
+
+/-! ### The split, read off without running the search
+
+The two default routes, `modelCheckUnderFairnessDisjunctiveHoist` (the prune) and `modelCheckUnderFairnessRehoistCross`
+(the crossing), hoist through the same two passes and differ only in what they do with the result. What is read off is the
+split a route actually passes to `modelCheckPruneSplit`, not the output of the first `hoistFairness`, since disjunctive
+hoisting adds options after that split. -/
+
+/-- The hoist both default routes share: every hoisted normal form, re-hoisted ones included, paired with
+the conjuncts left for the translator. -/
+@[expose] def fairHoist (φ : Formula α) : List (List (NNF.FairDisjunct α)) × List (NNF α) :=
+  let split := hoistFairness (φ.toNNF false).splitConj
+  let rehoisted := rehoist split.2
+  (split.1 ++ rehoisted.1, rehoisted.2)
+
+/-- What `modelCheckUnderFairnessDisjunctiveHoist` hands `modelCheckPruneSplit`, one entry per branch:
+the conjuncts kept for the translator (`keptProperty` assembles them) and the regions the prune decides
+per SCC. One prune run each. -/
+@[expose] def fairPruneSplits (φ : Formula α) :
+    List (List (NNF α) × List (List (NNF.FairDisjunct α))) :=
+  (branches (fairHoist φ).2).map fun b => (b.2, (fairHoist φ).1 ++ b.1)
+
+/-- What `modelCheckUnderFairnessRehoistCross` crosses: the kept conjuncts, and the crossed disjuncts, one
+latched check each. The crossing does not branch, so there is a single split. -/
+@[expose] def fairCrossSplit (φ : Formula α) : List (NNF α) × List (NNF.FairDisjunct α) :=
+  ((fairHoist φ).2, NNF.crossAllDNF (fairHoist φ).1)
+
+/-! ### Choosing between the prune and the crossing
+
+`modelCheckPruneSplit`'s witness contract asks that every hoisted region be `LSys.StateOnly`, which `FairRouter.lean`'s
+`regionsAvoid` tests syntactically from the atoms a step may contribute, the test being that no region the prune receives
+mentions one. It is all-or-nothing, any edge atom in any region of any branch sends the whole check to the crossing. -/
+
+/-- Can the prune decide `φ`, given that `edgeAtom` marks every atom a step may contribute? Decidable, and
+tested against the regions each branch of the prune route actually receives. -/
+def pruneApplicable (edgeAtom : α → Bool) (φ : Formula α) : Bool :=
+  (fairPruneSplits φ).all fun s => regionsAvoid edgeAtom s.2
+
+omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysState] in
+/-- The syntactic discharge of `modelCheckUnderFairnessDisjunctiveHoist_nonEmpty_sat`'s hypothesis: with
+every atom a step contributes marked by `edgeAtom`, `pruneApplicable` gives `StateOnly` for every region
+every branch hands the prune. -/
+theorem stateOnly_of_pruneApplicable [LawfulBEq α] [LawfulHashable α] {edgeAtom : α → Bool}
+    {φ : Formula α} {sysSucc : SysState → Array (LStep α SysState)}
+    {sysLabel : SysState → Std.HashSet α}
+    (hsteps : ∀ s, ∀ st ∈ LSys.totalize sysSucc s, ∀ a ∈ st.1, edgeAtom a = true)
+    (h : pruneApplicable edgeAtom φ = true) :
+    ∀ b ∈ branches (rehoist (hoistFairness (φ.toNNF false).splitConj).2).2,
+      ∀ ds ∈ (hoistFairness (φ.toNNF false).splitConj).1 ++
+          (rehoist (hoistFairness (φ.toNNF false).splitConj).2).1 ++ b.1,
+      ∀ d ∈ ds, LSys.StateOnly sysSucc sysLabel d.1.eval := by
+  intro b hb
+  exact stateOnly_of_regionsAvoid hsteps (List.all_eq_true.mp h _ (List.mem_map_of_mem hb))
+
+section Correctness
+
+variable [LawfulBEq α] [LawfulHashable α]
+
+/-- Soundness: an `.empty` result means every run of `sys` satisfies `φ`. -/
+theorem modelCheckUnderFairnessDisjunctiveHoist_empty_unsat [LawfulHashable SysState] (φ : Formula α)
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α) (sysFR : FiniteReach sysInit (LSys.targets sysSucc))
+    {n : Nat} (h : modelCheckUnderFairnessDisjunctiveHoist φ sysInit sysSucc sysLabel = .empty n) :
+    ∀ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ →
+      Formula.directSatisfies (LSys.valuation sysLabel ρ) φ := by
+  intro ρ hτ
+  by_contra hviol
+  obtain ⟨hdss, hkept⟩ :=
+    (hoistFairness_correct (LSys.valuation sysLabel ρ) (φ.toNNF false).splitConj).mp
+      ((NNF.satisfies_splitConj _ _).mp ((Formula.toNNF_correct_neg _ φ).mp hviol))
+  obtain ⟨hdss', hkept'⟩ := (rehoist_correct _ _).mp hkept
+  obtain ⟨b, hb, hbds, hbkept⟩ := (branches_correct _ _).mp hkept'
+  obtain ⟨m, hm⟩ := firstNonEmpty_empty h b hb
+  exact (directSatisfies_keptProperty _ _).mp
+    (modelCheckPruneSplit_empty_unsat _ _ sysInit sysSucc sysLabel sysFR hm ρ hτ fun ds hds => by
+      rcases List.mem_append.mp hds with hds | hds
+      · exact (List.mem_append.mp hds).elim (hdss ds) (hdss' ds)
+      · exact hbds ds hds) hbkept
+
+/-- Completeness: a `.nonEmpty` result yields one run of `sys` that violates `φ`. -/
+theorem modelCheckUnderFairnessDisjunctiveHoist_nonEmpty_sat (φ : Formula α)
+    (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
+    (sysLabel : SysState → Std.HashSet α)
+    -- Quantified over every branch, since which one reports is not known until the search runs, and stated against the
+    -- regions each branch actually hands the prune.
+    (hstate : ∀ b ∈ branches (rehoist (hoistFairness (φ.toNNF false).splitConj).2).2,
+      ∀ ds ∈ (hoistFairness (φ.toNNF false).splitConj).1 ++
+          (rehoist (hoistFairness (φ.toNNF false).splitConj).2).1 ++ b.1,
+      ∀ d ∈ ds, LSys.StateOnly sysSucc sysLabel d.1.eval)
+    {stem loop : List (SysState × Nat)}
+    (h : modelCheckUnderFairnessDisjunctiveHoist φ sysInit sysSucc sysLabel = .nonEmpty stem loop) :
+    ∃ ρ : Nat → LSys.Edge α SysState, (LSys.toSpec sysSucc sysInit sysLabel).isRun ρ ∧
+      ¬ Formula.directSatisfies (LSys.valuation sysLabel ρ) φ ∧
+      (∀ n, (lassoAt stem loop.tail n).map Prod.fst = some (ρ n).1) := by
+  obtain ⟨b, hb, hfb⟩ := firstNonEmpty_nonEmpty h
+  obtain ⟨τ, hτ, hdss, hviol, hstates⟩ :=
+    modelCheckPruneSplit_nonEmpty_sat _ _ sysInit sysSucc sysLabel (hstate b hb) hfb
+  -- the violated goal is the branch's kept conjuncts negated, so they all hold on this run
+  have hkept := Classical.not_not.mp (fun hno => hviol ((directSatisfies_keptProperty _ _).mpr hno))
+  have hkept' := (branches_correct _ _).mpr
+    ⟨b, hb, fun ds hds => hdss ds (List.mem_append_right _ hds), hkept⟩
+  refine ⟨τ, hτ, (Formula.toNNF_correct_neg _ φ).mpr ((NNF.satisfies_splitConj _ _).mpr
+    ((hoistFairness_correct _ (φ.toNNF false).splitConj).mpr
+      ⟨fun ds hds => hdss ds (List.mem_append_left _ (List.mem_append_left _ hds)), (rehoist_correct _ _).mpr
+        ⟨fun ds hds => hdss ds (List.mem_append_left _ (List.mem_append_right _ hds)), hkept'⟩⟩)), hstates⟩
+
+end Correctness
+
+/-! ## The same pipelines, from one system callback
+
+`LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair, so the product computes a state's transitions once. Each body is
+the two-callback one with the pair replaced, so each bridge is `rfl`. -/
+
+@[expose] def modelCheckUnderFairnessRehoistPruneOfStep (φ : Formula α)
+    (sysInit : List SysState) (sysStep : LSys.StepFn α SysState) :
+    EmptinessResult (SysState × Nat) :=
+  let split := hoistFairness (φ.toNNF false).splitConj
+  let rehoisted := rehoist split.2
+  modelCheckPruneSplitOfStep (keptProperty rehoisted.2) (split.1 ++ rehoisted.1) sysInit sysStep
+
+theorem modelCheckUnderFairnessRehoistPruneOfStep_eq (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α) :
+    modelCheckUnderFairnessRehoistPruneOfStep φ sysInit (fun s => (sysSucc s, sysLabel s))
+      = modelCheckUnderFairnessRehoistPrune φ sysInit sysSucc sysLabel := rfl
+
+@[expose] def modelCheckUnderFairnessDisjunctiveHoistOfStep (φ : Formula α)
+    (sysInit : List SysState) (sysStep : LSys.StepFn α SysState) :
+    EmptinessResult (SysState × Nat) :=
+  let split := hoistFairness (φ.toNNF false).splitConj
+  let rehoisted := rehoist split.2
+  firstNonEmpty (fun b => modelCheckPruneSplitOfStep (keptProperty b.2)
+    (split.1 ++ rehoisted.1 ++ b.1) sysInit sysStep) (branches rehoisted.2)
+
+theorem modelCheckUnderFairnessDisjunctiveHoistOfStep_eq (φ : Formula α) (sysInit : List SysState)
+    (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α) :
+    modelCheckUnderFairnessDisjunctiveHoistOfStep φ sysInit (fun s => (sysSucc s, sysLabel s))
+      = modelCheckUnderFairnessDisjunctiveHoist φ sysInit sysSucc sysLabel := rfl
+
+end Lasso

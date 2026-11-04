@@ -1,4 +1,4 @@
-# LTLLib
+# Lasso
 
 A standalone Lean 4 library for LTL (Linear Temporal Logic) model checking. It provides the formally verified pipeline from an LTL formula to a transition-based generalized Büchi automaton (TGBA), an on-the-fly product against an external system, and SCC-based emptiness checks, composed end to end into total, machine-checked decision procedures: model checking a system against an LTL property under a fairness assumption, and standalone LTL satisfiability.
 
@@ -6,7 +6,7 @@ The translation follows the ltl2ba and ltl3ba line of work, Gastin and Oddoux (C
 
 ## Contents
 
-- [LTLLib](#ltllib)
+- [Lasso](#lasso)
   - [Contents](#contents)
   - [Building and testing](#building-and-testing)
   - [LTL to TGBA translation](#ltl-to-tgba-translation)
@@ -59,7 +59,7 @@ Warnings: 0; panics: 0
 
 | Command | Scope |
 |---|---|
-| `lake build` | Main library and proofs imported by `LTLLib.lean` |
+| `lake build` | Main library and proofs imported by `Lasso.lean` |
 | `python3 scripts/verify.py` | Full verification of all Lean sources, tests and examples |
 | `python3 scripts/verify.py --coverage-only` | Audit that every Lean source is reached by a build target, without compiling |
 
@@ -164,7 +164,7 @@ See [Labelled steps and edge atoms](#labelled-steps-and-edge-atoms) for more det
 ### Example usage
 
 ```lean
-open LTLLib
+open Lasso
 
 /-- A token circulates round four positions, and may idle at `park`. -/
 inductive Spot where
@@ -198,7 +198,7 @@ def prop : Formula String :=
 
 `LSys.unlabelled` is how a system without edge atoms is passed, see [Labelled steps and edge atoms](#labelled-steps-and-edge-atoms). Both halves of `prop` are fairness formulas, so the whole implication is one, and so is its negation: the router hoists `□◇p` and `◇□¬q` alike and the translator receives `⊤`.
 
-The runnable demos are in `LTLLibTests/Examples/`: `FairPropertyDemo.lean` is this token ring, including what each routing hands to the translator, `NestedFairnessDemo.lean` and `DeMorganSplitDemo.lean` work through properties whose hoisting is less obvious, and `LTLLibTests/ModelCheckCounterExample.lean` checks a reported counterexample against the system edge by edge.
+The runnable demos are in `LassoTests/Examples/`: `FairPropertyDemo.lean` is this token ring, including what each routing hands to the translator, `NestedFairnessDemo.lean` and `DeMorganSplitDemo.lean` work through properties whose hoisting is less obvious, and `LassoTests/ModelCheckCounterExample.lean` checks a reported counterexample against the system edge by edge.
 
 ### What the caller supplies
 
@@ -296,7 +296,7 @@ theorem tgbaPipeline_nonEmpty_sat (φ : NNF α) {stem loop : List Nat}
 ### Example usage
 
 ```lean
-open LTLLib
+open Lasso
 
 /-- `□◇a ∧ □◇¬a`: `a` holds infinitely often, and fails infinitely often. -/
 def φ : Formula String :=
@@ -348,7 +348,7 @@ There is no degeneralization and no product here. The check reads only the graph
 
 Every top-level theorem is fully proven: no `sorry`, no admitted hypothesis, and no side condition beyond the system's finite reachability and, on the counterexample side, the witness obligation described in [What the caller supplies](#what-the-caller-supplies). Every decision procedure is a computable `def`.
 
-`LTLLibTests/PipelineTheorems.lean` pins this down with `#guard_axioms`, which fails the build if any of the following depends on an axiom outside `propext`, `Classical.choice` and `Quot.sound`:
+`LassoTests/PipelineTheorems.lean` pins this down with `#guard_axioms`, which fails the build if any of the following depends on an axiom outside `propext`, `Classical.choice` and `Quot.sound`:
 
 - `modelCheckFair_empty_unsat` / `modelCheckFair_nonEmpty_sat`, the default fairness route
 - `tgbaPipeline_empty_unsat` / `tgbaPipeline_nonEmpty_sat`, satisfiability
@@ -383,7 +383,7 @@ Each fairness route also has an `OfStep` form taking one `LSys.StepFn`, bridged 
 ## File organization
 
 ```
-LTLLib/
+Lasso/
   Data/
     Nat.lean
     List.lean
@@ -471,7 +471,7 @@ LTLLib/
   NDFSCheck.lean
   Satisfiability.lean
   ModelCheck.lean
-LTLLibTests/
+LassoTests/
   GuardAxioms.lean
   ModuleSystem.lean
   PipelineTheorems.lean    -- the axiom guards and the usability checks

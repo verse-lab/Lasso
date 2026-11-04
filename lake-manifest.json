@@ -31,6 +31,6 @@
    "inputRev": "v4.32.0",
    "inherited": true,
    "configFile": "lakefile.toml"}],
- "name": "LTLLib",
+ "name": "Lasso",
  "lakeDir": ".lake",
  "fixedToolchain": false}
