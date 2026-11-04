@@ -9,7 +9,7 @@ module
 
   - `NNF α`: Internal Negative Normal Form representation where
     negation only appears at the atomic level (`nprop`). This is the IR consumed
-    by the GBA construction pipeline.
+    by the TGBA construction pipeline.
 
   `Formula.toNNF` compiles the user-facing syntax to NNF and `NNF.toFormula` embeds it back, `toNNF true`
   being a left inverse. `NNF.splitConj` splits at the top-level conjunctions, which fairness routing runs

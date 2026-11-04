@@ -6,7 +6,7 @@ testDriver = "LTLLibTests"
 [[require]]
 name = "lentil"
 git = "https://github.com/verse-lab/Lentil.git"
-rev = "main"
+rev = "6a28e7d20bf9319ca083e4dffd587bd668553396"
 
 [[require]]
 name = "batteries"

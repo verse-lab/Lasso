@@ -2213,7 +2213,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
     dfsGo (dijkstraOps numMarks) succs edgeMarks expand aux stack = some r →
     DijkstraWellFormed aux →
     (∀ st ∈ stack, st.succ = succs st.state) →
-    -- `DFSStep.marks` is `edgeMarks state`, applied once at push, see `GenericDFS.dfsGo`
+    -- `DFSStep.marks` is `edgeMarks state`, applied once at push, see `dfsGo` in `SCC/GenericDFS.lean`
     (∀ st ∈ stack, st.succMarks = st.succ.map (edgeMarks st.state)) →
     -- a dispatched edge never leaves its target unknown
     (∀ st ∈ stack, ∀ x ∈ (st.succ.toList.take st.idx), dijkstraGetStatus aux x ≠ .unknown) →

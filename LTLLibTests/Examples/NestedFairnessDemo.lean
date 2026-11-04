@@ -23,8 +23,6 @@ module
     Here the operand `recv ∧ ◇(work ∧ ◇emit)` is not a state predicate, so TLC builds a tableau for it.
   - [LSFZ16] Appendix A's rule `GF(φ ∧ ◇ψ) ≡ GF φ ∧ GF ψ` applies twice and flattens it to
     `□◇recv ∧ □◇work ∧ □◇emit`, three acceptance marks and no automaton at all.
-
-  `NestedFairness.tla` is the same model and the same two assumptions written for TLC.
 -/
 import LTLLib
 import LTLLib.LTLtoTGBA.Pipeline

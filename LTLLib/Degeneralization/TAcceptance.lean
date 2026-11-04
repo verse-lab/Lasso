@@ -1,9 +1,8 @@
 module
 
 /-
-  Abstract degeneralization of edge-indexed automata, the transition-based analogue of `OASpec.degeneralize`.
-  The `k` acceptance marks of a `TOASpec` collapse into one by pairing states and edges with a counter `c : Fin k`,
-  which advances when the edge taken carries the awaited mark.
+  Abstract degeneralization of edge-indexed automata. The `k` acceptance marks of a `TOASpec` collapse into one by
+  pairing states and edges with a counter `c : Fin k`, which advances when the edge taken carries the awaited mark.
 
   Defines:
   - `TOASpec.degeneralize`: the degeneralized single-mark automaton

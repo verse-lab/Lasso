@@ -2,9 +2,9 @@ module
 
 /-
   Transition-based lasso theory. A valid lasso is a stem of edges into a cycle of edges covering every acceptance mark,
-  witnessing non-emptiness of a TGBA. Unlike the state-based `ValidLasso.stem`, `TValidLasso.stemE` can be empty, when
-  the initial state is the cycle's own head. `TAcceptingCycle.toTValidLassoOf` bridges a state-level `TAcceptingCycle`
-  into an edge-level `TValidLasso`, given a `TEdgeWitness` realizing every step and mark as a concrete edge.
+  witnessing non-emptiness of a TGBA. The stem `TValidLasso.stemE` can be empty, when the initial state is the cycle's
+  own head. `TAcceptingCycle.toTValidLassoOf` bridges a state-level `TAcceptingCycle` into an edge-level `TValidLasso`,
+  given a `TEdgeWitness` realizing every step and mark as a concrete edge.
 
   Defines:
   - `tlassoRun`, `TValidLasso`: the run of a lasso and its validity conditions

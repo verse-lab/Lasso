@@ -3,8 +3,8 @@ module
 /-
   Single-mark Transition-based Büchi Automaton (`TBA`) and the degeneralization of a TGBA into one.
 
-  An acceptance counter tracks which mark to satisfy next, the transition-based analogue of `GBA.degeneralize`.
-  Acceptance stays on edges throughout, only the number of marks collapses to one. The state space is |TGBA| × max(1, k) for k marks.
+  An acceptance counter tracks which mark to satisfy next, and acceptance stays on edges throughout, only the number of
+  marks collapses to one. The state space is |TGBA| × max(1, k) for k marks.
 
   Defines:
   - `TBAState`: a TGBA state paired with an acceptance counter

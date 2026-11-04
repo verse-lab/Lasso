@@ -4,7 +4,7 @@ module
   Fairness combinators for LTL formulas: unconditional, weak (justice), and strong (compassion) fairness, plus
   helpers for combining and assuming multiple fairness constraints.
 
-  These expand into standard LTL formulas and require no special handling in the GBA construction.
+  These expand into standard LTL formulas and require no special handling in the TGBA construction.
   Fairness-encoded formulas can however produce larger automata.
 
   `BoolFormula.weakFairMark` is the alternative for a propositional weak fairness assumption, which
