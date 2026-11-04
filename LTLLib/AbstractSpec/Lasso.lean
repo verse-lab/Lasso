@@ -955,9 +955,9 @@ theorem cycleE_forall {A : TOASpec State Edge α k} (W : TEdgeWitness A succs ed
           (ac.cycle_covers_marks m hmlt).choose_spec.choose_spec
     · simp at hem
 
-/-- A cycle confined to a subgraph, reached by a stem that need not be, what a static `FG` restriction
-asks for. The cycle's edges lie in `succsR` and its marks are `edgeMarksR`'s, because a mark there has to be
-realizable by a restricted step, see `EdgeLabels.md` §6.3. -/
+/-- A cycle confined to a subgraph, reached by a stem that need not be, what a static `FG` restriction asks for. The
+cycle's edges lie in `succsR` and its marks are `edgeMarksR`'s, because a mark there has to be realizable by a
+restricted step. -/
 structure TRegionCycle (initialStates : List State) (succs succsR : State → Array State)
     (edgeMarks edgeMarksR : State → State → Std.HashSet Nat) (numMarks : Nat) where
   stem : List State

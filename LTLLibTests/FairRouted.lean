@@ -11,7 +11,7 @@ module
     written as an assumption, so the common case pays nothing.
   - `◇□tk → ◇g` hoists `◇□tk` to the region `tk`, which a source state cannot decide, two parallel steps
     out of one state disagree on it, so the route falls back to the crossing, which latches the region into
-    the product instead (`EdgeLabels.md` §12.4, §12.6).
+    the product instead.
 
   Two systems: `trap`, where a `tk` self-loop at a `¬g` state gives both assumptions a counterexample, and
   `plain`, where `tk` is read once so neither assumption is satisfiable and `◇g` holds vacuously. Every

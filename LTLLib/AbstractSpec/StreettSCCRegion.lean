@@ -3,27 +3,16 @@ module
 /-
   Streett acceptance on an SCC when the hoisted regions restrict steps rather than states.
 
-  `StreettSCC.lean` reads a region `FG l` as a predicate on states, `∀ s ∈ B, region (label s)`. That is
-  exact only while every step out of `s` reads the same letter. On a product with edge atoms a pair `(p, p')`
-  has several parallel realizations with different letters, and then a single label per state, or per
-  endpoint pair, is not enough: answering "is this edge in-region?" and "does this edge carry the mark?"
-  on different realizations is the unsound test refuted in `EdgeLabels.md` §6.3.
+  `StreettSCC.lean` reads a region `FG l` as a predicate on states, which is exact only while every step out of
+  a state reads the same letter. A region here is instead a predicate on letters that selects a subgraph, and the
+  marks are recomputed on what survives. A spec exposes the restricted graph and the restricted marks as operators
+  indexed by the region, and both halves of availability are read off them, an option's mark `g` being witnessed is
+  membership of the restricted graph at the conjoined predicate `region ∧ g`, so region and mark are answered on
+  one realization.
 
-  So a region here is a predicate on letters that selects a subgraph, and the marks are recomputed on what
-  survives. A spec exposes the restricted graph and the restricted marks as operators indexed by the region,
-  which is exactly `TGBAProduct.keptSuccs`/`keptEdgeMarks` on the product side, and both halves of
-  availability are read off them, an option's mark `g` being witnessed is membership of the restricted
-  graph at the conjoined predicate `region ∧ g`, so region and mark are answered on one realization by
-  construction.
-
-  Two consequences that the state-based reading does not have, both load-bearing:
-
-  - `AcceptingMarks` moves onto the restricted graph too. §6.3 does not care whether the mark it strands is
-    an option's `GF g` or one of the property automaton's own Büchi marks.
-  - Availability does not compose across conjuncts. With state regions the selected options' regions all
-    hold on `B` independently, so their conjunction is free. With step regions an edge may have a realization
-    for each region separately and none satisfying both, so a `RFairSCC` carries its selection and is
-    connected in the conjunction of the selected regions.
+  Availability does not compose across conjuncts: an edge may have a realization for each region separately and
+  none satisfying both, so an `RFairSCC` carries its selection and is connected in the conjunction of the selected
+  regions.
 
   Defines:
   - `RStreettSpec`: the region-indexed spec, and `RStreettSpec.Compat`, its laws against an ambient graph
@@ -71,19 +60,11 @@ structure RStreettSpec (State : Type u) (L : Type w) where
   regionSuccs : (L → Bool) → State → Array State
   regionMarks : (L → Bool) → State → State → Std.HashSet Nat
   conjuncts : Array (Array (StreettOption L))
-  -- A region's graph and marks from one pass over the source, in the `…From` discipline of §12.8. A spec that
-  -- can share its per-source work should say so here. The default pairs `regionSuccs` with `regionMarks`
-  -- naively, and `regionMarks` is the two-argument spec form, so calling it once per successor re-derives the
-  -- source's label and steps every time, which `EdgeLabels.md` §13.8 measured at `1 + d` `sysSucc` and
-  -- `1 + 2d` `sysLabel` calls per state, against 1.0x for the top-level scan.
+  -- A region's graph and marks from one pass over the source. A spec that can share its per-source work should
+  -- say so here, the default pairs `regionSuccs` with `regionMarks` naively.
   regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat :=
     fun r => derivedExpand (regionSuccs r) (regionMarks r)
-  -- `regionExpand` computes what `regionSuccs` and `regionMarks` say it does. Carried as a field rather than
-  -- threaded as a hypothesis so that `Candidate.expand_coherent` stays a closed term and no prune theorem
-  -- grows an argument. No default, since inside the declaration `regionExpand` is an opaque variable and a
-  -- default here cannot see that it is `derivedExpand`. A construction that takes `regionExpand`'s default
-  -- discharges this with `fun r => derivedExpand_coherent _ _`, which typechecks once the default has been
-  -- substituted.
+  -- `regionExpand` computes what `regionSuccs` and `regionMarks` say it does.
   regionExpand_coherent : ∀ r, ExpandCoherent (regionSuccs r) (regionMarks r) (regionExpand r)
 
 /-- A predicate entailing another, pointwise. -/
@@ -103,14 +84,11 @@ structure RStreettSpec.Compat (spec : RStreettSpec State L) (succs : State → A
   marks_mono : ∀ {r' r : L → Bool}, LePred r' r →
     ∀ s t m, m ∈ spec.regionMarks r' s t → m ∈ spec.regionMarks r s t
   succs_top : ∀ s, spec.regionSuccs (fun _ => true) s = succs s
-  -- pointwise, not an equality of `Std.HashSet Nat`: an implementation may answer from a shared,
-  -- grouped table whose bucket layout differs from a per-realization fold. Membership is all the
-  -- consumers below ever use. See `EdgeLabels.md` §13.6.
+  -- pointwise, not an equality of `Std.HashSet Nat`, an implementation may answer from a shared, grouped table
+  -- whose bucket layout differs from a per-realization fold.
   marks_top : ∀ s t m, m ∈ spec.regionMarks (fun _ => true) s t ↔ m ∈ edgeMarks s t
 
-/-- The antitone halves of `Compat` on their own. They say nothing about any ambient graph, which is what
-makes them usable where `Compat` is not: a candidate's restricted graph never satisfies `succs_top`, yet
-the prune's completeness argument runs on candidates and only ever needs these two laws. -/
+/-- The antitone halves of `Compat` on their own, saying nothing about any ambient graph. -/
 structure RStreettSpec.Mono (spec : RStreettSpec State L) : Prop where
   succs_mono : ∀ {r' r : L → Bool}, LePred r' r →
     ∀ s t, t ∈ spec.regionSuccs r' s → t ∈ spec.regionSuccs r s
@@ -183,9 +161,7 @@ structure RFairSCC (initialStates : List State) (succs : State → Array State)
   reachable : ∀ s ∈ scc, Reachable initialStates succs s
   fair : spec.Accepting scc
 
-/-- The ambient `AcceptingSCC` underneath, obtained by relaxing the restricted graph and marks to the
-ambient ones. The selection is recovered classically, `fair` is a `Prop`, and only its existence matters
-here. -/
+/-- The ambient `AcceptingSCC` underneath, obtained by relaxing the restricted graph and marks to the ambient ones. -/
 @[expose] noncomputable def RFairSCC.toAcceptingSCC {initialStates : List State}
     (hcompat : spec.Compat succs edgeMarks) (A : RFairSCC initialStates succs spec) :
     AcceptingSCC initialStates succs edgeMarks spec.numMarks :=
@@ -204,11 +180,9 @@ here. -/
 
 /-! ## The edge-indexed reading
 
-The prune scans the SCC's internal edges, so each option is re-read as a predicate on edges: its region
-admits an edge that has an in-region realization, and its mark `g` is witnessed by an edge with a
-realization satisfying the region and `g`. The mark predicate conjoins the region, so the two are
-answered on one realization, §6.3's failure mode is excluded by construction rather than by a side
-condition. -/
+The prune scans the SCC's internal edges, so each option is re-read as a predicate on edges: its region admits an
+edge that has an in-region realization, and its mark `g` is witnessed by an edge with a realization satisfying the
+region and `g`. The mark predicate conjoins the region, so the two are answered on one realization. -/
 
 /-- An option read on edges. -/
 @[expose] def StreettOption.onEdges (spec : RStreettSpec State L) (opt : StreettOption L) :
@@ -217,15 +191,11 @@ condition. -/
   marks := opt.marks.map fun g e =>
     (spec.regionSuccs (fun l => opt.region l && g l) e.1).contains e.2
 
-/-- An option read on edges inside a letter restriction `r`: its region admits an edge that has a
-realization satisfying `r` and the region, and its mark `g` is witnessed by an edge with a realization
-satisfying `r`, the region and `g`, all three at once.
-
-`r` is the candidate's own region, the conjunction of the options already committed to it. Reading an
-option at `r ∧ opt.region` rather than at `opt.region` alone is what makes the scan's verdict joint with
-those commitments. Without it two conjuncts can each be witnessed by a different realization of the
-same edge, which is `EdgeLabels.md` §6.3 one level up and exactly what `AvailableWith` forbids by
-evaluating everything at `selRegion sel`. `onEdges` is the case `r = ⊤`, which is the top-level search. -/
+/-- An option read on edges inside a letter restriction `r`: its region admits an edge that has a realization
+satisfying `r` and the region, and its mark `g` is witnessed by an edge with a realization satisfying `r`, the
+region and `g`, all three at once. `r` is the candidate's own region, the conjunction of the options already
+committed to it, and reading the option at `r ∧ opt.region` is what makes the scan's verdict joint with those
+commitments. `onEdges` is the case `r = ⊤`. -/
 @[expose] def StreettOption.onEdgesIn (spec : RStreettSpec State L) (r : L → Bool) (opt : StreettOption L) :
     StreettOption (State × State) where
   region := fun e => (spec.regionSuccs (fun l => r l && opt.region l) e.1).contains e.2
@@ -233,8 +203,7 @@ evaluating everything at `selRegion sel`. `onEdges` is the case `r = ⊤`, which
     (spec.regionSuccs (fun l => r l && opt.region l && g l) e.1).contains e.2
 
 omit [Hashable State] [LawfulBEq State] in
-/-- At the top region an option's edge reading is the unrestricted one, definitionally: `true && b` is
-`b` by `Bool.and`'s own recursion, so the two predicates are the same term. -/
+/-- At the top region an option's edge reading is the unrestricted one. -/
 @[simp] theorem StreettOption.onEdgesIn_top (spec : RStreettSpec State L) (opt : StreettOption L) :
     opt.onEdgesIn spec (fun _ => true) = opt.onEdges spec := rfl
 
@@ -280,10 +249,9 @@ theorem RStreettSpec.edgeSpec_getElem (spec : RStreettSpec State L) {i : Nat}
 
 /-! ## Runs that carry their letters
 
-The abstract layer cannot see realizations, so a run carries, at each step, the letter its chosen
-realization reads and the marks that realization carries. The two laws say the obvious thing: a step whose
-letter satisfies `r` survives the `r`-restriction, with its marks. On the product both hold by
-construction. This is what ties the region and the marks to one realization. -/
+The abstract layer cannot see realizations, so a run carries, at each step, the letter its chosen realization reads
+and the marks that realization carries. The two laws say that a step whose letter satisfies `r` survives the
+`r`-restriction, with its marks. -/
 
 /-- A run of `succs` together with the letter and marks its chosen realization reads at each step. -/
 structure RRun (spec : RStreettSpec State L) (initialStates : List State) where
@@ -357,10 +325,8 @@ set_option maxHeartbeats 1000000 in
 /-- A run that covers the property's marks and satisfies every conjunct settles into an `RFairSCC`,
 [LSFZ16, Theorem 2] with the regions read on steps rather than on states.
 
-The marks the cycle has to cover are the property's own plus one per selected option mark, the extra one
-sitting on an edge exactly when that edge has a realization satisfying the selection's region and the
-option mark. Encoding the option marks as edge marks is what keeps them tied to the region: a cycle
-covering mark `numMarks + j` has an internal edge witnessing `gⱼ` without leaving the region. -/
+The marks the cycle has to cover are the property's own plus one per selected option mark, the extra one sitting on
+an edge exactly when that edge has a realization satisfying the selection's region and the option mark. -/
 theorem exists_RFairSCC_of_run (hcompat : spec.Compat succs edgeMarks)
     {initialStates : List State} (fr : FiniteReach initialStates succs)
     (ρ : RRun spec initialStates)

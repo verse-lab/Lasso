@@ -121,10 +121,8 @@ end RFrameDef
 
 /-! ## `reachCount`-based termination-measure helpers
 
-`reachCount`-based analogues of `HashSet.size_lt_of_ssubset`/`HashSet.size_le_of_subset` above,
-for the measure counting the reachable states outside `iv`. Kept as a `Nat × Nat` tuple in
-every `termination_by` clause below (never a bare `Nat`), so elaboration stays on the erased
-`WellFounded.fix` path regardless of `reachCount` being noncomputable. -/
+`reachCount`-based analogues of `HashSet.size_lt_of_ssubset`/`HashSet.size_le_of_subset` above, for the
+measure counting the reachable states outside `iv`. -/
 
 section ReachableCount
 

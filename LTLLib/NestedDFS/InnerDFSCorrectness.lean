@@ -226,11 +226,9 @@ structure FNDFSState (State : Type u) [BEq State] [Hashable State] where
 
 /-! ## Fuel-based inner DFS
 
-The inner DFS searches for a path from `current` back to `seed`. Or also,
-with the Holzmann-Peled-Yannakakis shortcut, back to any state on the outer DFS's
-current call stack. It uses `innerVisited` to track states visited in this inner search,
-and `innerFinished` (in `FNDFSState`) as a cross-call optimization: states
-whose inner DFS already completed without finding a cycle. -/
+The inner DFS searches for a path from `current` back to `seed`, or, with the Holzmann-Peled-Yannakakis
+shortcut, back to any state on the outer DFS's current stack. `innerVisited` tracks the states this search
+has visited, and `innerFinished` those whose own inner DFS already completed without finding a cycle. -/
 
 /-- Result type for inner DFS: `none` = out of fuel. On success, `some (path, target)` records
     both the path found and which state in `{seed} ∪ cyan` was actually hit. -/
@@ -404,14 +402,8 @@ theorem innerDFS_fuel_current_blocked (succs : State → Array State) (seed : St
           _ _ _ h
         exact Or.inl (hiv_m current (by simp [Std.HashSet.contains_insert]))
 
-/-- After `innerDFS_fuel_fold` returns `none` (no cycle), every successor in
-    `remaining` is not `seed`, is not on `cyan` (Holzmann-Peled-Yannakakis: no
-    successor is any outer-stack state either), and is blocked in the output state.
-
-    This is the "complete exploration" property: every successor was either
-    already blocked, or was recursively explored and added to `iv'`.
-    Corresponds to the invariant that all red-DFS successors end up red or
-    pink (Schwoon & Esparza §3, van de Pol (2015) invariant R2). -/
+/-- After `innerDFS_fuel_fold` returns `none`, every successor in `remaining` is neither `seed` nor on `cyan`
+(Holzmann-Peled-Yannakakis) and is blocked in the output state, invariant R2 of van de Pol (2015). -/
 theorem innerDFS_fuel_fold_succs_blocked (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)
@@ -453,16 +445,8 @@ theorem innerDFS_fuel_fold_succs_blocked (succs : State → Array State) (seed :
           · exact Or.inr (hfin_fold _ hfin_s)
         · exact ih_rem iv_mid st_mid h s hmem
 
-/-- Key theorem: when inner DFS is called from the outer DFS on an accepting
-    seed with an empty `innerVisited` and returns `none`, the seed cannot reach
-    itself through non-blocked intermediates.
-
-    Precondition: seed is NOT already in `innerFinished` (guaranteed by the
-    outer DFS invariant, seed is still on the stack when inner DFS is called).
-
-    Cf. Schwoon & Esparza §3, Lemma 1: after red DFS from seed returns
-    without finding a cycle, seed is not reachable from itself through
-    unfinished states. -/
+/-- Called on a seed not yet in `innerFinished` and returning `none`, inner DFS leaves the seed unable to
+reach itself through unblocked intermediates, Lemma 1 of Schwoon & Esparza. -/
 theorem innerDFS_no_cycle_from_seed (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (st : FNDFSState State) (cap : Nat)
     {iv' : Std.HashSet State} {st' : FNDFSState State}

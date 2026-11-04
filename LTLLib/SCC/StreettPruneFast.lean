@@ -2,16 +2,12 @@ module
 
 /-
   The Streett prune's fast path: the scan reads option bits that the expansion carried, instead of
-  asking the spec's region predicates once per (edge, option). `EdgeLabels.md` §13.20 (the executable),
-  §13.21 (the sweep), §13.22 (the proof).
+  asking the spec's region predicates once per (edge, option).
 
-  What it changes, and only this. The proved `streettPop` closes an SCC by re-deriving its internal
-  edges from `succs` and then evaluating every option's region and marks on each edge through
-  `cs.regions`/`cs.optMarks`, each of which is a full `regionSuccs`, one `sysSucc` plus one `sysLabel`
-  in Veil, to answer a membership question about a source whose steps the DFS had already computed.
-  §13.16 measured that at 25 of 66 Veil callbacks on BcastFolklore's CorrLtl, in a route that is 93 %
-  Veil. Here every frame's `succ` and `succOpts` are retained at its live position when it is popped,
-  and the scan folds the retained bits. The search makes no callback outside `expand`.
+  The proved `streettPop` closes an SCC by re-deriving its internal edges from `succs` and then evaluating every option's
+  region and marks on each edge through `cs.regions`/`cs.optMarks`, each of which is a full `regionSuccs`. Here every
+  frame's `succ` and `succOpts` are retained at its live position when it is popped and the scan folds the retained bits,
+  so the search makes no callback outside `expand`.
 
   Defines:
   - `CompiledSpec.letterBits`: one letter's packed option bits, in the layout `DFSStep.succOpts` uses
@@ -109,17 +105,15 @@ structure StreettAuxF (State : Type u) [BEq State] [Hashable State] where
   witness : Array State
   witnessOpts : Array Nat
   pending : Array (Candidate State)
-  -- `liveSuccs[i]` is `(expand live[i]).1` once `live[i]` has been popped, `#[]` before. What the proved
-  -- route's `internalEdges succs` re-derived through one callback per SCC state (§13.16's 5).
+  -- `liveSuccs[i]` is `(expand live[i]).1` once `live[i]` has been popped, `#[]` before, what the proved route's
+  -- `internalEdges succs` re-derived through one callback per SCC state.
   liveSuccs : Array (Array State)
-  -- `liveOpts[i]` is `(expand live[i]).2.2`, parallel to `liveSuccs[i]`, or `#[]` when the spec has no
-  -- options. What `cs.regions`/`cs.optMarks` re-derived through one callback per (edge, option)
-  -- evaluation (§13.16's 20).
+  -- `liveOpts[i]` is `(expand live[i]).2.2`, parallel to `liveSuccs[i]`, or `#[]` when the spec has no options, what
+  -- `cs.regions`/`cs.optMarks` re-derived through one callback per (edge, option) evaluation.
   liveOpts : Array (Array Nat)
-  -- §13.26: the retained successor arrays of the reported witness, `witnessSuccs[k]` belonging to
-  -- `witness[k]`, the slice of `liveSuccs` the accepting POP would otherwise drop. The report reads
-  -- them through `memoGraph` instead of calling the candidate's graph once per witness state, which
-  -- was one callback pair plus a region filter per witness state, 27 % of a `fails` row on `servers`.
+  -- The retained successor arrays of the reported witness, `witnessSuccs[k]` belonging to `witness[k]`, the slice of
+  -- `liveSuccs` the accepting POP would otherwise drop. The report reads them through `memoGraph` instead of calling the
+  -- candidate's graph once per witness state.
   witnessSuccs : Array (Array State)
 
 @[expose] def streettInitAuxF : StreettAuxF State where
@@ -142,12 +136,9 @@ The retained arrays give the same edges in the same order, `liveSuccs[i]` is `su
 hash set is not built either. `&&&`/`|||` are idempotent and monotone, so checking `scanLabels`'s early
 exit once per state rather than once per edge changes nothing. -/
 
-/-- Do the entries of `os` at successor indices `k ..< n` all equal `b`? A state-labelled system gives
-every out-edge of a state the same bits (`optBitsFor`'s shared-letter branch), and `&&&`/`|||` are
-idempotent, so once one internal edge of such a state has been folded the rest of its edges cannot
-change the masks. Deciding this costs one `Nat` comparison per edge and no hashing, acting on it saves
-a hash lookup with a deep state equality per edge, 17 % of the default route on `servers`
-(`EdgeLabels.md` §13.25). -/
+/-- Do the entries of `os` at successor indices `k ..< n` all equal `b`? A state-labelled system gives every out-edge of a
+state the same bits (`optBitsFor`'s shared-letter branch), and `&&&`/`|||` are idempotent, so once one internal edge of
+such a state has been folded the rest of its edges cannot change the masks. -/
 private def sameBitsFrom (os : Array Nat) (n k b : Nat) : Bool :=
   if h : k < n then (os[k]! == b) && sameBitsFrom os n (k + 1) b else true
 termination_by n - k
@@ -237,7 +228,7 @@ route calls `liveFlush`. -/
         match firstUnsatisfied cs curRegions regionAlive marksSeen with
         | none =>
           let wit' := live.extract step.pos live.size
-          -- the witness's successors, the same slice of the retained arrays (§13.26)
+          -- the witness's successors, the same slice of the retained arrays
           let ws' := ls.extract step.pos live.size
           let wopts' := selectedOptions cs curRegions regionAlive marksSeen
           let (live', liveIndex', dead') := liveFlush live liveIndex dead step.pos
@@ -305,7 +296,7 @@ as `Candidate.expand` does. -/
     | none => pruneLoopF cs regionExpand explored' (aux.pending.toList ++ rest)
 partial_fixpoint -- terminating for the reason `pruneLoop` is
 
-/-- The retained witness successors as a lookup for the report. §13.26 -/
+/-- The retained witness successors as a lookup for the report. -/
 @[expose] def witnessMemo (wit : Array State) (ws : Array (Array State)) : Std.HashMap State (Array State) :=
   (List.range wit.size).foldl (init := Std.HashMap.emptyWithCapacity wit.size) fun m k =>
     m.insert wit[k]! ws[k]!
@@ -1031,7 +1022,7 @@ theorem DFSStep.eq_of_strip_eq {st st' : DFSStep State Nat} (h : st.strip = st'.
   subst h1 h2 h3 h4 h5 h6
   rfl
 
-/-- The retained witness successors are the witness's successors in the graph the search ran on. §13.26 -/
+/-- The retained witness successors are the witness's successors in the graph the search ran on. -/
 @[expose] def WitOK [Inhabited State] (succs : State → Array State) (a : StreettAuxF State) : Prop :=
   a.witnessSuccs.size = a.witness.size ∧
     ∀ k, k < a.witness.size → a.witnessSuccs[k]! = succs a.witness[k]!
@@ -1053,7 +1044,7 @@ structure InvF [Inhabited State] (succs : State → Array State)
   retained : ∀ i, i < a.live.size → (∃ st ∈ stk, st.pos = i) ∨
     (a.liveSuccs[i]! = succs a.live[i]! ∧ a.liveOpts[i]! = (expandOpts a.live[i]!).2.2) ∨
     (∀ st ∈ stk, i < st.pos)
-  -- §13.26: the report reads the witness's successors off the aux
+  -- the report reads the witness's successors off the aux
   witOK : WitOK succs a
 
 /-! ### The flush, as the retained arrays see it -/
@@ -1336,7 +1327,7 @@ theorem streettPopF_spec [Inhabited State] [LawfulBEq State] [LawfulHashable Sta
     fun dstack wit' wopts' pending' ws' hws' =>
       InvF.flush live liveIndex dead dstack wit' wopts' pending' ws' ls lo step.pos hwfl hls1 hlo1 hframes
         hrestlt hsorted hret' hws'
-  -- the accepting POP's witness carries the same slice of the retained arrays (§13.26)
+  -- the accepting POP's witness carries the same slice of the retained arrays
   have hnew : (ls.extract step.pos live.size).size = (live.extract step.pos live.size).size ∧
       ∀ k, k < (live.extract step.pos live.size).size →
         (ls.extract step.pos live.size)[k]! = succs (live.extract step.pos live.size)[k]! := by
@@ -1717,7 +1708,7 @@ theorem InvF.nil_of_singleton [Inhabited State] {succs : State → Array State}
   · exact Or.inr (Or.inl hr)
   · exact Or.inr (Or.inr fun _ h' => by simp at h')
 
-/-! ### The retained witness successors survive every step (§13.26) -/
+/-! ### The retained witness successors survive every step -/
 
 theorem dfsGo_witOK [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hwf : cs.WF) (cr : Nat)

@@ -21,14 +21,13 @@ module
     for each option opt in live:  check(r ∧ opt.region, B)
   ```
 
-  Two things differ from the state-labelled reading in `StreettSCC.lean`, both forced by §6.3 of `EdgeLabels.md`:
+  Two things differ from the state-labelled reading in `StreettSCC.lean`:
 
-  - A prune step keeps all of `B` and narrows the region instead of deleting states. An edge prune need not
-    remove a state, so recursion on the state set alone would not progress, the implementation carries the
-    conjoined options as a bitmask and decreases on that (`Candidate.measure`).
-  - An option's marks are witnessed at the conjoined predicate `r ∧ opt.region ∧ g`, so the region and the mark
-    are answered on one realization. Reading them on different realizations of the same endpoint pair is the
-    unsoundness §6.3 refutes.
+  - A prune step keeps all of `B` and narrows the region instead of deleting states. An edge prune need not remove
+    a state, so recursion on the state set alone would not progress, the implementation carries the conjoined
+    options as a bitmask and decreases on that (`Candidate.measure`).
+  - An option's marks are witnessed at the conjoined predicate `r ∧ opt.region ∧ g`, so the region and the mark are
+    answered on one realization.
 
   Defines:
   - `RRefuted`: the check's refusal of a candidate, one constructor per pass
@@ -138,9 +137,7 @@ variable {spec : RStreettSpec State L} {succs : State → Array State}
   {edgeMarks : State → State → Std.HashSet Nat}
 
 omit [LawfulBEq State] [LawfulHashable State] in
-/-- A selection available on `B` is available on `B` read inside a candidate: the SCC is connected in, and
-covers its marks in, the candidate's own graph. The selection's region entails the candidate's, so every
-edge the selection admits is one the candidate keeps. -/
+/-- A selection available on `B` is available on `B` read inside a candidate. -/
 private theorem available_in_candGraph (hcompat : spec.Compat succs edgeMarks)
     {sel : List (StreettOption L)} {r : L → Bool} (hle : LePred (selRegion sel) r)
     {B C : Std.HashSet State} (hB : ∀ s ∈ B, s ∈ C) (hav : spec.AvailableWith sel B) :
@@ -153,12 +150,7 @@ private theorem available_in_candGraph (hcompat : spec.Compat succs edgeMarks)
 
 omit [LawfulHashable State] in
 /-- A refuted candidate holds no fair SCC whose selection is narrower than the candidate's region and contains
-every committed option, [SLDP09]'s prune read through [EL87]'s argument.
-
-The selection travels with the induction: with step regions, availability does not compose across
-conjuncts (`StreettSCCRegion.lean`), so the fair SCC's own selection is what has to entail the region at
-every level of the recursion. Containing the committed options is what makes the guard of `RRefuted.pass`
-hold: each of them is available on the fair SCC, so its marks are witnessed. -/
+every committed option, [SLDP09]'s prune read through [EL87]'s argument. -/
 theorem RRefuted.no_fairSCC (hcompat : spec.Compat succs edgeMarks) {com : List (StreettOption L)}
     {r : L → Bool} {C : Std.HashSet State} (h : RRefuted spec com r C) :
     ∀ {sel : List (StreettOption L)}, (∀ c ∈ spec.conjuncts, ∃ opt ∈ sel, opt ∈ c) →

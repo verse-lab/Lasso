@@ -67,11 +67,10 @@ theorem TAcceptingCycle.cycle_forall_of_step {initialStates : List State}
 
 /-! ## The latched graph
 
-The `FG` part arrives as a restriction of the graph, `succsR`, not as a predicate on states. With a
-propositional `FG l` over state atoms the two coincide, `succsR = (succs ·).filter (l.eval ∘ label)`, but
-once a letter belongs to the step (`LabelledSys.lean`), `◇□ l` restricts which edges the
-accepting cycle may traverse, and two parallel steps out of one state can differ on it. See
-`EdgeLabels.md` §6.4. -/
+The `FG` part arrives as a restriction of the graph, `succsR`, not as a predicate on states. With a propositional
+`FG l` over state atoms the two coincide, `succsR = (succs ·).filter (l.eval ∘ label)`, but once a letter belongs to
+the step (`LabelledSys.lean`), `◇□ l` restricts which edges the accepting cycle may traverse, and two parallel steps
+out of one state can differ on it. -/
 
 /-- Successors of the doubled graph. The stem copy moves freely along `succs` and may commit at any step,
 the committed copy moves only along `succsR` and never returns. -/
@@ -96,10 +95,8 @@ theorem latchSuccs_fst {succs succsR : State → Array State}
   · exact hsub _ _ hr
   · exact hs
 
-/-- Initial states of the doubled graph: in the stem copy, or already committed. Unlike the state-region
-form this needs no filter, commitment constrains the outgoing step, which `succsR` already governs, so a
-state with no restricted step out of it is simply a dead end in the committed copy. Under `total` every run
-starts committed, sound exactly when the restriction is the whole graph. -/
+/-- Initial states of the doubled graph: in the stem copy, or already committed. Under `total` every run starts
+committed, sound exactly when the restriction is the whole graph. -/
 @[expose] def latchInit (initialStates : List State) (total : Bool) : List (State × Bool) :=
   if total then initialStates.map (·, true)
   else initialStates.map (·, false) ++ initialStates.map (·, true)
@@ -120,10 +117,9 @@ theorem latchInit_fst_mem {initialStates : List State} {total : Bool} {p : State
   · exact (mem_latchInit_iff _ _).mp h
   · exact ((mem_latchInit_total_iff _ _).mp h).1
 
-/-- Marks of the doubled graph. Every edge into the committed copy reads `edgeMarksR`, because a mark
-there has to be realizable by a restricted step, `numMarks` is added when the source is committed too, which
-is what forces the accepting cycle inside. Keying on `p.2 && q.2`, as the state-region form did, would give
-the commit edge ambient marks, harmless while the two mark functions agree, wrong once they differ. -/
+/-- Marks of the doubled graph. Every edge into the committed copy reads `edgeMarksR`, because a mark there has to be
+realizable by a restricted step, and `numMarks` is added when the source is committed too, which is what forces the
+accepting cycle inside. -/
 @[expose] def latchMarks (edgeMarks edgeMarksR : State → State → Std.HashSet Nat) (numMarks : Nat) :
     State × Bool → State × Bool → Std.HashSet Nat :=
   fun p q =>
@@ -175,10 +171,8 @@ theorem latch_finiteReach {initialStates : List State} {succs succsR : State →
     if p.2 then (r.1.map (·, true), r.2.1.map (·.insert numMarks), r.2.2)
     else
       let e := expand p.1
-      -- The payload is empty or parallel to the successors, and a bare `++` only preserves that when
-      -- both sides agree on emptiness. They do on every route today, the latch is the crossing route,
-      -- which has no options, but a mixed pair would silently misalign the bits against an appended
-      -- successor array, so the empty side is padded rather than skipped. §13.17
+      -- The payload is empty or parallel to the successors, and a bare `++` only preserves that when both sides
+      -- agree on emptiness, so the empty side is padded rather than skipped.
       (e.1.map (·, false) ++ r.1.map (·, true), e.2.1 ++ r.2.1,
         if e.2.2.isEmpty && r.2.2.isEmpty then #[]
         else (if e.2.2.isEmpty then Array.replicate e.1.size 0 else e.2.2)

@@ -125,10 +125,9 @@ end Search
 
 /-! ## Region and checker obligations -/
 
--- The `FG` conjunct enters as a letter restriction `fg.eval`, not as a state predicate: the latch's
--- restricted graph keeps a step exactly when the letter it reads satisfies `fg`. For a state-labelled
--- system the letter is the source state's label, so this is the old state region (`keptSteps_unlabelled`),
--- for a labelled system it also constrains edge atoms, which is what lets `◇□ψ` mention `taken(a)`.
+-- The `FG` conjunct enters as a letter restriction `fg.eval` and not as a state predicate, the latch's restricted graph
+-- keeping a step exactly when the letter it reads satisfies `fg`. For a state-labelled system the letter is the source
+-- state's label, so this is the state region (`keptSteps_unlabelled`), for a labelled system it also constrains edge atoms.
 
 section Correctness
 
@@ -273,11 +272,9 @@ end Correctness
 
 /-! ## Feasibility fail-fast
 
-The system-level pre-pass runs the same latch on the system graph. Its obligation runs the other way from
-the product's: `disjunctFeasible` is only ever allowed to reject, so it must not lose a run, and a coarser
-graph or a coarser mark set can only keep more. That is why both may be over-approximated across the steps
-realizing a system edge, the opposite of the region rule in `EdgeLabels.md` §6.3, where the answer has to
-be exact and over-approximating a region is unsound. -/
+The system-level pre-pass runs the same latch on the system graph. `disjunctFeasible` is only ever allowed to reject, so it
+must not lose a run, and a coarser graph or a coarser mark set can only keep more, which is why both may be
+over-approximated across the steps realizing a system edge. -/
 
 /-- The `GF` parts as marks on the system graph: conjunct `i` marks every edge out of `s` as soon as some
 step out of `s` reads a letter satisfying it. Depending only on the source is what keeps `sysFairExpand`
@@ -286,10 +283,7 @@ section note). -/
 @[expose] def sysFairMarks (gfs : List (BoolFormula α)) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) : SysState → SysState → Std.HashSet Nat :=
   fun s _ =>
-    -- PERF: `steps` and `base` are hoisted out of the conjunct loop deliberately. Written inline they are
-    -- recomputed once per conjunct, and `sysSucc` is a `tr` call on the Veil side. This was one of three
-    -- causes that together made the fail-fast 2.2x slower than the state-labelled one on
-    -- `MCDijkstraPerf`'s `p4`, see `EdgeLabels.md` §11 item 2 for the other two and the measurements.
+    -- PERF: `steps` and `base` are hoisted out of the conjunct loop, written inline they are recomputed once per conjunct
     let steps := LSys.totalize sysSucc s
     let base := sysLabel s
     Std.HashSet.ofList ((List.range gfs.length).filter fun i =>
@@ -320,13 +314,9 @@ variable [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [Inhabited SysS
 
 /-- The fused expansion for the system-level feasibility latch.
 
-PERF: one pass over `s`'s steps serves the targets and every outgoing edge's marks, which is why the
-body is written out rather than calling `LSys.targets` and `sysFairMarks`. A labelled system's graph is
-derived from its step list, so anything wanting both pays two derivations unless they are shared here,
-and on the Veil side each derivation is a `tr` call, the dominant cost. Sharing them is what keeps this
-fail-fast close to what the state-labelled one cost, the price is that `ExpandCoherent` no longer holds by
-`rfl`, since `LSys.targets (LSys.totalize …)` and `totalizeSucc (LSys.targets …)` agree only
-propositionally (`LSys.targets_totalize`). -/
+PERF: one pass over `s`'s steps serves the targets and every outgoing edge's marks, which is why the body is written out
+rather than calling `LSys.targets` and `sysFairMarks`. The price is that `ExpandCoherent` holds only propositionally, since
+`LSys.targets (LSys.totalize …)` and `totalizeSucc (LSys.targets …)` do (`LSys.targets_totalize`). -/
 @[expose] def sysFairExpand (gfs : List (BoolFormula α)) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) : SysState → Array SysState × Array (Std.HashSet Nat) × Array Nat :=
   fun s =>
@@ -531,9 +521,9 @@ end Correctness
 
 /-! ## The same crossing, from one system callback
 
-`LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair, so a state's transitions are computed once on
-the system-level feasibility check as well as on the product. Bodies are repeated rather than refactored,
-the `rfl` bridges are what guarantee the repeat is faithful. `EdgeLabels.md` §15. -/
+`LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair, so a state's transitions are computed once on the system-level
+feasibility check as well as on the product. Bodies are repeated, with the `rfl` bridges guaranteeing the repeat is
+faithful. -/
 
 section OfStep
 

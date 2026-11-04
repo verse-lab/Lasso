@@ -8,7 +8,7 @@ module
   Both sides are transition-based: a `TBA.Transition` carries its own label, and a system step carries its
   own letter (`LabelledSys.lean`), so the compatibility gate is checked per (system step,
   automaton transition) pair. The product's state set is `SysState × TBAState` either way, an edge atom
-  such as `taken(a)` costs no states. See `EdgeLabels.md`.
+  such as `taken(a)` costs no states.
 
   Defines:
   - `initialStates`, `getSuccessors`, `realizations`, `edgeMarks`, `expand`: the product graph and its marks
@@ -55,17 +55,14 @@ variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
 @[expose] def transCompatible (t : TBA.Transition α) (valuation : Std.HashSet α) : Bool :=
   t.positiveProps.all valuation.contains && !t.negativeProps.any valuation.contains
 
-/-- From `(s, q)`, every system step out of `s` paired with every `q`-transition compatible with the letter
-that step reads. The system step is chosen first because it is what fixes the letter, in a state-labelled
-product the two loops are nested the other way round. -/
+/-- From `(s, q)`, every system step out of `s` paired with every `q`-transition compatible with the letter that step reads. The system step is
+chosen first because it is what fixes the letter. -/
 @[expose] def succsFrom (tba : TBA α) (q : TBAState) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) : Array (SysState × TBAState) :=
   let ts := tba.getSuccessors q
   if steps.all (·.1.isEmpty) then
-    -- PERF: every step reads `base`, so compatibility is a property of the transition alone and is
-    -- tested once per transition rather than once per (step, transition). See
-    -- `TGBAProduct.succsFrom` and `EdgeLabels.md` §12.10, this route feels it most, since the nested
-    -- DFS walks each edge more than once.
+    -- PERF: every step reads `base`, so compatibility is a property of the transition alone and is tested once per transition rather than once
+    -- per (step, transition), see `TGBAProduct.succsFrom`. This route feels it most, since the nested DFS walks each edge more than once.
     let ok := ts.filter fun t => transCompatible t base
     steps.flatMap fun st => ok.map fun t => (st.2, t.target)
   else
@@ -116,21 +113,15 @@ theorem mem_realizations_iff [BEq SysState] [Hashable SysState] [LawfulBEq SysSt
   · rintro ⟨⟨hst, hst2⟩, ht, htgt, hc⟩
     exact ⟨r.1, ⟨hst, hst2⟩, r.2, ⟨ht, htgt, hc⟩, rfl⟩
 
-/-- Marks on a product edge `(s, q) → (s', q')`: the union over every realization of the step. Unioning
-across realizations over-approximates a single step, it is sound because TGBA acceptance asks for each mark
-infinitely often and `edgeWitness.markEdge` names a realization carrying the mark, so pumping the cycle
-realizes them one at a time. A region may not be over-approximated this way, see `EdgeLabels.md` §6.3. -/
+/-- Marks on a product edge `(s, q) → (s', q')`: the union over every realization of the step. Over-approximating a single step this way is sound
+because acceptance asks for each mark infinitely often and pumping the cycle realizes them one at a time, a region may not be. -/
 @[expose] def edgeMarksFrom [BEq SysState] [Hashable SysState] (tba : TBA α) (q : TBAState) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) (p' : SysState × TBAState) : Std.HashSet Nat :=
   (realizationsFrom tba q base steps p').foldl
     (init := Std.HashSet.emptyWithCapacity 0) fun acc r => acc.union r.2.acceptMarks
 
--- PERF: `edgeMarks` is the spec form, one edge at a time, the search does not call it. `expand` above is
--- what the search walks with, fusing this and `getSuccessors` so a caller's per-source cost is paid once per
--- product state. Do not try to make this one cache its own per-source work by returning a closure: Lean
--- eta-expands a function-returning definition into its full arity, so `edgeMarks tba sysSucc sysLabel p` is
--- a partial application whose body never runs. That was measured. `expand` returns a pair of arrays, which
--- is not a function and so is saturated at `p`. See `EdgeLabels.md` §9.
+-- PERF: `edgeMarks` is the spec form, one edge at a time, the search does not call it. `expand` below is what the search walks with, fusing this
+-- and `getSuccessors` so a caller's per-source cost is paid once per product state.
 @[expose] def edgeMarks [BEq SysState] [Hashable SysState] (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p : SysState × TBAState) :
     (SysState × TBAState) → Std.HashSet Nat :=
@@ -138,23 +129,21 @@ realizes them one at a time. A region may not be over-approximated this way, see
   let steps := LSys.totalize sysSucc p.1
   fun p' => edgeMarksFrom tba p.2 base steps p'
 
-/-- Successors of a product state together with the marks of each, from one pass over the source. The
-result type is a pair of arrays, not a function, so the compiler cannot eta-expand it: the body runs once
-per call and `sysLabel`/`sysSucc` are entered once per product state. -/
+/-- Successors of a product state together with the marks of each, from one pass over the source, so `sysLabel` and `sysSucc` are entered once
+per product state. -/
 @[expose] def expand [BEq SysState] [Hashable SysState] (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p : SysState × TBAState) :
     Array (SysState × TBAState) × Array (Std.HashSet Nat) × Array Nat :=
   let base := sysLabel p.1
   let steps := LSys.totalize sysSucc p.1
   let out := succsFrom tba p.2 base steps
-  -- no options on this route, so the third array stays empty: §13.17's payload costs the nested DFS
-  -- nothing, neither an allocation per edge nor an array of zeros
+  -- no options on this route, so the third array stays empty, costing the nested DFS neither an allocation per edge nor an array of zeros
   (out, out.map fun p' => edgeMarksFrom tba p.2 base steps p', #[])
 
 /-! ## The same product, from one system callback
 
-`LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair, so a source's transitions are computed once.
-Mirrors `TGBAProduct`'s `OfStep` section, see `EdgeLabels.md` §15. -/
+`LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair, so a source's transitions are computed once. Mirrors `TGBAProduct`'s `OfStep`
+section. -/
 
 section OfStep
 
@@ -193,8 +182,7 @@ theorem expandOfStep_eq' :
 
 end OfStep
 
-/-- `expand` is the fused form of `getSuccessors` and `edgeMarks`: one call per product state. Coherence is
-definitional, because `expand` is literally the two of them sharing their per-source work. -/
+/-- `expand` is the fused form of `getSuccessors` and `edgeMarks`: one call per product state. -/
 theorem expand_coherent [BEq SysState] [Hashable SysState] (tba : TBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α) :
     ExpandCoherent (getSuccessors tba sysSucc sysLabel) (edgeMarks tba sysSucc sysLabel)

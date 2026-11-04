@@ -257,12 +257,10 @@ conjuncts (`branches`) is one prune run, and the first counterexample of any run
 
 /-! ### The split, read off without running the search
 
-The two default routes, `modelCheckUnderFairnessDisjunctiveHoist` (the prune) and
-`modelCheckUnderFairnessRehoistCross` (the crossing), hoist through the same two passes and differ only
-in what they do with the result. Naming that shared prefix once lets a caller decide between the routes,
-and report what either will run, without re-deriving the hoisting. Both uses need the split a route
-actually passes to `modelCheckPruneSplit`, not the output of the first `hoistFairness`: the routes hoist
-differently and disjunctive hoisting adds options after the first split (`EdgeLabels.md` §12.6 step 6). -/
+The two default routes, `modelCheckUnderFairnessDisjunctiveHoist` (the prune) and `modelCheckUnderFairnessRehoistCross`
+(the crossing), hoist through the same two passes and differ only in what they do with the result. What is read off is the
+split a route actually passes to `modelCheckPruneSplit`, not the output of the first `hoistFairness`, since disjunctive
+hoisting adds options after that split. -/
 
 /-- The hoist both default routes share: every hoisted normal form, re-hoisted ones included, paired with
 the conjuncts left for the translator. -/
@@ -285,12 +283,9 @@ latched check each. The crossing does not branch, so there is a single split. -/
 
 /-! ### Choosing between the prune and the crossing
 
-`modelCheckPruneSplit`'s witness contract asks that every hoisted region be `LSys.StateOnly`
-(`FairRouter.lean`'s `regionsAvoid`, `EdgeLabels.md` §12.4). A caller does not establish that
-semantically: it knows which atoms a step may contribute, in Veil, exactly the `taken(…)` indices,
-and the test is that no region the prune receives mentions one. All-or-nothing: any edge atom in any
-region of any branch sends the whole check to the crossing. A per-conjunct hybrid is strictly better and
-strictly more machinery, build it only if a real model asks for it. -/
+`modelCheckPruneSplit`'s witness contract asks that every hoisted region be `LSys.StateOnly`, which `FairRouter.lean`'s
+`regionsAvoid` tests syntactically from the atoms a step may contribute, the test being that no region the prune receives
+mentions one. It is all-or-nothing, any edge atom in any region of any branch sends the whole check to the crossing. -/
 
 /-- Can the prune decide `φ`, given that `edgeAtom` marks every atom a step may contribute? Decidable, and
 tested against the regions each branch of the prune route actually receives. -/
@@ -342,9 +337,8 @@ theorem modelCheckUnderFairnessDisjunctiveHoist_empty_unsat [LawfulHashable SysS
 theorem modelCheckUnderFairnessDisjunctiveHoist_nonEmpty_sat (φ : Formula α)
     (sysInit : List SysState) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α)
-    -- Quantified over every branch, since which one reports is not known until the search runs.
-    -- Disjunctive hoisting adds options after the first split, so the hypothesis is stated against
-    -- the regions each branch actually hands the prune, `EdgeLabels.md` §12.6 step 6, §17.
+    -- Quantified over every branch, since which one reports is not known until the search runs, and stated against the
+    -- regions each branch actually hands the prune.
     (hstate : ∀ b ∈ branches (rehoist (hoistFairness (φ.toNNF false).splitConj).2).2,
       ∀ ds ∈ (hoistFairness (φ.toNNF false).splitConj).1 ++
           (rehoist (hoistFairness (φ.toNNF false).splitConj).2).1 ++ b.1,
@@ -370,10 +364,8 @@ end Correctness
 
 /-! ## The same pipelines, from one system callback
 
-`LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair, so the product computes a state's transitions
-once. Each body is the two-callback one with the pair replaced, so each bridge is `rfl` and no soundness
-theorem above is restated, the fused entry points in `ModelCheck.lean` derive theirs by rewriting.
-`EdgeLabels.md` §15. -/
+`LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair, so the product computes a state's transitions once. Each body is
+the two-callback one with the pair replaced, so each bridge is `rfl`. -/
 
 @[expose] def modelCheckUnderFairnessRehoistPruneOfStep (φ : Formula α)
     (sysInit : List SysState) (sysStep : LSys.StepFn α SysState) :

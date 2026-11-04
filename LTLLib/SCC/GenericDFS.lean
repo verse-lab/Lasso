@@ -90,39 +90,15 @@ structure DFSStep (State : Type u) (Position : Type w) where
   acc : Nat  -- the incoming tree edge's marks as a bitmask, the spec's `s.acc`
   -- `succ[idx..]` are the still-unexplored outgoing states
   succ : Array State
-  -- The marks of each outgoing edge, `succMarks[i]` belonging to `succ[i]`. Filled together with `succ`
-  -- from one `expand` call when the frame is pushed, so a caller whose per-source work is expensive (in
-  -- Veil, `edgeMarks` runs every action instance and decides every atom) pays for it once per state rather
-  -- than once per outgoing edge.
-  --
-  -- It has to be data, not a cached `edgeMarks state` closure: Lean eta-expands a function-returning
-  -- definition into its full arity, so such a closure is a partial application whose body never runs and
-  -- caches nothing. That was tried first and measured to change nothing, see the note on
-  -- `TGBAProduct.expand`. A pair of arrays is not a function, so `expand` is saturated and runs once, and
-  -- Veil's two callbacks dropped from 4.1x to exactly 1x per product state.
-  --
-  -- The default is a placeholder for the frames proofs build by hand, `dfsGo` and `dfsFromRoot` always set
-  -- it, and the theorems that need `∀ st ∈ stack, st.succMarks = st.succ.map (edgeMarks st.state)` carry it
-  -- as a hypothesis alongside the `succ` one.
+  -- The marks of each outgoing edge, `succMarks[i]` belonging to `succ[i]`, filled together with `succ` from one
+  -- `expand` call when the frame is pushed, so a caller with expensive per-source work pays it once per state rather
+  -- than once per outgoing edge. Data rather than a cached closure, since Lean eta-expands a function-returning
+  -- definition to its full arity and such a closure would cache nothing. Defaulted for the frames proofs build by hand.
   succMarks : Array (Std.HashSet Nat) := #[]
-  -- §13.17: the option bits of each outgoing edge, `succOpts[i]` belonging to `succ[i]`. Filled from the
-  -- same `expand` call as `succ` and `succMarks`.
-  --
-  -- One packed `Nat` per edge: `regionBits ||| (markBits <<< numOptions)`. Packed, not a pair, because
-  -- `Prod` is a two-field constructor and so heap-allocates per entry, whereas a small `Nat` is a tagged
-  -- immediate stored straight in the array slot, `Array Nat` costs one array and nothing per element.
-  -- The scan already represents `regionAlive` and `marksSeen` as `Nat` bitmasks, so this is the same
-  -- representation it consumes. The array is empty when the spec has no options, so the routes that
-  -- never scan (Dijkstra, nested DFS) allocate nothing at all.
-  --
-  -- which options' regions hold on that edge, and which of their marks. Recovering those from
-  -- `spec.regionSuccs opt.region s` per (edge, option) costs a full `keptSuccs`, one `sysSucc` plus one
-  -- `sysLabel`, to answer a membership question about a source whose steps the DFS has already computed,
-  -- which §13.16 measured at 20 of 66 Veil callbacks on BcastFolklore's CorrLtl. Here the product evaluates
-  -- `opt.region` against each step's letter while it still holds `base` and `steps`, which is pure, and the
-  -- scan folds the bits.
-  --
-  -- Defaulted, like `succMarks`, for the frames proofs build by hand.
+  -- The option bits of each outgoing edge, `succOpts[i]` belonging to `succ[i]`: which options' regions hold on that
+  -- edge and which of their marks, filled from the same `expand` call as `succ` and `succMarks`. One packed `Nat` per
+  -- edge, `regionBits ||| (markBits <<< numOptions)`, which is the representation the scan already consumes. Empty
+  -- when the spec has no options, so the routes that never scan allocate nothing. Defaulted like `succMarks`.
   succOpts : Array Nat := #[]
   idx : Nat
 
@@ -180,12 +156,7 @@ theorem testBit_marksToBitmask (marks : Std.HashSet Nat) (m : Nat) :
   rw [marksToBitmask, testBit_foldl_or]
   simp [Std.HashSet.mem_toList]
 
-/-- Two mark sets with the same members give the same bitmask.
-
-Marks reach the search only through `marksToBitmask`, so this is the precise sense in which a mark set's
-representation is irrelevant downstream: only its membership is ever observed. Any future change to how
-`expand` builds its mark sets, grouping, merging, caching, is sound at the bitmask level as soon as it
-preserves membership. See `EdgeLabels.md` §13.5. -/
+/-- Two mark sets with the same members give the same bitmask. -/
 theorem marksToBitmask_congr {a b : Std.HashSet Nat} (h : ∀ m, m ∈ a ↔ m ∈ b) :
     marksToBitmask a = marksToBitmask b := by
   apply Nat.eq_of_testBit_eq
@@ -285,11 +256,9 @@ that call is done once per pushed frame (see `DFSStep.marks`), not once per edge
       | .unknown =>
         let marks := step.succMarks[step.idx]!
         let (aux', pos') := ops.push aux d marks
-        -- PERF: bound once. Spelling this `(expand d).1` / `(expand d).2.1` leaves it to the compiler
-        -- to share the two, and if it ever stopped, every route would double its Veil callbacks:
-        -- `expand` is one `sysSucc` plus one `sysLabel` per call. Sharing is what the measurements
-        -- show today (the Dijkstra route is 1.0 callbacks per state), but §9 is precisely about not
-        -- leaving per-source work to chance. `let` is zeta-transparent, so nothing downstream moves.
+        -- PERF: bound once. Spelling this `(expand d).1` / `(expand d).2.1` would leave the sharing of the two to the
+        -- compiler, and `expand` is one `sysSucc` plus one `sysLabel` per call. `let` is zeta-transparent, so nothing
+        -- downstream moves.
         let e := expand d
         let newStep : DFSStep State ops.Position :=
           { state := d, pos := pos', acc := marksToBitmask marks, succ := e.1,

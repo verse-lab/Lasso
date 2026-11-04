@@ -23,7 +23,7 @@ sibling branch.
     for each option opt in live:  check(r ∧ opt.region, B)
   ```
 
-  The regions restrict steps, not states (`EdgeLabels.md` §6.5). A product pair can have several parallel
+  The regions restrict steps, not states. A product pair can have several parallel
   realizations reading different letters, so "is this edge in-region?" and "does this edge carry the mark?" have to be
   answered on one realization, a single label per state, or per endpoint pair, cannot do that. The spec therefore
   exposes a region-indexed graph and marks (`RStreettSpec`), the scan walks the closing SCC's internal edges, and a
@@ -124,7 +124,7 @@ structure CompiledSpec (State : Type u) (L : Type w) where
   spec : RStreettSpec State L  -- the specification itself, for the report-time validator
   -- The candidate's own region, the conjunction of the options already committed to the search this spec was
   -- compiled for. Every option's edge reading above is taken inside it, so the scan's verdict is joint with
-  -- those commitments rather than per-option (`EdgeLabels.md` §6.3, §12). The top-level search compiles at
+  -- those commitments rather than per-option. The top-level search compiles at
   -- `⊤`, where this is a no-op and `onEdgesIn` is `onEdges`.
   restrict : L → Bool
   restrictBits : Nat  -- the same region as a bitmask over `letterOptions`, so every report is stated at `atBits` of one
@@ -256,9 +256,7 @@ spec ties its `restrict` predicate to its `restrictBits` (`WF.restrict_eq`), and
 below is just this at a candidate's own bitmask. -/
 
 /-- The conjunction of the selected options' regions from option `o` on, as a loop rather than
-`(List.range cs.numOptions).all …` under the `fun l`. Lean eta-expands `regionOf` to its full arity, so that
-shape allocates the list on every call, once per step of every candidate expansion and once per witness state
-of every report (`EdgeLabels.md` §13.26). -/
+`(List.range cs.numOptions).all …` under the `fun l`, a shape that allocates the list on every call. -/
 private def regionFrom (cs : CompiledSpec State L) (bits : Nat) (l : L) (o : Nat) : Bool :=
   if h : o < cs.numOptions then
     (!bits.testBit o || (cs.letterOptions[o]!).region l) && regionFrom cs bits l (o + 1)
@@ -497,8 +495,7 @@ end Wellformed
 A pruned candidate carries the options whose regions have been conjoined into it as a bitmask, not the
 region itself. The regions a candidate can ever carry are conjunctions of a subset of the spec's own
 options' regions, a finite set fixed by the spec, which is what gives the prune loop a bounded measure to
-decrease (`EdgeLabels.md` §6.5, Change 4). A state set alone does not suffice, an edge prune need not remove
-any state. -/
+decrease. A state set alone does not suffice, an edge prune need not remove any state. -/
 
 /-- A state set together with the options whose regions have been conjoined into it. -/
 structure Candidate (State : Type u) [BEq State] [Hashable State] where
@@ -711,12 +708,9 @@ states. -/
 /-- The fused expansion for a candidate's graph: the spec's own `regionExpand`, filtered to the
 candidate's states in lockstep.
 
-The region is decided on steps, so this cannot reuse the caller's fused expansion, but the spec can carry its
-own, and `regionExpand` is it. The naive shape `ss.map (spec.regionMarks … s)` takes successors first, then the
-two-argument spec form of the marks once per successor, each call re-deriving the source's label and steps. `EdgeLabels.md` §13.8 measured that shape at `1 + d` `sysSucc` and `1 + 2d`
-`sysLabel` calls per state against the top-level scan's 1.0x, and 4.58x the wall clock for an identical
-answer. Body inlined from `sccExpand` rather than calling it, since that one lives under a later
-`variable` block. -/
+The region is decided on steps, so this cannot reuse the caller's fused expansion, but the spec carries its own, and
+`regionExpand` is it, deriving a source's label and steps once instead of once per successor. Body inlined from
+`sccExpand` rather than calling it, since that one lives under a later `variable` block. -/
 @[expose] def Candidate.expand (cs : CompiledSpec State L) (spec : RStreettSpec State L)
     (c : Candidate State) : State → Array State × Array (Std.HashSet Nat) × Array Nat :=
   fun s => filterExpand (spec.regionExpand (c.region cs) s) c.states.contains
@@ -818,11 +812,9 @@ termination_by gs.size - j
 
 /-- Every option at one state, clearing the regions that fail here and setting the marks that hold here.
 
-Each option is decided independently of the others, and with step regions that is an
-over-approximation: two options can both survive an edge through different realizations of it, while no
-single step satisfies both. For a state-labelled system the two coincide, and every caller is state-labelled
-(`modelCheckPruneSplit`'s signature enforces it). Making the scan joint is `EdgeLabels.md` §11 item 4,
-`LTLLibTests/PruneJointRegions.lean` is the counterexample that fixes what "joint" has to mean. -/
+Each option is decided independently of the others, and with step regions that is an over-approximation: two options can
+both survive an edge through different realizations of it, while no single step satisfies both. For a state-labelled
+system the two coincide, and every caller is state-labelled (`modelCheckPruneSplit`'s signature enforces it). -/
 @[expose] def scanOptionsAt (cs : CompiledSpec State L) (lab : State × State) (o : Nat)
     (regionAlive marksSeen : Nat) :
     Nat × Nat :=
@@ -2022,11 +2014,9 @@ is always flushed, whether it passes, is discarded, or is queued for pruning. -/
             if C.states.isEmpty || curRegions.testBit o then ps else ps.push C
         match firstUnsatisfied cs curRegions regionAlive marksSeen with
         | none =>
-          -- Every conjunct has an available option, so the SCC is reported. Jointness of the selection
-          -- is guaranteed by the caller: `LSys.StateOnly` regions hold at the source state and so keep
-          -- every step out of them, which makes the per-option verdicts compose. Properties whose
-          -- hoisted regions mention an edge atom do not satisfy that and are routed to the crossing
-          -- before they reach here, `Veil.LivenessMC.checkFair`, `EdgeLabels.md` §17.
+          -- Every conjunct has an available option, so the SCC is reported. Jointness of the selection is guaranteed
+          -- by the caller: `LSys.StateOnly` regions hold at the source state and so keep every step out of them, which
+          -- makes the per-option verdicts compose.
           let wit' := live.extract step.pos live.size
           let wopts' := selectedOptions cs curRegions regionAlive marksSeen
           let (live', liveIndex', dead') := liveFlush live liveIndex dead step.pos
@@ -2528,9 +2518,9 @@ theorem sccExpand_coherent {succs : State → Array State}
 /-- The search one pruned candidate gets: its own restricted graph, marks and fused expansion, and its
 own compiled spec, recompiled at the region its bitmask denotes.
 
-Recompiling is the whole of `EdgeLabels.md` §12's first half. An option's edge reading has to be taken
-inside the candidate's region, not beside it: otherwise the scan can see a mark on a realization the
-candidate's region excludes, and two conjuncts end up witnessed by realizations no single run can take. -/
+An option's edge reading has to be taken inside the candidate's region, not beside it, otherwise the scan can see a mark
+on a realization the candidate's region excludes, and two conjuncts end up witnessed by realizations no single run can
+take. -/
 @[expose] def candidateRun (cs : CompiledSpec State L) (rspec : RStreettSpec State L) (c : Candidate State) :
     Option (State × List State) × StreettAux State :=
   streettRun (cs.atBits c.regions) c.regions (c.graph cs rspec)
@@ -2744,9 +2734,9 @@ theorem mem_cycleEdges_iff [Inhabited State] {l : List State} {e : State × Stat
 /-- The fair test decided on a reported cycle, read on its edges inside the reporting candidate's own region: every cycle edge has
 a realization in `cs.restrict`, and every conjunct has an option whose region admits every cycle edge and each of whose marks a
 cycle edge carries. `cs.regions` and `cs.optMarks` are already conjoined with `cs.restrict`, so a mark and its region are answered
-on one realization. Jointness across conjuncts is the caller's `LSys.StateOnly` obligation (`EdgeLabels.md` §17). `streettPop`
-reports only when every conjunct has an available option, so this check passes on every genuine find (`buildResult_ne_empty`),
-and a failure degrades to `.empty`. -/
+on one realization. Jointness across conjuncts is the caller's `LSys.StateOnly` obligation. `streettPop` reports only
+when every conjunct has an available option, so this check passes on every genuine find (`buildResult_ne_empty`), and a
+failure degrades to `.empty`. -/
 def CompiledSpec.fairCycleOpts (cs : CompiledSpec State L) (edges : List (State × State)) : Bool :=
   -- every cycle edge has a realization inside the candidate's region, stated once rather than per
   -- conjunct: it is what makes the cycle a cycle of the restricted graph, and it has to hold even
@@ -2769,8 +2759,7 @@ theorem fairCycleOpts_edges {cs : CompiledSpec State L} {edges : List (State × 
 omit [Hashable State] [Inhabited State] [LawfulHashable State] in
 /-- What a passing check gives back, per conjunct: an option whose region admits every cycle edge and
 each of whose marks is witnessed by a cycle edge, both inside `cs.restrict`. Jointness of the selection
-across conjuncts is not established here, it is the caller's `LSys.StateOnly` obligation, discharged
-by routing (`EdgeLabels.md` §17). -/
+across conjuncts is not established here, it is the caller's `LSys.StateOnly` obligation, discharged by routing. -/
 theorem exists_option_of_fairCycleOpts {cs : CompiledSpec State L} (hwf : cs.WF)
     (hmono : cs.spec.Mono) {edges : List (State × State)} (h : cs.fairCycleOpts edges = true)
     {i : Nat} (hi : i < cs.spec.conjuncts.size) :
@@ -3306,10 +3295,9 @@ committed to an option of that conjunct whose marks are not witnessed, or it has
 conjunct whose marks are witnessed, unless that candidate is empty, and the queued candidate commits to the candidate's options and
 the new one only.
 
-The marks are read on edges, a pair internal to `M` joined by an edge of the graph the search ran on, with one realization satisfying
-both the option's region and the mark (`EdgeLabels.md` §6.5). The queued candidate keeps all of `M` and gains a region bit. `hgraph`
-says the search's graph lies inside the region its bitmask denotes, so a committed option's region bit survives the scan, and a
-committed option of the blamed conjunct is missing its marks. -/
+The marks are read on edges, a pair internal to `M` joined by an edge of the graph the search ran on, with one
+realization satisfying both the option's region and the mark. The queued candidate keeps all of `M` and gains a region
+bit. -/
 theorem streettRun_none_pass (cs : CompiledSpec State L) (hcs : cs.WF) (curRegions : Nat)
     (hmono : cs.spec.Mono) (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)

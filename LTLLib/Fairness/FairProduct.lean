@@ -70,15 +70,12 @@ theorem fairKeep_le {keep : Std.HashSet α → Bool} {extra : List (BoolFormula 
     {l : Std.HashSet α} (h : fairKeep keep extra i l = true) :
     keep l = true ∧ (fairConj extra i).eval l = true := Bool.and_eq_true _ _ |>.mp h
 
-/-- The fairness conjuncts a product edge carries, under a standing letter restriction `keep`: conjunct
-`i` gives mark `base + i` exactly when some realization of the edge that survives `keep` reads a letter
-satisfying `i`. That is membership of the graph restricted to `keep ∧ conjᵢ`, so this needs no new
-machinery, it is §6.4's `keptSuccs` at a conjoined predicate, the same construction §6.5 uses for an
-option's marks.
+/-- The fairness conjuncts a product edge carries, under a standing letter restriction `keep`: conjunct `i` gives mark
+`base + i` exactly when some realization of the edge that survives `keep` reads a letter satisfying `i`, which is
+membership of the graph restricted to `keep ∧ conjᵢ`.
 
-Reading the conjuncts on the edge rather than on its source is what lets a `□◇` mention an edge atom.
-Unioning across parallel realizations over-approximates a single step, which `EdgeLabels.md` §6.3 shows is
-sound for marks (and unsound for regions, which is why the region half is not built this way). -/
+Reading the conjuncts on the edge rather than on its source is what lets a `□◇` mention an edge atom. Unioning across
+parallel realizations over-approximates a single step, which is sound for marks and unsound for regions. -/
 @[expose] def fairMarksEdge (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) (base : Nat)
     (extra : List (BoolFormula α)) (p p' : SysState × Nat) : Std.HashSet Nat :=
@@ -279,30 +276,19 @@ theorem eventuallyAlways_iff_indexed_run [LawfulBEq α] (b : BoolFormula α)
       ∃ N, ∀ n, N ≤ n → b.eval (LSys.letter (sysLabel (ρ n).1) (ρ n).2.1) = true :=
   eventuallyAlways_iff_indexed_letters b (fun i => LSys.letter (sysLabel (ρ i).1) (ρ i).2.1)
 
-/-- The fused expansion for the extended product: `expand`'s successors, with each edge's marks widened by
-the fairness conjuncts that edge carries.
+/-- The fused expansion for the extended product: `expand`'s successors, with each edge's marks widened by the fairness
+conjuncts that edge carries.
 
-PERF: the fairness part is per-edge, so both halves are kept out of the inner loop deliberately. The base
-marks come from the grouped table built once per source (`marksTableGen`/`genMarksFromShared`, §13.24).
-The conjunct marks are decided once per source when every step reads `base` (`fairMarksTable`: one
-`fairMarks` set shared by every successor, `ks` not built), and otherwise from the `extra.length`
-conjunct-restricted successor arrays built once per source in `ks`, a membership test per (target,
-conjunct), a deep state comparison per element, which is why the uniform path exists (§13.27, §13.29).
-Writing this as `e.1.map (edgeMarksFair … p)` would be much shorter and would cost a full re-expansion of
-`p` per (edge, conjunct).
-
-`base` and `steps` are threaded into `ks` through `keptSuccsFrom` rather than letting each conjunct call
-`keptSuccs`, which re-enters `sysLabel` twice and `sysSucc` once, per conjunct. That shape costs `1 + 2k`
-and `1 + k` callbacks per product state for `k` conjuncts, against 1 and 1 here. On the Veil side each entry
-is a `tr` call, and `k` is `3n` on the nested-fairness workload. -/
+PERF: the base marks come from the grouped table built once per source (`marksTableGen`/`genMarksFromShared`). The conjunct
+marks are one shared set when every step reads `base` (`fairMarksTable`, with `ks` not built), and otherwise come from the
+`extra.length` conjunct-restricted successor arrays built once per source in `ks`. `base` and `steps` are threaded into `ks`
+through `keptSuccsFrom` rather than letting each conjunct call `keptSuccs` and re-enter the system callbacks per conjunct. -/
 @[expose] def expandFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (extra : List (BoolFormula α)) (p : SysState × Nat) :
     Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
   let base := sysLabel p.1
   let steps := LSys.totalize sysSucc p.1
-  -- PERF (§13.29): the base marks come from the grouped table computed once per source, not from a
-  -- per-successor `edgeMarksFrom` that rebuilt it, and on a uniform source the conjunct marks are one
-  -- shared set and the conjunct-restricted family is not built. The general path is unchanged.
+  -- the base marks come from the grouped table computed once per source, and a uniform source shares one conjunct-mark set
   let byTgt? := marksTableGen tgba p.2 base steps
   let fm? := fairMarksTable tgba.numAcceptSets extra base steps
   let out := succsFrom tgba p.2 base steps
@@ -351,9 +337,8 @@ theorem expandFair_coherent [LawfulHashable SysState] (tgba : TGBA α)
 /-- The abstract product spec with `extra.length` further marks, conjunct `i` carried by an edge iff the
 letter that edge reads satisfies it. All other fields are `toSpec`'s.
 
-Reading the conjunct on the edge's letter rather than on its source state is what makes a `□◇` over an
-edge atom mean anything, on a system with no edge atoms every step reads its source's label and this is
-the old condition. -/
+Reading the conjunct on the edge's letter rather than on its source state is what makes a `□◇` over an edge atom mean
+anything, on a system with no edge atoms every step reads its source's label and this is the state-labelled condition. -/
 @[expose] def toSpecFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
     (extra : List (BoolFormula α)) :
@@ -531,14 +516,10 @@ theorem acceptingRunFair_marks (tgba : TGBA α) (sysSucc : SysState → Array (L
         congrArg Prod.fst hlink, congrArg Prod.snd hlink⟩
 
 omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
-/-- Where the run's own step reads a letter `keep` admits, the projected product edge survives the
-restriction.
+/-- Where the run's own step reads a letter `keep` admits, the projected product edge survives the restriction.
 
-This is the labelled counterpart of `mem_keptSuccs_unlabelled`, and it has to be stated on the run rather
-than on the endpoints. With edge atoms a product pair `(p, p')` may be realized by several steps reading
-different letters (`EdgeLabels.md` §6.3), so "`keep` holds somewhere out of `p.1`" does not put `p'` in the
-restricted graph, only the step the run actually takes is known to satisfy it, and that step is what the
-membership is built from. -/
+Stated on the run rather than on the endpoints, since with edge atoms a product pair `(p, p')` may be realized by several
+steps reading different letters, and only the step the run takes is known to satisfy `keep`. -/
 theorem acceptingRunFair_keptStep (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
     (extra : List (BoolFormula α)) {σ : Lentil.exec (Edge SysState α)}
@@ -715,11 +696,8 @@ theorem keptEdgeMarksFair_lt [BEq SysState] [Hashable SysState] [LawfulBEq SysSt
 /-- `acceptingRunFair_marks` on the restricted graph: past `N`, where every step of the run reads a letter
 `keep` admits, each mark still sits on infinitely many edges of the projected run, and does so restrictedly.
 
-Like `acceptingRunFair_keptStep` this replaces a statement about endpoints, `mem_keptEdgeMarksFair_unlabelled`,
-which lifted an unrestricted mark to a restricted one whenever the source's label was in region. That does not
-survive edge atoms: an unrestricted base mark may sit only on a realization the restriction rejects. Both
-halves are therefore rebuilt from the run's own step, the base half through the realization it takes and the
-fairness half through `keptSuccs` at `fairKeep keep extra i`. -/
+Both halves are rebuilt from the run's own step, the base half through the realization it takes and the fairness half
+through `keptSuccs` at `fairKeep keep extra i`. -/
 theorem acceptingRunFair_keptMarks (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
     (extra : List (BoolFormula α)) {σ : Lentil.exec (Edge SysState α)}
@@ -907,9 +885,8 @@ theorem exists_run_of_TRegionCycle [LawfulBEq α] [BEq SysState] [Hashable SysSt
 
 /-! ## The same extended product, from one system callback
 
-`LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair. The two expansions repeat their bodies rather
-than being refactored, because the `rfl` bridges below are a machine-checked guarantee that the repeat
-computes the same thing, a mistyped copy fails to compile. See `EdgeLabels.md` §15. -/
+`LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair. The two expansions repeat their bodies, with the `rfl` bridges
+below guaranteeing that the repeat computes the same thing. -/
 
 section OfStep
 

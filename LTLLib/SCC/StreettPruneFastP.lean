@@ -1,23 +1,13 @@
 module
 
 /-
-  The fast Streett prune with the live position carried by `getStatus` (`EdgeLabels.md` §13.30).
+  The fast Streett prune with the live position carried by `getStatus`.
 
-  Profiles of the default route on cheap-state models (§13.29) put the state equality inside hash-table
-  probes at 57–72 % of a `fails` row, and a back edge probed the same state twice: `getStatus`
-  (`liveIndex.contains`) and then `update` (`liveIndex.getD`). Here `getStatus` returns the position it
-  found and `update` takes it, so a back edge is one probe.
+  In the fast route a back edge probes the same state twice, `getStatus` (`liveIndex.contains`) and then `update`
+  (`liveIndex.getD`). Here `getStatus` returns the position it found and `update` takes it, so a back edge is one probe.
 
-  This is a parallel driver and ops (`…P`), not a change to `DFSOps`/`dfsGo`: the proved driver and
-  every theorem about it stay as they are, `streettCheckP` is what the router runs, and
-  `streettCheckP_eq` is the one bridge to `streettCheckF`. It was a `sorry` while the change was
-  measured (12–19 % on the cheap-state rows, §13.30) and is now proved: a lockstep of the two drivers on
-  equal auxes whose step cases are four facts, forgetting the position gives the old status, a
-  `.live pos` answer is the `liveIndex` entry, `streettUpdateP` at that entry is `streettUpdateF`, and
-  `push`/`pop` are the same functions.
-
-  A second half, one status map for live and dead states, was built here the same way and measured at
-  0.97–1.06x, noise (§13.32), it is archived on `archive/13.32-merged-status-map-measured` and not kept.
+  This is a parallel driver and ops (`…P`), not a change to `DFSOps`/`dfsGo`: the proved driver and every theorem about it
+  stay as they are, `streettCheckP` is what the router runs, and `streettCheckP_eq` is the one bridge to `streettCheckF`.
 
   Sections:
   - The interface with positions
@@ -532,7 +522,7 @@ theorem pruneLoopP_eq (cs : CompiledSpec State L)
     | some r => rw [pruneLoopF_le' cs regionExpand n cands r hF] at hP; cases hP
   | some r => exact (pruneLoopP_le cs regionExpand n cands r hP).symm
 
-/-- The position-carrying driver computes what `streettCheckF` computes (§13.30). -/
+/-- The position-carrying driver computes what `streettCheckF` computes. -/
 theorem streettCheckP_eq (cs : CompiledSpec State L) (succs : State → Array State)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)

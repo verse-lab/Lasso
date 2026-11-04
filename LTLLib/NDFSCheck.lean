@@ -55,16 +55,15 @@ theorem modelCheckTBA_finiteReach (φ : Formula α) (sysInit : List SysState)
   match htg : ltl3ba (φ.toNNF false) with
   | some tgba =>
     let tba := tgba.degeneralize
-    -- PERF: the fused `expand` is what the search walks with, so `sysLabel` and `sysSucc` are entered
-    -- once per product state instead of once per outgoing edge. `edgeMarks` stays as the spec callback
-    -- the correctness theorems are stated in terms of, `expand_coherent` ties the two together. Without
-    -- it this route paid a full `sys.tr` per edge, see `EdgeLabels.md` §12.11.
+    -- PERF: the fused `expand` is what the search walks with, so `sysLabel` and `sysSucc` are entered once per
+    -- product state instead of once per outgoing edge. `edgeMarks` stays as the spec callback the correctness
+    -- theorems are stated in terms of, `expand_coherent` ties the two together.
     nestedDFSTWF (TBAProduct.getSuccessors tba sysSucc sysLabel) (TBAProduct.edgeMarks tba sysSucc sysLabel)
       (TBAProduct.expand tba sysSucc sysLabel)
       (TBAProduct.initialStates tba sysInit) (modelCheckTBA_finiteReach φ sysInit sysSucc sysLabel sysFR htg)
   | none => .empty 0
 
-/-- `modelCheckTBA` over one system callback. §15 -/
+/-- `modelCheckTBA` over one system callback. -/
 @[expose] def modelCheckTBAOfStep (φ : Formula α) (sysInit : List SysState)
     (sysStep : LSys.StepFn α SysState)
     (sysFR : FiniteReach sysInit (LSys.targets fun s => (sysStep s).1)) :

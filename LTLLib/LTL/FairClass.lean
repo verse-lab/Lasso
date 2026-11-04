@@ -7,16 +7,12 @@ module
   [LSFZ16, Definition 1] defines a fairness as a formula whose language is closed under suffixes and under
   prepending finite prefixes. Those two closures are exactly Etessami and Holzmann's purely universal and pure
   eventuality classes, so `isFairness` is their conjunction and needs no further argument. The published
-  CONCUR'00 pure eventuality grammar has a typo, `ψ₁ U γ` where it should be `γ U ψ₁`, corrected here and
-  documented in `LTLSimplification.md`.
+  CONCUR'00 pure eventuality grammar has a typo, `ψ₁ U γ` where it should be `γ U ψ₁`, corrected here.
 
   Deviation from [EH00]. Two rules are generalised, both by dropping a condition on a binary operator's left
   operand. [EH00]'s pure eventuality grammar has `e R e` and this file has `f R e`, and its purely universal
-  grammar has `u U u` and this file has `f U u`. The soundness proofs below use only the right operand's
-  closure, in both cases through the `j = 0` instance of the release or the witness index of the until, so the
-  left operand never enters the argument. `LTLSimplification.md` already states the corresponding rewrites
-  `f U e ≡ e` and `f R u ≡ u` in this general form. The effect is that strictly more formulas are recognised,
-  for instance `a R F b` and `a U G b`, at no cost.
+  grammar has `u U u` and this file has `f U u`. The soundness proofs below use only the right operand's closure,
+  so strictly more formulas are recognised, for instance `a R F b` and `a U G b`, at no cost.
 
   Key definitions:
   - `isPureEventuality`, `isPurelyUniversal`, `isFairness`: the two grammars and their conjunction
