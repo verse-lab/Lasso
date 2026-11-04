@@ -63,6 +63,7 @@ private theorem exists_leaf_iff (leaves : List (NNF α)) (ξ : OmegaWord α) :
     · exact ⟨f, hf, hsat⟩
     · exact ⟨f, hf, (hoistConjunct_correct hh ξ).mpr ⟨d, hd, hhold⟩⟩
 
+/-- Splitting a mixed conjunct preserves its models: it holds iff some kept side or some hoisted disjunct does. -/
 theorem mixedSplit_correct {c : NNF α} {stay : List (NNF α)} {ds : List (NNF.FairDisjunct α)}
     (h : mixedSplit c = some (stay, ds)) (ξ : OmegaWord α) :
     c.satisfies ξ ↔ (∃ p ∈ stay, p.satisfies ξ) ∨ ∃ d ∈ ds, NNF.FairDisjunct.holds ξ d := by
@@ -101,6 +102,7 @@ private theorem exists_exists_and_eq_and {β : Type v} {γ : Type w} {f : β →
     {q : γ → Prop} : (∃ c, (∃ b, p b ∧ f b = c) ∧ q c) ↔ ∃ b, p b ∧ q (f b) :=
   ⟨fun ⟨_, ⟨b, hb, rfl⟩, hq⟩ => ⟨b, hb, hq⟩, fun ⟨b, hb, hq⟩ => ⟨_, ⟨b, hb, rfl⟩, hq⟩⟩
 
+/-- All conjuncts hold iff some enumerated branch has all its hoisted disjuncts and all its kept conjuncts hold. -/
 theorem branches_correct (ξ : OmegaWord α) (cs : List (NNF α)) :
     (∀ c ∈ cs, c.satisfies ξ) ↔
       ∃ b ∈ branches cs, (∀ ds ∈ b.1, ∃ d ∈ ds, NNF.FairDisjunct.holds ξ d) ∧ ∀ c ∈ b.2, c.satisfies ξ := by

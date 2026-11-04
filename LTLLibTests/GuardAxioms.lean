@@ -1,5 +1,9 @@
 module
 
+/-
+  The `#guard_axioms` command, which fails the build when a declaration depends on an axiom outside a given
+  list. `PipelineTheorems.lean` pins the top-level results down with it.
+-/
 public meta import Lean
 
 public meta section

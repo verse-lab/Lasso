@@ -41,6 +41,7 @@ module
   - Distributing over the matching connective
   - Absorbing a guarded operand
   - Distributing over the mismatched connective
+  - Raw shapes used by the pushing
   - Pushing the modalities inward
   - Pushing correctness
   - Fair normal form

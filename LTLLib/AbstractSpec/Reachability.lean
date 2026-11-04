@@ -123,22 +123,22 @@ theorem Reachable.of_run {State : Type u} {initialStates : List State} {succs : 
 
 /-- `expand` is the fused form of the two callbacks it stands for: one call yields a state's successors and
 the marks of each. Fusing them is what lets `dfsGo` pay the caller's per-source cost once per pushed frame
-instead of once per outgoing edge — see `DFSStep.succMarks`. Every theorem that reads a frame's cache back
+instead of once per outgoing edge, see `DFSStep.succMarks`. Every theorem that reads a frame's cache back
 as `succs`/`edgeMarks` takes this as a hypothesis. -/
 @[expose] def ExpandCoherent {State : Type u} (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) : Prop :=
   ∀ s, ((expand s).1, (expand s).2.1) = (succs s, (succs s).map (edgeMarks s))
 
 /-- Filter a fused expansion by a predicate on the target, keeping the successors, their marks and their
-option bits in step. This is how a route that walks a *restricted* graph — the prune's induced subgraphs,
-the latch's committed copy — reuses the caller's fused expansion instead of recomputing the marks pointwise.
+option bits in step. This is how a route that walks a restricted graph, the prune's induced subgraphs,
+the latch's committed copy, reuses the caller's fused expansion instead of recomputing the marks pointwise.
 
-The option-bit array obeys the dichotomy `derivedExpand` sets up: it is **either empty** — the caller has
-no options, which is every route but the Streett prune — **or parallel to the successors**. Filtering
+The option-bit array obeys the dichotomy `derivedExpand` sets up: it is either empty, the caller has
+no options, which is every route but the Streett prune, or parallel to the successors. Filtering
 preserves that, which is why the payload is filtered by its own pass rather than by one three-way `zip`.
 A single `((e.1.zip e.2.1).zip e.2.2)` is wrong and silently so: `Array.zip` truncates to the shorter
-operand, so an empty payload takes *every successor with it* and the restricted graph comes back edgeless.
-The searches that walk it then report `.empty` — no counterexample — on a graph that has no edges to find
+operand, so an empty payload takes every successor with it and the restricted graph comes back edgeless.
+The searches that walk it then report `.empty`, no counterexample, on a graph that has no edges to find
 one in. Caught by a probe, not by the bench: the benched properties leave `aux.pending` empty (§13.14), so
 neither caller runs on them. -/
 @[expose] def filterExpand {State : Type u} (e : Array State × Array (Std.HashSet Nat) × Array Nat)
@@ -148,7 +148,7 @@ neither caller runs on them. -/
     if e.2.2.isEmpty then #[] else ((e.1.zip e.2.2).filter fun x => p x.1).map Prod.snd)
 
 /-- Zipping an array against its own image and filtering on the source is filtering then re-pairing. The
-engine under `filterExpand_fst_snd`, and the reason the filter is stated on the *pair* rather than on the
+engine under `filterExpand_fst_snd`, and the reason the filter is stated on the pair rather than on the
 triple: it is the shape that does not depend on the payload's length. -/
 theorem zip_filter_map {State : Type u} {β : Type v} (ss : Array State) (f : State → β)
     (p : State → Bool) :
@@ -167,8 +167,7 @@ two projections `ExpandCoherent` is stated over.
 
 Deliberately silent about the option bits. Coherence constrains `.1` and `.2.1` only, and the payload is
 `#[]` on every route but the prune, so a statement that mentioned it would either have to case on
-emptiness or — as the first version of this theorem did — assume a full-length `ss.map g` that its own
-callers cannot supply. The hypothesis is exactly an `ExpandCoherent` instance at one state, so each
+emptiness or assume a full-length `ss.map g` that its own callers cannot supply. The hypothesis is exactly an `ExpandCoherent` instance at one state, so each
 coherence proof downstream is this lemma applied to the expansion it is filtering. -/
 theorem filterExpand_fst_snd {State : Type u}
     {e : Array State × Array (Std.HashSet Nat) × Array Nat}
@@ -181,7 +180,7 @@ theorem filterExpand_fst_snd {State : Type u}
   simp
 
 /-- The fused expansion derived pointwise from the two callbacks: coherent by definition, but it does the
-per-source work once per *edge*, so it is only for callers whose `succs`/`edgeMarks` are cheap — a table
+per-source work once per edge, so it is only for callers whose `succs`/`edgeMarks` are cheap, a table
 lookup, a hand-written test graph, an automaton walked on its own. A caller that pays real per-source cost
 (Veil, via `TGBAProduct.expand`) supplies a genuinely fused one instead. -/
 @[expose] def derivedExpand {State : Type u} (succs : State → Array State)
@@ -196,7 +195,7 @@ lookup, a hand-written test graph, an automaton walked on its own. A caller that
 
 /-- Carries `derivedExpand`'s own `optBits` default, so that a spec taking `regionExpand`'s default
 discharges its proof field with the documented `fun r => derivedExpand_coherent _ _`. Without the default
-that idiom is a three-explicit-argument term applied to two, and the error lands on the *spec*, not here. -/
+that idiom is a three-explicit-argument term applied to two, and the error lands on the spec, not here. -/
 theorem derivedExpand_coherent {State : Type u} (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)
     (optBits : Option (State → State → Nat) := none) :

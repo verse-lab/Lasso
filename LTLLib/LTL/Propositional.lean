@@ -182,7 +182,7 @@ when it is in the label. -/
   | .or φ ψ, l => φ.eval l || ψ.eval l
 
 /-- The atoms the formula actually inspects. Used to decide, syntactically, that a formula cannot tell two
-letters apart — which is how a caller discharges `LSys.StateOnly` without reasoning semantically. -/
+letters apart, which is how a caller discharges `LSys.StateOnly` without reasoning semantically. -/
 @[expose] def atoms : BoolFormula α → List α
   | .tt | .ff => []
   | .prop a | .nprop a => [a]

@@ -7,7 +7,7 @@ module
 
   Both sides are transition-based: a `TBA.Transition` carries its own label, and a system step carries its
   own letter (`LabelledSys.lean`), so the compatibility gate is checked per (system step,
-  automaton transition) pair. The product's state set is `SysState × TBAState` either way — an edge atom
+  automaton transition) pair. The product's state set is `SysState × TBAState` either way, an edge atom
   such as `taken(a)` costs no states. See `EdgeLabels.md`.
 
   Defines:
@@ -21,6 +21,16 @@ module
   - `expand_coherent`: the fused expansion agrees with the two callbacks
   - `exists_TAcceptingCycle_of_acceptingRun`: an accepting product run yields a lasso witness
   - `exists_run_of_TAcceptingCycle`: a lasso witness yields a system run
+
+  Sections:
+  - Product construction
+  - Realizations of a product step
+  - The same product, from one system callback
+  - Proof-level bridge
+  - Product run decomposition + acceptance transfer
+  - Edge witness
+  - From an accepting run to a lasso
+  - Lasso witness
 -/
 public import LTLLib.AbstractSpec.Reachability
 public import LTLLib.Degeneralization.TBA
@@ -36,6 +46,7 @@ variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
 
 /-! ## Product construction -/
 
+/-- The product's initial states, every system start paired with every automaton start. -/
 @[expose] def initialStates (tba : TBA α) (sysInit : List SysState) :
     List (SysState × TBAState) :=
   sysInit.flatMap fun s => tba.initialStates.toList.map fun q => (s, q)
@@ -45,7 +56,7 @@ variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
   t.positiveProps.all valuation.contains && !t.negativeProps.any valuation.contains
 
 /-- From `(s, q)`, every system step out of `s` paired with every `q`-transition compatible with the letter
-*that step* reads. The system step is chosen first because it is what fixes the letter; in a state-labelled
+that step reads. The system step is chosen first because it is what fixes the letter, in a state-labelled
 product the two loops are nested the other way round. -/
 @[expose] def succsFrom (tba : TBA α) (q : TBAState) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) : Array (SysState × TBAState) :=
@@ -53,7 +64,7 @@ product the two loops are nested the other way round. -/
   if steps.all (·.1.isEmpty) then
     -- PERF: every step reads `base`, so compatibility is a property of the transition alone and is
     -- tested once per transition rather than once per (step, transition). See
-    -- `TGBAProduct.succsFrom` and `EdgeLabels.md` §12.10 — this route feels it most, since the nested
+    -- `TGBAProduct.succsFrom` and `EdgeLabels.md` §12.10, this route feels it most, since the nested
     -- DFS walks each edge more than once.
     let ok := ts.filter fun t => transCompatible t base
     steps.flatMap fun st => ok.map fun t => (st.2, t.target)
@@ -63,6 +74,7 @@ product the two loops are nested the other way round. -/
       ts.filterMap fun t =>
         if transCompatible t lbl then some (st.2, t.target) else none
 
+/-- Successors of a product state, the system step and the `TBA` transition it realizes chosen together. -/
 @[expose] def getSuccessors (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) :
     (SysState × TBAState) → Array (SysState × TBAState) :=
@@ -105,15 +117,15 @@ theorem mem_realizations_iff [BEq SysState] [Hashable SysState] [LawfulBEq SysSt
     exact ⟨r.1, ⟨hst, hst2⟩, r.2, ⟨ht, htgt, hc⟩, rfl⟩
 
 /-- Marks on a product edge `(s, q) → (s', q')`: the union over every realization of the step. Unioning
-across realizations over-approximates a single step; it is sound because TGBA acceptance asks for each mark
+across realizations over-approximates a single step, it is sound because TGBA acceptance asks for each mark
 infinitely often and `edgeWitness.markEdge` names a realization carrying the mark, so pumping the cycle
-realizes them one at a time. A *region* may not be over-approximated this way — see `EdgeLabels.md` §6.3. -/
+realizes them one at a time. A region may not be over-approximated this way, see `EdgeLabels.md` §6.3. -/
 @[expose] def edgeMarksFrom [BEq SysState] [Hashable SysState] (tba : TBA α) (q : TBAState) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) (p' : SysState × TBAState) : Std.HashSet Nat :=
   (realizationsFrom tba q base steps p').foldl
     (init := Std.HashSet.emptyWithCapacity 0) fun acc r => acc.union r.2.acceptMarks
 
--- PERF: `edgeMarks` is the *spec* form, one edge at a time; the search does not call it. `expand` above is
+-- PERF: `edgeMarks` is the spec form, one edge at a time, the search does not call it. `expand` above is
 -- what the search walks with, fusing this and `getSuccessors` so a caller's per-source cost is paid once per
 -- product state. Do not try to make this one cache its own per-source work by returning a closure: Lean
 -- eta-expands a function-returning definition into its full arity, so `edgeMarks tba sysSucc sysLabel p` is
@@ -127,7 +139,7 @@ realizes them one at a time. A *region* may not be over-approximated this way �
   fun p' => edgeMarksFrom tba p.2 base steps p'
 
 /-- Successors of a product state together with the marks of each, from one pass over the source. The
-result type is a *pair of arrays*, not a function, so the compiler cannot eta-expand it: the body runs once
+result type is a pair of arrays, not a function, so the compiler cannot eta-expand it: the body runs once
 per call and `sysLabel`/`sysSucc` are entered once per product state. -/
 @[expose] def expand [BEq SysState] [Hashable SysState] (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p : SysState × TBAState) :
@@ -142,7 +154,7 @@ per call and `sysLabel`/`sysSucc` are entered once per product state. -/
 /-! ## The same product, from one system callback
 
 `LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair, so a source's transitions are computed once.
-Mirrors `TGBAProduct`'s `OfStep` section; see `EdgeLabels.md` §15. -/
+Mirrors `TGBAProduct`'s `OfStep` section, see `EdgeLabels.md` §15. -/
 
 section OfStep
 
@@ -503,6 +515,7 @@ theorem acceptingRun_states (tba : TBA α) (sysSucc : SysState → Array (LStep 
         ⟨((σ (N + j)).2.1, (σ (N + j)).2.2.2), ?_, hj⟩)⟩
     exact (mem_realizations_iff tba sysSucc sysLabel _ _ _).mpr ⟨⟨hsys, h1⟩, ht, h2, hc⟩
 
+/-- (Pumping) An accepting run of the product yields a `TAcceptingCycle` in it. -/
 theorem exists_TAcceptingCycle_of_acceptingRun (tba : TBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysInit : List SysState)

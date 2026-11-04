@@ -23,16 +23,16 @@ sibling branch.
     for each option opt in live:  check(r ∧ opt.region, B)
   ```
 
-  **The regions restrict steps, not states** (`EdgeLabels.md` §6.5). A product pair can have several parallel
+  The regions restrict steps, not states (`EdgeLabels.md` §6.5). A product pair can have several parallel
   realizations reading different letters, so "is this edge in-region?" and "does this edge carry the mark?" have to be
-  answered on *one* realization; a single label per state, or per endpoint pair, cannot do that. The spec therefore
-  exposes a region-indexed graph and marks (`RStreettSpec`), the scan walks the closing SCC's internal *edges*, and a
-  prune step narrows the region rather than deleting states — an edge prune need not remove any state, which is why a
+  answered on one realization, a single label per state, or per endpoint pair, cannot do that. The spec therefore
+  exposes a region-indexed graph and marks (`RStreettSpec`), the scan walks the closing SCC's internal edges, and a
+  prune step narrows the region rather than deleting states, an edge prune need not remove any state, which is why a
   candidate carries the conjoined options as a bitmask and the loop decreases on that.
 
   Defines:
-  - `CompiledSpec`: `RStreettSpec` flattened once, so the scan indexes options and marks by position; it keeps both the
-    options' *letter* regions and their *edge* readings, the latter derived from the former by `map`
+  - `CompiledSpec`: `RStreettSpec` flattened once, so the scan indexes options and marks by position, it keeps both the
+    options' letter regions and their edge readings, the latter derived from the former by `map`
   - `CompiledSpec.WF`: what the flattening guarantees
   - `Candidate`, `Candidate.region`/`graph`/`expand`/`measure`: a pruned candidate and what it induces
   - `internalEdges`, `scanLetters`, `scanFrame`, `firstUnsatisfied`: the per-SCC test, run on edges
@@ -48,7 +48,7 @@ sibling branch.
     whose marks are not
   - `blamed_bit_new`: a blamed option's bit was not already conjoined, so skipping such options loses nothing
   - `Candidate.measure_lt`, `pruneLoop_defined`: the prune terminates, on the bitmask deficit alone
-  - `streettCheck_nonEmpty_valid`: a reported stem and cycle is an accepting cycle whose *edges* satisfy every conjunct
+  - `streettCheck_nonEmpty_valid`: a reported stem and cycle is an accepting cycle whose edges satisfy every conjunct
   - `streettRun_found`: a reported counterexample lies in an internally connected SCC covering every property mark,
     reached by the reported stem, and the options recorded beside it cover every conjunct
   - `streettRun_none_pass`, `pruneLoop_none_refuted`: a search that reports nothing blames a conjunct for every maximal
@@ -69,12 +69,14 @@ sibling branch.
 
   Sections:
   - The compiled spec
+  - The region a bitmask denotes
   - Candidates
   - The search state
   - The per-SCC test
   - What the scan decides
-  - The SCC's internal edges
   - What the per-conjunct scan decides
+  - The SCC's internal edges
+  - The edge scan decides `AvailableWith`
   - What the test decides on the flushed SCC
   - PUSH, UPDATE and POP
   - The `DFSOps` instance
@@ -120,10 +122,10 @@ structure CompiledSpec (State : Type u) (L : Type w) where
   numOptions : Nat
   numOptMarks : Nat
   spec : RStreettSpec State L  -- the specification itself, for the report-time validator
-  /-- The candidate's own region: the conjunction of the options already committed to the search this
-  spec was compiled for. Every option's edge reading above is taken *inside* it, so the scan's verdict
-  is joint with those commitments rather than per-option (`EdgeLabels.md` §6.3, §12). The top-level
-  search compiles at `⊤`, where this is a no-op and `onEdgesIn` is `onEdges`. -/
+  -- The candidate's own region, the conjunction of the options already committed to the search this spec was
+  -- compiled for. Every option's edge reading above is taken inside it, so the scan's verdict is joint with
+  -- those commitments rather than per-option (`EdgeLabels.md` §6.3, §12). The top-level search compiles at
+  -- `⊤`, where this is a no-op and `onEdgesIn` is `onEdges`.
   restrict : L → Bool
   restrictBits : Nat  -- the same region as a bitmask over `letterOptions`, so every report is stated at `atBits` of one
 
@@ -167,9 +169,9 @@ private theorem prefixSums_spec (ns : Array Nat) :
     simp only [hi, dif_neg, not_false_iff]
     exact ⟨hsize, fun _ _ => trivial, fun j hij hj => absurd hj (by omega)⟩
 
-/-- Flatten a spec, numbering options and their marks in walk order. The scan works on the *edge* readings
-of the options, but the candidate machinery needs their *letter* regions, so both are kept and the edge
-readings are derived from the letter ones by `map` — which is what makes `cs.regions[o]` and
+/-- Flatten a spec, numbering options and their marks in walk order. The scan works on the edge readings
+of the options, but the candidate machinery needs their letter regions, so both are kept and the edge
+readings are derived from the letter ones by `map`, which is what makes `cs.regions[o]` and
 `cs.letterOptions[o]` correspond by `Array.getElem_map` rather than by a flatten/map commutation. -/
 @[expose] def CompiledSpec.ofAt (spec : RStreettSpec State L) (restrict : L → Bool) (restrictBits : Nat) :
     CompiledSpec State L :=
@@ -198,7 +200,7 @@ readings are derived from the letter ones by `map` — which is what makes `cs.r
 omit [Hashable State] in
 /-- Projections of a flattened spec that callers need without forcing the flattening itself. `CompiledSpec.of`
 is a `let`-heavy definition over `flattenOpts` and `prefixSums`, so leaving these to `whnf` makes any goal
-mentioning `(CompiledSpec.of spec).spec` blow up; rewriting with them first keeps it syntactic. -/
+mentioning `(CompiledSpec.of spec).spec` blow up, rewriting with them first keeps it syntactic. -/
 @[simp] theorem CompiledSpec.ofAt_spec (spec : RStreettSpec State L) (r : L → Bool) (b : Nat) :
     (CompiledSpec.ofAt spec r b).spec = spec := rfl
 
@@ -227,7 +229,7 @@ omit [Hashable State] in
     (CompiledSpec.of spec).restrictBits = 0 := rfl
 
 /-! The flattening itself does not see the restriction: `flattenOpts` reads only `spec.conjuncts`, and
-the mark-bit layout reads only the *number* of marks an option has, which `onEdgesIn` preserves. So every
+the mark-bit layout reads only the number of marks an option has, which `onEdgesIn` preserves. So every
 index, block base and mask a candidate's compiled spec carries is the one the top-level spec carries, and
 a candidate's bitmask means there what it means here. Each is `rfl`. -/
 
@@ -248,15 +250,15 @@ omit [Hashable State]
 
 /-! ## The region a bitmask denotes
 
-A candidate carries the options conjoined into it as a bitmask; `regionOf` is the letter predicate
+A candidate carries the options conjoined into it as a bitmask, `regionOf` is the letter predicate
 those bits denote. It lives here, above `CompiledSpec.WF`, because the well-formedness of a compiled
 spec ties its `restrict` predicate to its `restrictBits` (`WF.restrict_eq`), and `Candidate.region`
 below is just this at a candidate's own bitmask. -/
 
-/-- The conjunction of the selected options' regions from option `o` on, as a loop. `regionOf` used to be
-`(List.range cs.numOptions).all …` under the `fun l`, and Lean eta-expands `regionOf` to its full arity,
-so the list was allocated on every call — once per step of every candidate expansion and once per witness
-state of every report (`EdgeLabels.md` §13.26). -/
+/-- The conjunction of the selected options' regions from option `o` on, as a loop rather than
+`(List.range cs.numOptions).all …` under the `fun l`. Lean eta-expands `regionOf` to its full arity, so that
+shape allocates the list on every call, once per step of every candidate expansion and once per witness state
+of every report (`EdgeLabels.md` §13.26). -/
 private def regionFrom (cs : CompiledSpec State L) (bits : Nat) (l : L) (o : Nat) : Bool :=
   if h : o < cs.numOptions then
     (!bits.testBit o || (cs.letterOptions[o]!).region l) && regionFrom cs bits l (o + 1)
@@ -357,8 +359,8 @@ structure CompiledSpec.WF (cs : CompiledSpec State L) : Prop where
   option_marks : ∀ i < cs.spec.conjuncts.size, ∀ k < (cs.spec.conjuncts[i]!).size,
     cs.optMarks[cs.conjunctStart[i]! + k]! =
       ((cs.spec.conjuncts[i]![k]!).onEdgesIn cs.spec cs.restrict).marks
-  /-- The predicate and the bitmask denote the same region. Carrying both is what lets the report-time
-  validator establish `restrict ⊑ opt.region` for a committed option syntactically, by `regionOf_le`. -/
+  -- The predicate and the bitmask denote the same region. Carrying both is what lets the report-time
+  -- validator establish `restrict ⊑ opt.region` for a committed option syntactically, by `regionOf_le`.
   restrict_eq : cs.restrict = regionOf cs cs.restrictBits
 
 -- a start array that begins somewhere and steps by the block sizes only ever grows
@@ -494,9 +496,9 @@ end Wellformed
 
 A pruned candidate carries the options whose regions have been conjoined into it as a bitmask, not the
 region itself. The regions a candidate can ever carry are conjunctions of a subset of the spec's own
-options' regions — a finite set fixed by the spec — which is what gives the prune loop a bounded measure to
-decrease (`EdgeLabels.md` §6.5, Change 4). A state set alone no longer suffices: an edge prune need not
-remove any state. -/
+options' regions, a finite set fixed by the spec, which is what gives the prune loop a bounded measure to
+decrease (`EdgeLabels.md` §6.5, Change 4). A state set alone does not suffice, an edge prune need not remove
+any state. -/
 
 /-- A state set together with the options whose regions have been conjoined into it. -/
 structure Candidate (State : Type u) [BEq State] [Hashable State] where
@@ -519,10 +521,10 @@ theorem Candidate.region_mono {cs : CompiledSpec State L} {c c' : Candidate Stat
 
 
 
-/-- The same spec recompiled for a candidate carrying `bits`: every option is now read *inside* the
-region those bits denote. Only the readings change — the flattening, the block bases and the masks are
+/-- The same spec recompiled for a candidate carrying `bits`: every option is now read inside the
+region those bits denote. Only the readings change, the flattening, the block bases and the masks are
 functions of `spec.conjuncts` and of how many marks each option has, none of which the restriction
-touches — so a bitmask means in the recompiled spec exactly what it means here. -/
+touches, so a bitmask means in the recompiled spec exactly what it means here. -/
 @[expose] def CompiledSpec.atRegion (cs : CompiledSpec State L) (r : L → Bool) : CompiledSpec State L :=
   { cs with
     restrict := r
@@ -608,7 +610,7 @@ private theorem map_getElem!_letter (cs : CompiledSpec State L) (r : L → Bool)
 
 omit [Hashable State] in
 /-- Recompiling preserves well-formedness. Every structural field is copied, and the two that change are
-`map`s over the same `letterOptions` whose mark counts `onEdgesIn` preserves — so the block bases and
+`map`s over the same `letterOptions` whose mark counts `onEdgesIn` preserves, so the block bases and
 masks that `cs.WF` pins still describe the new readings. -/
 theorem CompiledSpec.WF.atBits {cs : CompiledSpec State L} (hwf : cs.WF) (bits : Nat) :
     (cs.atBits bits).WF := by
@@ -682,7 +684,7 @@ omit [BEq State] [Hashable State] in
 /-- Setting one more bit conjoins exactly that option's region. This is the bridge between the bitmask the
 prune loop carries and the region `RRefuted` recurses on: `RRefuted.pass` asks for `r ∧ opt.region`, and the
 queued candidate's region is `regionOf` of the extended mask. Since both sides are `L → Bool`, pointwise
-equality *is* equality, so the derivation needs no congruence lemma in the region. -/
+equality is equality, so the derivation needs no congruence lemma in the region. -/
 theorem regionOf_or_shift {cs : CompiledSpec State L} {bits o : Nat} (ho : o < cs.numOptions) :
     regionOf cs (bits ||| (1 <<< o))
       = fun l => regionOf cs bits l && (cs.letterOptions[o]!).region l := by
@@ -709,10 +711,9 @@ states. -/
 /-- The fused expansion for a candidate's graph: the spec's own `regionExpand`, filtered to the
 candidate's states in lockstep.
 
-The region is decided on steps, so this cannot reuse the *caller's* fused expansion — but the spec can
-carry its own, and `regionExpand` is it. This used to be `ss.map (spec.regionMarks … s)`: successors
-first, then the two-argument spec form of the marks once per successor, each call re-deriving the
-source's label and steps. `EdgeLabels.md` §13.8 measured that shape at `1 + d` `sysSucc` and `1 + 2d`
+The region is decided on steps, so this cannot reuse the caller's fused expansion, but the spec can carry its
+own, and `regionExpand` is it. The naive shape `ss.map (spec.regionMarks … s)` takes successors first, then the
+two-argument spec form of the marks once per successor, each call re-deriving the source's label and steps. `EdgeLabels.md` §13.8 measured that shape at `1 + d` `sysSucc` and `1 + 2d`
 `sysLabel` calls per state against the top-level scan's 1.0x, and 4.58x the wall clock for an identical
 answer. Body inlined from `sccExpand` rather than calling it, since that one lives under a later
 `variable` block. -/
@@ -817,11 +818,11 @@ termination_by gs.size - j
 
 /-- Every option at one state, clearing the regions that fail here and setting the marks that hold here.
 
-**Each option is decided independently of the others**, and with *step* regions that is an
+Each option is decided independently of the others, and with step regions that is an
 over-approximation: two options can both survive an edge through different realizations of it, while no
 single step satisfies both. For a state-labelled system the two coincide, and every caller is state-labelled
-(`modelCheckPruneSplit`'s signature enforces it). Making the scan joint is `EdgeLabels.md` §11 item 4;
-`Tests/PruneJointRegions.lean` is the counterexample that fixes what "joint" has to mean. -/
+(`modelCheckPruneSplit`'s signature enforces it). Making the scan joint is `EdgeLabels.md` §11 item 4,
+`LTLLibTests/PruneJointRegions.lean` is the counterexample that fixes what "joint" has to mean. -/
 @[expose] def scanOptionsAt (cs : CompiledSpec State L) (lab : State × State) (o : Nat)
     (regionAlive marksSeen : Nat) :
     Nat × Nat :=
@@ -1647,7 +1648,7 @@ theorem mem_internalEdges {succs : State → Array State}
 
 /-! ## The edge scan decides `AvailableWith`
 
-`StreettOption.onEdges` lives in `AbstractSpec/StreettSCCRegion.lean`; this is the bridge saying the scan's
+`StreettOption.onEdges` lives in `AbstractSpec/StreettSCCRegion.lean`, this is the bridge saying the scan's
 verdict for one option is exactly the per-option half of `RStreettSpec.AvailableWith` on `B`. -/
 
 omit [LawfulHashable State] in
@@ -1671,7 +1672,7 @@ omit [LawfulHashable State] in
 /-- Mark half: each of the option's marks is carried by an internal edge that is itself in-region.
 
 The witnessing pair is required to be an edge of the graph the scan walks, not merely of the spec's
-`opt.region ∧ g` restriction. On the whole product the two agree — `Compat.succs_sub` — but a *candidate*
+`opt.region ∧ g` restriction. On the whole product the two agree, `Compat.succs_sub`, but a candidate
 runs on a strictly smaller graph, and there the extra conjunct is what ties the witness to an edge the scan
 actually visited. Carrying it in the statement is what lets this bridge drop its `Compat` hypothesis, which
 a candidate's graph cannot supply. -/
@@ -1804,7 +1805,7 @@ theorem firstUnsatisfied_none_accepting {cs : CompiledSpec State L}
 
 /-- The blamed conjunct, together with every option of it whose marks are present in the flushed set.
 
-The named index `o` comes back with the option's *letter-level* identity as well as its two edge readings:
+The named index `o` comes back with the option's letter-level identity as well as its two edge readings:
 the candidate machinery conjoins `cs.letterOptions[o]!.region` into the pruned candidate's bitmask, so the
 pass has to know that this is the very option that was blamed. -/
 theorem blamedBlock_blames {cs : CompiledSpec State L}
@@ -2010,7 +2011,7 @@ is always flushed, whether it passes, is discarded, or is queued for pruning. -/
         let (live', liveIndex', dead') := liveFlush live liveIndex dead step.pos
         (⟨live', liveIndex', dead', dstack, wit, wopts, pending⟩, false)
       else
-        -- the scan walks the closing SCC's internal *edges*, not its states
+        -- the scan walks the closing SCC's internal edges, not its states
         let (regionAlive, marksSeen) := scanFrame cs succs live step.pos
         -- An edge prune need not drop a state, so a blamed candidate keeps the SCC and gains a region bit. Options already
         -- conjoined are skipped, so that bit is fresh by construction, and termination needs no hypothesis about the graph
@@ -2022,10 +2023,10 @@ is always flushed, whether it passes, is discarded, or is queued for pruning. -/
         match firstUnsatisfied cs curRegions regionAlive marksSeen with
         | none =>
           -- Every conjunct has an available option, so the SCC is reported. Jointness of the selection
-          -- is guaranteed by the *caller*: `LSys.StateOnly` regions hold at the source state and so keep
+          -- is guaranteed by the caller: `LSys.StateOnly` regions hold at the source state and so keep
           -- every step out of them, which makes the per-option verdicts compose. Properties whose
           -- hoisted regions mention an edge atom do not satisfy that and are routed to the crossing
-          -- before they reach here — `Veil.LivenessMC.checkFair`, `EdgeLabels.md` §17.
+          -- before they reach here, `Veil.LivenessMC.checkFair`, `EdgeLabels.md` §17.
           let wit' := live.extract step.pos live.size
           let wopts' := selectedOptions cs curRegions regionAlive marksSeen
           let (live', liveIndex', dead') := liveFlush live liveIndex dead step.pos
@@ -2524,8 +2525,8 @@ theorem sccExpand_coherent {succs : State → Array State}
     ExpandCoherent (sccSuccs succs C) edgeMarks (sccExpand expand C) :=
   fun s => filterExpand_fst_snd _ (hexp s)
 
-/-- The search one pruned candidate gets: its own restricted graph, marks and fused expansion — and its
-own *compiled spec*, recompiled at the region its bitmask denotes.
+/-- The search one pruned candidate gets: its own restricted graph, marks and fused expansion, and its
+own compiled spec, recompiled at the region its bitmask denotes.
 
 Recompiling is the whole of `EdgeLabels.md` §12's first half. An option's edge reading has to be taken
 inside the candidate's region, not beside it: otherwise the scan can see a mark on a realization the
@@ -2748,7 +2749,7 @@ reports only when every conjunct has an available option, so this check passes o
 and a failure degrades to `.empty`. -/
 def CompiledSpec.fairCycleOpts (cs : CompiledSpec State L) (edges : List (State × State)) : Bool :=
   -- every cycle edge has a realization inside the candidate's region, stated once rather than per
-  -- conjunct: it is what makes the cycle a cycle *of the restricted graph*, and it has to hold even
+  -- conjunct: it is what makes the cycle a cycle of the restricted graph, and it has to hold even
   -- when there is no conjunct to ask
   edges.all (fun e => (cs.spec.regionSuccs cs.restrict e.1).contains e.2) &&
   (List.range cs.spec.conjuncts.size).all fun i =>
@@ -2768,7 +2769,7 @@ theorem fairCycleOpts_edges {cs : CompiledSpec State L} {edges : List (State × 
 omit [Hashable State] [Inhabited State] [LawfulHashable State] in
 /-- What a passing check gives back, per conjunct: an option whose region admits every cycle edge and
 each of whose marks is witnessed by a cycle edge, both inside `cs.restrict`. Jointness of the selection
-across conjuncts is *not* established here — it is the caller's `LSys.StateOnly` obligation, discharged
+across conjuncts is not established here, it is the caller's `LSys.StateOnly` obligation, discharged
 by routing (`EdgeLabels.md` §17). -/
 theorem exists_option_of_fairCycleOpts {cs : CompiledSpec State L} (hwf : cs.WF)
     (hmono : cs.spec.Mono) {edges : List (State × State)} (h : cs.fairCycleOpts edges = true)
@@ -2817,7 +2818,7 @@ private def witnessExtra (cs : CompiledSpec State L) (wopts : Array Nat) :
     Array ((State × State) → Bool) :=
   wopts.foldl (init := #[]) fun a o => a ++ cs.optMarks[o]!
 
-/-- The graph's own marks on an edge, plus mark `numMarks + j` whenever `extra[j]` holds *of that edge*.
+/-- The graph's own marks on an edge, plus mark `numMarks + j` whenever `extra[j]` holds of that edge.
 Reading the extras on the edge rather than on its source is the whole point: an option's mark and its
 region have to be witnessed by one realization. -/
 private def witnessMarks (cs : CompiledSpec State L) (edgeMarks : State → State → Std.HashSet Nat)
@@ -2844,7 +2845,7 @@ private def witnessCycle (cs : CompiledSpec State L) (cycGraph : State → Array
 /-- The reported answer, with the witness checked rather than trusted. A failed check degrades to `.empty`.
 
 Two graphs, and the distinction is load-bearing. The cycle is rebuilt in `cycGraph`, the graph the search
-that found the witness actually walked — for a pruned candidate that is its region-restricted subgraph, and
+that found the witness actually walked, for a pruned candidate that is its region-restricted subgraph, and
 rebuilding in the ambient graph could pick an edge the recorded options do not admit, making
 `fairCycleOpts` fail and the answer degrade to `.empty` without a refutation to back it. The lasso is then
 validated against the ambient `succs`, which the stem walks and which `cycGraph` is contained in. -/
@@ -2911,10 +2912,10 @@ private theorem buildResult_valid (cs : CompiledSpec State L) (cycGraph : State 
 
 /-- Soundness: a reported stem and cycle form a `TAcceptingCycle` whose cycle carries every conjunct.
 
-The validator runs at the *reporting* spec, which for a witness found in a pruned candidate is `cs`
+The validator runs at the reporting spec, which for a witness found in a pruned candidate is `cs`
 recompiled at that candidate's bitmask. It is quantified here rather than fixed to `cs`, because which
-bitmask that is depends on where the witness was found; everything the caller needs — `numMarks`, the
-conjuncts, the option layout — is the same in both (`CompiledSpec.atBits_*`). -/
+bitmask that is depends on where the witness was found, everything the caller needs, `numMarks`, the
+conjuncts, the option layout, is the same in both (`CompiledSpec.atBits_*`). -/
 theorem streettCheck_nonEmpty_valid (cs : CompiledSpec State L) (hcs : cs.WF)
     (succs : State → Array State)
     (edgeMarks : State → State → Std.HashSet Nat)

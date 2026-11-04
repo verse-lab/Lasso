@@ -5,7 +5,7 @@ module
   carries its own label, and a system step carries its own letter (`LabelledSys.lean`), so the
   compatibility gate is checked per (system step, automaton transition) pair rather than once per source state.
 
-  The product's state set is `SysState × Nat` either way — an edge atom such as `taken(a)` costs no states.
+  The product's state set is `SysState × Nat` either way, an edge atom such as `taken(a)` costs no states.
   See `EdgeLabels.md` for the design.
 
   Defines:
@@ -23,6 +23,8 @@ module
   Sections:
   - Product construction
   - Realizations of a product step
+  - The restriction an `FG` part carves out
+  - The same product, from one system callback
   - Proof-level bridge
   - Product run decomposition + acceptance transfer
   - Edge witness
@@ -44,6 +46,7 @@ variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α]
 
 /-! ## Product construction -/
 
+/-- The product's initial states, every system start paired with every automaton start. -/
 @[expose] def initialStates (tgba : TGBA α) (sysInit : List SysState) :
     List (SysState × Nat) :=
   sysInit.flatMap fun s => tgba.initialStates.toList.map fun q => (s, q)
@@ -58,7 +61,7 @@ restriction an `FG` part carves out are this, differing only in which steps they
     (steps : Array (LStep α SysState)) : Array (SysState × Nat) :=
   let ts := tgba.getSuccessors q
   if steps.all (·.1.isEmpty) then
-    -- PERF, and the reason this is not just `flatMap`. Every step reads the *same* letter here, namely
+    -- PERF, and the reason this is not just `flatMap`. Every step reads the same letter here, namely
     -- `base`, so transition compatibility is a property of the transition alone and is tested once per
     -- transition instead of once per (step, transition). A state-labelled product is always in this
     -- branch, so it pays what it paid before edge atoms existed: `transCompatible` walks two `HashSet`s,
@@ -73,7 +76,7 @@ restriction an `FG` part carves out are this, differing only in which steps they
         if transCompatible t lbl then some (st.2, t.target) else none
 
 /-- From `(s, q)`, every system step out of `s` paired with every `q`-transition compatible with the letter
-*that step* reads. The system step is chosen first because it is what fixes the letter; in a state-labelled
+that step reads. The system step is chosen first because it is what fixes the letter, in a state-labelled
 product the two loops are nested the other way round. -/
 @[expose] def getSuccessors (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) :
@@ -91,7 +94,7 @@ which is why the marks are collected over all of them and why `edgeWitness` has 
     (steps : Array (LStep α SysState)) (p' : SysState × Nat) :
     Array (LStep α SysState × TGBA.Transition α) :=
   (steps.filter fun st => st.2 == p'.1).flatMap fun st =>
-    -- PERF: the step's letter is loop-invariant in the transition scan, but `LSys.letter` *allocates*
+    -- PERF: the step's letter is loop-invariant in the transition scan, but `LSys.letter` allocates
     -- (`base.union L` whenever the step carries atoms of its own), so leaving it inside cost one
     -- `HashSet` per (step, transition) rather than per step. `EdgeLabels.md` §12.10 (b).
     let lbl := LSys.letter base st.1
@@ -139,7 +142,7 @@ theorem mem_realizations_iff [BEq SysState] [Hashable SysState] [LawfulBEq SysSt
 /-- The marks of every `q`-transition compatible with `base`, grouped by target.
 
 Keyed by `t.target : Nat`, so building it costs no `SysState` comparisons. It is only meaningful when
-every step out of the source reads `base` — i.e. no step carries a letter of its own — because only then
+every step out of the source reads `base`, i.e. no step carries a letter of its own, because only then
 is transition compatibility independent of which step realizes an edge. `edgeMarksFrom` builds it exactly
 under that guard. -/
 def marksByTarget (tgba : TGBA α) (q : Nat) (base : Std.HashSet α) :
@@ -151,12 +154,12 @@ def marksByTarget (tgba : TGBA α) (q : Nat) (base : Std.HashSet α) :
 
 /-- `edgeMarksFrom` with the source's per-state work already in hand, in the `…From` style of §12.8.
 
-`byTgt?` is `some table` exactly when every step reads `base`, and carries the grouped marks; `none`
-selects the general path. Making the *decision* data rather than an `if` above `p'` is the §9 lesson: an
+`byTgt?` is `some table` exactly when every step reads `base`, and carries the grouped marks, `none`
+selects the general path. Making the decision data rather than an `if` above `p'` is the §9 lesson: an
 `if` there would be re-evaluated on every call, since Lean eta-expands to full arity.
 
 PERF: in the `some` branch an edge's marks are a lookup on a `Nat` key. The general path had to ask
-"which steps land on `p'.1`?" per successor, and that is a **deep `SysState` comparison** — `EdgeLabels.md`
+"which steps land on `p'.1`?" per successor, and that is a deep `SysState` comparison, `EdgeLabels.md`
 §13.3 profiled it at 24.5 % of the Dijkstra route. Here the only state work left is the short-circuiting
 `any` that decides whether the edge exists at all. -/
 @[expose] def edgeMarksFromShared [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
@@ -173,7 +176,7 @@ PERF: in the `some` branch an edge's marks are a lookup on a `Nat` key. The gene
       (init := Std.HashSet.emptyWithCapacity 0) fun acc r => acc.union r.2.acceptMarks
 
 /-- The targets of a source's steps, as a set. One hash per step to build, one per lookup, replacing the
-`steps.any (· .2 == p'.1)` scan that cost a **deep `SysState` comparison** per step per successor —
+`steps.any (· .2 == p'.1)` scan that cost a deep `SysState` comparison per step per successor,
 `EdgeLabels.md` §13.3 profiled that at 24.5 % of the Dijkstra route. -/
 def stepTargets [BEq SysState] [Hashable SysState]
     (steps : Array (LStep α SysState)) : Std.HashSet SysState :=
@@ -185,9 +188,9 @@ def stepTargets [BEq SysState] [Hashable SysState]
     Option (Std.HashMap Nat (Std.HashSet Nat) × Std.HashSet SysState) :=
   if steps.all (·.1.isEmpty) then some (marksByTarget tgba q base, stepTargets steps) else none
 
-/-- The grouped table alone, which is all a *generating* expansion needs. A successor `succsFrom` produced
-has a step target by construction, so the membership half of `marksTable` — `stepTargets`, one hash per
-step to build and one hash plus one deep state equality per successor to consult — answers a question
+/-- The grouped table alone, which is all a generating expansion needs. A successor `succsFrom` produced
+has a step target by construction, so the membership half of `marksTable`, `stepTargets`, one hash per
+step to build and one hash plus one deep state equality per successor to consult, answers a question
 whose answer is known. On a model whose states are cheap to produce and expensive to compare that test
 was 14 % of the default route and three quarters of a crossing row (`EdgeLabels.md` §13.23). -/
 @[expose] def marksTableGen (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
@@ -196,7 +199,7 @@ was 14 % of the default route and three quarters of a crossing row (`EdgeLabels.
 
 /-- `edgeMarksFromShared` for a successor the source's own steps generated: the `some` branch is the
 `Nat`-keyed lookup and nothing else. It agrees with `edgeMarksFrom` on every such successor
-(`genMarksFromShared_eq`), which is what the fused expansions' coherence rests on; the spec form keeps
+(`genMarksFromShared_eq`), which is what the fused expansions' coherence rests on, the spec form keeps
 its guard, since it has to be total on an arbitrary `p'`. -/
 @[expose] def genMarksFromShared [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) (byTgt? : Option (Std.HashMap Nat (Std.HashSet Nat)))
@@ -208,14 +211,14 @@ its guard, since it has to be total on an arbitrary `p'`. -/
       (init := Std.HashSet.emptyWithCapacity 0) fun acc r => acc.union r.2.acceptMarks
 
 /-- Marks on a product edge `(s, q) → (s', q')`: the union over every realization of the step. Unioning
-across realizations over-approximates a single step; it is sound because TGBA acceptance asks for each mark
+across realizations over-approximates a single step, it is sound because TGBA acceptance asks for each mark
 infinitely often and `edgeWitness.markEdge` names a realization carrying the mark, so pumping the cycle
-realizes them one at a time. A *region* may not be over-approximated this way — see `EdgeLabels.md` §6.3. -/
+realizes them one at a time. A region may not be over-approximated this way, see `EdgeLabels.md` §6.3. -/
 @[expose] def edgeMarksFrom [BEq SysState] [Hashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) (p' : SysState × Nat) : Std.HashSet Nat :=
   edgeMarksFromShared tgba q base steps (marksTable tgba q base steps) p'
 
--- PERF: `edgeMarks` is the *spec* form, one edge at a time; the search does not call it. `expand` above is
+-- PERF: `edgeMarks` is the spec form, one edge at a time, the search does not call it. `expand` above is
 -- what the search walks with, fusing this and `getSuccessors` so a caller's per-source cost is paid once per
 -- product state. Do not try to make this one cache its own per-source work by returning a closure: Lean
 -- eta-expands a function-returning definition into its full arity, so `edgeMarks tgba sysSucc sysLabel p` is
@@ -229,7 +232,7 @@ realizes them one at a time. A *region* may not be over-approximated this way �
   fun p' => edgeMarksFrom tgba p.2 base steps p'
 
 /-- Successors of a product state together with the marks of each, from one pass over the source. The
-result type is a *pair of arrays*, not a function, so the compiler cannot eta-expand it: the body runs once
+result type is a pair of arrays, not a function, so the compiler cannot eta-expand it: the body runs once
 per call and `sysLabel`/`sysSucc` are entered once per product state. -/
 @[expose] def expand [BEq SysState] [Hashable SysState] (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (p : SysState × Nat) :
@@ -238,7 +241,7 @@ per call and `sysLabel`/`sysSucc` are entered once per product state. -/
   let steps := LSys.totalize sysSucc p.1
   let byTgt? := marksTableGen tgba p.2 base steps
   let out := succsFrom tgba p.2 base steps
-  -- option bits are empty here: this is the *unrestricted* expansion, used by the routes with no
+  -- option bits are empty here: this is the unrestricted expansion, used by the routes with no
   -- hoisted conjuncts. `expandWithOpts` below is what the Streett scan gets. §13.17
   -- The marks come from `genMarksFromShared`, not `edgeMarksFromShared`: every `p'` in `out` was generated
   -- from a step, so the spec form's membership guard is not consulted. Coherence is `expand_coherent`,
@@ -247,15 +250,14 @@ per call and `sysLabel`/`sysSucc` are entered once per product state. -/
 
 /-! ## The restriction an `FG` part carves out
 
-`◇□ψ` confines the accepting cycle to the steps whose *letter* satisfies ψ. That is a subgraph, not a set of
+`◇□ψ` confines the accepting cycle to the steps whose letter satisfies ψ. That is a subgraph, not a set of
 states: two parallel steps out of the same state can differ on ψ once a letter belongs to the step. The
 latch (`AbstractSpec/RegionLatch.lean`) therefore takes this graph, and `keptSuccs_sub` is what lets it
 project back. See `EdgeLabels.md` §6. -/
 
 /-- The steps out of `s` whose letter satisfies `keep`. The totalizing self-loop is filtered too: a
 deadlocked state's stutter reads the state's own atoms, so it survives exactly when `keep` holds there. A
-`keep` that ignores the step's own atoms keeps all of a state's steps or none, which is the state region the
-latch used to take. -/
+`keep` that ignores the step's own atoms keeps all of a state's steps or none, which is a state region. -/
 @[expose] def keptStepsFrom (base : Std.HashSet α) (steps : Array (LStep α SysState))
     (keep : Std.HashSet α → Bool) : Array (LStep α SysState) :=
   steps.filter fun st => keep (LSys.letter base st.1)
@@ -263,8 +265,8 @@ latch used to take. -/
 /-- The steps out of `s` whose letter satisfies `keep`.
 
 PERF: every caller that already holds the source's label and steps uses `keptStepsFrom` instead, so that
-`sysLabel` and `sysSucc` are entered once per *source* rather than once per use. Spelling this one out as
-`succsFrom … (sysLabel p.1) (keptSteps … p.1)` — which is what it was — enters `sysLabel` twice, once for
+`sysLabel` and `sysSucc` are entered once per source rather than once per use. Spelling this one out as
+`succsFrom … (sysLabel p.1) (keptSteps … p.1)`, which is what it was, enters `sysLabel` twice, once for
 the letter base and once inside `keptSteps`. On the Veil side each entry is a `tr` call. -/
 @[expose] def keptSteps (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) (s : SysState) :
@@ -292,7 +294,7 @@ at one `sysLabel`/`sysSucc` per product state rather than one per conjunct. -/
   fun p => keptSuccsFrom tgba p.2 (sysLabel p.1) (LSys.totalize sysSucc p.1) keep
 
 /-- `keptSuccs` in its pre-sharing spelling. The definition now threads the source's label and steps so
-that each is entered once; this restores the old shape for the unfolding proofs below. -/
+that each is entered once, this restores the old shape for the unfolding proofs below. -/
 theorem keptSuccs_eq (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) (p : SysState × Nat) :
     keptSuccs tgba sysSucc sysLabel keep p
@@ -303,9 +305,9 @@ theorem keptSuccs_eq (tgba : TGBA α) (sysSucc : SysState → Array (LStep α Sy
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) :
     (SysState × Nat) → (SysState × Nat) → Std.HashSet Nat :=
   -- left pointwise on purpose: a `let` before `fun p'` would be re-entered per call anyway (§9's
-  -- eta-expansion) and buys nothing. The *fused* `keptExpand` is what the search actually calls, and
+  -- eta-expansion) and buys nothing. The fused `keptExpand` is what the search actually calls, and
   -- that one shares its source work. Both go through `edgeMarksFrom`, which is what keeps
-  -- `keptExpand_coherent` a `rfl` now that the grouped fast path is on this route too (§13.10).
+  -- `keptExpand_coherent` a `rfl`, the grouped fast path being on this route too (§13.10).
   fun p p' => edgeMarksFrom tgba p.2 (sysLabel p.1) (keptSteps sysSucc sysLabel keep p.1) p'
 
 /-- The fused expansion for the restricted product. -/
@@ -327,9 +329,9 @@ theorem keptExpand_coherent [BEq SysState] [Hashable SysState] (tgba : TGBA α)
 /-! ## The same product, from one system callback
 
 Each definition above applies `sysLabel s` and `sysSucc s` at the same `s`, so a two-callback system makes
-its implementer compute `s` twice. These take `LSys.StepFn` — steps and atoms together — and are otherwise
+its implementer compute `s` twice. These take `LSys.StepFn`, steps and atoms together, and are otherwise
 the same expressions, which is why every bridge is `rfl` up to unfolding the pattern match on the product
-state. Nothing above changes; the two-callback forms remain the ones every theorem is stated over, and a
+state. Nothing above changes, the two-callback forms remain the ones every theorem is stated over, and a
 fused caller reaches them through the bridges. `EdgeLabels.md` §15. -/
 
 section OfStep
@@ -655,7 +657,7 @@ private theorem foldl_union_contains {β : Type w} (m : Nat) (f : β → Std.Has
 
 `edgeMarksFrom` has two shapes, so its characterization needs both. The `none` branch is the plain fold
 over `realizationsFrom`. The `some` branch answers from two hash lookups instead of a per-successor scan,
-and that is sound only when the hash agrees with `==` — which is why everything below carries
+and that is sound only when the hash agrees with `==`, which is why everything below carries
 `LawfulHashable SysState`. That instance is not proof bookkeeping: it is the precondition the optimization
 actually runs on. See `EdgeLabels.md` §13.6. -/
 
@@ -726,8 +728,8 @@ theorem contains_marksByTarget (tgba : TGBA α) (q : Nat)
     false_or, ← Array.mem_def]
 
 /-- The hashed step-target guard, characterized. This is the lemma the whole optimization rests on: it is
-where `LawfulHashable SysState` is consumed, replacing the deep `SysState` comparison the scan used to do
-per step per successor. -/
+where `LawfulHashable SysState` is consumed, in place of a deep `SysState` comparison per step per
+successor. -/
 private theorem foldl_stepTargets_contains [BEq SysState] [Hashable SysState] [LawfulBEq SysState]
     [LawfulHashable SysState] (s : SysState) :
     ∀ (l : List (LStep α SysState)) (init : Std.HashSet SysState),
@@ -759,7 +761,7 @@ theorem contains_stepTargets [BEq SysState] [Hashable SysState] [LawfulBEq SysSt
 
 /-- The generating lookup agrees with the spec's guarded one on every successor the source generated. The
 guard is `stepTargets`' membership, which takes lawful hashing to read, and this is the one place a
-wired route reads it — as a proof obligation, not as a hash per successor. §13.23 -/
+wired route reads it, as a proof obligation, not as a hash per successor. §13.23 -/
 theorem genMarksFromShared_eq [BEq SysState] [Hashable SysState] [LawfulBEq SysState]
     [LawfulHashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) {p' : SysState × Nat}
@@ -777,7 +779,7 @@ theorem genMarksFromShared_eq [BEq SysState] [Hashable SysState] [LawfulBEq SysS
     rfl
 
 /-- `expand` is the fused form of `getSuccessors` and `edgeMarks`: one call per product state. The
-successors are definitionally the same; the marks agree on every generated successor by
+successors are definitionally the same, the marks agree on every generated successor by
 `genMarksFromShared_eq`, which is why this is a map-congruence over members rather than `rfl` (§13.23). -/
 theorem expand_coherent [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [LawfulHashable SysState]
     (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α) :
@@ -788,7 +790,7 @@ theorem expand_coherent [BEq SysState] [Hashable SysState] [LawfulBEq SysState] 
   exact Array.map_congr_left fun p' hp' => genMarksFromShared_eq tgba p.2 _ _ hp'
 
 /-- The marks of a product edge, whichever shape `edgeMarksFrom` took. Both branches compute the union of
-the accept marks over the edge's realizations; the grouped one just gets there without comparing states. -/
+the accept marks over the edge's realizations, the grouped one just gets there without comparing states. -/
 theorem contains_edgeMarksFrom_iff [BEq SysState] [Hashable SysState] [LawfulBEq SysState]
     [LawfulHashable SysState] (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     (steps : Array (LStep α SysState)) (p' : SysState × Nat) (m : Nat) :
@@ -840,8 +842,8 @@ theorem mem_edgeMarks_iff [BEq SysState] [Hashable SysState] [LawfulBEq SysState
   contains_edgeMarksFrom_iff tgba p.2 (sysLabel p.1) (LSys.totalize sysSucc p.1) p' m
 
 /-- The restricted edge's marks, characterized. `keptEdgeMarks` differs from `edgeMarks` only in which
-`steps` array it is handed, so this is `contains_edgeMarksFrom_iff` at `keptSteps`. Every lemma below
-that used to unfold the old `foldl` body goes through this instead. -/
+`steps` array it is handed, so this is `contains_edgeMarksFrom_iff` at `keptSteps`. Every lemma below that
+needs the `foldl` body unfolded goes through this. -/
 theorem contains_keptEdgeMarks_iff [BEq SysState] [Hashable SysState] [LawfulBEq SysState]
     [LawfulHashable SysState] (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
@@ -876,7 +878,7 @@ theorem keptSuccs_sub (tgba : TGBA α) (sysSucc : SysState → Array (LStep α S
 The prune conjoins one option's region into a candidate at a time, so it needs the restricted product to be
 antitone in `keep`: strengthening the predicate keeps fewer steps, hence fewer successors and fewer marks.
 Together with `keptSteps_top` these generalize the `_sub` lemmas above, which are the special case
-`keep := fun _ => true`; `_sub` keeps its own proof only because it is stated earlier in the file. -/
+`keep := fun _ => true`, `_sub` keeps its own proof only because it is stated earlier in the file. -/
 
 theorem keptSteps_mono {sysSucc : SysState → Array (LStep α SysState)}
     {sysLabel : SysState → Std.HashSet α} {keep keep' : Std.HashSet α → Bool}
@@ -943,7 +945,7 @@ Stated pointwise on marks rather than as an equality of `Std.HashSet Nat`.
 
 §13.7 had to weaken this: back then `keptEdgeMarks` folded a union per realization while `edgeMarks`
 answered from the grouped table, and the two agreed on membership but not on representation. Since
-§13.10 both sides are `edgeMarksFrom` at arguments `keptSteps_top` proves *equal*, so the value equality
+§13.10 both sides are `edgeMarksFrom` at arguments `keptSteps_top` proves equal, so the value equality
 is recoverable. It is left pointwise because that is all `RStreettSpec.Compat.marks_top` uses, and
 strengthening it back would mean re-threading that law through its implementors for no gain. -/
 theorem keptEdgeMarks_top [BEq SysState] [Hashable SysState] [LawfulBEq SysState]
@@ -958,7 +960,7 @@ theorem keptEdgeMarks_top [BEq SysState] [Hashable SysState] [LawfulBEq SysState
 /-! ### The state-labelled special case
 
 For an unlabelled system every step reads exactly the source state's label, so the letter restriction
-`keep` degenerates to a predicate on the source state. When it holds at `s`, *no* step out of `s` is cut
+`keep` degenerates to a predicate on the source state. When it holds at `s`, no step out of `s` is cut
 and the restricted product coincides with the product there. This is what makes the edge-aware latch a
 conservative generalisation of the old state-region latch. -/
 
@@ -1150,9 +1152,9 @@ theorem exists_keptRealization_of_mark (tgba : TGBA α)
     (Std.HashSet.mem_iff_contains.mp hm)
 
 set_option maxHeartbeats 1000000 in
-/-- The edge witness for the *restricted* product: it realizes a step with a kept realization, so every
+/-- The edge witness for the restricted product: it realizes a step with a kept realization, so every
 edge it emits reads a letter the restriction admits. It still targets the unrestricted `toSpec`, because
-that is the spec the lasso lives in — only the graph and marks it draws from are restricted. -/
+that is the spec the lasso lives in, only the graph and marks it draws from are restricted. -/
 def keptEdgeWitness (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) (sysInit : List SysState) :
     TEdgeWitness (toSpec tgba sysSucc sysLabel sysInit) (keptSuccs tgba sysSucc sysLabel keep)
@@ -1196,8 +1198,8 @@ private theorem keptEdgeWitness_letter (tgba : TGBA α) (sysSucc : SysState → 
   obtain ⟨⟨hst, -⟩, -⟩ := (mem_realizationsFrom_iff tgba p.2 (sysLabel p.1) _ p' _).mp hmem
   exact (mem_keptSteps.mp hst).2
 
-/-- `keptEdgeWitness_letter` at the `stepEdge` projection, with the source read off the *edge* rather
-than off `p` — that is the shape `cycleE_forall`'s predicate produces. -/
+/-- `keptEdgeWitness_letter` at the `stepEdge` projection, with the source read off the edge rather
+than off `p`, that is the shape `cycleE_forall`'s predicate produces. -/
 theorem keptEdgeWitness_stepEdge_letter (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (keep : Std.HashSet α → Bool) (sysInit : List SysState)
@@ -1258,6 +1260,7 @@ theorem acceptingRun_states (tgba : TGBA α) (sysSucc : SysState → Array (LSte
         ⟨((σ (N + j)).2.1, (σ (N + j)).2.2.2), ?_, hj⟩)⟩
     exact (mem_realizations_iff tgba sysSucc sysLabel _ _ _).mpr ⟨⟨hsys, h1⟩, ht, h2, hc⟩
 
+/-- (Pumping) An accepting run of the product yields a `TAcceptingCycle` in it. -/
 theorem exists_TAcceptingCycle_of_acceptingRun (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
     (sysInit : List SysState)

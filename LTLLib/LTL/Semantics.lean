@@ -1,8 +1,8 @@
 module
 
 /-
-  LTL semantics: denotation of NNF and Formula types into propositions
-  over ω-words, built on Lentil's TLA temporal logic foundations.
+  LTL semantics: denotation of NNF and Formula types into propositions over ω-words, built on Lentil's TLA
+  temporal logic foundations.
 
   Key definitions:
   - `tla_release`: Release operator (dual of Until), missing from Lentil
@@ -36,12 +36,10 @@ open Lentil
 
 /-! ## ω-words
 
-An ω-word over atomic propositions of type `α` is an infinite sequence
-where each position maps atoms to truth values. We use Lentil's `exec`
-type instantiated at `α → Prop`. -/
+An ω-word over atomic propositions of type `α` is an infinite sequence where each position maps atoms to
+truth values, Lentil's `exec` type instantiated at `α → Prop`. -/
 
-/-- An ω-word over atomic propositions `α`. Each time step is a valuation
-    `α → Prop` assigning truth values to atoms. -/
+/-- An ω-word over atomic propositions `α`, each time step a valuation `α → Prop` on the atoms. -/
 abbrev OmegaWord (α : Type u) := exec (α → Prop)
 
 /-! ## Release operator

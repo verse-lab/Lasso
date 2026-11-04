@@ -3,7 +3,7 @@ module
 /-
   A system whose letters are carried by steps rather than by states.
 
-  An atom like `taken(a)` — "the step being taken is an `a`-step" — is not a predicate of any state, so
+  An atom like `taken(a)`, "the step being taken is an `a`-step", is not a predicate of any state, so
   encoding it as one costs a factor of |actions| in reachable states. Here a successor entry carries the
   atoms its own step contributes, and the letter read at a step is the source state's atoms together with
   the step's own. The product built on top of this (`Product.lean`) keeps its state set
@@ -28,6 +28,13 @@ module
     yet converted: `LSys.toSpec_isRun_ofRun` and `LSys.isRun_of_toSpec_unlabelled` (runs, both ways),
     `LSys.valuation_ofRun` and `LSys.valuation_unlabelled` (the letters such a run reads are just the state
     labels), and `LSys.finiteReach_unlabelled` (the finiteness witness)
+
+  Sections:
+  - The labelled graph
+  - Basic facts
+  - The labelled system as an abstract spec
+  - Transfer from state-labelled systems
+  - Predicates that cannot see a step's own atoms
 -/
 public import LTLLib.LTL.Propositional
 public import LTLLib.AbstractSpec.Reachability
@@ -63,9 +70,9 @@ abbrev Edge (α : Type u) (SysState : Type v) [BEq α] [Hashable α] := SysState
 adapted through this, and every statement about one specializes through `toSpec_unlabelled_isRun_iff`. -/
 @[expose] def unlabelled (sysSucc : SysState → Array SysState) : SysState → Array (LStep α SysState) :=
   -- PERF: the empty letter is bound once per call rather than written inside the mapped closure, where
-  -- it would allocate a `HashSet` per successor. (It cannot be hoisted above `fun s` — the compiler
+  -- it would allocate a `HashSet` per successor. (It cannot be hoisted above `fun s`, the compiler
   -- eta-expands a function-returning definition to its full arity, so a `let` there would be re-entered
-  -- anyway; see `EdgeLabels.md` §9.)
+  -- anyway, see `EdgeLabels.md` §9.)
   fun s => let e : Std.HashSet α := ∅; (sysSucc s).map (fun t => (e, t))
 
 /-- Give a terminal state a self-loop reading no edge atoms, so every state has a step, as Büchi semantics
@@ -73,12 +80,12 @@ over infinite words requires. A deadlocked state stutters and takes no action. -
 @[expose] def totalize (sysSucc : SysState → Array (LStep α SysState)) : SysState → Array (LStep α SysState) :=
   fun s => let ss := sysSucc s; if ss.isEmpty then #[((∅ : Std.HashSet α), s)] else ss
 
-/-- A system presented as **one** callback: a state's steps and its own atoms, together.
+/-- A system presented as one callback: a state's steps and its own atoms, together.
 
 This is the shape the product actually consumes. `getSuccessors` and friends each apply `sysSucc s` and
 `sysLabel s` at the same `s` in the same expression, so a two-callback system forces whoever implements it
-to compute `s`'s transitions twice — and on Veil that is a full `tr` walk each. Taking the pair as the
-primitive makes "one walk per state" a fact about the *type*, so nothing has to be memoised and nothing
+to compute `s`'s transitions twice, and on Veil that is a full `tr` walk each. Taking the pair as the
+primitive makes "one walk per state" a fact about the type, so nothing has to be memoised and nothing
 outside the kernel has to be trusted. `EdgeLabels.md` §15. -/
 abbrev StepFn (α : Type u) (SysState : Type v) [BEq α] [Hashable α] :=
   SysState → Array (LStep α SysState) × Std.HashSet α
@@ -249,7 +256,7 @@ theorem toSpec_isRun_ofRun {sysSucc : SysState → Array SysState} {sysInit : Li
   · exact mem_totalize_of_mem (mem_unlabelled.mpr ⟨rfl, hmem⟩)
 
 /-- Forgetting the letters, a labelled run walks the underlying totalized graph. This is what a caller
-running an unlabelled search — the feasibility fail-fast, say — needs from a labelled run. -/
+running an unlabelled search, the feasibility fail-fast, say, needs from a labelled run. -/
 theorem targets_of_isRun {sysSucc : SysState → Array (LStep α SysState)} {sysInit : List SysState}
     {sysLabel : SysState → Std.HashSet α} {ρ : Nat → Edge α SysState}
     (h : (toSpec sysSucc sysInit sysLabel).isRun ρ) (n : Nat) :
@@ -278,21 +285,21 @@ theorem isRun_of_toSpec_unlabelled {sysSucc : SysState → Array SysState} {sysI
 
 /-! ## Predicates that cannot see a step's own atoms
 
-A letter predicate used as a *region* — the `◇□ψ` part of a hoisted fairness — is well behaved exactly
+A letter predicate used as a region, the `◇□ψ` part of a hoisted fairness, is well behaved exactly
 when it cannot distinguish a step's letter from its source's label. Every predicate is `StateOnly` on an
 unlabelled system, so this is a weakening of "the system has no edge atoms", and it is the hypothesis the
 prune routes are proved under: see `EdgeLabels.md` §12.4 for why it is the right one and §12.1 for why
 nothing weaker is affordable.
 
-The point is that a `StateOnly` region behaves like a *state* region even on a labelled system, which is
+The point is that a `StateOnly` region behaves like a state region even on a labelled system, which is
 what makes several regions jointly satisfiable as soon as they are separately satisfiable. Without it
 that inference is NP-hard, which is the whole content of §12. -/
 
 /-- `keep` cannot tell a step's own atoms from nothing: every step out of `s` reads a letter that `keep`
 scores exactly as it scores `s`'s own label.
 
-Note the quantifier is over *all* states and *all* their steps, including the totalizing self-loop, not
-just the reachable ones — this is a property of the predicate against the system, established once. -/
+Note the quantifier is over all states and all their steps, including the totalizing self-loop, not
+just the reachable ones, this is a property of the predicate against the system, established once. -/
 @[expose] def StateOnly (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (keep : Std.HashSet α → Bool) : Prop :=
   ∀ s : SysState, ∀ st ∈ totalize sysSucc s, keep (letter (sysLabel s) st.1) = keep (sysLabel s)
@@ -305,7 +312,7 @@ theorem stateOnly_of_unlabelled (sysSucc : SysState → Array SysState)
   intro s st hst
   rw [letter_eq_empty_of_unlabelled hst, letter_empty]
 
-/-- Closed under conjunction, which is what lets the *conjoined* region of several selected options
+/-- Closed under conjunction, which is what lets the conjoined region of several selected options
 inherit the hypothesis from the options themselves. -/
 theorem stateOnly_and {sysSucc : SysState → Array (LStep α SysState)}
     {sysLabel : SysState → Std.HashSet α} {k₁ k₂ : Std.HashSet α → Bool}
@@ -334,7 +341,7 @@ theorem stateOnly_top (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) :
     StateOnly sysSucc sysLabel (fun _ => true) := fun _ _ _ => rfl
 
-/-- A `StateOnly` region that holds at `s`'s label admits *every* step out of `s`. This is the form the
+/-- A `StateOnly` region that holds at `s`'s label admits every step out of `s`. This is the form the
 prune's proofs consume: it is what makes a region behave like a state region. -/
 theorem mem_of_stateOnly {sysSucc : SysState → Array (LStep α SysState)}
     {sysLabel : SysState → Std.HashSet α} {keep : Std.HashSet α → Bool}
@@ -345,14 +352,14 @@ theorem mem_of_stateOnly {sysSucc : SysState → Array (LStep α SysState)}
 
 /-! ### Discharging it syntactically
 
-A caller does not reason about `StateOnly` semantically. It knows which atoms a *step* may contribute —
-in Veil, exactly the indices of `T(…)` atoms — and checks that the region mentions none of them. -/
+A caller does not reason about `StateOnly` semantically. It knows which atoms a step may contribute,
+in Veil, exactly the indices of `T(…)` atoms, and checks that the region mentions none of them. -/
 
 /-- No step ever contributes an atom the formula inspects. -/
 @[expose] def NeverStepAtom (sysSucc : SysState → Array (LStep α SysState)) (b : BoolFormula α) : Prop :=
   ∀ s : SysState, ∀ st ∈ totalize sysSucc s, ∀ a ∈ b.atoms, a ∉ st.1
 
-/-- The syntactic discharge. A step can only *add* atoms to the source's label (`letter` is a union), so if
+/-- The syntactic discharge. A step can only add atoms to the source's label (`letter` is a union), so if
 none of the added atoms is one the formula looks at, the formula cannot tell the two apart. -/
 theorem stateOnly_of_neverStepAtom [LawfulBEq α] [LawfulHashable α]
     {sysSucc : SysState → Array (LStep α SysState)} {sysLabel : SysState → Std.HashSet α}

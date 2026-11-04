@@ -6,7 +6,7 @@ module
   One state has an a-only and a b-only self-loop. FG a and FG b are separately feasible, but no run
   satisfies both: beyond both eventual cutoffs every step would have to read a and b together.
   The unchecked prune tests options separately and can report a spurious witness here. This records
-  its documented StateOnly boundary; the crossing route remains the correctness oracle.
+  its documented StateOnly boundary, the crossing route remains the correctness oracle.
 
   Controls add an a-and-b edge, remove an individually required region, or move both atoms to the state.
 -/
@@ -50,7 +50,7 @@ theorem regions_stateOnly : ∀ ds ∈ regions, ∀ d ∈ ds,
     LSys.StateOnly stateSteps stateLabel d.1.eval :=
   fun _ _ d _ => LSys.stateOnly_of_unlabelled (fun _ => #[0]) stateLabel d.1.eval
 
-/-- A cycle with an actual joint-labelled realization at every step; the stem need not be in-region. -/
+/-- A cycle with an actual joint-labelled realization at every step, the stem need not be in-region. -/
 def jointLasso (succs : Nat → Array (LStep String Nat)) (label : Nat → Std.HashSet String)
     (stem cycle : List Nat) : Bool :=
   stem.head? == some 0 && pathRespectsEdges (LSys.targets succs) stem &&

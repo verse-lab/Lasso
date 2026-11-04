@@ -7,8 +7,8 @@ module
 
   What it changes, and only this. The proved `streettPop` closes an SCC by re-deriving its internal
   edges from `succs` and then evaluating every option's region and marks on each edge through
-  `cs.regions`/`cs.optMarks`, each of which is a full `regionSuccs` — one `sysSucc` plus one `sysLabel`
-  in Veil — to answer a membership question about a source whose steps the DFS had already computed.
+  `cs.regions`/`cs.optMarks`, each of which is a full `regionSuccs`, one `sysSucc` plus one `sysLabel`
+  in Veil, to answer a membership question about a source whose steps the DFS had already computed.
   §13.16 measured that at 25 of 66 Veil callbacks on BcastFolklore's CorrLtl, in a route that is 93 %
   Veil. Here every frame's `succ` and `succOpts` are retained at its live position when it is popped,
   and the scan folds the retained bits. The search makes no callback outside `expand`.
@@ -21,7 +21,7 @@ module
   - `streettRunF`, `candidateRunF`, `pruneLoopF`, `streettCheckF`: the drivers, mirroring the proved ones
     line for line except where they read retained data
 
-  Proves — the fast route *is* the proved route, so every theorem of `StreettPrune.lean` transfers
+  Proves, the fast route is the proved route, so every theorem of `StreettPrune.lean` transfers
   through one rewrite (`modelCheckPruneSplit_eq` in `Fairness/FairRouter.lean`):
   - `CompiledSpec.edgeBits`, defined through `scanOptionsAt`, and its bit lemmas
   - `scanFrameF_eq_scanFrame`: the retained scan is the callback scan, bit by bit
@@ -29,8 +29,18 @@ module
     directions, `dfsGo_eq`, `dfsFromRoot_eq`, `genericDFSGo_eq`, `genericDFS_eq`, `streettRunF_eq`
   - `candidateRunF_eq`, `pruneLoopF_eq`, and `streettCheckF_eq`: the top-level equality
 
-  `Tests/StreettPruneFast.lean` keeps the 200-case differential test that stood in for this proof while
-  the route was benchmarked; it is now a cross-check of the executable against the theorem.
+  `LTLLibTests/StreettPrune.lean` keeps a 200-case differential test, a cross-check of the executable
+  against the theorem.
+
+  Sections:
+  - A letter's option bits
+  - The search state
+  - The scan over retained data
+  - PUSH, UPDATE and POP
+  - The `DFSOps` instance and the drivers
+  - Proof, part 1: the retained scan is the callback scan
+  - Proof, part 2: what a letter's bits are
+  - Proof, part 3: the fast operations run in lockstep with the proved ones
 -/
 public import LTLLib.SCC.StreettPrune
 meta import Lentil
@@ -46,8 +56,8 @@ variable {State : Type u} {L : Type w} [BEq State] [Hashable State]
 
 `DFSStep.succOpts` packs one `Nat` per edge: bit `o` (for `o < numOptions`) says option `o`'s region
 admits the edge, and bit `numOptions + optMarkBase[o] + j` says its mark `j` is carried by an in-region
-realization of it. That is `cs.regions[o]` and `cs.optMarks[o][j]` read on the edge — exactly what
-`scanOptionsAt` folds — so the scan's accumulators become `regionAlive &&& bits` and
+realization of it. That is `cs.regions[o]` and `cs.optMarks[o][j]` read on the edge, exactly what
+`scanOptionsAt` folds, so the scan's accumulators become `regionAlive &&& bits` and
 `marksSeen ||| (bits >>> numOptions)`. -/
 
 private def markBitsAt (gs : Array (L → Bool)) (l : L) (base j acc : Nat) : Nat :=
@@ -83,13 +93,13 @@ def CompiledSpec.letterBits (cs : CompiledSpec State L) (l : L) : Nat :=
 /-! ## The search state
 
 `StreettAux` with two more arrays, indexed by live position like `live` itself. They are filled at POP,
-not PUSH: in `dfsGo` `push` runs *before* the frame's `expand`, and POP is the first operation handed the
+not PUSH: in `dfsGo` `push` runs before the frame's `expand`, and POP is the first operation handed the
 whole frame. Pops are LIFO, so when a frame closes an SCC every position above it has already been popped
 and stashed, and the scan reads a complete component.
 
 Memory: the arrays hold references to `succ`/`succOpts` arrays that `expand` allocated anyway and that
-the proved route frees at POP; here they live until their SCC is flushed. On one large SCC that is the
-edges of the SCC rather than its states. No allocation is added — the two pushes per frame store a
+the proved route frees at POP, here they live until their SCC is flushed. On one large SCC that is the
+edges of the SCC rather than its states. No allocation is added, the two pushes per frame store a
 shared empty literal. -/
 structure StreettAuxF (State : Type u) [BEq State] [Hashable State] where
   live : Array State
@@ -102,12 +112,12 @@ structure StreettAuxF (State : Type u) [BEq State] [Hashable State] where
   -- `liveSuccs[i]` is `(expand live[i]).1` once `live[i]` has been popped, `#[]` before. What the proved
   -- route's `internalEdges succs` re-derived through one callback per SCC state (§13.16's 5).
   liveSuccs : Array (Array State)
-  -- `liveOpts[i]` is `(expand live[i]).2.2`, parallel to `liveSuccs[i]` — or `#[]` when the spec has no
+  -- `liveOpts[i]` is `(expand live[i]).2.2`, parallel to `liveSuccs[i]`, or `#[]` when the spec has no
   -- options. What `cs.regions`/`cs.optMarks` re-derived through one callback per (edge, option)
   -- evaluation (§13.16's 20).
   liveOpts : Array (Array Nat)
   -- §13.26: the retained successor arrays of the reported witness, `witnessSuccs[k]` belonging to
-  -- `witness[k]` — the slice of `liveSuccs` the accepting POP would otherwise drop. The report reads
+  -- `witness[k]`, the slice of `liveSuccs` the accepting POP would otherwise drop. The report reads
   -- them through `memoGraph` instead of calling the candidate's graph once per witness state, which
   -- was one callback pair plus a region filter per witness state, 27 % of a `fails` row on `servers`.
   witnessSuccs : Array (Array State)
@@ -127,16 +137,16 @@ structure StreettAuxF (State : Type u) [BEq State] [Hashable State] where
 /-! ## The scan over retained data
 
 `scanFrame cs succs live lo` is `scanLetters` over `internalEdges succs (sccSetOf live lo) (live[lo..])`.
-The retained arrays give the same edges in the same order — `liveSuccs[i]` *is* `succs live[i]` by
-`ExpandCoherent` — and membership in the closing SCC is `liveIndex[t] ≥ lo`, so the per-scan `sccSetOf`
+The retained arrays give the same edges in the same order, `liveSuccs[i]` is `succs live[i]` by
+`ExpandCoherent`, and membership in the closing SCC is `liveIndex[t] ≥ lo`, so the per-scan `sccSetOf`
 hash set is not built either. `&&&`/`|||` are idempotent and monotone, so checking `scanLabels`'s early
 exit once per state rather than once per edge changes nothing. -/
 
 /-- Do the entries of `os` at successor indices `k ..< n` all equal `b`? A state-labelled system gives
 every out-edge of a state the same bits (`optBitsFor`'s shared-letter branch), and `&&&`/`|||` are
 idempotent, so once one internal edge of such a state has been folded the rest of its edges cannot
-change the masks. Deciding this costs one `Nat` comparison per edge and no hashing; acting on it saves
-a hash lookup with a deep state equality per edge — 17 % of the default route on `servers`
+change the masks. Deciding this costs one `Nat` comparison per edge and no hashing, acting on it saves
+a hash lookup with a deep state equality per edge, 17 % of the default route on `servers`
 (`EdgeLabels.md` §13.25). -/
 private def sameBitsFrom (os : Array Nat) (n k b : Nat) : Bool :=
   if h : k < n then (os[k]! == b) && sameBitsFrom os n (k + 1) b else true
@@ -183,6 +193,7 @@ def scanFrameF (cs : CompiledSpec State L) (liveIndex : Std.HashMap State Nat)
 Copies of the proved operations with the two retained arrays threaded through. Destructured rather than
 `{ aux with … }` for the same reason as there: in-place updates. -/
 
+/-- PUSH, with the two retained arrays extended alongside the live stack. -/
 @[expose] def streettPushF (aux : StreettAuxF State) (q : State) (_marks : Std.HashSet Nat) :
     StreettAuxF State × Nat :=
   let ⟨live, liveIndex, dead, dstack, wit, wopts, pending, ls, lo, ws⟩ := aux
@@ -190,6 +201,7 @@ Copies of the proved operations with the two retained arrays threaded through. D
   (⟨live.push q, liveIndex.insert q pos, dead, dstack.push (pos, 0), wit, wopts, pending,
     ls.push #[], lo.push #[], ws⟩, pos)
 
+/-- UPDATE, which lowers the top frame's lowlink and unions the edge's marks in, retained arrays untouched. -/
 @[expose] def streettUpdateF (numMarks : Nat) (aux : StreettAuxF State) (marks : Std.HashSet Nat) (d : State) :
     StreettAuxF State × Bool :=
   let ⟨live, liveIndex, dead, dstack, wit, wopts, pending, ls, lo, ws⟩ := aux
@@ -200,7 +212,7 @@ Copies of the proved operations with the two retained arrays threaded through. D
     (⟨live, liveIndex, dead, dstack.pop.push top, wit, wopts, pending, ls, lo, ws⟩, false)
 
 /-- POP. The frame's expansion is stashed at its position first, so that when this frame closes an SCC
-the scan sees its own edges too; the stash is dropped with the states by `shrink` wherever the proved
+the scan sees its own edges too, the stash is dropped with the states by `shrink` wherever the proved
 route calls `liveFlush`. -/
 @[expose] def streettPopF [Inhabited State] (cs : CompiledSpec State L) (curRegions : Nat)
     (aux : StreettAuxF State) (step : DFSStep State Nat) : StreettAuxF State × Bool :=
@@ -244,6 +256,7 @@ route calls `liveFlush`. -/
 
 /-! ## The `DFSOps` instance and the drivers -/
 
+/-- The fast prune as a `DFSOps` instance, the proved operations with the retained arrays threaded through. -/
 @[expose] def streettOpsF [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (curRegions : Nat) : DFSOps State where
   Aux := StreettAuxF State
@@ -269,7 +282,7 @@ them, so they are stubbed here: by construction the search expands through `expa
   genericDFS (streettOpsF cs curRegions) (fun _ => #[]) (fun _ _ => Std.HashSet.emptyWithCapacity 0)
     expand initialStates (streettOpsF cs curRegions).initAux
 
-/-- A candidate's search: the region-restricted expansion *with bits*, filtered to its states in lockstep
+/-- A candidate's search: the region-restricted expansion with bits, filtered to its states in lockstep
 as `Candidate.expand` does. -/
 @[expose] def candidateRunF (cs : CompiledSpec State L)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
@@ -298,16 +311,16 @@ partial_fixpoint -- terminating for the reason `pruneLoop` is
     m.insert wit[k]! ws[k]!
 
 /-- The report's graph: the memo, falling back to `g` off the witness. Equal to `g` as a function whenever
-the memo is correct (`memoGraph_eq`), which is all `streettCheckF_eq` needs; `witnessCycle` only asks
+the memo is correct (`memoGraph_eq`), which is all `streettCheckF_eq` needs, `witnessCycle` only asks
 about witness states, so the fallback is never taken. -/
 @[expose] def memoGraph (memo : Std.HashMap State (Array State)) (g : State → Array State) : State → Array State :=
   fun s => match memo[s]? with
     | some ss => ss
     | none => g s
 
-/-- `streettCheck` for the fast path. `succs` and `edgeMarks` are used only at report time — the stem's
-BFS, the cycle's rebuild and the lasso validation — never by a search. `regionExpand` is the spec's
-restricted expansion *with bits*, which the candidate searches walk. -/
+/-- `streettCheck` for the fast path. `succs` and `edgeMarks` are used only at report time, the stem's
+BFS, the cycle's rebuild and the lasso validation, never by a search. `regionExpand` is the spec's
+restricted expansion with bits, which the candidate searches walk. -/
 @[expose] def streettCheckF (cs : CompiledSpec State L) (succs : State → Array State)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (regionExpand : (L → Bool) → State → Array State × Array (Std.HashSet Nat) × Array Nat)
@@ -330,16 +343,16 @@ end Drivers
 
 /-! ## Proof, part 1: the retained scan is the callback scan
 
-`scanFrame` folds `scanOptionsAt` over the closing SCC's internal edges; `scanFrameF` folds
+`scanFrame` folds `scanOptionsAt` over the closing SCC's internal edges, `scanFrameF` folds
 `(· &&& bits, · ||| (bits >>> numOptions))` over the retained ones. Both results are characterised bit
-by bit — the callback scan's characterisation is `scanLabels_fst_testBit`/`scanLabels_snd_testBit`, in
-`StreettPrune.lean` — and the two agree when the retained bits are `edgeBits`, the scan's own reading of
+by bit, the callback scan's characterisation is `scanLabels_fst_testBit`/`scanLabels_snd_testBit`, in
+`StreettPrune.lean`, and the two agree when the retained bits are `edgeBits`, the scan's own reading of
 one edge packed the way `DFSStep.succOpts` packs it. -/
 
 section ScanProof
 
-/-- One edge's packed bits, defined *through* `scanOptionsAt` — from the full region mask and no marks,
-the marks shifted above the regions — so that the scan's own `testBit` lemmas apply to it unchanged. -/
+/-- One edge's packed bits, defined through `scanOptionsAt`, from the full region mask and no marks,
+the marks shifted above the regions, so that the scan's own `testBit` lemmas apply to it unchanged. -/
 @[expose] def CompiledSpec.edgeBits (cs : CompiledSpec State L) (lab : State × State) : Nat :=
   (scanOptionsAt cs lab 0 ((1 <<< cs.numOptions) - 1) 0).1 |||
     ((scanOptionsAt cs lab 0 ((1 <<< cs.numOptions) - 1) 0).2 <<< cs.numOptions)
@@ -745,9 +758,9 @@ private theorem internalEdges_exists_iff [Inhabited State] [LawfulBEq State] [La
     · show lsuccs[j][k] ∈ succs live[j]
       rw [← hs]; exact Array.getElem_mem hk
 
-/-- **The retained scan is the callback scan.** On a live stack whose retained arrays hold, from `lo`
+/-- The retained scan is the callback scan. On a live stack whose retained arrays hold, from `lo`
 up, each state's successors and their `edgeBits`, the two frames agree. When the spec has no options
-the payload may be anything — `#[]` on the wired routes — because the scan's early exit fires before
+the payload may be anything, `#[]` on the wired routes, because the scan's early exit fires before
 it is read. -/
 theorem scanFrameF_eq_scanFrame [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hwf : cs.WF)
@@ -944,8 +957,8 @@ private theorem letterBitsFrom_testBit (cs : CompiledSpec State L) (l : L) (b : 
       · omega
 
 omit [Hashable State] in
-/-- What `letterBits` says, bit by bit. Region bit `o` is option `o`'s region on the letter; mark bit
-`numOptions + optMarkBase[p] + k` is option `p`'s region *and* its mark `k` on the letter — the
+/-- What `letterBits` says, bit by bit. Region bit `o` is option `o`'s region on the letter, mark bit
+`numOptions + optMarkBase[p] + k` is option `p`'s region and its mark `k` on the letter, the
 conjunction `StreettOption.onEdges` builds into each mark predicate. -/
 theorem CompiledSpec.letterBits_testBit (cs : CompiledSpec State L) (hwf : cs.WF) (l : L) (b : Nat) :
     (cs.letterBits l).testBit b = true ↔
@@ -1033,7 +1046,7 @@ structure InvF [Inhabited State] (succs : State → Array State)
   frames : ∀ st ∈ stk, st.pos < a.live.size ∧ a.live[st.pos]! = st.state ∧
     st.succ = succs st.state ∧ st.succOpts = (expandOpts st.state).2.2
   sorted : List.Pairwise (fun (x y : DFSStep State Nat) => y.pos < x.pos) stk
-  -- Every live position is on the stack, or stashed, or an *orphan* below every stack frame — the
+  -- Every live position is on the stack, or stashed, or an orphan below every stack frame, the
   -- root of a run that the fixpoint left undefined, which `dfsFromRoot`'s `getD` fallback leaves live
   -- and unpopped. An orphan is never scanned: a scan starts at a stack frame's position and every
   -- later frame is pushed above it.
@@ -1360,7 +1373,7 @@ theorem streettPopF_spec [Inhabited State] [LawfulBEq State] [LawfulHashable Sta
         obtain ⟨pll, pacc⟩ := p2
         exact ⟨rfl, rfl, hinvNoFlush _⟩
 
-/-! ### UPDATE keeps the invariant; the proved POP ignores the payload -/
+/-! ### UPDATE keeps the invariant, the proved POP ignores the payload -/
 
 theorem InvF.update [Inhabited State] {succs : State → Array State}
     {expandOpts : State → Array State × Array (Std.HashSet Nat) × Array Nat}
@@ -1662,7 +1675,7 @@ theorem dfsGo_lockstep_rev [Inhabited State] [LawfulBEq State] [LawfulHashable S
 def liftF (rF : Option (State × List State) × StreettAuxF State) :
     Option (State × List State) × StreettAux State := (rF.1, rF.2.proj)
 
-/-- Both directions at once: the proved `dfsGo` is the fast one, lifted — on divergence too. -/
+/-- Both directions at once: the proved `dfsGo` is the fast one, lifted, on divergence too. -/
 theorem dfsGo_eq [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hwf : cs.WF) (cr : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
@@ -1964,7 +1977,7 @@ theorem streettInitAuxF_inv [Inhabited State] (succs : State → Array State)
   ⟨liveWF_init 0, rfl, rfl, fun _ h => by simp at h, List.Pairwise.nil,
     fun i hi => by simp [streettInitAuxF] at hi, rfl, fun k hk => by simp [streettInitAuxF] at hk⟩
 
-/-- **The fast run is the proved run**, projected. -/
+/-- The fast run is the proved run, projected. -/
 theorem streettRunF_eq [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hwf : cs.WF) (cr : Nat)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
@@ -2186,7 +2199,7 @@ theorem memoGraph_eq [Inhabited State] [LawfulBEq State] [LawfulHashable State]
   · next ss h => exact witnessMemo_get wit ws g hws.2 s ss h
   · rfl
 
-/-- **The fast check is the proved check.** -/
+/-- The fast check is the proved check. -/
 theorem streettCheckF_eq [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (hwf : cs.WF)
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)

@@ -1,5 +1,10 @@
 module
 
+/-
+  Checks what the root module exports: that a client can reduce the public syntax and semantic API, that the
+  exported tactic works without importing its implementation, that explicitly meta-imported algorithms stay
+  executable, and that the private fuel bridge does not leak.
+-/
 import LTLLib
 import Lean.Elab.BuiltinEvalCommand
 meta import LTLLib

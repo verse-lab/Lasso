@@ -276,10 +276,9 @@ end InnerDFSWellFounded
 
 /-! ## Fuel ↔ well-founded bridge, inner half
 
-Bridges `innerDFS_fuel` (fuel-indexed) to `innerDFSCore`/`innerDFSWF` (well-founded): for
-sufficient fuel, the two compute equal results. Every fuel-based correctness theorem from
-`InnerDFSCorrectness.lean` transports across this equation, instead of being reproved
-against the well-founded version. -/
+Bridges the fuel-indexed `innerDFS_fuel` to the well-founded `innerDFSCore`/`innerDFSWF`, for sufficient fuel
+the two computing equal results. Every fuel-based correctness theorem of `InnerDFSCorrectness.lean` transports
+across this equation. -/
 
 section InnerFuelBridge
 

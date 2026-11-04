@@ -1,8 +1,8 @@
 module
 
 /-
-  Transition-marked analogue of `AbstractSpec/OEmptinessCheck.lean`'s algorithm-agnostic emptiness contract. Acceptance
-  is a set of marks per transition (`edgeMarks`) plus their count (`numMarks`), instead of a single state predicate.
+  Transition-marked analogue of the algorithm-agnostic emptiness contract. Acceptance is a set of marks per
+  transition (`edgeMarks`) plus their count (`numMarks`), instead of a single state predicate.
 
   Defines:
   - `TAcceptingCycle`: a lasso witness whose cycle carries every mark
@@ -76,7 +76,7 @@ structure TEmptinessChecker (State : Type u) [BEq State] [Hashable State]
   -- `expand` is the fused `(succs, edgeMarks)` the search actually walks with: one call per state gives its
   -- successors and their marks, so a caller whose per-source cost is high pays it once per state rather
   -- than once per edge. `ExpandCoherent` says it agrees with the two callbacks the spec is stated in terms
-  -- of; the proof fields assume it. See `GenericDFS.DFSStep.succMarks`.
+  -- of, the proof fields assume it. See `GenericDFS.DFSStep.succMarks`.
   check : (succs : State → Array State) → (initialStates : List State) →
     (edgeMarks : State → State → Std.HashSet Nat) →
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) → (numMarks : Nat) →

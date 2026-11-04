@@ -2,15 +2,15 @@ module
 
 /-
   Tests `modelCheckFairRoutedOfStep`, the default entry point that chooses between the prune and the crossing
-  from a predicate marking the atoms a *step* may contribute.
+  from a predicate marking the atoms a step may contribute.
 
   `tk` is an edge atom: it is read by steps, never by a state's label. Two assumptions put it in different
   places of the hoisted split:
-  - `□◇tk → ◇g` hoists `□◇tk` to the region `⊤` with `tk` as a *mark*, so no region mentions an edge atom
+  - `□◇tk → ◇g` hoists `□◇tk` to the region `⊤` with `tk` as a mark, so no region mentions an edge atom
     and the prune keeps the property. This is the shape per-action strong and weak fairness take when
     written as an assumption, so the common case pays nothing.
-  - `◇□tk → ◇g` hoists `◇□tk` to the *region* `tk`, which a source state cannot decide — two parallel steps
-    out of one state disagree on it — so the route falls back to the crossing, which latches the region into
+  - `◇□tk → ◇g` hoists `◇□tk` to the region `tk`, which a source state cannot decide, two parallel steps
+    out of one state disagree on it, so the route falls back to the crossing, which latches the region into
     the product instead (`EdgeLabels.md` §12.4, §12.6).
 
   Two systems: `trap`, where a `tk` self-loop at a `¬g` state gives both assumptions a counterexample, and
@@ -20,6 +20,11 @@ module
   the route whose witness contract the decision discharges.
 
   A system with no edge atoms passes `fun _ => false`, and both assumptions then keep the prune.
+
+  Sections:
+  - Two systems over one labelling
+  - Two assumptions over the edge atom
+  - The certificate is owed only on the fallback branch
 -/
 import LTLLib.ModelCheck
 import LTLLibTests.TestUtil
@@ -99,7 +104,7 @@ theorem steps_isTk : ∀ s, ∀ st ∈ LSys.totalize (fun s => (trap s).1) s, �
     rw [h] at ha; simp at ha
   · simpa [isTk] using letters_trap (s := s) (by simpa [trap] using h) a ha
 
-/-- Completeness on a prune-routed property, with **no** finiteness certificate: the route fact alone
+/-- Completeness on a prune-routed property, with no finiteness certificate: the route fact alone
 discharges the hypothesis. `report` establishes `pruneApplicable isTk gfTkImpliesG` computationally. -/
 theorem nonEmpty_sat_without_finiteReach
     (hprune : pruneApplicable isTk gfTkImpliesG = true)
@@ -133,7 +138,7 @@ def report : IO Unit :=
     let g ← check "◇□tk → ◇g holds on the plain system, through the crossing"
       (isEmptyResult (routed plain fgTkImpliesG))
     -- Agreement with the oracle. On the two prune-routed cases this is the assertion that the
-    -- decision was sound; on the other two the routed call *is* the crossing.
+    -- decision was sound, on the other two the routed call is the crossing.
     let agrees (nm : String) (sys : LSys.StepFn String Nat) (φ : Formula String) : IO Bool :=
       check nm (isEmptyResult (routed sys φ) == isEmptyResult (crossing sys φ))
     let h ← agrees "prune and crossing agree: □◇tk → ◇g on the trap" trap gfTkImpliesG

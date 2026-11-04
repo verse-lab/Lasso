@@ -10,6 +10,12 @@ module
   - `List.mem_sublists`: membership in Batteries' `List.sublists` is being a sublist
   - `List.flatten_splitBy`: the groups of `List.splitBy` flatten back to the original list
     (proof from Mathlib's `Mathlib/Data/List/SplitBy.lean`)
+
+  Sections:
+  - Sums of `Nat` lists
+  - `countP`
+  - `sublists`
+  - `splitBy`
 -/
 public import Batteries.Data.List.Basic
 

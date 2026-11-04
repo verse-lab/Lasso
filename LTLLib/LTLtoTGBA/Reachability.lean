@@ -76,6 +76,7 @@ theorem size_foldl_erase_lt (l : List Nat) (s : Std.HashSet Nat) (x : Nat) (hx :
 
 /-! ## Closure -/
 
+/-- The members of `l` satisfying `p`, deduplicated. -/
 def dedupFilter (l : List Nat) (p : Nat → Bool) : List Nat := (Std.HashSet.ofList l).toList.filter p
 
 theorem mem_dedupFilter {l : List Nat} {p : Nat → Bool} {x : Nat} : x ∈ dedupFilter l p ↔ x ∈ l ∧ p x = true := by

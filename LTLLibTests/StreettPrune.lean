@@ -169,7 +169,7 @@ def accSuccs : Nat → Array Nat
 
 def accMarks (s t : Nat) : Std.HashSet Nat := if s == 2 && t == 0 then {0} else ∅
 
-/-- A step reads its source state; restricting it removes both its successor and its marks together. -/
+/-- A step reads its source state, restricting it removes both its successor and its marks together. -/
 def accSpec : RStreettSpec Nat Nat where
   numMarks := 1
   regionSuccs := fun r s => if r s then accSuccs s else #[]

@@ -1,9 +1,11 @@
 module
 
--- This module serves as the root of the `LTLLib` library.
--- Import modules here that should be publicly re-exported; lakefile.toml selects build targets.
+/-
+  Root of the `LTLLib` library, re-exporting the public API. Build targets are selected in `lakefile.toml`,
+  not here.
+-/
 
--- Utilities replacing Mathlib
+-- utilities replacing Mathlib
 public import LTLLib.Data.Nat
 public import LTLLib.Data.List
 public import LTLLib.Data.FinitePred
@@ -19,9 +21,11 @@ public import LTLLib.LTL.FairNormalForm
 public import LTLLib.LTL.Fairness
 public import LTLLib.LTL.Semantics
 
+-- generic graph and reachability infrastructure
 public import LTLLib.AbstractSpec.GraphPaths
 public import LTLLib.AbstractSpec.Reachability
 
+-- the TGBA pipeline
 public import LTLLib.TGBA
 public import LTLLib.AbstractSpec.Acceptance
 public import LTLLib.LTLtoTGBA.AbstractSpec.VWAAToTGBAInstance

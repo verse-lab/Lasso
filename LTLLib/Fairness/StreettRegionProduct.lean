@@ -4,10 +4,10 @@ module
   The product satisfies the region-indexed Streett interface of `AbstractSpec/StreettSCCRegion.lean`.
 
   This is the bridge that makes the edge-aware prune's abstract layer usable, and it is deliberately short:
-  the two operators the interface asks for — the graph restricted to the steps whose letter satisfies a
-  region, and the property automaton's marks carried by those same steps — are exactly `keptSuccs` and
+  the two operators the interface asks for, the graph restricted to the steps whose letter satisfies a
+  region, and the property automaton's marks carried by those same steps, are exactly `keptSuccs` and
   `keptEdgeMarks`, built for the latch in `EdgeLabels.md` §6.4. The four laws are their monotonicity and
-  top lemmas. Nothing new is constructed here; the point is that §6.5's interface is *already* implemented
+  top lemmas. Nothing new is constructed here, the point is that §6.5's interface is already implemented
   by §6.4's machinery, which is what lets the prune conjoin one option's region at a time.
 
   Defines:
@@ -19,6 +19,10 @@ module
   - `streettRSpecOf_compat`: it is compatible with the unrestricted product, so a restricted step is an
     ambient step and the top region restricts nothing
   - `acceptingRRun_marks`: the `RRun` meets the property automaton's marks infinitely often
+
+  Sections:
+  - The run a product execution walks
+  - The collapse a `StateOnly` region gives
 -/
 public import LTLLib.AbstractSpec.StreettSCCRegion
 public import LTLLib.Product
@@ -103,10 +107,10 @@ theorem streettRSpecOf_compat (tgba : TGBA α) (sysSucc : SysState → Array (LS
 
 /-! ## The run a product execution walks
 
-`RRun` is what `exists_RFairSCC_of_run` consumes, and it is where hoisting a `◇□ψ` that mentions an *edge*
+`RRun` is what `exists_RFairSCC_of_run` consumes, and it is where hoisting a `◇□ψ` that mentions an edge
 atom pays off: the run carries the letter its chosen realization reads, so "the region holds from some
 point on" is a statement about the steps the run takes rather than about the states it passes through. The
-two laws are immediate — a step whose letter satisfies the region is not filtered out by `keptSteps`, and
+two laws are immediate, a step whose letter satisfies the region is not filtered out by `keptSteps`, and
 its transition's marks survive into `keptEdgeMarks` because the same realization is still there. -/
 
 omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [LawfulHashable SysState] in
@@ -175,15 +179,14 @@ on a labelled system, so the edge reading collapses to the state reading. Both d
 collapse are what the prune route runs on: the run's letters score as the state labels do, and an
 in-region edge witnesses the region at its source.
 
-This used to be stated for systems with no edge atoms at all. The hypothesis is weaker now and the proofs
-are the same; `LSys.stateOnly_of_unlabelled` recovers the old form. Why it has to be *this* hypothesis
-rather than none is `EdgeLabels.md` §12: without it, separately available options need not be jointly
-available, and deciding whether they are is NP-hard. -/
+`LSys.stateOnly_of_unlabelled` gives the stronger form, for systems with no edge atoms at all. Why the
+hypothesis cannot be dropped altogether is `EdgeLabels.md` §12: without it, separately available options need
+not be jointly available, and deciding whether they are is NP-hard. -/
 
 /-- A `StateOnly` region scores a run's letter exactly as it scores the source state's label.
 
 This replaces the old `acceptingRRun_lets_unlabelled`, which equated the whole `lets` sequence with the
-state labels. That equation needed *every* atom to vanish, so it cannot survive the weaker hypothesis —
+state labels. That equation needed every atom to vanish, so it cannot survive the weaker hypothesis,
 but no caller needed the equation, only its image under a region, which is what this gives. -/
 theorem acceptingRRun_lets_stateOnly (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState))
@@ -210,7 +213,7 @@ theorem region_of_mem_keptSuccs_stateOnly (tgba : TGBA α)
   rwa [hstate p.1 st hst'] at hkeep
 
 omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [LawfulHashable SysState] in
-/-- Conversely, a `StateOnly` region that holds at `p.1` admits *every* product step out of `p`: the
+/-- Conversely, a `StateOnly` region that holds at `p.1` admits every product step out of `p`: the
 restricted graph agrees with the ambient one there. This is the direction that makes several regions
 jointly satisfiable as soon as they are separately satisfiable, which is what the prune's per-conjunct
 test assumes (`EdgeLabels.md` §12.4). -/

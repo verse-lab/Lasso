@@ -138,6 +138,7 @@ def tarjanPop (numMarks : Nat) (aux : TarjanAux State) (step : DFSStep State Nat
 def tarjanSccHint (aux : TarjanAux State) : Std.HashSet State :=
   aux.witness.foldl (init := Std.HashSet.emptyWithCapacity 0) fun h s => h.insert s
 
+/-- Tarjan's check as a `DFSOps` instance, Algorithm 2 of [RDKP13]. -/
 @[expose] def tarjanOps (numMarks : Nat) : DFSOps State where
   Aux := TarjanAux State
   Position := Nat

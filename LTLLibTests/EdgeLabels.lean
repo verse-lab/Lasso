@@ -40,7 +40,7 @@ def separate : Array (LStep String Nat) := #[({"r"}, 0), ({"g"}, 0)]
 
 def together : Array (LStep String Nat) := separate.push ({"r", "g"}, 0)
 
-/-- The mark is available exactly on letters containing g; r alone still permits an unmarked edge. -/
+/-- The mark is available exactly on letters containing g, r alone still permits an unmarked edge. -/
 def markedAutomaton : TGBA String where
   states := {0}
   initialStates := {0}

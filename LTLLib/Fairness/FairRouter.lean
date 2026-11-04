@@ -21,7 +21,7 @@ module
   - `isFlatLeaf`, `isFlatFairness`, `hoistFlat`: the split a state-predicate classifier makes
   - `keptProperty`: the kept conjuncts as one property, `⊤` when there are none
   - `hoistedOptions`, `streettRSpecOf`: the hoisted conjuncts as an `RStreettSpec`, whose regions select
-    *steps* by the letter they read, so a hoisted `FG ψ` may mention an edge atom
+    steps by the letter they read, so a hoisted `FG ψ` may mention an edge atom
   - `modelCheckCrossSplit`, `modelCheckPruneSplit`: the crossing and the prune with the split given
 
   Proves:
@@ -36,7 +36,9 @@ module
   Sections:
   - Folding over disjuncts
   - Splitting the negated property
+  - Choosing between the prune and the crossing
   - Model checking under fairness
+  - The same route, from one system callback
   - Soundness
   - Completeness
   - Routes
@@ -209,9 +211,9 @@ end Split
 /-! ## Choosing between the prune and the crossing
 
 The prune's witness contract asks that every hoisted region be `LSys.StateOnly` (`EdgeLabels.md` §12.4).
-That is not checked semantically: a caller knows which atoms a *step* may contribute — in Veil, exactly
-the `T(…)` indices — and the test is that no region mentions one. It has to be applied to the regions the
-route actually hands the prune, which the routes derive differently and disjunctive hoisting *adds* to
+That is not checked semantically: a caller knows which atoms a step may contribute, in Veil, exactly
+the `T(…)` indices, and the test is that no region mentions one. It has to be applied to the regions the
+route actually hands the prune, which the routes derive differently and disjunctive hoisting adds to
 after the first split (§12.6 step 6, §19).
 
 These are the two primitives. The decision built from them is `pruneApplicable` in
@@ -281,10 +283,10 @@ variable {α : Type u} {SysState : Type v} [BEq SysState] [Hashable SysState] [L
   dss.toArray.map fun ds => ds.toArray.map fun d =>
     { region := d.1.eval, marks := d.2.toArray.map (·.eval) }
 
-/-- The hoisted conjuncts as an `RStreettSpec` over the product. The regions select *steps* by the letter
+/-- The hoisted conjuncts as an `RStreettSpec` over the product. The regions select steps by the letter
 they read rather than states by their label, which is what lets a hoisted `FG ψ` mention an edge atom
 (`EdgeLabels.md` §6.5). For the state-labelled systems this route is wired to, every step out of `s` reads
-`sysLabel s` and the two readings coincide — that collapse is `TGBAProduct.acceptingRRun_lets_unlabelled`
+`sysLabel s` and the two readings coincide, that collapse is `TGBAProduct.acceptingRRun_lets_unlabelled`
 and `TGBAProduct.region_of_mem_keptSuccs_unlabelled`. -/
 @[expose] def streettRSpecOf (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (dss : List (List (NNF.FairDisjunct α))) :
@@ -306,16 +308,16 @@ omit [LawfulBEq SysState] [Inhabited SysState] in
 
 /-- The prune with the split supplied rather than derived, `kept` going to the translator.
 
-Reads a *labelled* system, but with an asymmetry between its two contracts that is the whole subject of
+Reads a labelled system, but with an asymmetry between its two contracts that is the whole subject of
 `EdgeLabels.md` §12, and worth stating here because it decides which routes may call this.
 
-- `modelCheckPruneSplit_empty_unsat` needs **nothing**. The per-SCC test decides each conjunct's options
-  independently, which *over-approximates* acceptance once regions select steps; so a verdict of `.empty`
+- `modelCheckPruneSplit_empty_unsat` needs nothing. The per-SCC test decides each conjunct's options
+  independently, which over-approximates acceptance once regions select steps, so a verdict of `.empty`
   means the scan could not satisfy even the over-approximation, and a fortiori no run satisfies the real
   condition. Soundness is free.
 - `modelCheckPruneSplit_nonEmpty_sat` needs every hoisted region to be `LSys.StateOnly`. Without it two
-  conjuncts can be available through *different* realizations of the same edges and the reported
-  counterexample need not exist — `Tests/PruneJointRegions.lean` is the worked case. Deciding jointness
+  conjuncts can be available through different realizations of the same edges and the reported
+  counterexample need not exist, `LTLLibTests/PruneJointRegions.lean` is the worked case. Deciding jointness
   exactly is NP-hard (§12.1), so the hypothesis is the affordable answer rather than a stopgap, and the
   properties that violate it are routed to the crossing (§12.6). -/
 @[expose] def modelCheckPruneSplit (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
@@ -328,7 +330,7 @@ Reads a *labelled* system, but with an asymmetry between its two contracts that 
     -- region predicates. `modelCheckPruneSplit_eq` below is the bridge to the proved `streettCheck`
     -- (§13.22), and every soundness theorem of this route goes through that one rewrite.
     let cs := CompiledSpec.of (streettRSpecOf tgba sysSucc sysLabel dss)
-    -- §13.30: the position-carrying driver; `streettCheckP_eq` bridges it to `streettCheckF`.
+    -- §13.30: the position-carrying driver, `streettCheckP_eq` bridges it to `streettCheckF`.
     streettCheckP cs
       (TGBAProduct.getSuccessors tgba sysSucc sysLabel)
       (TGBAProduct.expandWithOpts tgba sysSucc sysLabel cs)
@@ -339,10 +341,7 @@ Reads a *labelled* system, but with an asymmetry between its two contracts that 
 /-! ## The same route, from one system callback
 
 `modelCheckPruneSplitOfStep` is `modelCheckPruneSplit` with `LSys.StepFn` in place of the
-`sysSucc`/`sysLabel` pair: the product's transitions out of a state are computed once, as a fact about
-the type rather than a memo installed behind `@[implemented_by]`. The bridge is `rfl` — Lean's
-definitional eta for structures makes `fun s => ((f s).1, (f s).2)` the same term as `f` — so every
-soundness theorem below transfers by one rewrite and none of them is restated. `EdgeLabels.md` §15. -/
+`sysSucc`/`sysLabel` pair. -/
 
 @[expose] def streettRSpecOfStep (tgba : TGBA α) (sysStep : LSys.StepFn α SysState)
     (dss : List (List (NNF.FairDisjunct α))) : RStreettSpec (SysState × Nat) (Std.HashSet α) :=
@@ -375,7 +374,7 @@ theorem modelCheckPruneSplitOfStep_eq (kept : Formula α) (dss : List (List (NNF
 
 /-- The fast path computes what the proved route computes (§13.22). Nothing else in the tree unfolds
 `modelCheckPruneSplit`, so every soundness theorem of the fair routes goes through this one rewrite.
-`streettCheckF_eq` does the work; the product supplies `expandWithOpts`'s coherence (definitional) and
+`streettCheckF_eq` does the work, the product supplies `expandWithOpts`'s coherence (definitional) and
 the fact that its payload is `edgeBits` edge by edge (`optBitsFor_eq`). -/
 theorem modelCheckPruneSplit_eq [LawfulHashable SysState] (kept : Formula α)
     (dss : List (List (NNF.FairDisjunct α)))
@@ -406,7 +405,7 @@ variable [DecidableEq α]
 
 /-- The crossing with the split supplied rather than derived, one latched check per disjunct of the crossed `dss`.
 
-Reads a *labelled* system, so a hoisted `◇□ψ` or `□◇ψ` may mention an edge atom such as `taken(a)`: the
+Reads a labelled system, so a hoisted `◇□ψ` or `□◇ψ` may mention an edge atom such as `taken(a)`: the
 latch's region and its extra marks are both decided on the letter each step contributes
 (`EdgeLabels.md` §6.5). A system with no edge atoms is passed as `LSys.unlabelled sysSucc`. -/
 @[expose] def modelCheckCrossSplit (kept : Formula α) (dss : List (List (NNF.FairDisjunct α)))
@@ -482,7 +481,7 @@ theorem modelCheckPruneSplit_empty_unsat [LawfulHashable SysState] (kept : Formu
         tgba.numAcceptSets (hoistedOptions dss) hrun)
       (TGBAProduct.acceptingRRun_marks tgba sysSucc sysLabel sysInit
         tgba.numAcceptSets (hoistedOptions dss) hrun hacc (Nat.le_refl _)) ?_))
-  -- No collapse is needed in this direction, and that is the point: the `RRun`'s letters *are* the ones
+  -- No collapse is needed in this direction, and that is the point: the `RRun`'s letters are the ones
   -- the run reads, so the hypothesis transfers with nothing in between. `LSys.StateOnly` is required only
   -- by the witness direction, where separately available options have to be jointly available
   -- (`EdgeLabels.md` §12).
@@ -636,7 +635,7 @@ theorem modelCheckPruneSplit_nonEmpty_sat (kept : Formula α) (dss : List (List 
         obtain ⟨⟨ds, hds⟩, -, rfl⟩ := List.mem_map.mp hd
         obtain ⟨e, he, hse⟩ := hM ds hds _ hgd
         obtain ⟨i, hi, rfl⟩ := mem_cycleEdges_iff.mp he
-        -- move the witness onto `ac.cycle`; the goal cannot be rewritten the other way, since its
+        -- move the witness onto `ac.cycle`, the goal cannot be rewritten the other way, since its
         -- length proof depends on the list
         rw [← hcyc] at hi hse
         have hmod : (i + 1) % ac.cycle.length < ac.cycle.length := Nat.mod_lt _ (by omega)

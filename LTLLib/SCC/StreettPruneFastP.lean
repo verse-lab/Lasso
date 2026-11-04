@@ -4,20 +4,28 @@ module
   The fast Streett prune with the live position carried by `getStatus` (`EdgeLabels.md` §13.30).
 
   Profiles of the default route on cheap-state models (§13.29) put the state equality inside hash-table
-  probes at 57–72 % of a `fails` row, and a back edge probed the *same* state twice: `getStatus`
+  probes at 57–72 % of a `fails` row, and a back edge probed the same state twice: `getStatus`
   (`liveIndex.contains`) and then `update` (`liveIndex.getD`). Here `getStatus` returns the position it
   found and `update` takes it, so a back edge is one probe.
 
-  This is a *parallel* driver and ops (`…P`), not a change to `DFSOps`/`dfsGo`: the proved driver and
+  This is a parallel driver and ops (`…P`), not a change to `DFSOps`/`dfsGo`: the proved driver and
   every theorem about it stay as they are, `streettCheckP` is what the router runs, and
   `streettCheckP_eq` is the one bridge to `streettCheckF`. It was a `sorry` while the change was
   measured (12–19 % on the cheap-state rows, §13.30) and is now proved: a lockstep of the two drivers on
-  equal auxes whose step cases are four facts — forgetting the position gives the old status, a
+  equal auxes whose step cases are four facts, forgetting the position gives the old status, a
   `.live pos` answer is the `liveIndex` entry, `streettUpdateP` at that entry is `streettUpdateF`, and
   `push`/`pop` are the same functions.
 
-  A second half — one status map for live and dead states — was built here the same way and measured at
-  0.97–1.06x, noise (§13.32); it is archived on `archive/13.32-merged-status-map-measured` and not kept.
+  A second half, one status map for live and dead states, was built here the same way and measured at
+  0.97–1.06x, noise (§13.32), it is archived on `archive/13.32-merged-status-map-measured` and not kept.
+
+  Sections:
+  - The interface with positions
+  - The driver, as `dfsGo` with the position threaded
+  - The Streett ops with the position
+  - The easy facts
+  - Drivers
+  - The bridge: `streettCheckP` is `streettCheckF`
 -/
 public import LTLLib.SCC.StreettPruneFast
 
@@ -245,10 +253,10 @@ partial_fixpoint
 
 /-! ## The bridge: `streettCheckP` is `streettCheckF`
 
-A lockstep of `dfsGoP` with `dfsGo` on the *same* aux and stack, in both directions since each driver is
+A lockstep of `dfsGoP` with `dfsGo` on the same aux and stack, in both directions since each driver is
 a `partial_fixpoint` and the fallbacks have to agree on divergence too (as in `dfsGo_eq`). `push` and
 `pop` are the same functions, `getStatus` agrees up to `forget`, and on a `.live pos` answer
-`streettUpdateP … pos` is `streettUpdateF` — the four easy facts above. -/
+`streettUpdateP … pos` is `streettUpdateF`, the four easy facts above. -/
 
 theorem streettOpsP_getStatus_forget (cs : CompiledSpec State L) (cr : Nat) (aux : StreettAuxF State)
     (q : State) : ((streettOpsP cs cr).getStatus aux q).forget = (streettOpsF cs cr).getStatus aux q :=

@@ -6,8 +6,8 @@ module
   `EdgeLabels.md` §13.20 (the executable) and §13.22 (the proof). The bits are computed where `base` and
   `steps` are already in hand, from the per-source work `expand` does anyway, so the scan that reads them
   makes no callback. What each bit means is fixed by `StreettOption.onEdges`: option `o` admits the edge
-  `(s, t)` iff `(spec.regionSuccs opt.region s).contains t`, i.e. iff *some* realization of the edge reads
-  a letter satisfying `opt.region` — decided on every step out of `s`, not only on the steps a candidate's
+  `(s, t)` iff `(spec.regionSuccs opt.region s).contains t`, i.e. iff some realization of the edge reads
+  a letter satisfying `opt.region`, decided on every step out of `s`, not only on the steps a candidate's
   region has kept. `optBitsFor` computes exactly that, edge by edge, which is why a candidate's restricted
   expansion still takes its bits from the source's full steps.
 
@@ -21,6 +21,11 @@ module
   - `optBitsFor_eq`: `optBitsFor` is `edgeBits` mapped over the successors, in both of its branches
   - `expandWithOpts_coherent`/`_bits`, `keptExpandWithOpts_coherent`/`_bits`: what `streettCheckF_eq`
     asks of the two expansions
+
+  Sections:
+  - The same expansions, from one system callback
+  - Proof: the bits are the spec's edge predicates
+  - What the router needs
 -/
 public import LTLLib.Product
 public import LTLLib.SCC.StreettPruneFast
@@ -37,10 +42,10 @@ variable {α : Type u} {SysState : Type v} [BEq α] [Hashable α] [BEq SysState]
 /-- The packed option bits of each successor in `out`, from the source's full `steps`.
 
 Two shapes, as in `succsFrom`. When no step carries a letter of its own every realization of every edge
-reads `base`, so the bits are one `letterBits` per *source*, shared by its successors:
+reads `base`, so the bits are one `letterBits` per source, shared by its successors:
 `Array.replicate` of a small `Nat`, one allocation and nothing per entry. Otherwise an edge's bits are
-the `|||` over its realizations — the existential of `StreettOption.onEdges` — walked the way
-`edgeMarksFromShared`'s general path walks them; no wired route reaches this branch today. With no
+the `|||` over its realizations, the existential of `StreettOption.onEdges`, walked the way
+`edgeMarksFromShared`'s general path walks them, no wired route reaches this branch today. With no
 options at all the payload is empty, by §13.18's rule, and `scanFrameF` never reads it. -/
 @[expose] def optBitsFor (tgba : TGBA α) (cs : CompiledSpec (SysState × Nat) (Std.HashSet α)) (q : Nat)
     (base : Std.HashSet α) (steps : Array (LStep α SysState)) (out : Array (SysState × Nat)) :
@@ -51,9 +56,9 @@ options at all the payload is empty, by §13.18's rule, and `scanFrameF` never r
   else
     let ts := tgba.getSuccessors q
     -- PERF: each step's letter and its option bits are invariant in `out`, but were computed in the
-    -- innermost position — twice, since the compatibility test and the `|||` each recomputed them. With
+    -- innermost position, twice, since the compatibility test and the `|||` each recomputed them. With
     -- an out-degree of `d` that is `2·d·|steps|` `HashSet` allocations per product state against
-    -- `|steps|`. `EdgeLabels.md` §12.10 (b): the guard above only spares a property with *no* edge
+    -- `|steps|`. `EdgeLabels.md` §12.10 (b): the guard above only spares a property with no edge
     -- atoms, so every `T(a)` property paid this in full.
     let info := steps.map fun st =>
       let lbl := LSys.letter base st.1
@@ -65,17 +70,17 @@ options at all the payload is empty, by §13.18's rule, and `scanFrameF` never r
           acc ||| si.2.2
         else acc
 
-/-- **One pass over (step, transition), then merge by target.** `EdgeLabels.md` §12.12.
+/-- One pass over (step, transition), then merge by target. `EdgeLabels.md` §12.12.
 
 `out` is generated as exactly the compatible (step, transition) pairs, so each pair's marks and option
-bits are known *as it is generated*. What made an edge-atom property expensive was asking for them again
-afterwards, once per successor, by re-scanning every step and every transition — `|out| x |steps| x |ts|`
+bits are known as it is generated. What made an edge-atom property expensive was asking for them again
+afterwards, once per successor, by re-scanning every step and every transition, `|out| x |steps| x |ts|`
 in `optBitsFor` and the same again through `realizationsFrom`, ~3500 `transCompatible` calls per product
 state where `|steps| x |ts|` is ~72.
 
-The letter and its option bits are computed once per *step*; the triples are emitted in `succsFrom`'s own
-order, so `out` is that array's first projection; and the per-target union of marks and `|||` of bits is
-one fold over the triples. Only the edge-atom branch needs this — a state-labelled source keeps
+The letter and its option bits are computed once per step, the triples are emitted in `succsFrom`'s own
+order, so `out` is that array's first projection, and the per-target union of marks and `|||` of bits is
+one fold over the triples. Only the edge-atom branch needs this, a state-labelled source keeps
 `marksTableGen`'s `Nat`-keyed table, which is cheaper still because it never hashes a `SysState`. -/
 def fusedExpandWithOpts (tgba : TGBA α) (cs : CompiledSpec (SysState × Nat) (Std.HashSet α))
     (q : Nat) (base : Std.HashSet α) (steps : Array (LStep α SysState)) :
@@ -87,10 +92,10 @@ def fusedExpandWithOpts (tgba : TGBA α) (cs : CompiledSpec (SysState × Nat) (S
       let bits := if cs.numOptions == 0 then 0 else cs.letterBits lbl
       ts.filterMap fun t =>
         if transCompatible t lbl then some ((st.2, t.target), t.acceptMarks, bits) else none
-  -- The accumulator starts at `(∅, 0)` and always `union`s / `|||`s, so a target's entry is *literally*
-  -- the fold `edgeMarksFrom`/`optBitsFor` perform over that target's realizations — `realizationsFrom`
+  -- The accumulator starts at `(∅, 0)` and always `union`s / `|||`s, so a target's entry is literally
+  -- the fold `edgeMarksFrom`/`optBitsFor` perform over that target's realizations, `realizationsFrom`
   -- enumerates (step, transition) in the order the triples are emitted. Seeding with the first triple's
-  -- own payload instead would give the same *elements* but not the same `Std.HashSet` value, and
+  -- own payload instead would give the same elements but not the same `Std.HashSet` value, and
   -- `ExpandCoherent` asks for equality of the marks array, not equi-membership.
   let tbl : Std.HashMap (SysState × Nat) (Std.HashSet Nat × Nat) :=
     triples.foldl (init := ∅) fun m e =>
@@ -117,12 +122,12 @@ def fusedExpandWithOpts (tgba : TGBA α) (cs : CompiledSpec (SysState × Nat) (S
 
 /-- `keptExpand` with the option payload filled.
 
-Successors, marks **and bits** are all decided on the *kept* steps. Deciding the bits on all of the
-source's steps — which is what this did while `cs.regions` was the unrestricted reading — is the
+Successors, marks and bits are all decided on the kept steps. Deciding the bits on all of the
+source's steps, which is what this did while `cs.regions` was the unrestricted reading, is the
 `EdgeLabels.md` §6.3 failure one level up: it lets an option's mark be witnessed by a realization the
 candidate's region excludes, so two conjuncts come out available through realizations no single run can
 take. Restricting the letters that contribute is exactly what makes `cs.letterBits` compute the
-*restricted* reading, since every kept letter satisfies the region by construction. -/
+restricted reading, since every kept letter satisfies the region by construction. -/
 @[expose] def keptExpandWithOpts (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (cs : CompiledSpec (SysState × Nat) (Std.HashSet α))
     (keep : Std.HashSet α → Bool) (p : SysState × Nat) :
@@ -381,7 +386,7 @@ theorem optBitsFor_eq (tgba : TGBA α) (sysSucc : SysState → Array (LStep α S
       simp only [Array.getElem_map]
       apply Nat.eq_of_testBit_eq; intro b
       apply Bool.eq_iff_iff.mpr
-      -- the fold now walks the per-step `(target, letter, bits)` triples; `Array.toList_map` plus
+      -- the fold now walks the per-step `(target, letter, bits)` triples, `Array.toList_map` plus
       -- `List.foldl_map` puts it back over the steps themselves, at which point this is the pre-hoist
       -- proof unchanged
       rw [edgeBits_testBit_iff tgba sysSucc sysLabel cs hwf hspec, ← Array.foldl_toList,
@@ -426,7 +431,7 @@ private theorem foldl_or_testBit' {β : Type w} (g : β → Nat) (b : Nat) :
 
 omit [LawfulBEq SysState] [LawfulHashable SysState] in
 /-- A table built by folding `insert`s that accumulate, read back at one key, is the accumulation over
-exactly that key's entries — the rest of the fold never touches it. This is what lets the fused pass be
+exactly that key's entries, the rest of the fold never touches it. This is what lets the fused pass be
 compared against the per-successor folds `edgeMarksFrom` and `optBitsFor` perform: the two run over the
 same (step, transition) pairs, in the same order, from the same seed. -/
 private theorem foldl_insert_getD [LawfulBEq SysState] (p' : SysState × Nat)
@@ -477,7 +482,7 @@ private theorem foldl_pair_fst {γ : Type w} {δ : Type w'} (h : Std.HashSet Nat
 Three of them: `out` is `succsFrom`'s array (`fusedExpandWithOpts_fst`), entry `i`'s marks are the edge's
 marks (`_snd`), entry `i`'s bits are its `edgeBits` (`_thd`). The marks and the bits need different
 arguments: the bits are a `Nat`, so `|||` being idempotent makes a bit-level extensionality argument
-enough, while the marks are a `Std.HashSet` that `ExpandCoherent` compares by *value*, so they need the
+enough, while the marks are a `Std.HashSet` that `ExpandCoherent` compares by value, so they need the
 triples reaching a target to be that target's realizations in the same order. -/
 
 omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] [LawfulHashable SysState] in
@@ -528,10 +533,10 @@ private theorem step_payload {γ : Type w} (lbl : Std.HashSet α) (tgt : SysStat
 omit [LawfulHashable SysState] in
 /-- The triples that reach `p'`, payload by payload, are `p'`'s realizations, in the same order.
 
-`realizationsFrom` filters the *steps* before descending into the transitions, while the fused pass keeps
-every step and filters inside; a step that reaches a different target contributes an empty inner array
-either way, so `flatMap` sees the same sequence. That the sequences match *in order* is what makes the
-marks equal as `Std.HashSet` **values** — `ExpandCoherent` asks for equality, and a union fold is only
+`realizationsFrom` filters the steps before descending into the transitions, while the fused pass keeps
+every step and filters inside, a step that reaches a different target contributes an empty inner array
+either way, so `flatMap` sees the same sequence. That the sequences match in order is what makes the
+marks equal as `Std.HashSet` values, `ExpandCoherent` asks for equality, and a union fold is only
 order-insensitive up to membership. -/
 private theorem fusedTriples_filter_payload {γ : Type w} (tgba : TGBA α)
     (q : Nat) (base : Std.HashSet α) (steps : Array (LStep α SysState))
@@ -545,7 +550,7 @@ private theorem fusedTriples_filter_payload {γ : Type w} (tgba : TGBA α)
   rw [realizationsFrom]
   simp only [Array.toList_map, Array.toList_filter, Array.toList_flatMap, Array.toList_filterMap,
     List.filter_flatMap, List.map_flatMap]
-  -- both sides are now a `List.flatMap` over the steps; the right filters them first, the left lets a
+  -- both sides are now a `List.flatMap` over the steps, the right filters them first, the left lets a
   -- step that reaches another target contribute nothing
   induction steps.toList with
   | nil => simp
@@ -592,10 +597,10 @@ theorem fusedExpandWithOpts_fst (tgba : TGBA α) (cs : CompiledSpec (SysState ×
 omit [LawfulHashable SysState] in
 /-- Its marks agree with the spec's, edge by edge.
 
-Unlike the bits, the marks have to agree as `Std.HashSet` **values**, not just up to membership —
+Unlike the bits, the marks have to agree as `Std.HashSet` values, not just up to membership,
 `ExpandCoherent` is an array equality and `Std.HashSet` equality is not extensional. So this cannot be a
-bit-level argument like `fusedExpandWithOpts_thd`; it goes through `fusedTriples_filter_payload`, which
-says the triples reaching `p'` are `p'`'s realizations *in the same order*, and then the two unions are
+bit-level argument like `fusedExpandWithOpts_thd`, it goes through `fusedTriples_filter_payload`, which
+says the triples reaching `p'` are `p'`'s realizations in the same order, and then the two unions are
 the same fold over the same list. -/
 theorem fusedExpandWithOpts_snd (tgba : TGBA α) (cs : CompiledSpec (SysState × Nat) (Std.HashSet α))
     (q : Nat) (base : Std.HashSet α) (steps : Array (LStep α SysState))
@@ -628,9 +633,9 @@ theorem fusedExpandWithOpts_snd (tgba : TGBA α) (cs : CompiledSpec (SysState ×
 omit [LawfulHashable SysState] in
 /-- Its option bits are `optBitsFor`'s.
 
-`optBitsFor` `|||`s a step's bits once per *step*, guarded by "some compatible transition reaches `p'`",
-while the table does it once per *realization*. The two therefore agree only because `|||` is idempotent
-— which is exactly what a bit-level argument gives for free: bit `b` is set on either side iff some step
+`optBitsFor` `|||`s a step's bits once per step, guarded by "some compatible transition reaches `p'`",
+while the table does it once per realization. The two therefore agree only because `|||` is idempotent,
+which is exactly what a bit-level argument gives for free: bit `b` is set on either side iff some step
 reaching `p'` has it, however many times it is contributed. Generic in `(q, base, steps)`, so it serves
 the kept-steps expansion as well as the source's own. -/
 theorem fusedExpandWithOpts_thd (tgba : TGBA α) (cs : CompiledSpec (SysState × Nat) (Std.HashSet α))
@@ -733,12 +738,12 @@ theorem keptExpandWithOpts_coherent (tgba : TGBA α) (sysSucc : SysState → Arr
     rfl
 
 omit [LawfulHashable SysState] in
-/-- A candidate's payload carries the bits of the *recompiled* spec.
+/-- A candidate's payload carries the bits of the recompiled spec.
 
 The bits are folded over the kept steps only, and an option read inside the candidate's region is
-satisfied exactly by an in-region realization — so the two sides quantify over the same steps. What makes
+satisfied exactly by an in-region realization, so the two sides quantify over the same steps. What makes
 this work without a case split on which realization was chosen is `letterBits`' hoisted region test: a
-letter outside the region contributes `0`, so the existential over *all* realizations that
+letter outside the region contributes `0`, so the existential over all realizations that
 `edgeBits_testBit_iff` produces collapses to one over the kept ones. -/
 theorem keptExpandWithOpts_bits (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (cs : CompiledSpec (SysState × Nat) (Std.HashSet α))

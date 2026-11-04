@@ -18,6 +18,18 @@ module
   - `FinSet.ext`: sets with the same members are equal
   - `FinSet.card_le_card`, `FinSet.card_lt_card`, `FinSet.sum_le_sum_of_subset`: monotonicity of the counts
   - `FinSet.finite`: the members of a `FinSet` form a `FinitePred`
+
+  Sections:
+  - Extensionality and inclusion
+  - Deciding membership and equality, by choice
+  - Empty set, singletons and insertion
+  - Union, intersection and difference
+  - Filter, erase and range
+  - Image and indexed union
+  - Powerset and product
+  - Enumeration and counting
+  - Finiteness
+  - `List.toFinSet`
 -/
 import Batteries.Data.List.Perm
 public import LTLLib.Data.List

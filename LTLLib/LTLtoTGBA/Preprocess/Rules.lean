@@ -77,6 +77,7 @@ variable {α : Type u}
 
 /-! ## Semantics -/
 
+/-- `andAll` holds exactly when every conjunct does. -/
 theorem satisfies_andAll (fs : List (NNF α)) (ξ : OmegaWord α) :
     (andAll fs).satisfies ξ ↔ ∀ f ∈ fs, f.satisfies ξ := by
   induction fs with
@@ -89,6 +90,7 @@ theorem satisfies_andAll (fs : List (NNF α)) (ξ : OmegaWord α) :
       rw [NNF.satisfies_and, ih]
       simp
 
+/-- `orAll` holds exactly when some disjunct does. -/
 theorem satisfies_orAll (fs : List (NNF α)) (ξ : OmegaWord α) :
     (orAll fs).satisfies ξ ↔ ∃ f ∈ fs, f.satisfies ξ := by
   induction fs with

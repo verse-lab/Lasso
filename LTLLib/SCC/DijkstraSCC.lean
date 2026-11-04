@@ -1932,6 +1932,7 @@ theorem dijkstraSccHint_eq_top_range [Inhabited State] (aux : DijkstraAux State)
     unfold DijkstraAux.rangeStart
     rw [hr]
 
+/-- Dijkstra's check as a `DFSOps` instance, Algorithm 3 of [RDKP13]. -/
 @[expose] def dijkstraOps (numMarks : Nat) : DFSOps State where
   Aux := DijkstraAux State
   Position := Nat
@@ -2212,7 +2213,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
     dfsGo (dijkstraOps numMarks) succs edgeMarks expand aux stack = some r →
     DijkstraWellFormed aux →
     (∀ st ∈ stack, st.succ = succs st.state) →
-    -- `DFSStep.marks` is `edgeMarks state`, applied once at push; see `GenericDFS.dfsGo`
+    -- `DFSStep.marks` is `edgeMarks state`, applied once at push, see `GenericDFS.dfsGo`
     (∀ st ∈ stack, st.succMarks = st.succ.map (edgeMarks st.state)) →
     -- a dispatched edge never leaves its target unknown
     (∀ st ∈ stack, ∀ x ∈ (st.succ.toList.take st.idx), dijkstraGetStatus aux x ≠ .unknown) →
@@ -2479,7 +2480,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
           (DijkstraNoInternalEdge.bump hdTake (dijkstraGetStatus_dead_not_mem_range hwf hgs i))) hdead
     | live =>
       simp only [hgs] at hr
-      -- rewrite only the *applied* cache, not the `marks` field inside the frame record
+      -- rewrite only the applied cache, not the `marks` field inside the frame record
       rw [show step.succMarks[step.idx]! = edgeMarks step.state d from
           DFSStep.succMarks_get (hmk step (by simp)) h] at hr
       rcases hupdeq : dijkstraUpdate numMarks aux (edgeMarks step.state d) d with ⟨aux', found⟩
@@ -2814,7 +2815,7 @@ theorem dijkstra_dead_not_accepting [LawfulBEq State] [LawfulHashable State] [In
           hrootsBound' hentryBound' hrootsNotFull' hdead'
     | unknown =>
       simp only [hgs] at hr
-      -- rewrite only the *applied* cache, not the `marks` field inside the frame record
+      -- rewrite only the applied cache, not the `marks` field inside the frame record
       rw [show step.succMarks[step.idx]! = edgeMarks step.state d from
           DFSStep.succMarks_get (hmk step (by simp)) h] at hr
       rcases hpsheq : dijkstraPush aux d (edgeMarks step.state d) with ⟨aux', pos'⟩

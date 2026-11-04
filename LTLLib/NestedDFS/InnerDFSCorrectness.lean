@@ -55,8 +55,8 @@ Upgrade a restricted no-cycle fact (no path through never-blocked intermediates)
 one (no path at all), given that the blocking set is closed under `succs`, the key step in the
 CVWY/Schwoon-Esparza argument that doesn't reduce to plain monotonicity/weakening. -/
 
-/-- If `F` is closed under `succs` and `s ∈ F`, any unrestricted path from `s` stays entirely inside `F`,
-    in particular its endpoint is in `F`. -/
+/-- If `F` is closed under `succs` and `s ∈ F`, any unrestricted path from `s` stays inside `F`, in particular
+its endpoint is in `F`. -/
 theorem PathTo.mem_of_closed {State} {succs : State → Array State} {F : State → Prop}
     (hclosed : ∀ s, F s → ∀ t, t ∈ succs s → F t) :
     ∀ {s t : State}, PathTo succs (fun _ => False) s t → F s → F t := by
@@ -65,10 +65,8 @@ theorem PathTo.mem_of_closed {State} {succs : State → Array State} {F : State 
   | direct ht => exact fun hFs => hclosed _ hFs _ ht
   | through hmid _ _ ih => exact fun hFs => ih (hclosed _ hFs _ hmid)
 
-/-- An unrestricted path from a state outside a closed set `F` to another state
-    outside `F` must avoid `F` entirely, i.e. is also a path restricted to
-    avoid `F`. This is the bridge lemma: combined with `s = t` and a
-    restricted no-cycle fact, it yields the unrestricted no-cycle fact. -/
+/-- An unrestricted path between two states outside a closed set `F` avoids `F` entirely, so it is also a
+path restricted to avoid `F`. -/
 theorem PathTo.of_unrestricted_avoiding_closed {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t, t ∈ succs s → F t)
     {s t : State} (hnotF_t : ¬F t)
@@ -83,8 +81,8 @@ theorem PathTo.of_unrestricted_avoiding_closed {State} {succs : State → Array 
     · exact absurd (PathTo.mem_of_closed hclosed hrest hFmid) hnotF_t
     · exact .through hmid hFmid (ih hnotF_t hFmid)
 
-/-- No self-cycle through a closed set's complement, plus the set being closed
-    and the state itself not being in the set, implies no self-cycle at all. -/
+/-- No self-cycle through a closed set's complement, with the set closed and the state outside it, gives no
+self-cycle at all. -/
 theorem PathTo.no_self_loop_of_closed {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t, t ∈ succs s → F t)
     {s : State} (hnotF_s : ¬F s)
@@ -94,15 +92,11 @@ theorem PathTo.no_self_loop_of_closed {State} {succs : State → Array State}
 
 /-! ### A second closure upgrade, for when `s ∈ F` is unavoidable
 
-    `PathTo.no_self_loop_of_closed` needs `s ∉ F`, but for `F := innerFinished`
-    right after `s`'s own successful inner-DFS call, `s` is always in `F`.
-    The fix: instead of "`s ∉ F`", it's enough that nothing in `F` has an
-    edge back to `s`. A weaker fact, but one inner DFS gives us for a different
-    reason (its own `succ == seed` check). -/
+`PathTo.no_self_loop_of_closed` needs `s ∉ F`, but for `F := innerFinished` right after `s`'s own successful
+inner-DFS call `s` is always in `F`. It is enough instead that nothing in `F` has an edge back to `s`, a
+weaker fact that inner DFS gives for a different reason, its own `succ == seed` check. -/
 
-/-- If nothing in the closed set `F` has an edge to `t`, then `F` can't be
-    re-entered from a member and still reach `t`. Reaching `t` from an
-    `F`-member is impossible outright. -/
+/-- If nothing in the closed set `F` has an edge to `t`, reaching `t` from an `F`-member is impossible. -/
 theorem PathTo.false_of_mem_closed_reaches {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t ∈ succs s, F t)
     {t : State} (hno_edge : ∀ x, F x → t ∉ succs x) :
@@ -113,10 +107,8 @@ theorem PathTo.false_of_mem_closed_reaches {State} {succs : State → Array Stat
   | @through mid mid2 t hmid2 _ hrest ih =>
     exact fun hFmid => ih hno_edge (hclosed mid hFmid mid2 hmid2)
 
-/-- An unrestricted path to `t`, given nothing in the closed set `F` has an
-    edge to `t`, is automatically `F`-avoiding: it can never dip into `F`,
-    since doing so would trap it there (closedness) and it could never reach
-    `t` again (`hno_edge`). -/
+/-- With nothing in the closed set `F` having an edge to `t`, every unrestricted path to `t` is `F`-avoiding,
+since dipping into `F` traps it there and `t` is then unreachable. -/
 theorem PathTo.avoids_closed_of_no_incoming {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t ∈ succs s, F t)
     {t : State} (hno_edge : ∀ x, F x → t ∉ succs x) :
@@ -129,8 +121,7 @@ theorem PathTo.avoids_closed_of_no_incoming {State} {succs : State → Array Sta
     · exact (PathTo.false_of_mem_closed_reaches hclosed hno_edge hrest hFmid).elim
     · exact .through hmid hFmid (ih hno_edge)
 
-/-- `s` need not be outside the closed set `F`, it's enough that
-    nothing in `F` has an edge back to `s`. -/
+/-- The same with `s` allowed inside the closed set `F`, nothing in `F` having an edge back to `s`. -/
 theorem PathTo.no_self_loop_of_closed_no_incoming {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t ∈ succs s, F t)
     {s : State} (hno_edge : ∀ x, F x → s ∉ succs x)
@@ -138,8 +129,7 @@ theorem PathTo.no_self_loop_of_closed_no_incoming {State} {succs : State → Arr
     ¬PathTo succs (fun _ => False) s s :=
   fun h => hno_restricted (PathTo.avoids_closed_of_no_incoming hclosed hno_edge h)
 
-/-- Generalizes `no_self_loop_of_closed_no_incoming` from a fixed self-loop target to an
-    arbitrary target `t`. -/
+/-- The same for an arbitrary target `t` rather than a self-loop. -/
 theorem PathTo.no_reach_of_closed_no_incoming {State} {succs : State → Array State}
     {F : State → Prop} (hclosed : ∀ s, F s → ∀ t ∈ succs s, F t)
     {s t : State} (hno_edge : ∀ x, F x → t ∉ succs x)
@@ -147,8 +137,8 @@ theorem PathTo.no_reach_of_closed_no_incoming {State} {succs : State → Array S
     ¬PathTo succs (fun _ => False) s t :=
   fun h => hno_restricted (PathTo.avoids_closed_of_no_incoming hclosed hno_edge h)
 
-/-- If `F`'s successors stay in `F ∪ S`, and nothing reachable from `x` (inclusive)
-    escapes into `S`, then everything reachable from `x` (an `F`-member) stays in `F`. -/
+/-- If `F`'s successors stay in `F ∪ S` and nothing reachable from an `F`-member `x` escapes into `S`, then
+everything reachable from `x` stays in `F`. -/
 theorem PathTo.closed_of_no_escape {State} {succs : State → Array State} {F S : State → Prop}
     (hCL : ∀ x, F x → ∀ y ∈ succs x, F y ∨ S y) :
     ∀ {x v}, PathTo succs (fun _ => False) x v →
@@ -842,11 +832,10 @@ theorem innerDFS_fuel_outerVisited_eq (succs : State → Array State) (seed : St
         rfl
       · exact innerDFS_fuel_fold_outerVisited_eq_aux succs seed cyan n current _ _ st ih _ _ _ h
 
-/-- After `innerDFS_fuel_fold` returns `none`, no state newly visited during
-    the fold has `seed`, or any `cyan` state (Holzmann-Peled-Yannakakis), as a
-    successor. If it did, the fold's own widened `if succ == seed ||
-    cyan.contains succ then FOUND` check would have fired the moment it was
-    reached, and the whole call would have returned `some (...)`, not `none`. -/
+/-- After `innerDFS_fuel_fold` returns `none`, no state newly visited during the fold has `seed`, or any `cyan`
+state (Holzmann-Peled-Yannakakis), as a successor. If it did, the fold's own widened check
+`if succ == seed || cyan.contains succ then FOUND` would have fired the moment it was reached,
+and the whole call would have returned `some (...)`, not `none`. -/
 private theorem fold_new_no_edge_to_seed_aux (succs : State → Array State) (seed : State) (cyan : List State)
     (fuel : Nat) (current : State) (remaining : List State)
     (iv : Std.HashSet State) (st : FNDFSState State)

@@ -2,7 +2,7 @@ module
 
 /-
   The recursive fairness check of [SLDP09] as a specification, and the Emerson-Lei argument [EL87] that it misses
-  nothing — with the hoisted regions restricting *steps* rather than states.
+  nothing, with the hoisted regions restricting steps rather than states.
 
   `RRefuted spec com r C` is a derivation that the check found no fair SCC inside the candidate `C` once the
   letters have been narrowed to `r` and the options `com` have been committed to. One step enumerates the maximal
@@ -23,10 +23,10 @@ module
 
   Two things differ from the state-labelled reading in `StreettSCC.lean`, both forced by §6.3 of `EdgeLabels.md`:
 
-  - A prune step keeps *all* of `B` and narrows the region instead of deleting states. An edge prune need not
-    remove a state, so recursion on the state set alone would not progress; the implementation carries the
+  - A prune step keeps all of `B` and narrows the region instead of deleting states. An edge prune need not
+    remove a state, so recursion on the state set alone would not progress, the implementation carries the
     conjoined options as a bitmask and decreases on that (`Candidate.measure`).
-  - An option's marks are witnessed at the *conjoined* predicate `r ∧ opt.region ∧ g`, so the region and the mark
+  - An option's marks are witnessed at the conjoined predicate `r ∧ opt.region ∧ g`, so the region and the mark
     are answered on one realization. Reading them on different realizations of the same endpoint pair is the
     unsoundness §6.3 refutes.
 
@@ -69,9 +69,9 @@ graph the implementation's `Candidate.graph` builds. -/
   sccSuccs (spec.regionSuccs r) C
 
 /-- The marks an option must have witnessed inside `M` before the pass recurses on it: for each `g`, an
-internal pair of `M` with a realization satisfying the candidate's region, the option's region **and** `g`
+internal pair of `M` with a realization satisfying the candidate's region, the option's region and `g`
 at once. Conjoining `r` is what lets the implementation find the witness among the edges it actually
-scanned — those of the restricted graph. -/
+scanned, those of the restricted graph. -/
 @[expose] def RStreettSpec.OptMarksIn (spec : RStreettSpec State L) (r : L → Bool)
     (opt : StreettOption L) (M : Std.HashSet State) : Prop :=
   ∀ g ∈ opt.marks, ∃ s ∈ M, ∃ t ∈ M,

@@ -1077,9 +1077,9 @@ theorem stitchCycleAt_toTAcceptingCycle [LawfulBEq State] [LawfulHashable State]
     cycle_covers_marks := hcov
   }, rfl, rfl⟩
 
-/-- The same, with the cycle stitched inside a *subgraph* of the one the stem walks. The prune needs this:
+/-- The same, with the cycle stitched inside a subgraph of the one the stem walks. The prune needs this:
 a witness found in a pruned candidate has to have its cycle rebuilt inside that candidate's restricted
-graph — an edge the region excludes is not one the reported options admit — while its stem comes from a BFS
+graph, an edge the region excludes is not one the reported options admit, while its stem comes from a BFS
 over the ambient reachable set. -/
 theorem stitchCycleAt_toTAcceptingCycle' [LawfulBEq State] [LawfulHashable State]
     {initialStates : List State} {succs g : State → Array State}

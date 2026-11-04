@@ -1,7 +1,7 @@
 module
 
 /-
-  Differential tests of the `DNF` labels of `Label.lean` against brute force, every property checked on random pairs
+  Differential tests of the `DNF` labels of `LTLtoTGBA/Label.lean` against brute force, every property checked on random pairs
   of labels at every valuation of a four-atom universe.
 
   Sections:

@@ -36,6 +36,7 @@ def chainOK (succs : State → Array State) : List State → Bool
   | [_] => true
   | a :: b :: rest => (succs a).contains b && chainOK succs (b :: rest)
 
+/-- `chainOK` decides that consecutive list entries are `succs`-related. -/
 theorem chainOK_spec {succs : State → Array State} :
     ∀ {l : List State}, chainOK succs l = true →
       ∀ i, (hi : i + 1 < l.length) → l[i + 1] ∈ succs l[i] := by

@@ -80,7 +80,7 @@ def outerDFSTWF [LawfulHashable State] {initialStates : List State}
         Array.mem_toList_iff.mp (frame.hsuffix.mem hmemrem)
       -- PERF: the edge's marks are read off the frame's cached `marksRem` rather than recomputed by
       -- `edgeMarks frame.state succ`. `marksRem` is filled once per pushed frame from `(expand _).2.1`, so
-      -- the caller's per-source work — for `TBAProduct` a `sysLabel` *and* a `sysSucc` (`sys.tr`) call —
+      -- the caller's per-source work, for `TBAProduct` a `sysLabel` and a `sysSucc` (`sys.tr`) call,
       -- is paid once per state instead of once per outgoing edge. Under `ExpandCoherent` the invariant
       -- `marksRem = frame.remaining.map (edgeMarks frame.state)` holds, so the head is exactly
       -- `edgeMarks frame.state succ` and the `[]` branch is unreachable. See `EdgeLabels.md` §9, §12.11.
@@ -440,8 +440,8 @@ theorem expand_snd_toList (succs : State → Array State)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat)
     (hexp : ExpandCoherent succs edgeMarks expand) (s : State) :
     (expand s).2.1.toList = (succs s).toList.map (edgeMarks s) := by
-  -- §13.17: `ExpandCoherent` is now an equation between the first two projections, so the marks come
-  -- out through `.snd` rather than by rewriting with the pair equation directly
+  -- §13.17: `ExpandCoherent` is an equation between the first two projections, so the marks come out
+  -- through `.snd` rather than by rewriting with the pair equation directly
   rw [hexp.snd s]; simp
 
 /-- For a suitable `stack`, `pathStack` and `st`, some fuel makes `outerDFST_fuel` succeed and agree with
@@ -449,8 +449,8 @@ theorem expand_snd_toList (succs : State → Array State)
 
 `hmarks` is the frame-cache invariant: every frame's cached `marksRem` is exactly the marks of its own
 remaining successors. It is established at each push from `hexp` and preserved by `consumeOne`, and it is
-what makes the cached head equal `edgeMarks frame.state succ`, so the fuel spec — which still reads
-`edgeMarks` pointwise — agrees with the cached search. See `EdgeLabels.md` §12.11. -/
+what makes the cached head equal `edgeMarks frame.state succ`, so the fuel spec, which still reads
+`edgeMarks` pointwise, agrees with the cached search. See `EdgeLabels.md` §12.11. -/
 theorem outerDFST_fuel_eq_outerDFSTWF
     (hexp : ExpandCoherent succs edgeMarks expand)
     (stack : List (RFrame initialStates succs × Bool × List (Std.HashSet Nat)))
@@ -719,6 +719,8 @@ theorem outerDFST_fuel_eq_outerDFSTWF
       grind
 
 end OuterFuelBridge
+
+/-! ## Top-level `nestedDFST`, well-founded -/
 
 section TopLevelWF
 

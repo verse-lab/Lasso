@@ -4,7 +4,7 @@ module
   Model checking a system against a degeneralized TGBA product, searched by the transition-based Nested DFS, no
   fairness. The `¬φ`-automaton comes from `ltl3ba` (`LTLtoTGBA/Pipeline.lean`). `nestedDFSTWF` is sound only for a
   single-mark product, so the automaton is degeneralized to a `TBA` before it is crossed with the system
-  (`TBAProduct.lean`).
+  (`Degeneralization/TBAProduct.lean`).
 
   Defines:
   - `modelCheckTBA`: runs `nestedDFSTWF` on the product of `sys` and the degeneralized `¬φ`-automaton
@@ -56,9 +56,9 @@ theorem modelCheckTBA_finiteReach (φ : Formula α) (sysInit : List SysState)
   | some tgba =>
     let tba := tgba.degeneralize
     -- PERF: the fused `expand` is what the search walks with, so `sysLabel` and `sysSucc` are entered
-    -- once per product state instead of once per outgoing edge. `edgeMarks` stays as the *spec* callback
-    -- the correctness theorems are stated in terms of; `expand_coherent` ties the two together. Without
-    -- it this route paid a full `sys.tr` per edge — see `EdgeLabels.md` §12.11.
+    -- once per product state instead of once per outgoing edge. `edgeMarks` stays as the spec callback
+    -- the correctness theorems are stated in terms of, `expand_coherent` ties the two together. Without
+    -- it this route paid a full `sys.tr` per edge, see `EdgeLabels.md` §12.11.
     nestedDFSTWF (TBAProduct.getSuccessors tba sysSucc sysLabel) (TBAProduct.edgeMarks tba sysSucc sysLabel)
       (TBAProduct.expand tba sysSucc sysLabel)
       (TBAProduct.initialStates tba sysInit) (modelCheckTBA_finiteReach φ sysInit sysSucc sysLabel sysFR htg)

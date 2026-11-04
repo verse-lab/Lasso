@@ -13,6 +13,9 @@ module
   - `FinitePred.exists_lt_eq`: pigeonhole, a sequence confined to a finite predicate repeats a value
   - `FinitePred.nat_iff`: on `Nat`, finite means bounded (with `not_ge`, `not_of_forall_exists_gt`,
     `exists_gt_of_not` for the infinite side)
+
+  Sections:
+  - Predicates on `Nat`
 -/
 import Batteries.Data.List.Perm
 
@@ -101,6 +104,7 @@ theorem nat_iff {p : Nat → Prop} : FinitePred p ↔ ∃ N, ∀ i, p i → i < 
 theorem lt (n : Nat) : FinitePred (· < n) :=
   nat_iff.mpr ⟨n, fun _ h => h⟩
 
+/-- An upward-closed set of naturals is not finite. -/
 theorem not_ge (n : Nat) : ¬ FinitePred (n ≤ ·) := fun h =>
   let ⟨N, hN⟩ := nat_iff.mp h
   absurd (hN (max n N) (Nat.le_max_left n N)) (Nat.not_lt.mpr (Nat.le_max_right n N))

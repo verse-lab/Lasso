@@ -199,7 +199,7 @@ theorem modelCheckTGBAFair_empty_unsat [DecidableEq α] (φ : Formula α) (fair 
     hrunL
     ((ltl3ba_accepts _ htg _).mpr ((Formula.toNNF_correct_neg _ φ).mp
       (by simpa only [LSys.valuation_ofRun] using hviolate)))
-    -- the conjuncts are now read on the letters; unlabelled, those are the state labels
+    -- the conjuncts are read on the letters, and unlabelled those are the state labels
     (fun i hi n => by
       obtain ⟨j, hj⟩ := (TGBAProduct.fair_iff_indexed fair sysLabel τ).mp hfair i hi n
       exact ⟨j, by rw [LSys.letter_of_isRun_unlabelled hrunL (n + j)]; exact hj⟩)

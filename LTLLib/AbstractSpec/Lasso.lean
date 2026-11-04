@@ -26,6 +26,8 @@ module
   - The run is valid and accepting
   - Edge witnesses
   - The bridge from TAcceptingCycle
+  - Reading a property off the realized edges
+  - The states a lasso run passes through
 -/
 public import LTLLib.AbstractSpec.Acceptance
 public import LTLLib.AbstractSpec.EmptinessCheck
@@ -908,7 +910,7 @@ theorem TValidLasso.run_src_hits_cycle {A : TOASpec State Edge α k} {stemE : Li
 /-! ## Reading a property off the realized edges
 
 Every edge the bridge emits is a `stepEdge` or a `markEdge`, so any property both constructors guarantee
-holds of the whole lasso. A witness built over a *restricted* graph only ever emits restricted edges, which
+holds of the whole lasso. A witness built over a restricted graph only ever emits restricted edges, which
 is how a caller reads an `FG` restriction back off the run. -/
 
 theorem stemEdges_forall {stepEdge : State → State → Edge} (P : Edge → Prop)
@@ -929,7 +931,7 @@ theorem stemEdges_forall {stepEdge : State → State → Edge} (P : Edge → Pro
       · exact ih (fun i hi => hchain (i + 1) (by simpa using hi)) e he
 
 /-- Every edge the bridge emits is a `stepEdge` or a `markEdge` applied to a genuine step of the cycle, so a
-property both constructors guarantee there holds of the whole cycle. A witness built over a *restricted*
+property both constructors guarantee there holds of the whole cycle. A witness built over a restricted
 graph only emits restricted edges, which is how a caller reads an `FG` restriction off the run. -/
 theorem cycleE_forall {A : TOASpec State Edge α k} (W : TEdgeWitness A succs edgeMarks)
     (ac : TAcceptingCycle initialStates succs edgeMarks k) (P : Edge → Prop)
@@ -953,9 +955,9 @@ theorem cycleE_forall {A : TOASpec State Edge α k} (W : TEdgeWitness A succs ed
           (ac.cycle_covers_marks m hmlt).choose_spec.choose_spec
     · simp at hem
 
-/-- A cycle confined to a subgraph, reached by a stem that need not be — what a static `FG` restriction
+/-- A cycle confined to a subgraph, reached by a stem that need not be, what a static `FG` restriction
 asks for. The cycle's edges lie in `succsR` and its marks are `edgeMarksR`'s, because a mark there has to be
-realizable by a *restricted* step; see `EdgeLabels.md` §6.3. -/
+realizable by a restricted step, see `EdgeLabels.md` §6.3. -/
 structure TRegionCycle (initialStates : List State) (succs succsR : State → Array State)
     (edgeMarks edgeMarksR : State → State → Std.HashSet Nat) (numMarks : Nat) where
   stem : List State
@@ -972,7 +974,7 @@ structure TRegionCycle (initialStates : List State) (succs succsR : State → Ar
   cycle_covers_marks : ∀ m, m < numMarks → ∃ (i : Nat) (hi : i < cycle.length),
     m ∈ edgeMarksR (cycle[i]) (cycle[(i + 1) % cycle.length]'(Nat.mod_lt _ (by omega)))
 
-/-- The cycle read as an accepting cycle of the *restricted* graph, rooted at its own head. This is what
+/-- The cycle read as an accepting cycle of the restricted graph, rooted at its own head. This is what
 gives `cycleE` a restricted witness to pick realizations from. -/
 @[expose] def TRegionCycle.cycleAc {initialStates : List State} {succs succsR : State → Array State}
     {edgeMarks edgeMarksR : State → State → Std.HashSet Nat} {numMarks : Nat}
@@ -1035,7 +1037,7 @@ theorem TAcceptingCycle.toTValidLassoOf {A : TOASpec State Edge α k}
 
 /-- The bridge for a region cycle: the stem is realized by `Ws` in the ambient graph, the cycle by `Wc` in
 the restricted one. `toTValidLassoOf` is the case where the two coincide. Splitting them is what makes an
-edge-indexed `◇□ψ` sound — the cycle's edges must be realized by ψ-steps, and the ambient witness is free to
+edge-indexed `◇□ψ` sound, the cycle's edges must be realized by ψ-steps, and the ambient witness is free to
 pick a non-ψ step where a ψ one exists. -/
 theorem TRegionCycle.toTValidLasso {A : TOASpec State Edge α k}
     {succsR : State → Array State} {edgeMarksR : State → State → Std.HashSet Nat}

@@ -27,6 +27,7 @@ module
   - From an accepting run to a lasso
   - Lasso witness
   - Region cycles
+  - The same extended product, from one system callback
 -/
 public import LTLLib.LTL.Propositional
 public import LTLLib.AbstractSpec.RegionLatch
@@ -69,13 +70,13 @@ theorem fairKeep_le {keep : Std.HashSet α → Bool} {extra : List (BoolFormula 
     {l : Std.HashSet α} (h : fairKeep keep extra i l = true) :
     keep l = true ∧ (fairConj extra i).eval l = true := Bool.and_eq_true _ _ |>.mp h
 
-/-- The fairness conjuncts a product *edge* carries, under a standing letter restriction `keep`: conjunct
+/-- The fairness conjuncts a product edge carries, under a standing letter restriction `keep`: conjunct
 `i` gives mark `base + i` exactly when some realization of the edge that survives `keep` reads a letter
 satisfying `i`. That is membership of the graph restricted to `keep ∧ conjᵢ`, so this needs no new
-machinery — it is §6.4's `keptSuccs` at a conjoined predicate, the same construction §6.5 uses for an
+machinery, it is §6.4's `keptSuccs` at a conjoined predicate, the same construction §6.5 uses for an
 option's marks.
 
-Reading the conjuncts on the *edge* rather than on its source is what lets a `□◇` mention an edge atom.
+Reading the conjuncts on the edge rather than on its source is what lets a `□◇` mention an edge atom.
 Unioning across parallel realizations over-approximates a single step, which `EdgeLabels.md` §6.3 shows is
 sound for marks (and unsound for regions, which is why the region half is not built this way). -/
 @[expose] def fairMarksEdge (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
@@ -101,7 +102,7 @@ theorem mem_fairMarksEdge_iff (tgba : TGBA α) (sysSucc : SysState → Array (LS
     exact ⟨i, ⟨hi, hc⟩, rfl⟩
 
 /-- The same marks read off an already-computed family of conjunct-restricted successor arrays. The fused
-expansions build that family once per *source* and then only test membership per target, which is what
+expansions build that family once per source and then only test membership per target, which is what
 keeps `fairMarksEdge`'s `keptSuccs` call out of the inner loop. -/
 @[expose] def fairMarksOf (base : Nat) (extra : List (BoolFormula α))
     (ks : Nat → Array (SysState × Nat)) (p' : SysState × Nat) : Std.HashSet Nat :=
@@ -209,8 +210,8 @@ theorem edgeMarksFair_lt (tgba : TGBA α) (sysSucc : SysState → Array (LStep �
   · omega
 
 /-- The `□◇` reading of the conjuncts and the indexed `eval` reading the marks use are one statement, of
-the sequence of *letters* a run reads. On a state-labelled system that sequence is `sysLabel ∘ τ`, which is
-`fair_iff_indexed`; on a labelled one it is the letter each step contributes, which is what an edge atom in
+the sequence of letters a run reads. On a state-labelled system that sequence is `sysLabel ∘ τ`, which is
+`fair_iff_indexed`, on a labelled one it is the letter each step contributes, which is what an edge atom in
 a `□◇` needs. -/
 theorem fair_iff_indexed_letters [LawfulBEq α] (extra : List (BoolFormula α))
     (lets : Nat → Std.HashSet α) :
@@ -261,7 +262,7 @@ theorem eventuallyAlways_iff_indexed [LawfulBEq α] (b : BoolFormula α)
   eventuallyAlways_iff_indexed_letters b (fun i => sysLabel (τ i))
 
 omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
-/-- The labelled specialization: the letters a run of a labelled system reads *are* its valuation, so the
+/-- The labelled specialization: the letters a run of a labelled system reads are its valuation, so the
 two indexed readings apply to `LSys.valuation` with nothing in between. These are what the fairness entry
 points state their hypotheses with. -/
 theorem fair_iff_indexed_run [LawfulBEq α] (extra : List (BoolFormula α))
@@ -279,28 +280,28 @@ theorem eventuallyAlways_iff_indexed_run [LawfulBEq α] (b : BoolFormula α)
   eventuallyAlways_iff_indexed_letters b (fun i => LSys.letter (sysLabel (ρ i).1) (ρ i).2.1)
 
 /-- The fused expansion for the extended product: `expand`'s successors, with each edge's marks widened by
-the fairness conjuncts *that edge* carries.
+the fairness conjuncts that edge carries.
 
 PERF: the fairness part is per-edge, so both halves are kept out of the inner loop deliberately. The base
 marks come from the grouped table built once per source (`marksTableGen`/`genMarksFromShared`, §13.24).
 The conjunct marks are decided once per source when every step reads `base` (`fairMarksTable`: one
 `fairMarks` set shared by every successor, `ks` not built), and otherwise from the `extra.length`
 conjunct-restricted successor arrays built once per source in `ks`, a membership test per (target,
-conjunct) — a deep state comparison per element, which is why the uniform path exists (§13.27, §13.29).
+conjunct), a deep state comparison per element, which is why the uniform path exists (§13.27, §13.29).
 Writing this as `e.1.map (edgeMarksFair … p)` would be much shorter and would cost a full re-expansion of
 `p` per (edge, conjunct).
 
 `base` and `steps` are threaded into `ks` through `keptSuccsFrom` rather than letting each conjunct call
-`keptSuccs` — which re-enters `sysLabel` *twice* and `sysSucc` once, per conjunct. That made the callbacks
-`1 + 2k` and `1 + k` per product state for `k` conjuncts; they are now 1 and 1. On the Veil side each
-entry is a `tr` call, and `k` is `3n` on the nested-fairness workload. -/
+`keptSuccs`, which re-enters `sysLabel` twice and `sysSucc` once, per conjunct. That shape costs `1 + 2k`
+and `1 + k` callbacks per product state for `k` conjuncts, against 1 and 1 here. On the Veil side each entry
+is a `tr` call, and `k` is `3n` on the nested-fairness workload. -/
 @[expose] def expandFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (extra : List (BoolFormula α)) (p : SysState × Nat) :
     Array (SysState × Nat) × Array (Std.HashSet Nat) × Array Nat :=
   let base := sysLabel p.1
   let steps := LSys.totalize sysSucc p.1
   -- PERF (§13.29): the base marks come from the grouped table computed once per source, not from a
-  -- per-successor `edgeMarksFrom` that rebuilt it; and on a uniform source the conjunct marks are one
+  -- per-successor `edgeMarksFrom` that rebuilt it, and on a uniform source the conjunct marks are one
   -- shared set and the conjunct-restricted family is not built. The general path is unchanged.
   let byTgt? := marksTableGen tgba p.2 base steps
   let fm? := fairMarksTable tgba.numAcceptSets extra base steps
@@ -342,16 +343,16 @@ theorem expandFair_coherent [LawfulHashable SysState] (tgba : TGBA α)
     simp only []
     rw [getElem!_pos _ i (by simpa using List.mem_range.mp hi), Array.getElem_map,
       Array.getElem_range]
-    -- `keptSuccsFrom` with the source's own label and steps *is* `keptSuccs`, but only definitionally
+    -- `keptSuccsFrom` with the source's own label and steps is `keptSuccs`, but only definitionally
     rfl
 
 /-! ## Extended product spec -/
 
 /-- The abstract product spec with `extra.length` further marks, conjunct `i` carried by an edge iff the
-letter *that edge reads* satisfies it. All other fields are `toSpec`'s.
+letter that edge reads satisfies it. All other fields are `toSpec`'s.
 
 Reading the conjunct on the edge's letter rather than on its source state is what makes a `□◇` over an
-edge atom mean anything; on a system with no edge atoms every step reads its source's label and this is
+edge atom mean anything, on a system with no edge atoms every step reads its source's label and this is
 the old condition. -/
 @[expose] def toSpecFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
@@ -444,8 +445,8 @@ theorem gsp_correct2Fair [LawfulBEq α] (tgba : TGBA α) (sysSucc : SysState →
 
 /-! ## Edge witness -/
 
-/-- The extended spec's edge witness. A fairness mark now constrains the *letter*, so it is witnessed by a
-realization reading a satisfying one — which is the step edge of `keptEdgeWitness` at the conjunct's own
+/-- The extended spec's edge witness. A fairness mark now constrains the letter, so it is witnessed by a
+realization reading a satisfying one, which is the step edge of `keptEdgeWitness` at the conjunct's own
 restriction, no new selection machinery needed. -/
 def edgeWitnessFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
@@ -536,7 +537,7 @@ restriction.
 This is the labelled counterpart of `mem_keptSuccs_unlabelled`, and it has to be stated on the run rather
 than on the endpoints. With edge atoms a product pair `(p, p')` may be realized by several steps reading
 different letters (`EdgeLabels.md` §6.3), so "`keep` holds somewhere out of `p.1`" does not put `p'` in the
-restricted graph — only the step the run actually takes is known to satisfy it, and that step is what the
+restricted graph, only the step the run actually takes is known to satisfy it, and that step is what the
 membership is built from. -/
 theorem acceptingRunFair_keptStep (tgba : TGBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState)
@@ -660,7 +661,7 @@ theorem fairMarksEdge_unlabelled (tgba : TGBA α) (sysSucc : SysState → Array 
 /-- The state-labelled special case, lifted to the extended marks: where the source label satisfies the
 restriction, restricted and unrestricted marks agree.
 
-Pointwise on marks rather than as a `Std.HashSet` equality, following `keptEdgeMarks_unlabelled` — the
+Pointwise on marks rather than as a `Std.HashSet` equality, following `keptEdgeMarks_unlabelled`, the
 base half may be answered from the grouped table, which agrees on membership but not on representation. -/
 theorem mem_keptEdgeMarksFair_unlabelled [LawfulHashable SysState] (tgba : TGBA α)
     (sysSucc : SysState → Array SysState) (sysLabel : SysState → Std.HashSet α)
@@ -712,9 +713,9 @@ theorem keptEdgeMarksFair_lt [BEq SysState] [Hashable SysState] [LawfulBEq SysSt
     (keptEdgeMarksFair_sub tgba sysSucc sysLabel keep extra p p' m hm)
 
 /-- `acceptingRunFair_marks` on the restricted graph: past `N`, where every step of the run reads a letter
-`keep` admits, each mark still sits on infinitely many edges of the projected run, and does so *restrictedly*.
+`keep` admits, each mark still sits on infinitely many edges of the projected run, and does so restrictedly.
 
-Like `acceptingRunFair_keptStep` this replaces a statement about endpoints — `mem_keptEdgeMarksFair_unlabelled`,
+Like `acceptingRunFair_keptStep` this replaces a statement about endpoints, `mem_keptEdgeMarksFair_unlabelled`,
 which lifted an unrestricted mark to a restricted one whenever the source's label was in region. That does not
 survive edge atoms: an unrestricted base mark may sit only on a realization the restriction rejects. Both
 halves are therefore rebuilt from the run's own step, the base half through the realization it takes and the
@@ -841,7 +842,7 @@ set_option maxHeartbeats 1000000 in
 omit [BEq SysState] [Hashable SysState] [LawfulBEq SysState] in
 /-- The counterexample a region cycle describes: one labelled system run the automaton accepts, satisfying
 every conjunct infinitely often, and whose tail reads only letters the restriction admits. That last part is
-`◇□` over *letters*, which is what an edge-indexed `FG` means. The run passes through exactly the region
+`◇□` over letters, which is what an edge-indexed `FG` means. The run passes through exactly the region
 cycle's system states: `rc.stem`, then `rc.cycle` repeated. -/
 theorem exists_run_of_TRegionCycle [LawfulBEq α] [BEq SysState] [Hashable SysState] [LawfulBEq SysState] (tgba : TGBA α)
     (sysSucc : SysState → Array (LStep α SysState)) (sysLabel : SysState → Std.HashSet α)
@@ -867,7 +868,7 @@ theorem exists_run_of_TRegionCycle [LawfulBEq α] [BEq SysState] [Hashable SysSt
   · rw [TRegionCycle.toTValidLasso_run_src (edgeWitnessFair tgba sysSucc sysLabel sysInit extra hbound)
       (edgeWitnessFairKept tgba sysSucc sysLabel keep sysInit extra hbound) (fun hs => hs) rc n]
     rfl
-  -- past the stem the run walks `cycleE` of the *restricted* witness, whose edges read kept letters
+  -- past the stem the run walks `cycleE` of the restricted witness, whose edges read kept letters
   rw [hlasso.run_eq_cycle n (by omega)]
   refine cycleE_forall (edgeWitnessFairKept tgba sysSucc sysLabel keep sysInit extra hbound) rc.cycleAc
     (fun e => keep (LSys.letter (sysLabel e.1) e.2.1.1) = true) ?_ ?_ _ (List.getElem_mem _)
@@ -908,7 +909,7 @@ theorem exists_run_of_TRegionCycle [LawfulBEq α] [BEq SysState] [Hashable SysSt
 
 `LSys.StepFn` in place of the `sysSucc`/`sysLabel` pair. The two expansions repeat their bodies rather
 than being refactored, because the `rfl` bridges below are a machine-checked guarantee that the repeat
-computes the same thing — a mistyped copy fails to compile. See `EdgeLabels.md` §15. -/
+computes the same thing, a mistyped copy fails to compile. See `EdgeLabels.md` §15. -/
 
 section OfStep
 
