@@ -21,7 +21,6 @@ public import LTLLib.LTL.Semantics
 
 public import LTLLib.AbstractSpec.GraphPaths
 public import LTLLib.AbstractSpec.Reachability
-public import LTLLib.AbstractSpec.OEmptinessCheck
 
 public import LTLLib.TGBA
 public import LTLLib.AbstractSpec.Acceptance
@@ -39,8 +38,8 @@ public import LTLLib.SCC.StreettPrune
 public import LTLLib.SCC.StreettPruneFast
 public import LTLLib.SCC.TarjanSCC
 public import LTLLib.SCC.GabowSCC
-public import LTLLib.NestedDFS.NestedDFSCorrectness
-public import LTLLib.NestedDFS.NestedDFSTermination
+public import LTLLib.NestedDFS.InnerDFSCorrectness
+public import LTLLib.NestedDFS.InnerDFSTermination
 public import LTLLib.Satisfiability
 public import LTLLib.LabelledSys
 public import LTLLib.Product

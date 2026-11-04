@@ -6,7 +6,7 @@ module
   incoming tree edge is marked, the inner DFS starts at that state and searches back for the edge's source,
   and the back-edge shortcut fires on the traversed edge's own mark.
 
-  The inner DFS (`innerDFS_fuel`, `FNDFSState`) is reused from `NestedDFS/NestedDFSCorrectness.lean`, with the seed
+  The inner DFS (`innerDFS_fuel`, `FNDFSState`) is reused from `NestedDFS/InnerDFSCorrectness.lean`, with the seed
   being the marked edge's source and the start state its target.
 
   Defines:
@@ -16,7 +16,7 @@ module
   Sections:
   - Fuel-based outer DFS, edge-aware
 -/
-public import LTLLib.NestedDFS.NestedDFSCorrectness
+public import LTLLib.NestedDFS.InnerDFSCorrectness
 
 public section
 

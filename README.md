@@ -49,7 +49,7 @@ failure, warning, or Lean panic produces a nonzero exit status, including panics
 Lake's build cache. Add `--verbose` to stream all build and test output. A successful run reports:
 
 ```text
-Source coverage: PASS (118/118 Lean files)
+Source coverage: PASS (117/117 Lean files)
 Building library and tests...
 Library build: PASS
 Tests and examples: PASS
@@ -403,7 +403,6 @@ LTLLib/
   AbstractSpec/
     GraphPaths.lean
     Reachability.lean
-    OEmptinessCheck.lean
     Acceptance.lean
     EmptinessCheck.lean
     Lasso.lean
@@ -452,8 +451,8 @@ LTLLib/
     TBAProduct.lean
     DegeneralBridge.lean
   NestedDFS/
-    NestedDFSCorrectness.lean
-    NestedDFSTermination.lean
+    InnerDFSCorrectness.lean
+    InnerDFSTermination.lean
     NestedDFST.lean
     NestedDFSTCorrectness.lean
     NestedDFSTTermination.lean
@@ -561,7 +560,7 @@ LTLLibTests/
 
 **`Degeneralization/DegeneralBridge.lean`** — Computational `TGBA.degeneralize` against the abstract `TOASpec.degeneralize`.
 
-**`NestedDFS/NestedDFSCorrectness.lean`**, **`NestedDFSTermination.lean`** — The inner DFS of the CVWY algorithm, shared by both nested searches because it never reads acceptance: the fuel-indexed `innerDFS_fuel` and its colour invariants, the executable `innerDFSWF`, and the `RFrame` stack with the `reachCount` measure the outer loops recurse on.
+**`NestedDFS/InnerDFSCorrectness.lean`**, **`InnerDFSTermination.lean`** — The inner DFS of the CVWY algorithm, shared because it never reads acceptance: the fuel-indexed `innerDFS_fuel` with its colour invariants and Schwoon and Esparza's Lemma 1, the executable `innerDFSWF`, and the `RFrame` stack with the `reachCount` measure the outer loop recurses on.
 
 **`NestedDFS/NestedDFST.lean`**, **`NestedDFSTCorrectness.lean`**, **`NestedDFSTTermination.lean`** — The transition-based nested DFS built on that inner half: the fuel-indexed version, its soundness and completeness, and the executable well-founded `nestedDFSTWF` bridged to it.
 
@@ -616,8 +615,6 @@ LTLLibTests/
 **`LTL/Fairness.lean`** — Unconditional, weak (justice) and strong (compassion) fairness as LTL formulas, combinators over lists of them, and `BoolFormula.weakFairMark`, the propositional weak fairness carried as a single mark.
 
 **`AbstractSpec/Reachability.lean`** — `EmptinessResult` and its renaming, `Reachable` and `FiniteReach`, the `reachCount` measure, the fused `ExpandCoherent` callback and its laws, and `totalizeSucc`.
-
-**`AbstractSpec/OEmptinessCheck.lean`** — `AcceptingCycle` and the state-indexed `EmptinessChecker` contract, which only the shared inner DFS still needs.
 
 **`AbstractSpec/GraphPaths.lean`** — Generic `succs`-graph reachability, paths through unblocked intermediates, and the conversions to and from their list witnesses.
 

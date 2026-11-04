@@ -4,8 +4,8 @@ module
   Well-founded executable version of the edge-aware nested DFS, terminating by a `reachCount` measure, and the fuel bridge
   transporting the correctness theorems of `NestedDFSTCorrectness.lean` onto it.
 
-  The inner DFS and its lemmas from `NestedDFSTermination.lean` are reused unchanged. `outerDFSTWF` follows `outerDFSLoopWF`,
-  with the same `RFrame` stack and lexicographic measure (reachable minus `outerVisited`, pending), and the per-frame
+  The inner DFS and its lemmas from `InnerDFSTermination.lean` are reused unchanged, as are that file's `RFrame`
+  stack and lexicographic measure, reachable minus `outerVisited` paired with the pending count, with the per-frame
   `marked` bit paired in externally. Correctness is stated for a single mark, the shape `TGBA.degeneralize` produces.
 
   Defines:
@@ -17,15 +17,21 @@ module
   - `nestedDFSTWF_empty_no_cycle`: an `.empty` result rules out every `TAcceptingCycle` with one mark
   - `nestedDFSTWF_nonEmpty_valid`: a `.nonEmpty stem loop` result gives a `TAcceptingCycle` with one mark
 
+  References:
+  - Holzmann, Peled & Yannakakis: "On Nested Depth First Search" (SPIN 1996) — the accepting-leaf shortcut,
+    `target` may be any state on `pathStack`, not just `current`.
+  - Schwoon & Esparza: "A Note on On-The-Fly Verification Algorithms" (TACAS 2005) — the back-edge shortcut that
+    reports a cycle from `pathStack.contains succ` alone, without launching an inner DFS.
+
   Sections:
   - Well-founded `outerDFST`
   - Fuel ↔ well-founded bridge, outer half
   - Top-level `nestedDFST`, well-founded
   - Fuel ↔ well-founded bridge, top level
 -/
-public import LTLLib.NestedDFS.NestedDFSTermination
+public import LTLLib.NestedDFS.InnerDFSTermination
 -- The TGBA termination proof reuses the private fuel bridge.
-import all LTLLib.NestedDFS.NestedDFSTermination
+import all LTLLib.NestedDFS.InnerDFSTermination
 public import LTLLib.NestedDFS.NestedDFSTCorrectness
 
 public section
@@ -38,7 +44,7 @@ section OuterDFSTWellFounded
 
 variable {State : Type u} [BEq State] [Hashable State] [LawfulBEq State]
 
-/-- Well-founded `outerDFST`, `RFrame`-based like `outerDFSLoopWF` with the per-frame `marked` bit paired in externally,
+/-- Well-founded `outerDFST`, `RFrame`-based with the per-frame `marked` bit paired in externally,
 and the same three cases as `outerDFST_fuel` (back edge, postorder-triggered tree edge, immediate forward/cross edge). -/
 def outerDFSTWF [LawfulHashable State] {initialStates : List State}
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)

@@ -2,7 +2,7 @@ module
 
 /-
   Correctness of the edge-aware nested DFS `nestedDFST_fuel` against `TAcceptingCycle` with a single mark.
-  The inner-DFS lemmas of `NestedDFSCorrectness.lean` are reused unchanged, the outer-DFS invariants are re-derived for
+  The inner-DFS lemmas of `InnerDFSCorrectness.lean` are reused unchanged, the outer-DFS invariants are re-derived for
   the three-tuple stack `(State × List State × Bool)` and the algorithm's three cases (back edge, postorder-triggered
   tree edge, immediate forward/cross edge).
 
@@ -28,7 +28,7 @@ module
   - Top-level correctness theorem
 -/
 public import LTLLib.AbstractSpec.GraphPaths
-public import LTLLib.NestedDFS.NestedDFSCorrectness
+public import LTLLib.NestedDFS.InnerDFSCorrectness
 public import LTLLib.AbstractSpec.EmptinessCheck
 public import LTLLib.NestedDFS.NestedDFST
 meta import Lentil
@@ -80,8 +80,7 @@ theorem TStackMarked.cons (edgeMarks : State → State → Std.HashSet Nat) (par
   | 0, hi => simp
   | i + 1, hi => exact h i (by simpa using hi)
 
-/-- Outer-DFS bookkeeping independent of acceptance, `outerVisited` behaves like a DFS discovered-set.
-The edge-aware analogue of `OuterReachClosed`. -/
+/-- Outer-DFS bookkeeping independent of acceptance, `outerVisited` behaves like a DFS discovered-set. -/
 structure TOuterReachClosed
     (succs : State → Array State) (st : FNDFSState State)
     (stack : List (State × List State × Bool)) : Prop where
@@ -413,7 +412,7 @@ section NonEmptyWitness
 variable {State} [BEq State] [Hashable State] [LawfulBEq State]
 
 /-- If `pathStack` is a `succs`-chain from `root` and `outerDFST_fuel` returns `.nonEmpty stem loop`, then `stem` is a chain
-from `root` and `loop.tail` a cycle with a marked edge, the edge-aware analogue of `outerDFSLoop_fuel_nonEmpty_witness`. -/
+from `root` and `loop.tail` a cycle with a marked edge. -/
 theorem outerDFST_fuel_nonEmpty_witness
     (succs : State → Array State) (edgeMarks : State → State → Std.HashSet Nat)
     (fuel : Nat)
@@ -960,7 +959,7 @@ section EmptyNoCycle
 
 variable {State} [BEq State] [Hashable State] [LawfulBEq State]
 
-/-- Acceptance-agnostic outer-DFS invariant of the edge-aware CVWY algorithm, the bookkeeping fields of `OuterInvariant`.
+/-- Acceptance-agnostic outer-DFS invariant of the edge-aware CVWY algorithm, its bookkeeping fields alone.
 The no-cycle fact for marked edges is not a field, since tree and forward/cross edges resolve while their source is on the stack. -/
 structure TOuterInvariant
     (succs : State → Array State) (st : FNDFSState State) (stackStates : List State) : Prop where
