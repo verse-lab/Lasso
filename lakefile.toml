@@ -19,23 +19,3 @@ name = "Lasso"
 [[lean_lib]]
 name = "LassoTests"
 globs = ["LassoTests.+"]
-
-[[lean_exe]]
-name = "tgbabench"
-root = "Lasso.Benchmark.PipelineBench"
-
-[[lean_exe]]
-name = "fairbench"
-root = "Lasso.Benchmark.FairnessBench"
-
-[[lean_exe]]
-name = "fairmatrix"
-root = "Lasso.Benchmark.FairnessMatrix"
-
-[[lean_exe]]
-name = "simpbench"
-root = "Lasso.Benchmark.SimplifyBench"
-
-[[lean_exe]]
-name = "ltl3bench"
-root = "Lasso.LTLtoTGBA.Benchmark.TranslationBench"
