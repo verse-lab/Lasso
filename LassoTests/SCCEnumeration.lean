@@ -112,11 +112,11 @@ example (cs : CompiledSpec State L) (curRegions : Nat) (succs edgeMarks) (aux) (
   obtain ⟨⟨ll, acc⟩, hb, hll⟩ := h
   have hll' : ll = step.pos := by simpa using hll
   by_cases hacc : acc != fullAccMask cs.numMarks
-  · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_pos hacc]; rfl
+  · simp only [streettView, streettOps, streettPop, hb, ite_eq_left hll', ite_eq_left hacc]; rfl
   · rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1
         (scanFrame cs succs live step.pos).2 with _ | opts
-    · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_neg hacc, hfu]; rfl
-    · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_neg hacc, hfu]; rfl
+    · simp only [streettView, streettOps, streettPop, hb, ite_eq_left hll', ite_eq_right hacc, hfu]; rfl
+    · simp only [streettView, streettOps, streettPop, hb, ite_eq_left hll', ite_eq_right hacc, hfu]; rfl
 
 -- The merging POP, both branches. With no parent frame the closing lowlink is dropped rather than folded.
 example (cs : CompiledSpec State L) (curRegions : Nat) (succs edgeMarks) (aux) (step) (ll)
@@ -138,9 +138,9 @@ example (cs : CompiledSpec State L) (curRegions : Nat) (succs edgeMarks) (aux) (
   have hmb : ((dstack.map (·.1)).pop).back? = Option.map (·.1) (dstack.pop.back?) := by
     rw [← Array.map_pop, Array.back?_map]
   rcases hb2 : dstack.pop.back? with _ | ⟨pll, pacc⟩
-  · simp only [streettView, streettOps, streettPop, hbk, if_neg hne, hb2, hmb,
+  · simp only [streettView, streettOps, streettPop, hbk, ite_eq_right hne, hb2, hmb,
       Option.map_none, Array.map_pop]
-  · simp only [streettView, streettOps, streettPop, hbk, if_neg hne, hb2, hmb,
+  · simp only [streettView, streettOps, streettPop, hbk, ite_eq_right hne, hb2, hmb,
       Option.map_some, Array.map_pop, Array.map_push]
 
 /-! ## Initial state -/

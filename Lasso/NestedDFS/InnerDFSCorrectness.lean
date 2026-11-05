@@ -174,7 +174,7 @@ theorem dropWhile_ne_head?_eq_some {State : Type u} [BEq State] [LawfulBEq State
         · simp at hax
         · exact hx
       have hax' : (fun y => !(y == x)) a = true := by simp [hax]
-      simp only [List.dropWhile_cons, hax', if_true]
+      simp only [List.dropWhile_cons, hax', ite_true]
       exact ih hxt
 
 /-- A length-1 list's head and last element coincide. -/

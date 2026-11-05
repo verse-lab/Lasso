@@ -120,7 +120,7 @@ theorem branches_correct (ξ : OmegaWord α) (cs : List (NNF α)) :
     · rw [mixedSplit_correct hms ξ]
       cases stay with
       | nil =>
-        simp only [branches, hms, List.isEmpty_nil, if_true, List.append_nil, List.mem_map, exists_exists_and_eq_and,
+        simp only [branches, hms, List.isEmpty_nil, ite_true, List.append_nil, List.mem_map, exists_exists_and_eq_and,
           List.forall_mem_cons, List.not_mem_nil, false_and, exists_false, false_or]
         constructor
         · rintro ⟨hds, b, hb, h1, h2⟩
@@ -128,7 +128,7 @@ theorem branches_correct (ξ : OmegaWord α) (cs : List (NNF α)) :
         · rintro ⟨b, hb, ⟨hds, h1⟩, h2⟩
           exact ⟨hds, b, hb, h1, h2⟩
       | cons s0 stay =>
-        simp only [branches, hms, List.isEmpty_cons, Bool.false_eq_true, if_false, List.mem_append, or_and_right,
+        simp only [branches, hms, List.isEmpty_cons, Bool.false_eq_true, ite_false, List.mem_append, or_and_right,
           exists_or, List.mem_map, exists_exists_and_eq_and, List.forall_mem_cons, satisfies_orAll]
         constructor
         · rintro (⟨hp, b, hb, h1, h2⟩ | ⟨hds, b, hb, h1, h2⟩)

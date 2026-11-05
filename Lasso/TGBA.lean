@@ -196,7 +196,7 @@ private theorem TGBA.mem_edgeMarksTable_iff (tgba : TGBA α) (q q' m : Nat) :
           · exact Or.inl (Or.inr hkv2)
           · exact Or.inr ⟨kv, hkv, hkv1, hkv2⟩
       · have hbeq : (a.1 == (q, q')) = false := by simpa using hkey
-        rw [Std.HashMap.getD_insert, if_neg (by simpa using hbeq)]
+        rw [Std.HashMap.getD_insert, ite_eq_right (by simpa using hbeq)]
         simp only [List.mem_cons]
         constructor
         · rintro (h | ⟨kv, hkv, hkv1, hkv2⟩)

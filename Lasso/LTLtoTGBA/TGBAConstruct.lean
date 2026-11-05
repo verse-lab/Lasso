@@ -352,10 +352,10 @@ private theorem testBit_foldl_marks (P : Nat → Bool) (l : List Nat) (acc i : N
   | cons j l ih =>
     rw [List.foldl_cons, ih]
     by_cases hj : P j = true
-    · simp only [hj, if_true, Nat.testBit_or, bit, Nat.one_shiftLeft, Nat.testBit_two_pow, Bool.or_eq_true,
+    · simp only [hj, ite_true, Nat.testBit_or, bit, Nat.one_shiftLeft, Nat.testBit_two_pow, Bool.or_eq_true,
         decide_eq_true_eq, List.mem_cons]
       grind
-    · simp only [hj, Bool.false_eq_true, if_false, List.mem_cons]
+    · simp only [hj, Bool.false_eq_true, ite_false, List.mem_cons]
       grind
 
 /-- `computeMarks` is exact: bit `i` is set exactly when `i` indexes `finals` and `marksCond` holds there. -/
@@ -547,11 +547,11 @@ theorem exploreState_wf (cv : ConcreteVWAA α) (finals : Array Nat) :
     have hmem' : (stFinal.transitions.insert st.nextId transArr)[id0]? = some arr := hmem
     rw [Std.HashMap.getElem?_insert] at hmem'
     by_cases hcase : st.nextId == id0
-    · rw [if_pos hcase] at hmem'
+    · rw [ite_eq_left hcase] at hmem'
       injection hmem' with hmem'
       subst hmem'
       exact haccWF
-    · rw [if_neg hcase] at hmem'
+    · rw [ite_eq_right hcase] at hmem'
       exact htwf_stFinal id0 arr hmem'
 
 /-! ## Id-renumbering -/
@@ -569,19 +569,19 @@ private theorem visited_insert_bound {st : TGBAConstructState α} {e : Nat} (hbn
     id0 < st.nextId + 1 := by
   rw [Std.HashMap.getElem?_insert] at h0
   by_cases heq0 : e == e0
-  · rw [if_pos heq0] at h0; injection h0 with h0; omega
-  · rw [if_neg heq0] at h0; exact Nat.lt_trans (hbnd e0 id0 h0) (by omega)
+  · rw [ite_eq_left heq0] at h0; injection h0 with h0; omega
+  · rw [ite_eq_right heq0] at h0; exact Nat.lt_trans (hbnd e0 id0 h0) (by omega)
 
 private theorem visited_insert_eq_or {st : TGBAConstructState α} {e : Nat}
     {e0 : Nat} {id0 : Nat} (h0 : (st.visited.insert e st.nextId)[e0]? = some id0) :
     (e0 = e ∧ id0 = st.nextId) ∨ st.visited[e0]? = some id0 := by
   rw [Std.HashMap.getElem?_insert] at h0
   by_cases heq0 : e == e0
-  · rw [if_pos heq0] at h0
+  · rw [ite_eq_left heq0] at h0
     injection h0 with h0
     rw [beq_iff_eq] at heq0
     exact Or.inl ⟨heq0.symm, h0.symm⟩
-  · rw [if_neg heq0] at h0
+  · rw [ite_eq_right heq0] at h0
     exact Or.inr h0
 
 /-- `exploreState` only extends its state, assigns the returned id to `e`, and preserves `NextIdBound` and
@@ -806,14 +806,14 @@ theorem exploreState_denotes (cv : ConcreteVWAA α) (finals : Array Nat) :
         have h1 : st1.visited.getD pe 0 = st.visited.getD pe 0 := by
           rw [hst1, Std.HashMap.getD_eq_getD_getElem?, Std.HashMap.getD_eq_getD_getElem?]
           show (st.visited.insert e st.nextId)[pe]?.getD 0 = st.visited[pe]?.getD 0
-          rw [Std.HashMap.getElem?_insert, if_neg hne]
+          rw [Std.HashMap.getElem?_insert, ite_eq_right hne]
         simp only [h1]
     have hdenFinal : Denotes finals cv stFinal := hden2 hdenst1
     intro id0 arr0 h0
     change (stFinal.transitions.insert st.nextId transArr)[id0]? = some arr0 at h0
     rw [Std.HashMap.getElem?_insert] at h0
     by_cases hcase : st.nextId == id0
-    · rw [if_pos hcase] at h0
+    · rw [ite_eq_left hcase] at h0
       injection h0 with h0
       subst h0
       rw [beq_iff_eq] at hcase
@@ -821,7 +821,7 @@ theorem exploreState_denotes (cv : ConcreteVWAA α) (finals : Array Nat) :
       refine ⟨e, hvisFinal, ?_, ?_⟩
       · rw [← hcand]; exact fun g e' m hmem => hproc (g, e', m) hmem
       · rw [hacc, hcand]
-    · rw [if_neg hcase] at h0
+    · rw [ite_eq_right hcase] at h0
       exact hdenFinal id0 arr0 h0
 private theorem mem_states_of_visited {visited : Std.HashMap Nat Nat} {e0 : Nat} {id : Nat}
     (h : visited[e0]? = some id) :
@@ -901,7 +901,7 @@ theorem exploreState_finished (cv : ConcreteVWAA α) (finals : Array Nat) :
     · rcases hfinal e0 id0 h0 with ⟨arr, harr⟩ | h | h
       · refine Or.inl ⟨arr, ?_⟩
         change (stFinal.transitions.insert st.nextId transArr)[id0]? = some arr
-        rw [Std.HashMap.getElem?_insert, if_neg (by simpa [beq_iff_eq] using Ne.symm hid)]
+        rw [Std.HashMap.getElem?_insert, ite_eq_right (by simpa [beq_iff_eq] using Ne.symm hid)]
         exact harr
       · exact Or.inr h
       · exact absurd h hid
@@ -1097,15 +1097,15 @@ private theorem mem_foldl_productStep {cv : ConcreteVWAA α} :
         · simpa [hne x hx] using hvalid' x hx
       · show g = qs.foldl (fun acc q' => DNF.and acc (if q' = q then p.1 else gf' q'))
           (DNF.and c.1 (if q = q then p.1 else gf' q))
-        rw [if_pos rfl, hg', ← hg0eq]
+        rw [ite_eq_left rfl, hg', ← hg0eq]
         exact (foldl_and_congr (fun q' hq' => by simp [hne q' hq']) _).symm
       · show t = qs.foldl (fun acc q' => acc ||| (if q' = q then p.2 else Of' q')) (c.2.1 ||| (if q = q then p.2 else Of' q))
-        rw [if_pos rfl, ht', ← ht0eq]
+        rw [ite_eq_left rfl, ht', ← ht0eq]
         exact (foldl_or_congr (fun q' hq' => by simp [hne q' hq']) _).symm
       · show s = qs.foldl (fun acc q' => if cv.final.getD q' false && !(if q' = q then p.2 else Of' q').testBit q' then
             acc ||| bit q' else acc)
           (if cv.final.getD q false && !(if q = q then p.2 else Of' q).testBit q then c.2.2 ||| bit q else c.2.2)
-        rw [if_pos rfl, hs', ← hs0eq]
+        rw [ite_eq_left rfl, hs', ← hs0eq]
         exact (foldl_esc_congr (fun q' hq' => by simp [hne q' hq']) _).symm
 
 /-- A product transition of `e` is a per-id component choice, guard the conjunction, target the union, and escaped-own
@@ -1392,7 +1392,7 @@ private theorem sat_escapeGuard_iff (cv : ConcreteVWAA α) (f : Nat) (e' : Nat) 
       exact ⟨p, hmem, hcond, c, hc, hcsat⟩
     · exact absurd hc List.not_mem_nil
   · rintro ⟨p, hmem, hcond, c, hcmem, hcsat⟩
-    exact ⟨c, ⟨p, hmem, by rw [if_pos hcond]; exact hcmem⟩, hcsat⟩
+    exact ⟨c, ⟨p, hmem, by rw [ite_eq_left hcond]; exact hcmem⟩, hcsat⟩
 
 variable [LawfulBEq α] [LawfulHashable α]
 

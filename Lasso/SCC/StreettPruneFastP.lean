@@ -138,7 +138,7 @@ def streettUpdateP (numMarks : Nat) (aux : StreettAuxF State) (marks : Std.HashS
     let top := (min ll dpos, acc ||| marksToBitmask marks ||| (1 <<< numMarks))
     (⟨live, liveIndex, dead, dstack.pop.push top, wit, wopts, pending, ls, lo, ws⟩, false)
 
-@[expose] def streettOpsP [Inhabited State] [LawfulBEq State] [LawfulHashable State]
+@[expose, implicit_reducible] def streettOpsP [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (curRegions : Nat) : DFSOpsP State where
   Aux := StreettAuxF State
   Position := Nat
@@ -174,8 +174,8 @@ theorem liveStatusOfP_live (liveIndex : Std.HashMap State Nat) (dead : Std.HashS
   | none =>
     rw [h'] at h
     by_cases hd : dead.contains q = true
-    · rw [if_pos hd] at h; cases h
-    · rw [if_neg hd] at h; cases h
+    · rw [ite_eq_left hd] at h; cases h
+    · rw [ite_eq_right hd] at h; cases h
 
 theorem liveStatusOfP_live_getD (liveIndex : Std.HashMap State Nat) (dead : Std.HashSet State)
     (q : State) (pos : Nat) (h : liveStatusOfP liveIndex dead q = .live pos) :
@@ -284,7 +284,7 @@ theorem dfsGoP_le (cs : CompiledSpec State L) (cr : Nat) (succs : State → Arra
     simp only []
     by_cases h : step.idx < step.succ.size
     · simp only [h, dite_true] at hr
-      rw [dif_pos h]
+      rw [dite_eq_left h]
       cases hgs : (streettOpsP cs cr).getStatus aux step.succ[step.idx] with
       | dead =>
         simp only [hgs] at hr
@@ -318,7 +318,7 @@ theorem dfsGoP_le (cs : CompiledSpec State L) (cr : Nat) (succs : State → Arra
         simp only [hpsh']
         exact ih _ _ r hr
     · simp only [h, dite_false] at hr
-      rw [dif_neg h]
+      rw [dite_eq_right h]
       rcases hp : (streettOpsP cs cr).pop succs edgeMarks aux step with ⟨aux', found⟩
       simp only [hp] at hr
       have hp' : (streettOpsF cs cr).pop succs edgeMarks aux step = (aux', found) := hp
@@ -343,7 +343,7 @@ theorem dfsGoF_le (cs : CompiledSpec State L) (cr : Nat) (succs : State → Arra
     simp only []
     by_cases h : step.idx < step.succ.size
     · simp only [h, dite_true] at hr
-      rw [dif_pos h]
+      rw [dite_eq_left h]
       cases hgs : (streettOpsF cs cr).getStatus aux step.succ[step.idx] with
       | dead =>
         simp only [hgs] at hr
@@ -383,7 +383,7 @@ theorem dfsGoF_le (cs : CompiledSpec State L) (cr : Nat) (succs : State → Arra
         simp only [hpsh']
         exact ih _ _ r hr
     · simp only [h, dite_false] at hr
-      rw [dif_neg h]
+      rw [dite_eq_right h]
       rcases hp : (streettOpsF cs cr).pop succs edgeMarks aux step with ⟨aux', found⟩
       simp only [hp] at hr
       have hp' : (streettOpsP cs cr).pop succs edgeMarks aux step = (aux', found) := hp
@@ -425,7 +425,6 @@ theorem genericDFSGoP_eq (cs : CompiledSpec State L) (cr : Nat) (succs : State �
   | nil =>
     intro aux
     rw [genericDFSGoP.eq_def (streettOpsP cs cr), genericDFSGo.eq_def (streettOpsF cs cr)]
-    rfl
   | cons q rest ih =>
     intro aux
     rw [genericDFSGoP.eq_def (streettOpsP cs cr), genericDFSGo.eq_def (streettOpsF cs cr)]
@@ -459,7 +458,6 @@ theorem genericDFSP_eq (cs : CompiledSpec State L) (cr : Nat) (succs : State →
       genericDFS (streettOpsF cs cr) succs edgeMarks expand roots aux := by
   unfold genericDFSP genericDFS
   rw [genericDFSGoP_eq]
-  rfl
 
 theorem streettRunP_eq (cs : CompiledSpec State L) (cr : Nat)
     (expand : State → Array State × Array (Std.HashSet Nat) × Array Nat) (initialStates : List State) :

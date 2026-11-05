@@ -231,7 +231,7 @@ theorem toSpec_isRun_ofRun {sysSucc : SysState → Array SysState} {sysInit : Li
   · next he =>
     have hemp : sysSucc (τ n) = #[] := Array.isEmpty_iff.mp he
     refine mem_totalize.mpr ?_
-    rw [if_pos (by simp [unlabelled, hemp]), Array.mem_singleton.mp hmem]
+    rw [ite_eq_left (by simp [unlabelled, hemp]), Array.mem_singleton.mp hmem]
   · exact mem_totalize_of_mem (mem_unlabelled.mpr ⟨rfl, hmem⟩)
 
 /-- Forgetting the letters, a labelled run walks the underlying totalized graph. -/

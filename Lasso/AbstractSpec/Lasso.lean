@@ -497,14 +497,14 @@ theorem lapFor_src_dst (W : TEdgeWitness A succs edgeMarks)
     congr 1
     · exact List.getElem_append_left hi
     · exact (cycleClosed_getElem_succ ac hne i hi).symm
-  unfold lapFor
+  unfold lapFor at hi' ⊢
   rw [List.getElem_set]
   by_cases h : witnessIdx = i
   · subst h
-    rw [if_pos rfl]
+    rw [ite_eq_left rfl]
     exact ⟨(W.markEdge_spec hm hstepmem hcov).2.1, (W.markEdge_spec hm hstepmem hcov).2.2.1,
       (W.markEdge_spec hm hstepmem hcov).1⟩
-  · simp only [if_neg h]
+  · simp only [ite_eq_right h]
     rw [show (stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne]))[i]'(by omega) =
         (stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne]))[i]'hi'' from rfl, hbaseElem]
     exact ⟨(W.stepEdge_spec hstepmem).2.1, (W.stepEdge_spec hstepmem).2.2, (W.stepEdge_spec hstepmem).1⟩
@@ -582,7 +582,7 @@ theorem lapFor_mark (W : TEdgeWitness A succs edgeMarks)
   have hstepmem := TAcceptingCycle.cycle_succ_mem ac hne witnessIdx hidx
   refine ⟨witnessIdx, by omega, ?_⟩
   unfold lapFor
-  rw [List.getElem_set, if_pos rfl]
+  rw [List.getElem_set, ite_eq_left rfl]
   exact (W.markEdge_spec hm hstepmem hcov).2.2.2
 
 private theorem edgeChain_tail (a : Edge) (l : List Edge)
@@ -724,7 +724,7 @@ theorem cycleLapAt_eq (W : TEdgeWitness A succs edgeMarks)
     (ac : TAcceptingCycle initialStates succs edgeMarks k) (hne : ac.cycle ≠ []) (m : Nat) (hm : m < k) :
     cycleLapAt W ac hne m = lapFor W ac.cycle hne (ac.cycle_covers_marks m hm).choose
       (ac.cycle_covers_marks m hm).choose_spec.choose m := by
-  unfold cycleLapAt; rw [dif_pos hm]
+  unfold cycleLapAt; rw [dite_eq_left hm]
 
 theorem cycleLapAt_length (W : TEdgeWitness A succs edgeMarks)
     (ac : TAcceptingCycle initialStates succs edgeMarks k) (hne : ac.cycle ≠ []) (m : Nat) (hm : m < k) :
@@ -743,7 +743,7 @@ theorem TAcceptingCycle.cycleE_eq_flatMap (W : TEdgeWitness A succs edgeMarks)
     (ac : TAcceptingCycle initialStates succs edgeMarks k) (hne : ac.cycle ≠ []) (hk0 : ¬ k = 0) :
     ac.cycleE W = (List.range k).flatMap (cycleLapAt W ac hne) := by
   unfold TAcceptingCycle.cycleE
-  rw [dif_neg hk0]
+  rw [dite_eq_right hk0]
 
 private theorem cycleE_spec (W : TEdgeWitness A succs edgeMarks)
     (ac : TAcceptingCycle initialStates succs edgeMarks k) :
@@ -759,7 +759,7 @@ private theorem cycleE_spec (W : TEdgeWitness A succs edgeMarks)
   · have hcc := cycleClosed_chain ac
     have hcne : ac.cycle ++ [ac.cycle.head hne] ≠ [] := by simp
     have heq : ac.cycleE W = stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne]) := by
-      unfold TAcceptingCycle.cycleE; rw [dif_pos h]
+      unfold TAcceptingCycle.cycleE; rw [dite_eq_left h]
     simp only [heq]
     refine ⟨?_, stemEdges_valid W _ hcc, stemEdges_chain W _ hcc, fun _ => ?_, fun _ => ?_⟩
     · rw [stemEdges_length]; simp; have := ac.cycle_nonempty; omega
@@ -821,7 +821,7 @@ theorem cycleE_endpoints_mem (W : TEdgeWitness A succs edgeMarks)
   have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos (by have := ac.cycle_nonempty; omega)
   by_cases h : k = 0
   · have heq : ac.cycleE W = stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne]) := by
-      unfold TAcceptingCycle.cycleE; rw [dif_pos h]
+      unfold TAcceptingCycle.cycleE; rw [dite_eq_left h]
     rw [heq] at he
     obtain ⟨j, hj, rfl⟩ := List.mem_iff_getElem.mp he
     have hjlen : (stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne])).length =
@@ -869,7 +869,7 @@ theorem cycleE_src_hits (W : TEdgeWitness A succs edgeMarks)
   have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos (by have := ac.cycle_nonempty; omega)
   by_cases h : k = 0
   · have heq : ac.cycleE W = stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne]) := by
-      unfold TAcceptingCycle.cycleE; rw [dif_pos h]
+      unfold TAcceptingCycle.cycleE; rw [dite_eq_left h]
     have hlen : (stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne])).length =
         ac.cycle.length := by rw [stemEdges_length]; simp
     have hi'' : i < (stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne])).length := by omega
@@ -1097,7 +1097,7 @@ theorem cycleE_length_dvd (W : TEdgeWitness A succs edgeMarks)
   have hne : ac.cycle ≠ [] := List.ne_nil_of_length_pos (by have := ac.cycle_nonempty; omega)
   by_cases hk : k = 0
   · unfold TAcceptingCycle.cycleE
-    rw [dif_pos hk, stemEdges_length]
+    rw [dite_eq_left hk, stemEdges_length]
     simp
   · rw [TAcceptingCycle.cycleE_eq_flatMap W ac hne hk,
       flatMap_uniform_length _ _ _ (fun i hi => cycleLapAt_length W ac hne i hi)]
@@ -1112,7 +1112,7 @@ theorem cycleE_src (W : TEdgeWitness A succs edgeMarks)
   have hL : 0 < ac.cycle.length := by have := ac.cycle_nonempty; omega
   by_cases hk : k = 0
   · have hE : ac.cycleE W = stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne]) := by
-      unfold TAcceptingCycle.cycleE; rw [dif_pos hk]
+      unfold TAcceptingCycle.cycleE; rw [dite_eq_left hk]
     have hj' : j < (stemEdges W.stepEdge (ac.cycle ++ [ac.cycle.head hne])).length := hE ▸ hj
     have hjL : j < ac.cycle.length := by
       rw [stemEdges_length] at hj'; simpa using hj'
@@ -1166,7 +1166,7 @@ theorem TRegionCycle.toTValidLasso_run_src {A : TOASpec State Edge α k}
     rw [TValidLasso.run_eq_cycle _ n hnE, cycleE_src Wc rc.cycleAc, ← List.getElem?_eq_getElem,
       Nat.mod_mod_of_dvd _ (cycleE_length_dvd Wc rc.cycleAc)]
     have hidx : n + 1 - rc.stem.length = n - (stemEdges Ws.stepEdge rc.stem).length := by omega
-    simp only [lassoAt, hn, if_false, hidx]
+    simp only [lassoAt, hn, ite_false, hidx]
     rfl
 
 end Bridge

@@ -178,7 +178,7 @@ theorem liveFlush_spec [Inhabited State] [LawfulBEq State] [LawfulHashable State
       rw [Std.HashMap.getElem?_erase] at h
       by_cases hqq' : q == q'
       · simp [hqq'] at h
-      · simp only [hqq', Bool.false_eq_true, if_false] at h
+      · simp only [hqq', Bool.false_eq_true, ite_false] at h
         obtain ⟨hp1, hp2⟩ := hbwd q' p h
         simp only [Array.size_push] at hp1
         have hqne : q' ≠ q := fun heq => by simp [heq] at hqq'
@@ -191,7 +191,7 @@ theorem liveFlush_spec [Inhabited State] [LawfulBEq State] [LawfulHashable State
     simp only [hpop] at ih
     obtain ⟨ihwf, ihbwd, ihstatus⟩ := ih hwf' hbwd'
     unfold liveFlush
-    simp only [hgt, if_true, hb, hpop]
+    simp only [hgt, ite_true, hb, hpop]
     refine ⟨ihwf, ihbwd, ?_⟩
     · intro q'
       have hstep : liveStatusOf (liveIndex.erase q) (dead.insert q) q' =
@@ -219,7 +219,7 @@ theorem liveFlush_spec [Inhabited State] [LawfulBEq State] [LawfulHashable State
   | case3 live liveIndex dead hle =>
     intro hwf hbwd
     unfold liveFlush
-    simp only [hle, if_false]
+    simp only [hle, ite_false]
     exact ⟨hwf, hbwd, fun q => Or.inl trivial⟩
 
 /-- The flush preserves `LiveWF`. -/
@@ -240,7 +240,7 @@ theorem liveFlush_dead_or_old [Inhabited State] [LawfulBEq State] (pos : Nat) :
   | case1 live liveIndex dead hgt hnone =>
     intro q hq
     unfold liveFlush at hq
-    simp only [hgt, if_true, hnone] at hq
+    simp only [hgt, ite_true, hnone] at hq
     exact Or.inl hq
   | case2 live liveIndex dead hgt q0 hb ih =>
     intro q hq
@@ -249,7 +249,7 @@ theorem liveFlush_dead_or_old [Inhabited State] [LawfulBEq State] (pos : Nat) :
     have hpop : (ys.push q0).pop = ys := by simp
     simp only [hpop] at ih
     unfold liveFlush at hq
-    simp only [hgt, if_true, hb, hpop] at hq
+    simp only [hgt, ite_true, hb, hpop] at hq
     rcases ih q hq with hc | ⟨p, hp1, hp2, hp3⟩
     · rw [Std.HashSet.mem_insert] at hc
       rcases hc with hc | hc
@@ -263,7 +263,7 @@ theorem liveFlush_dead_or_old [Inhabited State] [LawfulBEq State] (pos : Nat) :
   | case3 live liveIndex dead hle =>
     intro q hq
     unfold liveFlush at hq
-    simp only [hle, if_false] at hq
+    simp only [hle, ite_false] at hq
     exact Or.inl hq
 
 /-- The flush only ever adds to `dead`. -/
@@ -275,7 +275,7 @@ theorem liveFlush_dead_mono [Inhabited State] [LawfulBEq State] [LawfulHashable 
   | case1 live liveIndex dead hgt hnone =>
     intro q hq
     unfold liveFlush
-    simp only [hgt, if_true, hnone]
+    simp only [hgt, ite_true, hnone]
     exact hq
   | case2 live liveIndex dead hgt q0 hb ih =>
     intro q hq
@@ -284,12 +284,12 @@ theorem liveFlush_dead_mono [Inhabited State] [LawfulBEq State] [LawfulHashable 
     have hpop : (ys.push q0).pop = ys := by simp
     simp only [hpop] at ih
     unfold liveFlush
-    simp only [hgt, if_true, hb, hpop]
+    simp only [hgt, ite_true, hb, hpop]
     exact ih q (Std.HashSet.mem_insert.mpr (Or.inr hq))
   | case3 live liveIndex dead hle =>
     intro q hq
     unfold liveFlush
-    simp only [hle, if_false]
+    simp only [hle, ite_false]
     exact hq
 
 /-- Everything the flush takes off the stack is dead afterwards. -/
@@ -309,7 +309,7 @@ theorem liveFlush_dead_of_ge [Inhabited State] [LawfulBEq State] [LawfulHashable
     have hpop : (ys.push q0).pop = ys := by simp
     simp only [hpop] at ih
     unfold liveFlush
-    simp only [hgt, if_true, hb, hpop]
+    simp only [hgt, ite_true, hb, hpop]
     simp only [Array.size_push] at hi
     rcases Nat.lt_or_ge i ys.size with hlt | hge
     · rw [Array.getElem!_push_lt hlt]
@@ -332,7 +332,7 @@ theorem liveFlush_getElem!_lt [Inhabited State] (pos : Nat) :
   | case1 live liveIndex dead hgt hnone =>
     intro i hi
     unfold liveFlush
-    simp only [hgt, if_true, hnone]
+    simp only [hgt, ite_true, hnone]
   | case2 live liveIndex dead hgt q hb ih =>
     intro i hi
     obtain ⟨ys, hys⟩ := Array.back?_eq_some_iff.mp hb
@@ -340,7 +340,7 @@ theorem liveFlush_getElem!_lt [Inhabited State] (pos : Nat) :
     have hpop : (ys.push q).pop = ys := by simp
     simp only [hpop] at ih
     unfold liveFlush
-    simp only [hgt, if_true, hb, hpop]
+    simp only [hgt, ite_true, hb, hpop]
     have hilt : i < ys.size := by
       have hgt' : (ys.push q).size > pos := hgt
       simp only [Array.size_push] at hgt'
@@ -349,7 +349,7 @@ theorem liveFlush_getElem!_lt [Inhabited State] (pos : Nat) :
   | case3 live liveIndex dead hle =>
     intro i hi
     unfold liveFlush
-    simp only [hle, if_false]
+    simp only [hle, ite_false]
 
 /-- A touched state is still live or has joined the dead after the flush. -/
 theorem liveFlush_touched_mono [Inhabited State] [LawfulBEq State] [LawfulHashable State] (pos : Nat) :
@@ -369,7 +369,7 @@ theorem liveFlush_touched_mono [Inhabited State] [LawfulBEq State] [LawfulHashab
     have hpop : (ys.push q).pop = ys := by simp
     simp only [hpop] at ih
     unfold liveFlush
-    simp only [hgt, if_true, hb, hpop]
+    simp only [hgt, ite_true, hb, hpop]
     refine ih s ?_
     rcases hs with hs | hs
     · rcases Array.mem_push.mp hs with hs' | rfl
@@ -379,7 +379,7 @@ theorem liveFlush_touched_mono [Inhabited State] [LawfulBEq State] [LawfulHashab
   | case3 live liveIndex dead hle =>
     intro s hs
     unfold liveFlush
-    simp only [hle, if_false]
+    simp only [hle, ite_false]
     exact hs
 
 /-- The flush drains `live` down to exactly `pos`, given `pos ≤ live.size`. -/
@@ -401,12 +401,12 @@ theorem liveFlush_size (pos : Nat) :
     have hgt' : (ys.push q).size > pos := hgt
     rw [hpop] at ih
     unfold liveFlush
-    simp only [hgt, if_true, hb, hpop]
+    simp only [hgt, ite_true, hb, hpop]
     exact ih (by simp only [Array.size_push] at hgt' ⊢; omega)
   | case3 live liveIndex dead hle' =>
     intro hle
     unfold liveFlush
-    simp only [hle', if_false]
+    simp only [hle', ite_false]
     omega
 
 end Lasso

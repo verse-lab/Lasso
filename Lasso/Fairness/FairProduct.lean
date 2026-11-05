@@ -233,7 +233,7 @@ theorem eventuallyAlways_iff_indexed_letters [LawfulBEq α] (b : BoolFormula α)
     (lets : Nat → Std.HashSet α) :
     (BoolFormula.eventuallyAlways b).satisfies (fun i a => a ∈ lets i) ↔
       ∃ N, ∀ n, N ≤ n → b.eval (lets n) = true := by
-  rw [BoolFormula.satisfies_eventuallyAlways]
+  rw (transparency := .default) [BoolFormula.satisfies_eventuallyAlways]
   constructor
   · rintro ⟨N, hN⟩
     refine ⟨N, fun n hn => ?_⟩
@@ -318,11 +318,11 @@ theorem expandFair_coherent [LawfulHashable SysState] (tgba : TGBA α)
   rw [genMarksFromShared_eq tgba q _ _ hmem]
   congr 1
   by_cases hu : (LSys.totalize sysSucc s).all (·.1.isEmpty) = true
-  · simp only [fairMarksGen, fairMarksTable, hu, if_true]
+  · simp only [fairMarksGen, fairMarksTable, hu, ite_true]
     obtain ⟨st, hst, t, ht, hc, h1, h2⟩ := (succsFrom_mem_iff _ _ _ _ _).mp hmem
     exact (fairMarksOf_uniform tgba q _ _ (fun _ => true) tgba.numAcceptSets extra _ hu
       ⟨st, hst, rfl, t, ht, hc, h1, h2⟩).symm
-  · simp only [fairMarksGen, fairMarksTable, hu, if_false, Bool.false_eq_true]
+  · simp only [fairMarksGen, fairMarksTable, hu, ite_false, Bool.false_eq_true]
     unfold fairMarksOf
     congr 2
     refine List.filter_congr fun i hi => ?_
@@ -450,7 +450,7 @@ def edgeWitnessFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α Sys
     by_cases hlt : m < tgba.numAcceptSets
     · have hbase := (edgeWitness tgba sysSucc sysLabel sysInit).markEdge_spec (k := tgba.numAcceptSets)
         hlt hstep (mem_edgeMarks_of_mem_edgeMarksFair tgba sysSucc sysLabel extra p p' m hlt hmark)
-      simp only [hlt, if_pos]
+      simp only [hlt, ite_eq_left]
       exact ⟨hbase.1, hbase.2.1, hbase.2.2.1, by simpa [toSpec, toSpecFair, hlt] using hbase.2.2.2⟩
     · obtain ⟨i, -, heq, hmem⟩ | hbase :=
         (mem_edgeMarksFair_iff tgba sysSucc sysLabel extra p p' m).mp hmark |>.symm
@@ -462,7 +462,7 @@ def edgeWitnessFair (tgba : TGBA α) (sysSucc : SysState → Array (LStep α Sys
           (fairKeep (fun _ => true) extra (m - tgba.numAcceptSets)) sysInit).stepEdge_spec hmem'
         have hletter := keptEdgeWitness_stepEdge_letter tgba sysSucc sysLabel
           (fairKeep (fun _ => true) extra (m - tgba.numAcceptSets)) sysInit p p' hmem'
-        simp only [hlt, if_neg, not_false_eq_true]
+        simp only [hlt, ite_eq_right, not_false_eq_true]
         exact ⟨hstepspec.1, hstepspec.2.1, hstepspec.2.2,
           by simpa [toSpecFair, hlt] using (fairKeep_le hletter).2⟩
       · exact absurd (edgeMarks_lt tgba sysSucc sysLabel hbound p p' m hbase) hlt
@@ -612,12 +612,12 @@ theorem keptExpandFair_coherent [LawfulHashable SysState] (tgba : TGBA α)
   rw [genMarksFromShared_eq tgba q _ _ hmem]
   congr 1
   by_cases hu : (LSys.totalize sysSucc s).all (·.1.isEmpty) = true
-  · simp only [fairMarksGen, fairMarksTable, hu, if_true]
+  · simp only [fairMarksGen, fairMarksTable, hu, ite_true]
     obtain ⟨st, hst, t, ht, hc, h1, h2⟩ := (succsFrom_mem_iff _ _ _ _ _).mp hmem
     simp only [keptStepsFrom, Array.mem_filter] at hst
     exact (fairMarksOf_uniform tgba q _ _ keep tgba.numAcceptSets extra _ hu
       ⟨st, hst.1, hst.2, t, ht, hc, h1, h2⟩).symm
-  · simp only [fairMarksGen, fairMarksTable, hu, if_false, Bool.false_eq_true]
+  · simp only [fairMarksGen, fairMarksTable, hu, ite_false, Bool.false_eq_true]
     unfold fairMarksOf
     congr 2
     refine List.filter_congr fun i hi => ?_
@@ -769,7 +769,7 @@ system state, so any restricted step edge witnesses it. -/
               (mem_fairMarksEdge_iff tgba sysSucc sysLabel keep tgba.numAcceptSets extra p p' m).mp
                 (Std.HashSet.mem_iff_contains.mpr h)
             omega)
-      simp only [hlt, if_pos]
+      simp only [hlt, ite_eq_left]
       exact ⟨hbase.1, hbase.2.1, hbase.2.2.1, by simpa [toSpec, toSpecFair, hlt] using hbase.2.2.2⟩
     · -- the mark says the edge survives `keep ∧ conjᵢ`, so that witness's step edge reads such a letter
       have hmem : p' ∈ keptSuccs tgba sysSucc sysLabel
@@ -789,7 +789,7 @@ system state, so any restricted step edge witnesses it. -/
         (fairKeep keep extra (m - tgba.numAcceptSets)) sysInit).stepEdge_spec hmem
       have hletter := keptEdgeWitness_stepEdge_letter tgba sysSucc sysLabel
         (fairKeep keep extra (m - tgba.numAcceptSets)) sysInit p p' hmem
-      simp only [hlt, if_neg, not_false_eq_true]
+      simp only [hlt, ite_eq_right, not_false_eq_true]
       exact ⟨hstepspec.1, hstepspec.2.1, hstepspec.2.2,
         by simpa [toSpecFair, hlt] using (fairKeep_le hletter).2⟩
 
@@ -855,7 +855,7 @@ theorem exists_run_of_TRegionCycle [LawfulBEq α] [BEq SysState] [Hashable SysSt
     exact keptEdgeWitness_stepEdge_letter tgba sysSucc sysLabel keep sysInit s s' hs'
   · intro s s' m hs' hmm
     by_cases hlt : m < tgba.numAcceptSets
-    · rw [edgeWitnessFairKept_markEdge, if_pos hlt]
+    · rw [edgeWitnessFairKept_markEdge, ite_eq_left hlt]
       refine keptEdgeWitness_markEdge_letter tgba sysSucc sysLabel keep sysInit s s' hs' m hlt ?_
       simp only [keptEdgeMarksFair, Std.HashSet.mem_iff_contains, Std.HashSet.union_eq,
         Std.HashSet.contains_union, Bool.or_eq_true] at hmm
@@ -866,7 +866,7 @@ theorem exists_run_of_TRegionCycle [LawfulBEq α] [BEq SysState] [Hashable SysSt
             (Std.HashSet.mem_iff_contains.mpr h)
         omega
     · -- the fairness witness is the step edge at `keep ∧ conjᵢ`, whose letter satisfies `keep` a fortiori
-      rw [edgeWitnessFairKept_markEdge, if_neg hlt]
+      rw [edgeWitnessFairKept_markEdge, ite_eq_right hlt]
       have hmem : s' ∈ keptSuccs tgba sysSucc sysLabel
           (fairKeep keep extra (m - tgba.numAcceptSets)) s := by
         simp only [keptEdgeMarksFair, Std.HashSet.mem_iff_contains, Std.HashSet.union_eq,

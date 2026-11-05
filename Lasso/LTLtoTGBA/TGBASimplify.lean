@@ -144,11 +144,11 @@ theorem sum_foldl_condPush_le {β} (w : β → Nat) (p : Array β → β → Boo
     intro acc0
     rw [List.foldl_cons]
     by_cases h : p acc0 a = true
-    · rw [if_pos h]
+    · rw [ite_eq_left h]
       have := ih acc0
       simp only [List.map_cons, List.sum_cons]
       omega
-    · rw [if_neg h]
+    · rw [ite_eq_right h]
       have := ih (acc0.push a)
       rw [Array.toList_push, List.map_append, List.sum_append] at this
       simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil] at this ⊢
@@ -259,8 +259,8 @@ private theorem mem_sccIndex_inner (i : Nat) (l : List Nat) (m : Std.HashMap Nat
   | cons s l ih =>
     rw [List.foldl_cons, ih, Std.HashMap.getD_insert]
     by_cases hsx : s = x
-    · subst hsx; simp only [beq_self_eq_true, if_true, List.mem_cons]; grind
-    · simp only [beq_iff_eq, hsx, if_false, List.mem_cons]; grind
+    · subst hsx; simp only [beq_self_eq_true, ite_true, List.mem_cons]; grind
+    · simp only [beq_iff_eq, hsx, ite_false, List.mem_cons]; grind
 
 private theorem mem_sccIndex_outer (sccs : Array (Std.HashSet Nat)) (l : List Nat) (m : Std.HashMap Nat (List Nat))
     (x j : Nat) :
@@ -334,7 +334,7 @@ theorem mem_sccInternalMarks_iff (tgba : TGBA α) (scc : Std.HashSet Nat) (m : N
       intro acc
       rw [List.foldl_cons]
       by_cases hc : scc.contains a.target = true
-      · rw [if_pos hc, ih (acc.union a.acceptMarks), Std.HashSet.union_eq, Std.HashSet.contains_union,
+      · rw [ite_eq_left hc, ih (acc.union a.acceptMarks), Std.HashSet.union_eq, Std.HashSet.contains_union,
           Bool.or_eq_true]
         constructor
         · rintro ((h1 | h2) | ⟨t, ht, htc, htm⟩)
@@ -346,7 +346,7 @@ theorem mem_sccInternalMarks_iff (tgba : TGBA α) (scc : Std.HashSet Nat) (m : N
           · rcases List.mem_cons.mp ht with rfl | ht'
             · exact Or.inl (Or.inr htm)
             · exact Or.inr ⟨t, ht', htc, htm⟩
-      · rw [if_neg hc, ih acc]
+      · rw [ite_eq_right hc, ih acc]
         constructor
         · rintro (h | ⟨t, ht, htc, htm⟩)
           · exact Or.inl h
@@ -667,7 +667,7 @@ theorem eraseMarks_correct (tgba : TGBA α) (hwf : tgba.WellFormed) (sccs : Arra
     have hkept : ∀ n, N ≤ n →
         (if keepMarks sccs (sccs.map (sccIsBad tgba)) (sccIndex sccs) (σ n).1 (σ n).2.target then (σ n).2
           else { (σ n).2 with acceptMarks := Std.HashSet.emptyWithCapacity 0 }) = (σ n).2 := fun n hn => by
-      rw [if_pos (hkeep n hn)]
+      rw [ite_eq_left (hkeep n hn)]
     refine ⟨fun n => ⟨(σ n).1, if keepMarks sccs (sccs.map (sccIsBad tgba)) (sccIndex sccs) (σ n).1 (σ n).2.target
       then (σ n).2 else { (σ n).2 with acceptMarks := Std.HashSet.emptyWithCapacity 0 }⟩, ⟨?_, ?_⟩, ?_, ?_⟩
     · show (eraseMarks tgba sccs).initialStates.contains (σ 0).1
@@ -1016,11 +1016,11 @@ theorem mem_foldl_condPush_of_mem {β} (p : Array β → β → Bool) :
     intro acc0 x hx
     rw [List.foldl_cons] at hx
     by_cases h : p acc0 a
-    · rw [if_pos h] at hx
+    · rw [ite_eq_left h] at hx
       rcases ih acc0 x hx with h1 | h2
       · exact Or.inl h1
       · exact Or.inr (List.mem_cons_of_mem _ h2)
-    · rw [if_neg h] at hx
+    · rw [ite_eq_right h] at hx
       rcases ih (acc0.push a) x hx with h1 | h2
       · rcases (Array.mem_push).mp h1 with h1 | rfl
         · exact Or.inl h1
@@ -1038,8 +1038,8 @@ theorem mem_of_mem_foldl_condPush_acc0 {β} (p : Array β → β → Bool) :
     intro acc0 x hx
     rw [List.foldl_cons]
     by_cases h : p acc0 a
-    · rw [if_pos h]; exact ih acc0 x hx
-    · rw [if_neg h]; exact ih (acc0.push a) x (Array.mem_push.mpr (Or.inl hx))
+    · rw [ite_eq_left h]; exact ih acc0 x hx
+    · rw [ite_eq_right h]; exact ih (acc0.push a) x (Array.mem_push.mpr (Or.inl hx))
 
 theorem mem_dedupExactTrans_of_mem {ts : Array (TGBA.Transition α)} {t : TGBA.Transition α}
     (ht : t ∈ dedupExactTrans ts) : t ∈ ts := by
@@ -1106,12 +1106,12 @@ theorem exists_rep_foldl_condPush {β} (same : β → β → Bool) (hrefl : ∀ 
     rw [List.foldl_cons]
     rw [List.mem_cons] at hx
     by_cases h : acc0.any (same · a)
-    · rw [if_pos h]
+    · rw [ite_eq_left h]
       rcases hx with rfl | hx
       · obtain ⟨x', hx'mem, hx'same⟩ := Array.any_eq_true'.mp h
         exact ⟨x', mem_of_mem_foldl_condPush_acc0 _ rest acc0 x' hx'mem, hx'same⟩
       · exact ih acc0 x hx
-    · rw [if_neg h]
+    · rw [ite_eq_right h]
       rcases hx with rfl | hx
       · exact ⟨x, mem_of_mem_foldl_condPush_acc0 _ rest (acc0.push x) x (Array.mem_push.mpr (Or.inr rfl)),
           hrefl x⟩
@@ -1336,7 +1336,7 @@ theorem measureTGBA_redirectTGBA_le (tgba : TGBA α) (ids : List Nat) (redirect 
       transWeight ((redirectTGBA tgba ids redirect).getSuccessors q) = transWeight (tgba.getSuccessors q) := by
     intro q hq
     rw [List.mem_toFinSet] at hq
-    rw [redirectTGBA_getSuccessors tgba ids redirect hidsnd, if_pos hq]
+    rw [redirectTGBA_getSuccessors tgba ids redirect hidsnd, ite_eq_left hq]
     exact transWeight_map_marks_eq
       (f := fun t => { t with target := redirect.getD t.target t.target }) (fun _ => rfl) _
   unfold measureTGBA
@@ -1476,7 +1476,7 @@ theorem redirect_isRoot_of_suffix (ids : List Nat) (key : Nat → Nat) (cands : 
             Bool.or_eq_false_iff, hneq r hrq]
           exact ⟨rfl, hrnc⟩
         · have hxltq : key x < key q := hJ1 x hxacc q List.mem_cons_self
-          simp only [Std.HashMap.getD_insert, hneq x hxltq, Bool.false_eq_true, if_false]
+          simp only [Std.HashMap.getD_insert, hneq x hxltq, Bool.false_eq_true, ite_false]
           rw [Std.HashMap.contains_insert, Bool.not_eq_true', Bool.or_eq_false_iff,
             hneq _ (Nat.lt_trans (hJ2 x hxacc) hxltq)]
           exact ⟨rfl, by simpa using hJ3 x hxacc⟩
@@ -1624,7 +1624,7 @@ theorem redirectTGBA_spec (tgba : TGBA α) (hwf : tgba.WellFormed) (ids : List N
   have hsucc : ∀ q ∈ kept, result.getSuccessors q =
       (tgba.getSuccessors q).map fun t => { t with target := redirect.getD t.target t.target } := by
     intro q hq
-    rw [hresult, redirectTGBA_getSuccessors tgba ids redirect hidsnd, if_pos hq]
+    rw [hresult, redirectTGBA_getSuccessors tgba ids redirect hidsnd, ite_eq_left hq]
   have hinitIff : ∀ q, result.initialStates.contains q ↔
       ∃ q0 ∈ tgba.initialStates.toList, redirect.getD q0 q0 = q := by
     intro q
@@ -1656,7 +1656,7 @@ theorem redirectTGBA_spec (tgba : TGBA α) (hwf : tgba.WellFormed) (ids : List N
     · rw [hsucc q hqk] at ht
       obtain ⟨v, hvmem, rfl⟩ := Array.mem_map.mp ht
       exact ⟨q, v, hvmem, rfl⟩
-    · rw [hresult, redirectTGBA_getSuccessors tgba ids redirect hidsnd, if_neg hqk] at ht
+    · rw [hresult, redirectTGBA_getSuccessors tgba ids redirect hidsnd, ite_eq_right hqk] at ht
       exact absurd ht (by simp)
   constructor
   · rintro ⟨σ, hrun, hcompat, hacc⟩
@@ -1808,9 +1808,9 @@ private theorem mergeEquivalentStates_spec (tgba : TGBA α) (hwf : tgba.WellForm
     (Std.HashMap.emptyWithCapacity ids.length) with hredirect
   have hdef : mergeEquivalentStates tgba = if redirect.isEmpty then tgba else redirectTGBA tgba ids redirect := rfl
   by_cases hemp : redirect.isEmpty = true
-  · rw [hdef, if_pos hemp]
+  · rw [hdef, ite_eq_left hemp]
     exact ⟨hwf, ⟨rfl, fun q t ht => ⟨q, t, ht, rfl⟩⟩, fun _ => Iff.rfl⟩
-  rw [hdef, if_neg hemp]
+  rw [hdef, ite_eq_right hemp]
   have hperm : ids.Perm tgba.states.toList := List.mergeSort_perm _ _
   have hnd : tgba.states.toList.Nodup := states_toList_nodup tgba
   have hidsnd : ids.Nodup := (List.Perm.nodup_iff hperm).mpr hnd
@@ -2258,12 +2258,12 @@ theorem simplifyTGBA_spec (tgba : TGBA α) (hwf : tgba.WellFormed) :
     by_cases hc : measureTGBA (reduceRound (eraseMarks tgba (tgbaSCCs tgba))) =
         measureTGBA (eraseMarks tgba (tgbaSCCs tgba))
     · have heq : simplifyTGBA tgba = reduceRound (eraseMarks tgba (tgbaSCCs tgba)) := by
-        rw [simplifyTGBA]; exact dif_pos hc
+        rw [simplifyTGBA]; exact dite_eq_left hc
       rw [heq]
       exact ⟨hnext, fun hb => reduceRound_marks_lt _ h1 (eraseMarks_marks_lt tgba _ hb),
         fun ξ => (hcorr1 ξ).trans (reduceRound_correct _ h1 ξ)⟩
     · have heq : simplifyTGBA tgba = simplifyTGBA (reduceRound (eraseMarks tgba (tgbaSCCs tgba))) := by
-        rw [simplifyTGBA]; exact dif_neg hc
+        rw [simplifyTGBA]; exact dite_eq_right hc
       rw [heq]
       have hlt : measureTGBA (reduceRound (eraseMarks tgba (tgbaSCCs tgba))) < n :=
         hm ▸ Nat.lt_of_lt_of_le (Nat.lt_of_le_of_ne (measureTGBA_reduceRound_le _) hc) (measureTGBA_eraseMarks_le _ _)

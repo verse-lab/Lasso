@@ -434,7 +434,13 @@ theorem TGBA.degeneralize_bridge [LawfulBEq α] [LawfulHashable α]
       simp only [TOASpec.degeneralize, TGBA.toSpec, TOASpec.counterStep]
       obtain ⟨h1, h2⟩ := hidx_next n
       refine ⟨ht_mem n, Prod.ext h1.symm (Fin.ext ?_)⟩
-      split <;> simp_all
+      dsimp only
+      -- The abstract counter and executable transition use different Decidable instances.
+      by_cases hc : (t n).acceptMarks.contains (σ n).1.acceptIdx = true
+      · rw (transparency := .default) [ite_eq_left hc] at h2 ⊢
+        exact h2.symm
+      · rw (transparency := .default) [ite_eq_right hc] at h2 ⊢
+        exact h2.symm
     · -- Compatibility
       intro n
       simp only [TOASpec.degeneralize, TGBA.toSpec]
@@ -486,7 +492,11 @@ theorem TGBA.degeneralize_bridge [LawfulBEq α] [LawfulHashable α]
         rw [h1]
         congr 1
         have hc := congrArg Fin.val hc2
-        split at hc <;> simp_all
+        by_cases hm : (σ' n).1.2.acceptMarks.contains (σ' n).2.val = true
+        · rw (transparency := .default) [ite_eq_left hm] at hc ⊢
+          exact hc
+        · rw (transparency := .default) [ite_eq_right hm] at hc ⊢
+          exact hc
     · -- Compatibility
       intro n
       simp only [TBA.toSpec]

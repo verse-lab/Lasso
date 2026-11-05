@@ -206,7 +206,7 @@ private theorem foldl_or_testBit {β : Type w} (cond : β → Bool) (g : β → 
   | x :: l, init => by
     rw [List.foldl_cons, foldl_or_testBit cond g b l]
     by_cases hc : cond x = true
-    · simp only [hc, if_true, Nat.testBit_or, Bool.or_eq_true, List.mem_cons]
+    · simp only [hc, ite_true, Nat.testBit_or, Bool.or_eq_true, List.mem_cons]
       constructor
       · rintro ((h | h) | ⟨y, hy, hcy, hby⟩)
         · exact Or.inl h
@@ -274,7 +274,8 @@ theorem mark_edge_iff (tgba : TGBA α) (sysSucc : SysState → Array (LStep α S
   have hk' : k < (cs.letterOptions[o]!).marks.size := by
     simpa [StreettOption.onEdgesIn] using hk
   rw [getElem!_pos _ k hk]
-  simp only [StreettOption.onEdgesIn, Array.getElem_map]
+  dsimp only [StreettOption.onEdgesIn] at hk ⊢
+  simp only [Array.getElem_map]
   rw [hspec, Array.contains_iff_mem]
   show p' ∈ keptSuccsFrom tgba p.2 (sysLabel p.1) (LSys.totalize sysSucc p.1) _ ↔ _
   rw [mem_keptSuccsFrom_iff]
@@ -338,11 +339,11 @@ theorem optBitsFor_eq (tgba : TGBA α) (sysSucc : SysState → Array (LStep α S
     optBitsFor tgba cs p.2 (sysLabel p.1) (LSys.totalize sysSucc p.1) out =
       out.map fun p' => cs.edgeBits (p, p') := by
   unfold optBitsFor
-  rw [if_neg (by simpa using hn)]
+  rw [ite_eq_right (by simpa using hn)]
   by_cases hall : (LSys.totalize sysSucc p.1).all (·.1.isEmpty) = true
-  · rw [if_pos hall]
+  · rw [ite_eq_left hall]
     have hbase : ∀ st ∈ LSys.totalize sysSucc p.1, LSys.letter (sysLabel p.1) st.1 = sysLabel p.1 :=
-      fun st hst => by rw [LSys.letter, if_pos (by simpa using Array.all_eq_true'.mp hall st hst)]
+      fun st hst => by rw [LSys.letter, ite_eq_left (by simpa using Array.all_eq_true'.mp hall st hst)]
     apply Array.ext
     · simp
     · intro k hk1 hk2
@@ -359,7 +360,7 @@ theorem optBitsFor_eq (tgba : TGBA α) (sysSucc : SysState → Array (LStep α S
       · rintro ⟨st, ⟨hst, _⟩, hbit⟩
         rw [hbase st hst] at hbit
         exact hbit
-  · rw [if_neg hall]
+  · rw [ite_eq_right hall]
     apply Array.ext
     · simp
     · intro k hk1 hk2
@@ -430,10 +431,10 @@ private theorem foldl_insert_getD [LawfulBEq SysState] (p' : SysState × Nat)
     rw [List.foldl_cons, List.filter_cons, ih]
     by_cases he : (e.1 == p') = true
     · obtain rfl : e.1 = p' := by simpa using he
-      rw [if_pos he, List.foldl_cons]
+      rw [ite_eq_left he, List.foldl_cons]
       congr 1
       simp [Std.HashMap.getD_insert_self]
-    · rw [if_neg he]
+    · rw [ite_eq_right he]
       congr 1
       rw [Std.HashMap.getD_insert]
       simp [he]
@@ -480,7 +481,7 @@ private theorem mem_fusedTriples {γ : Type w} (tgba : TGBA α)
     · exact ⟨st, hst, t, ht, by assumption, by simpa using hte.symm⟩
     · exact absurd hte (by simp)
   · rintro ⟨st, hst, t, ht, hc, rfl⟩
-    exact ⟨st, hst, Array.mem_filterMap.mpr ⟨t, ht, by rw [if_pos hc]⟩⟩
+    exact ⟨st, hst, Array.mem_filterMap.mpr ⟨t, ht, by rw [ite_eq_left hc]⟩⟩
 
 omit [Hashable SysState] [LawfulHashable SysState] in
 /-- One step's contribution, when it does reach `p'`: the transitions it is compatible with that land on
@@ -532,13 +533,13 @@ private theorem fusedTriples_filter_payload {γ : Type w} (tgba : TGBA α)
     simp only [List.flatMap_cons, List.filter_cons, ih]
     by_cases hs : (st.2 == p'.1) = true
     · have hs' : st.2 = p'.1 := by simpa using hs
-      rw [if_pos hs, List.flatMap_cons]
+      rw [ite_eq_left hs, List.flatMap_cons]
       congr 1
       simp only [List.map_map, Function.comp_def]
       exact step_payload (LSys.letter base st.1) st.2
         (fun t => mk st t) p' hs' (tgba.getSuccessors q).toList
 
-    · rw [if_neg hs]
+    · rw [ite_eq_right hs]
       have hnil : List.map (fun e => e.2) (List.filter (fun e => e.1 == p')
           (List.filterMap (fun t =>
             if transCompatible t (LSys.letter base st.1) then some ((st.2, t.target), mk st t)
@@ -560,7 +561,7 @@ theorem fusedExpandWithOpts_fst (tgba : TGBA α) (cs : CompiledSpec (SysState ×
     (q : Nat) (base : Std.HashSet α) (steps : Array (LStep α SysState))
     (h : ¬ (steps.all (·.1.isEmpty) = true)) :
     (fusedExpandWithOpts tgba cs q base steps).1 = succsFrom tgba q base steps := by
-  rw [fusedExpandWithOpts, succsFrom, if_neg h]
+  rw [fusedExpandWithOpts, succsFrom, ite_eq_right h]
   simp only [Array.map_flatMap, Array.map_filterMap]
   congr 1
   funext st
@@ -586,7 +587,7 @@ theorem fusedExpandWithOpts_snd (tgba : TGBA α) (cs : CompiledSpec (SysState ×
     (fun (a : Nat) (e : (SysState × Nat) × Std.HashSet Nat × Nat) => a ||| e.2.2)]
   -- the fused branch is only reached when some step carries its own letter, so the spec's marks are the
   -- unguarded fold over the realizations
-  rw [edgeMarksFrom, marksTable, if_neg h]
+  rw [edgeMarksFrom, marksTable, ite_eq_right h]
   show _ = (realizationsFrom tgba q base steps p').foldl
     (init := Std.HashSet.emptyWithCapacity 0) (fun acc r => acc.union r.2.acceptMarks)
   rw [← Array.foldl_toList]
@@ -615,9 +616,9 @@ theorem fusedExpandWithOpts_thd (tgba : TGBA α) (cs : CompiledSpec (SysState ×
   by_cases hn : cs.numOptions = 0
   · rw [fusedExpandWithOpts, optBitsFor]
     simp [hn]
-  · rw [optBitsFor, if_neg (by simpa using hn), if_neg h,
+  · rw [optBitsFor, ite_eq_right (by simpa using hn), ite_eq_right h,
       ← fusedExpandWithOpts_fst tgba cs q base steps h, fusedExpandWithOpts]
-    simp only [beq_iff_eq, if_neg hn]
+    simp only [beq_iff_eq, ite_eq_right hn]
     refine Array.map_congr_left fun p' _ => ?_
     rw [← Array.foldl_toList, foldl_insert_getD p' _ _ ∅]
     rw [foldl_pair_snd (fun (x : Std.HashSet Nat) (e : (SysState × Nat) × Std.HashSet Nat × Nat) =>
@@ -735,7 +736,7 @@ theorem keptExpandWithOpts_bits (tgba : TGBA α) (sysSucc : SysState → Array (
       intro l hl
       have : ((cs.atBits bits).restrict l) = false := by
         rw [CompiledSpec.atBits_restrict, ← hkeep]; exact hl
-      rw [CompiledSpec.letterBits, if_neg (by rw [this]; simp)]
+      rw [CompiledSpec.letterBits, ite_eq_right (by rw [this]; simp)]
     have hagree : ∀ l, keep l = true → (cs.atBits bits).letterBits l = cs.letterBits l :=
       fun l hl => CompiledSpec.letterBits_atBits cs hwf bits (by rw [← hkeep]; exact hl) (htop l)
     -- the two existentials range over the same realizations
@@ -756,11 +757,11 @@ theorem keptExpandWithOpts_bits (tgba : TGBA α) (sysSucc : SysState → Array (
         · rw [hzero _ (by simpa using hk)] at hbit
           simp at hbit
     unfold optBitsFor
-    rw [if_neg (by simpa using hn)]
+    rw [ite_eq_right (by simpa using hn)]
     by_cases hall : kept.all (·.1.isEmpty) = true
-    · rw [if_pos hall]
+    · rw [ite_eq_left hall]
       have hbl : ∀ st ∈ kept, LSys.letter base st.1 = base :=
-        fun st hst => by rw [LSys.letter, if_pos (by simpa using Array.all_eq_true'.mp hall st hst)]
+        fun st hst => by rw [LSys.letter, ite_eq_left (by simpa using Array.all_eq_true'.mp hall st hst)]
       apply Array.ext
       · simp
       · intro k hk1 hk2
@@ -779,7 +780,7 @@ theorem keptExpandWithOpts_bits (tgba : TGBA α) (sysSucc : SysState → Array (
         · rintro ⟨st', hst', -, hbit⟩
           rw [hbl st' hst'] at hbit
           exact hbit
-    · rw [if_neg hall]
+    · rw [ite_eq_right hall]
       apply Array.ext
       · simp
       · intro k hk1 hk2

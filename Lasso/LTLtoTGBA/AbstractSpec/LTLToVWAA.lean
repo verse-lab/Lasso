@@ -260,10 +260,10 @@ theorem NNF.satTrans_spec (q : NNF α) (ξ : OmegaWord α) (hq : q.satisfies ξ)
     rw [NNF.satisfies_or] at hq
     unfold NNF.satTrans
     by_cases hφ : φ.satisfies ξ
-    · rw [if_pos hφ]
+    · rw [ite_eq_left hφ]
       obtain ⟨hmem, hg, hO⟩ := ihφ ξ hφ
       exact ⟨by simp [NNF.vwaaTrans, hmem], hg, hO⟩
-    · rw [if_neg hφ]
+    · rw [ite_eq_right hφ]
       have hψ : ψ.satisfies ξ := hq.resolve_left hφ
       obtain ⟨hmem, hg, hO⟩ := ihψ ξ hψ
       exact ⟨by simp [NNF.vwaaTrans, hmem], hg, hO⟩
@@ -273,10 +273,10 @@ theorem NNF.satTrans_spec (q : NNF α) (ξ : OmegaWord α) (hq : q.satisfies ξ)
   | «until» φ ψ ihφ ihψ =>
     unfold NNF.satTrans
     by_cases hψ : ψ.satisfies ξ
-    · rw [if_pos hψ]
+    · rw [ite_eq_left hψ]
       obtain ⟨hmem, hg, hO⟩ := ihψ ξ hψ
       exact ⟨by simp [NNF.vwaaTrans, hmem], hg, hO⟩
-    · rw [if_neg hψ]
+    · rw [ite_eq_right hψ]
       rw [NNF.satisfies_until] at hq
       obtain ⟨i, hψi, hφlt⟩ := hq
       have hipos : 0 < i := by
@@ -309,7 +309,7 @@ theorem NNF.satTrans_spec (q : NNF α) (ξ : OmegaWord α) (hq : q.satisfies ξ)
     obtain ⟨hmemψ, hgψ, hOψ⟩ := ihψ ξ hψ0
     unfold NNF.satTrans
     by_cases hφ0 : φ.satisfies ξ
-    · rw [if_pos hφ0]
+    · rw [ite_eq_left hφ0]
       obtain ⟨hmemφ, hgφ, hOφ⟩ := ihφ ξ hφ0
       refine ⟨?_, ⟨hgψ, hgφ⟩, ?_⟩
       · simp only [NNF.vwaaTrans]
@@ -319,7 +319,7 @@ theorem NNF.satTrans_spec (q : NNF α) (ξ : OmegaWord α) (hq : q.satisfies ξ)
         rcases FinSet.mem_union.mp hq' with hq' | hq'
         · exact hOψ q' hq'
         · exact hOφ q' hq'
-    · rw [if_neg hφ0]
+    · rw [ite_eq_right hφ0]
       refine ⟨?_, ⟨hgψ, trivial⟩, ?_⟩
       · simp only [NNF.vwaaTrans]
         exact List.mem_flatMap.mpr ⟨NNF.satTrans ξ ψ, hmemψ,
@@ -517,7 +517,7 @@ theorem NNF.satRun_accepting (ξ : OmegaWord α) (ψ φ : NNF α) (hψ : ψ.sati
     intro m hm hψ'm
     have hmem := hself m hm
     unfold NNF.satTrans at hmem
-    rw [if_pos hψ'm] at hmem
+    rw [ite_eq_left hψ'm] at hmem
     have hmem' : NNF.satTrans (ξ.drop m) ψ' ∈ ψ'.vwaaTrans := (NNF.satTrans_spec ψ' (ξ.drop m) hψ'm).1
     rcases NNF.vwaaTrans_veryWeak ψ' _ _ hmem' (NNF.until φ' ψ') hmem with heq | hlt
     · have hrk : (NNF.until φ' ψ').rank = ψ'.rank := by rw [heq]
@@ -596,31 +596,31 @@ theorem NNF.sound_until (φ : NNF α) {r : VWAA.Run (NNF α)} {S : FinSet (NNF �
     have hb : r.InfBranch b := by
       refine ⟨?_, ?_⟩
       · show b 0 ∈ r.level 0
-        simp only [hb_def, if_pos (Nat.zero_le i)]
+        simp only [hb_def, ite_eq_left (Nat.zero_le i)]
         exact hp0
       · intro k
         show b (k + 1) ∈ r.succ k (b k)
         rcases Nat.lt_or_ge k i with hk | hk
-        · simp only [hb_def, if_pos (Nat.le_of_lt hk), if_pos (show k + 1 ≤ i by omega)]
+        · simp only [hb_def, ite_eq_left (Nat.le_of_lt hk), ite_eq_left (show k + 1 ≤ i by omega)]
           exact hpstep k hk
         · rcases Nat.lt_or_ge i k with hk' | hk'
-          · simp only [hb_def, if_neg (show ¬ k ≤ i by omega), if_neg (show ¬ k + 1 ≤ i by omega)]
+          · simp only [hb_def, ite_eq_right (show ¬ k ≤ i by omega), ite_eq_right (show ¬ k + 1 ≤ i by omega)]
             have hboth := hforever (k - i)
             have heqk : i + (k - i) = k := by omega
             rw [heqk] at hboth
             exact hboth.2
           · have hk'' : k = i := by omega
             subst hk''
-            simp only [hb_def, if_pos (Nat.le_refl _), if_neg (show ¬ k + 1 ≤ k by omega), hpi]
+            simp only [hb_def, ite_eq_left (Nat.le_refl _), ite_eq_right (show ¬ k + 1 ≤ k by omega), hpi]
             have hboth := hforever 0
             simpa using hboth.2
     have hstab : VWAA.StabilizesAt b (NNF.until φ' ψ') := by
       refine ⟨i, fun m hm => ?_⟩
       simp only [hb_def]
       rcases Nat.lt_or_ge i m with hm' | hm'
-      · rw [if_neg (show ¬ m ≤ i by omega)]
+      · rw [ite_eq_right (show ¬ m ≤ i by omega)]
       · have : m = i := by omega
-        rw [this, if_pos (Nat.le_refl _), hpi]
+        rw [this, ite_eq_left (Nat.le_refl _), hpi]
     exact (acceptingRun_iff hv).mp hacc b (NNF.until φ' ψ') hb hstab trivial
   rw [not_forall] at hnotforever
   obtain ⟨N, hNspec⟩ := hnotforever

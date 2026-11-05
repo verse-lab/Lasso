@@ -140,7 +140,7 @@ private theorem flattenAux_spec (cs : Array (Array (StreettOption L))) :
     have hs' : (starts.push (out.size + cs[i].size)).size = i + 1 + 1 := by simp [hsize]
     obtain ⟨q1, q2, q3, q4, q5⟩ := ih (by omega) hs' hpushTop
     rw [flattenAux]
-    simp only [hi, dif_pos]
+    simp only [hi, dite_eq_left]
     refine ⟨q1, fun j hj => ?_, fun j hj => ?_, q4, fun p hip hp => ?_⟩
     · rw [q2 j (by omega), hpush j hj]
     · rw [q3 j (by simp; omega), happ j hj]
@@ -163,7 +163,7 @@ private theorem flattenAux_spec (cs : Array (Array (StreettOption L))) :
     have hieq : i = cs.size := by omega
     subst hieq
     rw [flattenAux]
-    simp only [hi, dif_neg, not_false_iff]
+    simp only [hi, dite_eq_right, not_false_iff]
     refine ⟨hsize, ?_, ?_, hstart.symm, fun p hip hp => absurd hp (by omega)⟩ <;>
       intros <;> trivial
 

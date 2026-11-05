@@ -119,20 +119,20 @@ private theorem tgba_to_vwaa (hfinals : ∀ f, f ∈ T.finals ↔ A.final f)
       else Of q, ?_, ?_, ?_⟩
     · intro q hq
       by_cases hcase : q ∈ T.finals ∩ r.mark i ∧ q ∈ r.state (i + 1)
-      · simp only [dif_pos hcase]
+      · simp only [dite_eq_left hcase]
         exact (Classical.choose_spec (hoverride q hcase.1 hcase.2)).1
-      · simp only [dif_neg hcase]
+      · simp only [dite_eq_right hcase]
         exact ⟨gf q, (hcomp q hq).1, (hcomp q hq).2⟩
     · intro q hq
       by_cases hcase : q ∈ T.finals ∩ r.mark i ∧ q ∈ r.state (i + 1)
-      · simp only [dif_pos hcase]
+      · simp only [dite_eq_left hcase]
         exact (Classical.choose_spec (hoverride q hcase.1 hcase.2)).2.1
-      · simp only [dif_neg hcase]
+      · simp only [dite_eq_right hcase]
         exact (FinSet.subset_biUnion_of_mem Of hq).trans hbU
     · intro f hfm hfe
       have hcase : f ∈ T.finals ∩ r.mark i ∧ f ∈ r.state (i + 1) :=
         ⟨hfm, hfe⟩
-      simp only [dif_pos hcase]
+      simp only [dite_eq_left hcase]
       exact (Classical.choose_spec (hoverride f hcase.1 hcase.2)).2.2
   let Of : Nat → Q → FinSet Q := fun i => Classical.choose (hchoice i)
   have hOf : ∀ i, (∀ q ∈ r.state i, ∃ g, (g, Of i q) ∈ A.trans q ∧ g (ξ i)) ∧
@@ -202,7 +202,7 @@ private theorem vwaa_to_tgba (hsc : SoundComplete T A) {e : FinSet Q} {ξ : Omeg
       exact ⟨fun q => if hq : q ∈ rv.level i then Classical.choose (hrv.step i q hq)
                       else fun _ => False,
              rv.succ i,
-             fun q hq => by simp only [dif_pos (hei_sub hq)];
+             fun q hq => by simp only [dite_eq_left (hei_sub hq)];
                             exact Classical.choose_spec (hrv.step i q (hei_sub hq)),
              FinSet.biUnion_subset.mpr fun q hq => hrv.succ_sub i q (hei_sub hq)⟩
     obtain ⟨g, ei1, mi, htrans, hg, hsub, hmarks⟩ :=
@@ -271,16 +271,16 @@ private theorem vwaa_to_tgba (hsc : SoundComplete T A) {e : FinSet Q} {ξ : Omeg
   have hbranch : rv.InfBranch branch := ⟨by simp [branch, hp_start], fun i => by
     simp only [branch]
     by_cases hi : i + 1 ≤ N + 2
-    · rw [if_pos hi, if_pos (by omega)]; exact hp_step i (by omega)
-    · rw [if_neg hi]
+    · rw [ite_eq_left hi, ite_eq_left (by omega)]; exact hp_step i (by omega)
+    · rw [ite_eq_right hi]
       by_cases hi2 : i ≤ N + 2
       · have heqi : i = N + 2 := by omega
-        rw [if_pos hi2, heqi, hp_end]; exact hf_loop 0
-      · rw [if_neg hi2]
+        rw [ite_eq_left hi2, heqi, hp_end]; exact hf_loop 0
+      · rw [ite_eq_right hi2]
         have heq : i = N + 2 + (i - N - 2) := by omega
         exact heq ▸ hf_loop (i - N - 2)⟩
   have hstab : VWAA.StabilizesAt branch f :=
-    ⟨N + 3, fun m hm => if_neg (show ¬(m ≤ N + 2) from by omega)⟩
+    ⟨N + 3, fun m hm => ite_eq_right (show ¬(m ≤ N + 2) from by omega)⟩
   -- Contradicts A.AcceptingRun rv, `[GO01]`'s Claim in contrapositive form
   rw [acceptingRun_iff hrv] at hracc
   exact hracc branch f hbranch hstab ((hsc.finals_iff f).mp hfT)
@@ -322,7 +322,7 @@ private theorem vwaa_to_tgba' (hsc : SoundCompleteTight T A) {e : FinSet Q} {ξ 
     obtain ⟨g, ei1, mi, htrans, hg, hsub, hmarks, hmarks2⟩ := hsc.completeTight ei hei_reach (ξ i)
       (fun q => if hq : q ∈ ei then Classical.choose (hrv.step i q (hei_sub hq)) else fun _ => False)
       (rv.succ i)
-      (fun q hq => by simp only [dif_pos hq]; exact Classical.choose_spec (hrv.step i q (hei_sub hq)))
+      (fun q hq => by simp only [dite_eq_left hq]; exact Classical.choose_spec (hrv.step i q (hei_sub hq)))
     obtain ⟨e₀, he₀, hre₀⟩ := hei_reach
     exact ⟨g, ei1, mi, htrans, hg, hsub, ⟨e₀, he₀, hre₀.step ⟨g, mi, htrans⟩⟩, hmarks, hmarks2⟩
   -- The TGBA state sequence, each state inside its VWAA level and reachable
@@ -379,14 +379,14 @@ private theorem vwaa_to_tgba' (hsc : SoundCompleteTight T A) {e : FinSet Q} {ξ 
   have hbranch : rv.InfBranch branch := ⟨by simp [branch, hp_start], fun i => by
     simp only [branch]
     by_cases hi : i + 1 ≤ N + 2
-    · rw [if_pos hi, if_pos (by omega)]; exact hp_step i (by omega)
-    · rw [if_neg hi]
+    · rw [ite_eq_left hi, ite_eq_left (by omega)]; exact hp_step i (by omega)
+    · rw [ite_eq_right hi]
       by_cases hi2 : i ≤ N + 2
       · have heqi : i = N + 2 := by omega
-        rw [if_pos hi2, heqi, hp_end]; exact hf_loop (N + 2) (Nat.le_refl _)
-      · rw [if_neg hi2]; exact hf_loop i (by omega)⟩
+        rw [ite_eq_left hi2, heqi, hp_end]; exact hf_loop (N + 2) (Nat.le_refl _)
+      · rw [ite_eq_right hi2]; exact hf_loop i (by omega)⟩
   have hstab : VWAA.StabilizesAt branch f :=
-    ⟨N + 3, fun m hm => if_neg (show ¬(m ≤ N + 2) from by omega)⟩
+    ⟨N + 3, fun m hm => ite_eq_right (show ¬(m ≤ N + 2) from by omega)⟩
   -- Contradicts A.AcceptingRun rv, `[GO01]`'s Claim in contrapositive form
   rw [acceptingRun_iff hrv] at hracc
   exact hracc branch f hbranch hstab ((hsc.finals_iff f).mp hfT)

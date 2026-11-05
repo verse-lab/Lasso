@@ -231,7 +231,7 @@ theorem getSuccessors_mem_iff (tba : TBA α) (sysSucc : SysState → Array (LSte
     next hall =>
       have hbase : ∀ st ∈ LSys.totalize sysSucc s, LSys.letter (sysLabel s) st.1 = sysLabel s :=
         fun st hst => by
-          rw [LSys.letter, if_pos (by simpa using Array.all_eq_true'.mp hall st hst)]
+          rw [LSys.letter, ite_eq_left (by simpa using Array.all_eq_true'.mp hall st hst)]
       simp only [Array.mem_flatMap, Array.mem_map, Array.mem_filter]
       constructor
       · rintro ⟨st, hst, t, ⟨ht, hc⟩, heq⟩
@@ -244,12 +244,12 @@ theorem getSuccessors_mem_iff (tba : TBA α) (sysSucc : SysState → Array (LSte
     constructor
     · rintro ⟨st, hst, t, ht, hopt⟩
       by_cases hc : transCompatible t (LSys.letter (sysLabel s) st.1) = true
-      · rw [if_pos hc] at hopt
+      · rw [ite_eq_left hc] at hopt
         obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. |>.mp (Option.some.inj hopt)
         exact ⟨st, hst, t, ht, hc, rfl, rfl⟩
-      · rw [if_neg hc] at hopt; exact absurd hopt (by simp)
+      · rw [ite_eq_right hc] at hopt; exact absurd hopt (by simp)
     · rintro ⟨st, hst, t, ht, hc, rfl, rfl⟩
-      exact ⟨st, hst, t, ht, by rw [if_pos hc]⟩
+      exact ⟨st, hst, t, ht, by rw [ite_eq_left hc]⟩
 
 private theorem reachable_imp (tba : TBA α) (sysSucc : SysState → Array (LStep α SysState))
     (sysLabel : SysState → Std.HashSet α) (sysInit : List SysState) :

@@ -908,7 +908,7 @@ theorem nestedDFST_fuel_go_eq_nestedDFSTWF_go
                     hsuffix := List.suffix_refl _ }, false, (expand init).2.1.toList)]
                 [init] { st with outerVisited := st.outerVisited.insert init } := by
             simpa only [st2] using heqCI
-          rw [if_neg (by simp [hvis])]
+          rw [ite_eq_right (by simp [hvis])]
           show EmptinessResult.nonEmpty stem loop =
               match outerDFSTWF succs edgeMarks expand fr
                   [({ state := init, hreach := hinit_reach, remaining := (succs init).toList,

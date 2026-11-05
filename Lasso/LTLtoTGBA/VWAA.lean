@@ -316,9 +316,9 @@ private theorem mem_foldr_groupByKey {β : Type w} {K : Type v} [BEq K] [Hashabl
     rw [List.foldr_cons, Std.HashMap.getD_insert]
     by_cases hk : key a = k
     · subst hk
-      rw [if_pos (beq_self_eq_true _), List.mem_cons, ih]
+      rw [ite_eq_left (beq_self_eq_true _), List.mem_cons, ih]
       grind
-    · rw [if_neg (by simpa using hk), ih]
+    · rw [ite_eq_right (by simpa using hk), ih]
       grind
 
 theorem mem_groupByKey {β : Type w} {K : Type v} [BEq K] [Hashable K] [LawfulBEq K] [LawfulHashable K] (key : β → K)
@@ -805,10 +805,10 @@ private theorem foldl_mergeStep_sat (l : List (DNF α × K)) (m : Std.HashMap K 
     simp only [List.mem_cons, Prod.mk.injEq]
     by_cases ht : t0 = t
     · subst ht
-      simp only [beq_self_eq_true, if_true, DNF.sat_or]
+      simp only [beq_self_eq_true, ite_true, DNF.sat_or]
       grind
     · have hne : (t0 == t) = false := beq_false_of_ne ht
-      simp only [hne, Bool.false_eq_true, if_false]
+      simp only [hne, Bool.false_eq_true, ite_false]
       grind
 
 theorem mem_mergeByTarget (l : List (DNF α × K)) (g : DNF α) (t : K) :
@@ -897,7 +897,7 @@ private theorem mem_splitByTarget (l : List (DNF α × Nat)) (g' : DNF α) (t : 
   · rintro ⟨g, hmem, rfl, hne⟩
     refine ⟨(g, t), hmem, ?_⟩
     dsimp only
-    rw [if_neg (by simp [hne])]
+    rw [ite_eq_right (by simp [hne])]
 
 /-- `true` exactly for the guards `splitGuard l · t` narrows by. -/
 private theorem splitCond_iff (p : DNF α × Nat) (t : Nat) :
@@ -917,7 +917,7 @@ private theorem sat_splitGuard (l : List (DNF α × Nat)) (g : DNF α) (t : Nat)
   | cons p l ih =>
     rw [List.foldl_cons, ih]
     by_cases hc : (maskSub p.2 t && p.2 != t) = true
-    · rw [if_pos hc, DNF.sat_diff]
+    · rw [ite_eq_left hc, DNF.sat_diff]
       obtain ⟨hs, hne⟩ := (splitCond_iff p t).mp hc
       constructor
       · rintro ⟨⟨hg, hp⟩, hrest⟩
@@ -927,7 +927,7 @@ private theorem sat_splitGuard (l : List (DNF α × Nat)) (g : DNF α) (t : Nat)
         · exact hrest q hq hqs hqne
       · rintro ⟨hg, hrest⟩
         exact ⟨⟨hg, hrest p List.mem_cons_self hs hne⟩, fun q hq => hrest q (List.mem_cons_of_mem _ hq)⟩
-    · rw [if_neg hc]
+    · rw [ite_eq_right hc]
       constructor
       · rintro ⟨hg, hrest⟩
         refine ⟨hg, fun q hq hqs hqne => ?_⟩
@@ -1002,7 +1002,7 @@ private theorem mem_tprod {xs ys : List (DNF α × Nat)} {p : DNF α × Nat} :
     · rename_i hne
       exact ⟨p1, h1, p2, h2, by simpa using hne, (Option.some.inj heq).symm⟩
   · rintro ⟨p1, h1, p2, h2, hne, rfl⟩
-    exact ⟨p1, h1, p2, h2, by rw [if_neg (by simp [hne])]⟩
+    exact ⟨p1, h1, p2, h2, by rw [ite_eq_right (by simp [hne])]⟩
 
 theorem targetsIn_tprod (xs ys : List (DNF α × Nat)) :
     VWAA.TargetsIn (encTrans (tprod xs ys)) (VWAA.lprod (encTrans xs) (encTrans ys)) := by
@@ -1143,12 +1143,12 @@ private theorem rawStage_trans_getD (φ : NNF α) (i : Nat) :
       if (rawReach φ).contains i then readTrans (lazyTrans (SubformulaTable.build φ)) i else []).getD i [] = _
   rw [Array.getD_eq_getD_getElem?, Array.getElem?_map]
   by_cases hi : i < (SubformulaTable.build φ).formulas.size
-  · rw [Array.getElem?_range, if_pos hi]
-    simp only [Option.map_some, Option.getD_some, readTrans_lazyTrans, if_pos hi]
+  · rw [Array.getElem?_range, ite_eq_left hi]
+    simp only [Option.map_some, Option.getD_some, readTrans_lazyTrans, ite_eq_left hi]
     by_cases hr : (rawReach φ).contains i = true
     · simp [hr, hi]
     · simp [hr]
-  · rw [Array.getElem?_range, if_neg hi]
+  · rw [Array.getElem?_range, ite_eq_right hi]
     simp [hi]
 
 private theorem rawStage_mem_target {φ : NNF α} {i : Nat} {g : DNF α} {t : Nat}
@@ -1247,7 +1247,7 @@ theorem relabelsFrom_tableAbstract [DecidableEq α] (φ : NNF α) :
   trans q hq := by
     have hsub := ltlVWAA_reachable_subformula φ q hq
     show (if (SubformulaTable.build φ).idOf q < (SubformulaTable.build φ).formulas.size then _ else []) = _
-    rw [if_pos (SubformulaTable.idOf_lt_size φ q hsub), SubformulaTable.formulaOf_idOf φ q hsub]
+    rw [ite_eq_left (SubformulaTable.idOf_lt_size φ q hsub), SubformulaTable.formulaOf_idOf φ q hsub]
     rfl
   final q hq := by
     have hsub := ltlVWAA_reachable_subformula φ q hq
@@ -1277,7 +1277,7 @@ private theorem reducedAbstract_reachable (φ : NNF α) :
   have hbound : ∀ p, p < table.formulas.size → ∀ q ∈ readSucc (lazyTrans table) p, q < table.formulas.size := by
     intro p hp q hq
     obtain ⟨⟨g, t⟩, hx, hq⟩ := List.mem_flatMap.mp hq
-    rw [readTrans_lazyTrans, if_pos hp] at hx
+    rw [readTrans_lazyTrans, ite_eq_left hp] at hx
     exact (rtrans_target_spec φ p hp g t hx q (mem_maskMembers.mp hq)).1
   intro q hq
   induction hq with
@@ -1288,7 +1288,7 @@ private theorem reducedAbstract_reachable (φ : NNF α) :
   | step p _ g O hgO q hq ih =>
     obtain ⟨hp, hpr⟩ := ih
     have hmem : (g, O) ∈ encTrans ((table.formulaOf p).rtrans table.idOf) := by
-      have h' : (reducedAbstract φ).trans p = encTrans ((table.formulaOf p).rtrans table.idOf) := if_pos hp
+      have h' : (reducedAbstract φ).trans p = encTrans ((table.formulaOf p).rtrans table.idOf) := ite_eq_left hp
       rw [← h']; exact hgO
     obtain ⟨⟨g0, t⟩, hm, heq⟩ := List.mem_map.mp hmem
     simp only [Prod.mk.injEq] at heq
@@ -1297,7 +1297,7 @@ private theorem reducedAbstract_reachable (φ : NNF α) :
     have hqlt := (rtrans_target_spec φ p hp g0 t hm q hbit).1
     have hsucc : q ∈ readSucc (lazyTrans table) p := by
       refine List.mem_flatMap.mpr ⟨(g0, t), ?_, mem_maskMembers.mpr hbit⟩
-      rw [readTrans_lazyTrans, if_pos hp]; exact hm
+      rw [readTrans_lazyTrans, ite_eq_left hp]; exact hm
     exact ⟨hqlt, reachableFrom_closed (readSucc (lazyTrans table)) [table.idOf φ] (List.range table.formulas.size)
       (fun x => x < table.formulas.size) hbound
       (fun x hx => by rw [List.mem_singleton] at hx; subst hx; exact hinit)
@@ -1314,7 +1314,7 @@ theorem rawStage_acceptsFrom_iff (φ : NNF α) (ξ : OmegaWord α) :
     obtain ⟨hlt, hr⟩ := reducedAbstract_reachable φ q hq
     show encTrans ((rawStage φ).trans.getD q []) =
       if q < table.formulas.size then encTrans ((table.formulaOf q).rtrans table.idOf) else []
-    rw [rawStage_trans_getD, if_pos ⟨hlt, hr⟩, if_pos hlt]
+    rw [rawStage_trans_getD, ite_eq_left ⟨hlt, hr⟩, ite_eq_left hlt]
   have hfinal : (abstractOf (rawStage φ) (rawStage_veryWeak φ)).final = (reducedAbstract φ).final := by
     funext i
     by_cases hi : i < table.formulas.size

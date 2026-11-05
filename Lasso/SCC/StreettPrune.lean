@@ -147,7 +147,7 @@ private theorem prefixSums_spec (ns : Array Nat) :
     have hsize' : (out.push (out[i]! + ns[i])).size = i + 1 + 1 := by simp [hsize]
     obtain ⟨p1, p2, p3⟩ := ih hsize' (by omega)
     rw [prefixSums]
-    simp only [hi, dif_pos]
+    simp only [hi, dite_eq_left]
     refine ⟨p1, fun j hj => ?_, fun j hij hj => ?_⟩
     · rw [p2 j (by omega), getElem!_pos _ _ (by simp [hsize]; omega),
         Array.getElem_push_lt (by omega), ← getElem!_pos _ _ (by omega)]
@@ -166,7 +166,7 @@ private theorem prefixSums_spec (ns : Array Nat) :
     have hieq : i = ns.size := by omega
     subst hieq
     rw [prefixSums]
-    simp only [hi, dif_neg, not_false_iff]
+    simp only [hi, dite_eq_right, not_false_iff]
     exact ⟨hsize, fun _ _ => trivial, fun j hij hj => absurd hj (by omega)⟩
 
 /-- Flatten a spec, numbering options and their marks in walk order. The scan works on the edge readings
@@ -964,12 +964,12 @@ theorem scanMarksAt_testBit (gs : Array ((State × State) → Bool)) (lab : Stat
   induction j, marksSeen using scanMarksAt.induct (gs := gs) (lab := lab) (base := base) with
   | case1 j ms hj ih =>
     rw [scanMarksAt]
-    simp only [hj, dif_pos]
+    simp only [hj, dite_eq_left]
     simp only [dite_eq_ite] at ih
     rw [ih]; clear ih
     have hget : gs[j]! = gs[j] := getElem!_pos gs j hj
     by_cases hc : (!ms.testBit (base + j) && gs[j] lab) = true
-    · rw [if_pos hc]
+    · rw [ite_eq_left hc]
       simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at hc
       simp only [Nat.testBit_or, Nat.one_shiftLeft, Nat.testBit_two_pow, Bool.or_eq_true,
         decide_eq_true_eq]
@@ -983,7 +983,7 @@ theorem scanMarksAt_testBit (gs : Array ((State × State) → Bool)) (lab : Stat
         · rcases Nat.eq_or_lt_of_le hjk with rfl | hlt
           · exact Or.inl (Or.inr hbk)
           · exact Or.inr ⟨k, hk, hlt, hbk, hgk⟩
-    · rw [if_neg hc]
+    · rw [ite_eq_right hc]
       simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, not_and] at hc
       constructor
       · rintro (h | ⟨k, hk, hjk, hbk, hgk⟩)
@@ -999,7 +999,7 @@ theorem scanMarksAt_testBit (gs : Array ((State × State) → Bool)) (lab : Stat
           · exact Or.inr ⟨k, hk, hlt, hbk, hgk⟩
   | case2 j ms hj =>
     rw [scanMarksAt]
-    simp only [hj, dif_neg, not_false_iff]
+    simp only [hj, dite_eq_right, not_false_iff]
     constructor
     · exact Or.inl
     · rintro (h | ⟨k, hk, hjk, _, _⟩)
@@ -1015,21 +1015,21 @@ theorem scanOptionsAt_fst_testBit (cs : CompiledSpec State L) (lab : State × St
   induction o, ra, ms using scanOptionsAt.induct (cs := cs) (lab := lab) with
   | case1 o ra ms ho ra' need ms' ih =>
     rw [scanOptionsAt]
-    simp only [ho, dif_pos]
+    simp only [ho, dite_eq_left]
     simp only [ra', need, ms', dite_eq_ite] at ih
     rw [ih]; clear ih
     by_cases hcond : (ra.testBit o && !(cs.regions[o]! lab)) = true
-    · rw [if_pos hcond]
+    · rw [ite_eq_left hcond]
       simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true] at hcond
       simp only [Nat.testBit_xor, Nat.one_shiftLeft, Nat.testBit_two_pow]
       grind
-    · rw [if_neg hcond]
+    · rw [ite_eq_right hcond]
       simp only [Bool.and_eq_true, Bool.not_eq_eq_eq_not, Bool.not_true, not_and,
         Bool.not_eq_false] at hcond
       grind
   | case2 o ra ms ho =>
     rw [scanOptionsAt]
-    simp only [ho, dif_neg, not_false_iff]
+    simp only [ho, dite_eq_right, not_false_iff]
     grind
 
 theorem scanOptionsAt_snd_testBit (cs : CompiledSpec State L) (hwf : cs.WF)
@@ -1041,11 +1041,11 @@ theorem scanOptionsAt_snd_testBit (cs : CompiledSpec State L) (hwf : cs.WF)
   induction o, ra, ms using scanOptionsAt.induct (cs := cs) (lab := lab) with
   | case1 o ra ms ho ra' need ms' ih =>
     rw [scanOptionsAt]
-    simp only [ho, dif_pos]
+    simp only [ho, dite_eq_left]
     simp only [ra', need, ms', dite_eq_ite] at ih
     rw [ih]; clear ih
     by_cases hskip : (ms &&& cs.optMarkMask[o]! != cs.optMarkMask[o]!) = true
-    · rw [if_pos hskip, scanMarksAt_testBit]
+    · rw [ite_eq_left hskip, scanMarksAt_testBit]
       constructor
       · rintro ((h | ⟨k, hk, _, hbk, hmk⟩) | ⟨p, hop, hp, hrest⟩)
         · exact Or.inl h
@@ -1056,7 +1056,7 @@ theorem scanOptionsAt_snd_testBit (cs : CompiledSpec State L) (hwf : cs.WF)
         · rcases Nat.eq_or_lt_of_le hop with rfl | hlt
           · exact Or.inl (Or.inr ⟨k, hk, Nat.zero_le _, hbk, hmk⟩)
           · exact Or.inr ⟨p, hlt, hp, k, hk, hbk, hmk⟩
-    · rw [if_neg hskip]
+    · rw [ite_eq_right hskip]
       simp only [bne_iff_ne, ne_eq, Decidable.not_not] at hskip
       constructor
       · rintro (h | ⟨p, hop, hp, hrest⟩)
@@ -1069,7 +1069,7 @@ theorem scanOptionsAt_snd_testBit (cs : CompiledSpec State L) (hwf : cs.WF)
           · exact Or.inr ⟨p, hlt, hp, k, hk, hbk, hmk⟩
   | case2 o ra ms ho =>
     rw [scanOptionsAt]
-    simp only [ho, dif_neg, not_false_iff]
+    simp only [ho, dite_eq_right, not_false_iff]
     grind
 
 omit [BEq State] in
@@ -1081,10 +1081,10 @@ theorem scanLabels_fst_testBit (cs : CompiledSpec State L) (b : Nat) :
   | lab :: rest, ra, ms => by
     rw [scanLabels]
     by_cases hbreak : (ra == 0 && ms == (1 <<< cs.numOptMarks) - 1) = true
-    · rw [if_pos hbreak]
+    · rw [ite_eq_left hbreak]
       simp only [Bool.and_eq_true, beq_iff_eq] at hbreak
       simp [hbreak.1]
-    · rw [if_neg hbreak]
+    · rw [ite_eq_right hbreak]
       have hbit := scanOptionsAt_fst_testBit cs lab b 0 ra ms
       show (scanLabels cs rest (scanOptionsAt cs lab 0 ra ms).1
         (scanOptionsAt cs lab 0 ra ms).2).1.testBit b = true ↔ _
@@ -1101,7 +1101,7 @@ theorem scanLabels_snd_testBit (cs : CompiledSpec State L) (hwf : cs.WF) (b : Na
   | lab :: rest, ra, ms => by
     rw [scanLabels]
     by_cases hbreak : (ra == 0 && ms == (1 <<< cs.numOptMarks) - 1) = true
-    · rw [if_pos hbreak]
+    · rw [ite_eq_left hbreak]
       simp only [Bool.and_eq_true, beq_iff_eq] at hbreak
       constructor
       · exact Or.inl
@@ -1111,7 +1111,7 @@ theorem scanLabels_snd_testBit (cs : CompiledSpec State L) (hwf : cs.WF) (b : Na
           rw [hbreak.2]
           simp only [Nat.one_shiftLeft, Nat.testBit_two_pow_sub_one, decide_eq_true_eq]
           omega
-    · rw [if_neg hbreak]
+    · rw [ite_eq_right hbreak]
       have hbit := scanOptionsAt_snd_testBit cs hwf lab b 0 ra ms
       show (scanLabels cs rest (scanOptionsAt cs lab 0 ra ms).1
         (scanOptionsAt cs lab 0 ra ms).2).2.testBit b = true ↔ _
@@ -1188,7 +1188,7 @@ private theorem selectOne_eq_none {cs : CompiledSpec State L} {ra ms hi : Nat} :
   intro o
   induction o using selectOne.induct (cs := cs) (regionAlive := ra) (marksSeen := ms) (hi := hi) with
   | case1 x hx havail =>
-    rw [selectOne, if_pos hx, if_pos havail]
+    rw [selectOne, ite_eq_left hx, ite_eq_left havail]
     constructor
     · intro h; exact absurd h (by simp)
     · intro h
@@ -1196,7 +1196,7 @@ private theorem selectOne_eq_none {cs : CompiledSpec State L} {ra ms hi : Nat} :
       rw [havail] at hc
       exact absurd hc (by simp)
   | case2 x hx hnavail ih =>
-    rw [selectOne, if_pos hx, if_neg hnavail, ih]
+    rw [selectOne, ite_eq_left hx, ite_eq_right hnavail, ih]
     constructor
     · intro h p hp hph
       rcases Nat.eq_or_lt_of_le hp with rfl | hlt
@@ -1205,7 +1205,7 @@ private theorem selectOne_eq_none {cs : CompiledSpec State L} {ra ms hi : Nat} :
     · intro h p hp hph
       exact h p (Nat.le_of_succ_le hp) hph
   | case3 x hx =>
-    rw [selectOne, if_neg hx]
+    rw [selectOne, ite_eq_right hx]
     simp only [true_iff]
     intro p hp hph
     omega
@@ -1218,17 +1218,17 @@ private theorem selectOne_eq_some {cs : CompiledSpec State L} {ra ms hi : Nat} :
   induction o using selectOne.induct (cs := cs) (regionAlive := ra) (marksSeen := ms) (hi := hi) with
   | case1 x hx havail =>
     intro r h
-    rw [selectOne, if_pos hx, if_pos havail] at h
+    rw [selectOne, ite_eq_left hx, ite_eq_left havail] at h
     obtain rfl : x = r := by simpa using h
     exact ⟨Nat.le_refl _, hx, havail⟩
   | case2 x hx hnavail ih =>
     intro r h
-    rw [selectOne, if_pos hx, if_neg hnavail] at h
+    rw [selectOne, ite_eq_left hx, ite_eq_right hnavail] at h
     obtain ⟨h1, h2, h3⟩ := ih r h
     exact ⟨Nat.le_of_succ_le h1, h2, h3⟩
   | case3 x hx =>
     intro r h
-    rw [selectOne, if_neg hx] at h
+    rw [selectOne, ite_eq_right hx] at h
     exact absurd h (by simp)
 
 omit [BEq State] in
@@ -1239,11 +1239,11 @@ private theorem mem_liveOptionsIn {cs : CompiledSpec State L} {ms hi : Nat} :
   induction o, acc using liveOptionsIn.induct (cs := cs) (marksSeen := ms) (hi := hi) with
   | case1 x acc hx ih =>
     intro p
-    rw [liveOptionsIn, if_pos hx]
+    rw [liveOptionsIn, ite_eq_left hx]
     simp only [dite_eq_ite] at ih
     rw [ih p]
     by_cases hl : optionLive cs ms x = true
-    · rw [if_pos hl]
+    · rw [ite_eq_left hl]
       simp only [Array.mem_push]
       constructor
       · rintro ((hp | rfl) | ⟨h1, h2, h3⟩)
@@ -1255,7 +1255,7 @@ private theorem mem_liveOptionsIn {cs : CompiledSpec State L} {ms hi : Nat} :
         · rcases Nat.eq_or_lt_of_le h1 with rfl | hlt
           · exact Or.inl (Or.inr rfl)
           · exact Or.inr ⟨hlt, h2, h3⟩
-    · rw [if_neg hl]
+    · rw [ite_eq_right hl]
       constructor
       · rintro (hp | ⟨h1, h2, h3⟩)
         · exact Or.inl hp
@@ -1267,7 +1267,7 @@ private theorem mem_liveOptionsIn {cs : CompiledSpec State L} {ms hi : Nat} :
           · exact Or.inr ⟨hlt, h2, h3⟩
   | case2 x acc hx =>
     intro p
-    rw [liveOptionsIn, if_neg hx]
+    rw [liveOptionsIn, ite_eq_right hx]
     constructor
     · exact Or.inl
     · rintro (hp | ⟨h1, h2, _⟩)
@@ -1279,7 +1279,7 @@ private theorem anyBitIn_eq_true_iff {bits : Nat} :
   intro o hi
   induction o using anyBitIn.induct (hi := hi) with
   | case1 x hx ih =>
-    rw [anyBitIn, if_pos hx, Bool.or_eq_true, ih]
+    rw [anyBitIn, ite_eq_left hx, Bool.or_eq_true, ih]
     constructor
     · rintro (h | ⟨k, h1, h2, h3⟩)
       · exact ⟨x, Nat.le_refl _, hx, h⟩
@@ -1289,7 +1289,7 @@ private theorem anyBitIn_eq_true_iff {bits : Nat} :
       · exact Or.inl h3
       · exact Or.inr ⟨k, hlt, h2, h3⟩
   | case2 x hx =>
-    rw [anyBitIn, if_neg hx]
+    rw [anyBitIn, ite_eq_right hx]
     simp only [Bool.false_eq_true, false_iff, not_exists, not_and]
     intro k h1 h2
     omega
@@ -1305,18 +1305,18 @@ private theorem firstUnsatFrom_eq_none {cs : CompiledSpec State L} {bits ra ms :
     (marksSeen := ms) with
   | case1 x hx hsome ih =>
     intro h j hj hjn
-    rw [firstUnsatFrom, if_pos hx, if_pos hsome] at h
+    rw [firstUnsatFrom, ite_eq_left hx, ite_eq_left hsome] at h
     rcases Nat.eq_or_lt_of_le hj with rfl | hlt
     · obtain ⟨o, ho⟩ := Option.isSome_iff_exists.mp hsome
       exact ⟨o, selectOne_eq_some _ _ ho⟩
     · exact ih h j hlt hjn
   | case2 x hx hnone hcom =>
     intro h _ _ _
-    rw [firstUnsatFrom, if_pos hx, if_neg hnone, if_pos hcom] at h
+    rw [firstUnsatFrom, ite_eq_left hx, ite_eq_right hnone, ite_eq_left hcom] at h
     exact absurd h (by simp)
   | case3 x hx hnone hcom =>
     intro h _ _ _
-    rw [firstUnsatFrom, if_pos hx, if_neg hnone, if_neg hcom] at h
+    rw [firstUnsatFrom, ite_eq_left hx, ite_eq_right hnone, ite_eq_right hcom] at h
     exact absurd h (by simp)
   | case4 x hx =>
     intro _ j hj hjn
@@ -1335,12 +1335,12 @@ private theorem firstUnsatFrom_eq_some {cs : CompiledSpec State L} {bits ra ms :
     (marksSeen := ms) with
   | case1 x hx hsome ih =>
     intro opts h
-    rw [firstUnsatFrom, if_pos hx, if_pos hsome] at h
+    rw [firstUnsatFrom, ite_eq_left hx, ite_eq_left hsome] at h
     obtain ⟨j, h1, h2, h3, h4⟩ := ih opts h
     exact ⟨j, Nat.le_of_succ_le h1, h2, h3, h4⟩
   | case2 x hx hnone hcom =>
     intro opts h
-    rw [firstUnsatFrom, if_pos hx, if_neg hnone, if_pos hcom] at h
+    rw [firstUnsatFrom, ite_eq_left hx, ite_eq_right hnone, ite_eq_left hcom] at h
     obtain rfl : (#[] : Array Nat) = opts := by simpa using h
     refine ⟨x, Nat.le_refl _, hx, ?_, fun p => ?_⟩
     · have := selectOne_eq_none (cs := cs) (ra := ra) (ms := ms)
@@ -1349,7 +1349,7 @@ private theorem firstUnsatFrom_eq_some {cs : CompiledSpec State L} {bits ra ms :
     · simp [hcom]
   | case3 x hx hnone hcom =>
     intro opts h
-    rw [firstUnsatFrom, if_pos hx, if_neg hnone, if_neg hcom] at h
+    rw [firstUnsatFrom, ite_eq_left hx, ite_eq_right hnone, ite_eq_right hcom] at h
     obtain rfl : liveOptionsIn cs ms cs.conjunctStart[x]! cs.conjunctStart[x + 1]! #[] = opts := by
       simpa using h
     refine ⟨x, Nat.le_refl _, hx, ?_, fun p => ?_⟩
@@ -1360,7 +1360,7 @@ private theorem firstUnsatFrom_eq_some {cs : CompiledSpec State L} {bits ra ms :
       simp [hcom]
   | case4 x hx =>
     intro opts h
-    rw [firstUnsatFrom, if_neg hx] at h
+    rw [firstUnsatFrom, ite_eq_right hx] at h
     exact absurd h (by simp)
 
 omit [BEq State] in
@@ -1383,18 +1383,18 @@ private theorem selectCommitted_eq_some {cs : CompiledSpec State L} {bits ra ms 
     (marksSeen := ms) (hi := hi) with
   | case1 x hx havail =>
     intro r h
-    rw [selectCommitted, if_pos hx, if_pos havail] at h
+    rw [selectCommitted, ite_eq_left hx, ite_eq_left havail] at h
     obtain rfl : x = r := by simpa using h
     obtain ⟨h1, h2⟩ := Bool.and_eq_true _ _ |>.mp havail
     exact ⟨Nat.le_refl _, hx, h1, h2⟩
   | case2 x hx hnavail ih =>
     intro r h
-    rw [selectCommitted, if_pos hx, if_neg hnavail] at h
+    rw [selectCommitted, ite_eq_left hx, ite_eq_right hnavail] at h
     obtain ⟨h1, h2, h3, h4⟩ := ih r h
     exact ⟨Nat.le_of_succ_le h1, h2, h3, h4⟩
   | case3 x hx =>
     intro r h
-    rw [selectCommitted, if_neg hx] at h
+    rw [selectCommitted, ite_eq_right hx] at h
     exact absurd h (by simp)
 
 omit [BEq State] in
@@ -1405,7 +1405,7 @@ private theorem selectCommitted_eq_none {cs : CompiledSpec State L} {bits ra ms 
   induction o using selectCommitted.induct (cs := cs) (bits := bits) (regionAlive := ra)
     (marksSeen := ms) (hi := hi) with
   | case1 x hx havail =>
-    rw [selectCommitted, if_pos hx, if_pos havail]
+    rw [selectCommitted, ite_eq_left hx, ite_eq_left havail]
     constructor
     · intro h; exact absurd h (by simp)
     · intro h
@@ -1413,7 +1413,7 @@ private theorem selectCommitted_eq_none {cs : CompiledSpec State L} {bits ra ms 
       rw [havail] at hc
       exact absurd hc (by simp)
   | case2 x hx hnavail ih =>
-    rw [selectCommitted, if_pos hx, if_neg hnavail, ih]
+    rw [selectCommitted, ite_eq_left hx, ite_eq_right hnavail, ih]
     constructor
     · intro h p hp hph
       rcases Nat.eq_or_lt_of_le hp with rfl | hlt
@@ -1422,7 +1422,7 @@ private theorem selectCommitted_eq_none {cs : CompiledSpec State L} {bits ra ms 
     · intro h p hp hph
       exact h p (Nat.le_of_succ_le hp) hph
   | case3 x hx =>
-    rw [selectCommitted, if_neg hx]
+    rw [selectCommitted, ite_eq_right hx]
     simp only [true_iff]
     intro p hp hph
     omega
@@ -1472,12 +1472,12 @@ private theorem mem_selectFrom_of_mem {cs : CompiledSpec State L} {bits ra ms : 
     (marksSeen := ms) with
   | case1 i sel hi ih =>
     intro p hp
-    rw [selectFrom, if_pos hi]
+    rw [selectFrom, ite_eq_left hi]
     refine ih p ?_
     split <;> simp [hp]
   | case2 i sel hi =>
     intro p hp
-    rw [selectFrom, if_neg hi]
+    rw [selectFrom, ite_eq_right hi]
     exact hp
 
 omit [BEq State] in
@@ -1489,7 +1489,7 @@ private theorem mem_selectFrom {cs : CompiledSpec State L} {bits ra ms : Nat} :
     (marksSeen := ms) with
   | case1 i sel hi ih =>
     intro p hp
-    rw [selectFrom, if_pos hi] at hp
+    rw [selectFrom, ite_eq_left hi] at hp
     rcases ih p hp with h | h
     · revert h
       split
@@ -1502,7 +1502,7 @@ private theorem mem_selectFrom {cs : CompiledSpec State L} {bits ra ms : Nat} :
     · exact Or.inr h
   | case2 i sel hi =>
     intro p hp
-    rw [selectFrom, if_neg hi] at hp
+    rw [selectFrom, ite_eq_right hi] at hp
     exact Or.inl hp
 
 omit [BEq State] in
@@ -1518,7 +1518,7 @@ private theorem selectFrom_covers {cs : CompiledSpec State L} {bits ra ms : Nat}
     (marksSeen := ms) with
   | case1 i sel hi ih =>
     intro j hij hj hsome
-    rw [selectFrom, if_pos hi]
+    rw [selectFrom, ite_eq_left hi]
     rcases Nat.eq_or_lt_of_le hij with rfl | hlt
     · obtain ⟨o, ho⟩ := Option.isSome_iff_exists.mp hsome
       refine ⟨o, mem_selectFrom_of_mem _ _ o ?_, ?_, ?_, ?_, fun hc => selectPref_committed hc ho⟩
@@ -1541,7 +1541,7 @@ private theorem selectFrom_committed {cs : CompiledSpec State L} {bits ra ms : N
     (marksSeen := ms) with
   | case1 i sel hi ih =>
     intro p hp
-    rw [selectFrom, if_pos hi] at hp
+    rw [selectFrom, ite_eq_left hi] at hp
     rcases ih p hp with h | h
     · revert h
       split
@@ -1554,7 +1554,7 @@ private theorem selectFrom_committed {cs : CompiledSpec State L} {bits ra ms : N
     · exact Or.inr h
   | case2 i sel hi =>
     intro p hp
-    rw [selectFrom, if_neg hi] at hp
+    rw [selectFrom, ite_eq_right hi] at hp
     exact Or.inl hp
 
 omit [BEq State] in
@@ -1714,7 +1714,7 @@ private theorem mem_foldl_cond_insert (l : List State) (p : State → Bool)
   | cons a l ih =>
     simp only [List.foldl_cons, ih, List.mem_cons]
     by_cases hp : p a = true
-    · simp only [if_pos hp, Std.HashSet.mem_insert, beq_iff_eq]
+    · simp only [ite_eq_left hp, Std.HashSet.mem_insert, beq_iff_eq]
       constructor
       · rintro ((rfl | hx) | ⟨hx, hpx⟩)
         · exact Or.inr ⟨Or.inl rfl, hp⟩
@@ -1724,7 +1724,7 @@ private theorem mem_foldl_cond_insert (l : List State) (p : State → Bool)
         · exact Or.inl (Or.inr hx)
         · exact Or.inl (Or.inl rfl)
         · exact Or.inr ⟨hx, hpx⟩
-    · simp only [if_neg hp]
+    · simp only [ite_eq_right hp]
       constructor
       · rintro (hx | ⟨hx, hpx⟩)
         · exact Or.inl hx
@@ -2040,7 +2040,7 @@ def streettSccHint [LawfulBEq State] [LawfulHashable State] (aux : StreettAux St
   aux.witness.foldl (init := Std.HashSet.emptyWithCapacity aux.witness.size) fun h s => h.insert s
 
 /-- Tarjan refined with the prune's own POP, the property marks arriving in `acc`. -/
-@[expose] def streettOps [Inhabited State] [LawfulBEq State] [LawfulHashable State]
+@[expose, implicit_reducible] def streettOps [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (curRegions : Nat) : DFSOps State where
   Aux := StreettAux State
   Position := Nat
@@ -2092,14 +2092,14 @@ private theorem streettPop_triple [Inhabited State] (cs : CompiledSpec State L) 
   · exact Or.inl (by simp only [streettPop, hb])
   · by_cases h : ll = step.pos
     · by_cases hacc : acc != fullAccMask cs.numMarks
-      · exact Or.inr (by simp only [streettPop, hb, if_pos h, if_pos hacc])
+      · exact Or.inr (by simp only [streettPop, hb, ite_eq_left h, ite_eq_left hacc])
       · rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with _ | opts
-        · exact Or.inr (by simp only [streettPop, hb, if_pos h, if_neg hacc, hfu])
-        · exact Or.inr (by simp only [streettPop, hb, if_pos h, if_neg hacc, hfu])
+        · exact Or.inr (by simp only [streettPop, hb, ite_eq_left h, ite_eq_right hacc, hfu])
+        · exact Or.inr (by simp only [streettPop, hb, ite_eq_left h, ite_eq_right hacc, hfu])
     · rcases hb2 : dstack.pop.back? with _ | ⟨pll, pacc⟩
-      · exact Or.inl (by simp only [streettPop, hb, if_neg h, hb2])
-      · exact Or.inl (by simp only [streettPop, hb, if_neg h, hb2])
+      · exact Or.inl (by simp only [streettPop, hb, ite_eq_right h, hb2])
+      · exact Or.inl (by simp only [streettPop, hb, ite_eq_right h, hb2])
 
 /-- POP reports only at a closing frame whose accumulator is full and whose scan blames no conjunct, recording the
 flushed range as the witness and the selected options beside it. -/
@@ -2121,17 +2121,17 @@ private theorem streettPop_eq_true [Inhabited State] {cs : CompiledSpec State L}
   · simp only [streettPop, hb, Bool.false_eq_true] at h2
   · by_cases hll : ll = step.pos
     · by_cases hacc : acc != fullAccMask cs.numMarks
-      · simp only [streettPop, hb, if_pos hll, if_pos hacc, Bool.false_eq_true] at h2
+      · simp only [streettPop, hb, ite_eq_left hll, ite_eq_left hacc, Bool.false_eq_true] at h2
       · have hacc' : acc = fullAccMask cs.numMarks := by simpa using hacc
         rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with _ | opts
         · exact ⟨by simp only [hll, hacc'],
-            by simp only [streettPop, hb, if_pos hll, if_neg hacc, hfu], rfl,
-            by simp only [streettPop, hb, if_pos hll, if_neg hacc, hfu]⟩
-        · simp only [streettPop, hb, if_pos hll, if_neg hacc, hfu, Bool.false_eq_true] at h2
+            by simp only [streettPop, hb, ite_eq_left hll, ite_eq_right hacc, hfu], rfl,
+            by simp only [streettPop, hb, ite_eq_left hll, ite_eq_right hacc, hfu]⟩
+        · simp only [streettPop, hb, ite_eq_left hll, ite_eq_right hacc, hfu, Bool.false_eq_true] at h2
     · rcases hb2 : dstack.pop.back? with _ | ⟨pll, pacc⟩
-      · simp only [streettPop, hb, if_neg hll, hb2, Bool.false_eq_true] at h2
-      · simp only [streettPop, hb, if_neg hll, hb2, Bool.false_eq_true] at h2
+      · simp only [streettPop, hb, ite_eq_right hll, hb2, Bool.false_eq_true] at h2
+      · simp only [streettPop, hb, ite_eq_right hll, hb2, Bool.false_eq_true] at h2
 
 private theorem mem_foldl_push_cond {α : Type v} {β : Type v'} (g : α → β) (p : α → Bool) :
     ∀ (l : List α) (ps : Array β) (P : β),
@@ -2144,7 +2144,7 @@ private theorem mem_foldl_push_cond {α : Type v} {β : Type v'} (g : α → β)
     intro ps P
     rw [List.foldl_cons, ih]
     by_cases hp : p a = true
-    · rw [if_pos hp]
+    · rw [ite_eq_left hp]
       constructor
       · rintro (h | ⟨x, hx, hpx, rfl⟩)
         · exact Or.inl h
@@ -2154,7 +2154,7 @@ private theorem mem_foldl_push_cond {α : Type v} {β : Type v'} (g : α → β)
         · rcases List.mem_cons.mp hx with rfl | hx'
           · exact absurd hpx (by simp [hp])
           · exact Or.inr ⟨x, hx', hpx, rfl⟩
-    · rw [if_neg hp, Array.mem_push]
+    · rw [ite_eq_right hp, Array.mem_push]
       constructor
       · rintro ((h | rfl) | ⟨x, hx, hpx, rfl⟩)
         · exact Or.inl h
@@ -2181,19 +2181,19 @@ private theorem streettPop_pending [Inhabited State] (cs : CompiledSpec State L)
   · exact Or.inl (by simpa only [streettPop, hb] using hP)
   · by_cases h : ll = step.pos
     · by_cases hacc : acc != fullAccMask cs.numMarks
-      · exact Or.inl (by simpa only [streettPop, hb, if_pos h, if_pos hacc] using hP)
+      · exact Or.inl (by simpa only [streettPop, hb, ite_eq_left h, ite_eq_left hacc] using hP)
       · rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with _ | opts
-        · exact Or.inl (by simpa only [streettPop, hb, if_pos h, if_neg hacc, hfu] using hP)
-        · simp only [streettPop, hb, if_pos h, if_neg hacc, hfu] at hP
+        · exact Or.inl (by simpa only [streettPop, hb, ite_eq_left h, ite_eq_right hacc, hfu] using hP)
+        · simp only [streettPop, hb, ite_eq_left h, ite_eq_right hacc, hfu] at hP
           rw [← Array.foldl_toList] at hP
           rcases (mem_foldl_push_cond _ _ opts.toList pending P).mp hP with hP' | ⟨o, ho, hguard, hPo⟩
           · exact Or.inl hP'
           · refine Or.inr ⟨opts, o, rfl, by simpa using ho, ?_, hPo⟩
             simpa using (Bool.or_eq_false_iff.mp hguard).2
     · rcases hb2 : dstack.pop.back? with _ | ⟨pll, pacc⟩
-      · exact Or.inl (by simpa only [streettPop, hb, if_neg h, hb2] using hP)
-      · exact Or.inl (by simpa only [streettPop, hb, if_neg h, hb2] using hP)
+      · exact Or.inl (by simpa only [streettPop, hb, ite_eq_right h, hb2] using hP)
+      · exact Or.inl (by simpa only [streettPop, hb, ite_eq_right h, hb2] using hP)
 
 /-- A touched state is still live or has joined the dead after POP. -/
 private theorem streettPop_touched_mono [Inhabited State] [LawfulBEq State] [LawfulHashable State]
@@ -2235,7 +2235,7 @@ def streettLawful [Inhabited State] [LawfulBEq State] [LawfulHashable State]
       by_contra hc
       simp only [Bool.not_eq_false] at hc
       rw [show (streettOps cs curRegions).getStatus aux q = liveStatusOf aux.liveIndex aux.dead q from rfl,
-        liveStatusOf, if_pos hc] at hq
+        liveStatusOf, ite_eq_left hc] at hq
       exact absurd hq (by simp)
     · rw [hl, hd, hp]
       intro P hP
@@ -2341,12 +2341,12 @@ theorem streettLowlinkLawful [Inhabited State] [LawfulBEq State] [LawfulHashable
     have hll' : ll = step.pos := by simpa using hll
     refine ⟨?_, ?_, ?_⟩
     · by_cases hacc : acc != fullAccMask cs.numMarks
-      · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_pos hacc]; rfl
+      · simp only [streettView, streettOps, streettPop, hb, ite_eq_left hll', ite_eq_left hacc]; rfl
       · rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with _ | opts
-        · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_neg hacc, hfu]
+        · simp only [streettView, streettOps, streettPop, hb, ite_eq_left hll', ite_eq_right hacc, hfu]
           rfl
-        · simp only [streettView, streettOps, streettPop, hb, if_pos hll', if_neg hacc, hfu]; rfl
+        · simp only [streettView, streettOps, streettPop, hb, ite_eq_left hll', ite_eq_right hacc, hfu]; rfl
     · subst hll'
       grind [streettPop, Array.map_pop, streettView, streettOps]
     · subst hll'
@@ -2362,12 +2362,12 @@ theorem streettLowlinkLawful [Inhabited State] [LawfulBEq State] [LawfulHashable
         simp only [LowlinkView.closes, streettView, Array.back?_map, hb, hEq] at hcl
         simp at hcl
       rcases hb2 : dstack.pop.back? with _ | ⟨pll, pacc⟩
-      · exact ⟨by simp only [streettView, streettOps, streettPop, hb, if_neg hne, hb2],
-          by simp only [streettView, streettOps, streettPop, hb, if_neg hne, hb2],
-          by simp only [streettView, streettOps, streettPop, hb, if_neg hne, hb2]⟩
-      · exact ⟨by simp only [streettView, streettOps, streettPop, hb, if_neg hne, hb2],
-          by simp only [streettView, streettOps, streettPop, hb, if_neg hne, hb2],
-          by simp only [streettView, streettOps, streettPop, hb, if_neg hne, hb2]⟩
+      · exact ⟨by simp only [streettView, streettOps, streettPop, hb, ite_eq_right hne, hb2],
+          by simp only [streettView, streettOps, streettPop, hb, ite_eq_right hne, hb2],
+          by simp only [streettView, streettOps, streettPop, hb, ite_eq_right hne, hb2]⟩
+      · exact ⟨by simp only [streettView, streettOps, streettPop, hb, ite_eq_right hne, hb2],
+          by simp only [streettView, streettOps, streettPop, hb, ite_eq_right hne, hb2],
+          by simp only [streettView, streettOps, streettPop, hb, ite_eq_right hne, hb2]⟩
   pop_merge_lowlinks := fun succs edgeMarks aux step ll hcl hb => by
     obtain ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
     simp only [streettView, Array.back?_map, Option.map_eq_some_iff] at hb
@@ -2381,9 +2381,9 @@ theorem streettLowlinkLawful [Inhabited State] [LawfulBEq State] [LawfulHashable
     have hmb : ((dstack.map (·.1)).pop).back? = Option.map (·.1) (dstack.pop.back?) := by
       rw [← Array.map_pop, Array.back?_map]
     rcases hb2 : dstack.pop.back? with _ | ⟨pll, pacc⟩
-    · simp only [streettView, streettOps, streettPop, hbk, if_neg hne, hb2, hmb,
+    · simp only [streettView, streettOps, streettPop, hbk, ite_eq_right hne, hb2, hmb,
         Option.map_none, Array.map_pop]
-    · simp only [streettView, streettOps, streettPop, hbk, if_neg hne, hb2, hmb,
+    · simp only [streettView, streettOps, streettPop, hbk, ite_eq_right hne, hb2, hmb,
         Option.map_some, Array.map_pop, Array.map_push]
   pop_merge_accs := fun succs edgeMarks aux step acc hcl hb => by
     obtain ⟨live, liveIndex, dead, dstack, wit, wopts, pending⟩ := aux
@@ -2398,9 +2398,9 @@ theorem streettLowlinkLawful [Inhabited State] [LawfulBEq State] [LawfulHashable
     have hmb : ((dstack.map (·.2)).pop).back? = Option.map (·.2) (dstack.pop.back?) := by
       rw [← Array.map_pop, Array.back?_map]
     rcases hb2 : dstack.pop.back? with _ | ⟨pll, pacc⟩
-    · simp only [streettView, streettOps, streettPop, hbk, if_neg hne, hb2, hmb,
+    · simp only [streettView, streettOps, streettPop, hbk, ite_eq_right hne, hb2, hmb,
         Option.map_none, Array.map_pop]
-    · simp only [streettView, streettOps, streettPop, hbk, if_neg hne, hb2, hmb,
+    · simp only [streettView, streettOps, streettPop, hbk, ite_eq_right hne, hb2, hmb,
         Option.map_some, Array.map_pop, Array.map_push]
   init_live := rfl
   init_dead := by simp [streettView, streettOps, streettInitAux]
@@ -2418,16 +2418,16 @@ private theorem streettPop_pending_mono [Inhabited State] (cs : CompiledSpec Sta
   · simpa only [streettPop, hb] using hP
   · by_cases h : ll = step.pos
     · by_cases hacc : acc != fullAccMask cs.numMarks
-      · simpa only [streettPop, hb, if_pos h, if_pos hacc] using hP
+      · simpa only [streettPop, hb, ite_eq_left h, ite_eq_left hacc] using hP
       · rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with _ | opts
-        · simpa only [streettPop, hb, if_pos h, if_neg hacc, hfu] using hP
-        · simp only [streettPop, hb, if_pos h, if_neg hacc, hfu]
+        · simpa only [streettPop, hb, ite_eq_left h, ite_eq_right hacc, hfu] using hP
+        · simp only [streettPop, hb, ite_eq_left h, ite_eq_right hacc, hfu]
           rw [← Array.foldl_toList]
           exact (mem_foldl_push_cond _ _ opts.toList pending P).mpr (Or.inl hP)
     · rcases hb2 : dstack.pop.back? with _ | ⟨pll, pacc⟩
-      · simpa only [streettPop, hb, if_neg h, hb2] using hP
-      · simpa only [streettPop, hb, if_neg h, hb2] using hP
+      · simpa only [streettPop, hb, ite_eq_right h, hb2] using hP
+      · simpa only [streettPop, hb, ite_eq_right h, hb2] using hP
 
 private theorem streettMonotone [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (curRegions : Nat) :
@@ -2476,10 +2476,10 @@ private theorem streettPop_queues [Inhabited State] [LawfulBEq State] [LawfulHas
   have hacc : ¬ ((fullAccMask cs.numMarks != fullAccMask cs.numMarks) = true) := by simp
   rcases hfu : firstUnsatisfied cs curRegions (scanFrame cs succs live step.pos).1 (scanFrame cs succs live step.pos).2
     with _ | opts
-  · simp only [streettPop, hb', if_neg hacc, hfu] at h2
+  · simp only [streettPop, hb', ite_eq_right hacc, hfu] at h2
     exact absurd h2 (by simp)
   · refine ⟨opts, rfl, fun o ho => ?_⟩
-    simp only [streettPop, hb', if_neg hacc, hfu]
+    simp only [streettPop, hb', ite_eq_right hacc, hfu]
     rw [← Array.foldl_toList]
     by_cases he : (sccSetOf live step.pos).isEmpty = true
     · exact Or.inl he
@@ -3141,9 +3141,9 @@ private theorem mem_foldl_insertIf (p : Nat → Bool) (c m : Nat) :
     intro init
     rw [List.foldl_cons, ih]
     by_cases hp : p a = true
-    · simp only [if_pos hp, Std.HashSet.mem_insert, beq_iff_eq, List.mem_cons]
+    · simp only [ite_eq_left hp, Std.HashSet.mem_insert, beq_iff_eq, List.mem_cons]
       grind
-    · simp only [if_neg hp, List.mem_cons]
+    · simp only [ite_eq_right hp, List.mem_cons]
       grind
 
 omit [Inhabited State] in
@@ -3561,7 +3561,7 @@ theorem streettRun_none_dead (cs : CompiledSpec State L) (hcs : cs.WF) (succs : 
       exact Option.isSome_iff_exists.mp hc
     have := (hwf.liveWF.bwd s p hp).1
     omega
-  simp only [hnl, Bool.false_eq_true, if_false] at hst
+  simp only [hnl, Bool.false_eq_true, ite_false] at hst
   by_cases hd : fin.dead.contains s = true
   · exact Std.HashSet.mem_iff_contains.mpr hd
   · simp [hd] at hst

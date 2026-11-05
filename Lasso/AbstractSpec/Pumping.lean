@@ -52,7 +52,7 @@ private theorem nextMark_ge (hacc : MarksRecur edgeMarks numMarks σ) (m N : Nat
 
 private theorem nextMark_spec (hacc : MarksRecur edgeMarks numMarks σ) {m : Nat} (hm : m < numMarks)
     (N : Nat) : m ∈ edgeMarks (σ (nextMark hacc m N)) (σ (nextMark hacc m N + 1)) := by
-  rw [nextMark, dif_pos hm]
+  rw [nextMark, dite_eq_left hm]
   exact (hacc m hm N).choose_spec.2
 
 /-- One index past the point where marks `0 .. k-1` have each occurred at or after `N`. -/
@@ -253,13 +253,13 @@ theorem exists_TAcceptingCycle_of_run_marks {succs : State → Array State}
       · exact Or.inl ⟨h1, by simpa using h2⟩
       · refine Or.inr ⟨j, List.mem_range.mp hj, ?_⟩
         by_cases hp : ps.getD j (fun _ => false) s = true
-        · rw [if_pos hp] at hje
+        · rw [ite_eq_left hp] at hje
           exact ⟨(Option.some.inj hje).symm, hp⟩
-        · rw [if_neg hp] at hje
+        · rw [ite_eq_right hp] at hje
           exact absurd hje (by simp)
     · rintro (⟨h1, h2⟩ | ⟨j, hj, rfl, hp⟩)
       · exact Or.inl ⟨h1, by simpa using h2⟩
-      · exact Or.inr ⟨j, List.mem_range.mpr hj, by rw [if_pos hp]⟩
+      · exact Or.inr ⟨j, List.mem_range.mpr hj, by rw [ite_eq_left hp]⟩
   have hacc' : ∀ m, m < numMarks + ps.length → ∀ K, ∃ n ≥ K, m ∈ em' (σ n) (σ (n + 1)) := by
     intro m hm K
     rcases Nat.lt_or_ge m numMarks with hlt | hge

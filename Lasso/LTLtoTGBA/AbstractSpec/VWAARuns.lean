@@ -178,11 +178,11 @@ theorem exists_path_to (hv : r.ValidFrom A S ξ) :
     intro i hi
     rcases (by omega : i < n ∨ i = n) with h | h
     · show (if i + 1 = n + 1 then x else p (i + 1)) ∈ r.succ i (if i = n + 1 then x else p i)
-      rw [if_neg (by omega : ¬ (i + 1 = n + 1)), if_neg (by omega : ¬ (i = n + 1))]
+      rw [ite_eq_right (by omega : ¬ (i + 1 = n + 1)), ite_eq_right (by omega : ¬ (i = n + 1))]
       exact hpstep i h
     · subst h
       show (if i + 1 = i + 1 then x else p (i + 1)) ∈ r.succ i (if i = i + 1 then x else p i)
-      rw [if_pos rfl, if_neg (by omega : ¬ (i = i + 1)), hpn]
+      rw [ite_eq_left rfl, ite_eq_right (by omega : ¬ (i = i + 1)), hpn]
       exact hxy
 
 /-! ## Run union -/
@@ -201,9 +201,9 @@ theorem conj_level_subset (hv₁ : r₁.ValidFrom A S₁ ξ) (hv₂ : r₂.Valid
     obtain ⟨p, hp, hxp⟩ := hx
     simp only [VWAA.Run.conjSucc] at hxp
     by_cases hp1 : p ∈ r₁.level i
-    · rw [if_pos hp1] at hxp
+    · rw [ite_eq_left hp1] at hxp
       exact FinSet.mem_union_left _ (hv₁.succ_sub i p hp1 hxp)
-    · rw [if_neg hp1] at hxp
+    · rw [ite_eq_right hp1] at hxp
       have hp2 : p ∈ r₂.level i := by
         rcases FinSet.mem_union.mp (ih hp) with h | h
         · exact absurd h hp1
@@ -218,8 +218,8 @@ theorem conj_validFrom (hv₁ : r₁.ValidFrom A S₁ ξ) (hv₂ : r₂.ValidFro
       intro i q hq
       simp only [VWAA.Run.conj, VWAA.Run.conjSucc]
       by_cases hq1 : q ∈ r₁.level i
-      · rw [if_pos hq1]; exact hv₁.step i q hq1
-      · rw [if_neg hq1]
+      · rw [ite_eq_left hq1]; exact hv₁.step i q hq1
+      · rw [ite_eq_right hq1]
         have hq2 : q ∈ r₂.level i := by
           rcases FinSet.mem_union.mp (conj_level_subset hv₁ hv₂ i hq) with h | h
           · exact absurd h hq1
@@ -236,7 +236,7 @@ private theorem conj_absorbing (hv₁ : r₁.ValidFrom A S₁ ξ) (hb : (r₁.co
   | base => exact h
   | succ i _ ih =>
     have hstep := hb.2 i
-    simp only [VWAA.Run.conj, VWAA.Run.conjSucc, if_pos ih] at hstep
+    simp only [VWAA.Run.conj, VWAA.Run.conjSucc, ite_eq_left ih] at hstep
     exact hv₁.succ_sub i (b i) ih hstep
 
 /-- Acceptance survives run union, `[HOL4-ltl]` `CONJ_RUN_FIXP_LEMM`. -/
@@ -251,24 +251,24 @@ theorem acceptingRun_conj (hv₁ : r₁.ValidFrom A S₁ ξ)
       refine ⟨?_, ?_⟩
       · show (if 0 < i₀ then p 0 else b 0) ∈ r₁.level 0
         by_cases h0 : 0 < i₀
-        · rw [if_pos h0]; exact hp0
-        · rw [if_neg h0]
+        · rw [ite_eq_left h0]; exact hp0
+        · rw [ite_eq_right h0]
           have : i₀ = 0 := by omega
           subst this
           exact hi₀
       · intro i
         show (if i + 1 < i₀ then p (i + 1) else b (i + 1)) ∈ r₁.succ i (if i < i₀ then p i else b i)
         rcases Nat.lt_trichotomy (i + 1) i₀ with h | h | h
-        · rw [if_pos h, if_pos (by omega : i < i₀)]
+        · rw [ite_eq_left h, ite_eq_left (by omega : i < i₀)]
           exact hpstep i (by omega)
-        · rw [if_neg (by omega : ¬ (i + 1 < i₀)), if_pos (by omega : i < i₀)]
+        · rw [ite_eq_right (by omega : ¬ (i + 1 < i₀)), ite_eq_left (by omega : i < i₀)]
           rw [← h] at hpn
           rw [← hpn]
           exact hpstep i (by omega)
         · have hmem := habs i (by omega)
           have hstep := hb.2 i
-          simp only [VWAA.Run.conj, VWAA.Run.conjSucc, if_pos hmem] at hstep
-          rw [if_neg (by omega : ¬ (i + 1 < i₀)), if_neg (by omega : ¬ (i < i₀))]
+          simp only [VWAA.Run.conj, VWAA.Run.conjSucc, ite_eq_left hmem] at hstep
+          rw [ite_eq_right (by omega : ¬ (i + 1 < i₀)), ite_eq_right (by omega : ¬ (i < i₀))]
           exact hstep
     refine FinitePred.subset (FinitePred.union (FinitePred.lt i₀) (hacc₁ _ hb')) ?_
     intro m hm
@@ -276,7 +276,7 @@ theorem acceptingRun_conj (hv₁ : r₁.ValidFrom A S₁ ξ)
     · exact Or.inl hmlt
     · refine Or.inr ?_
       show A.final (if m < i₀ then p m else b m)
-      rw [if_neg hmlt]
+      rw [ite_eq_right hmlt]
       exact hm
   · simp only [_root_.not_exists] at hcase
     refine hacc₂ b ⟨?_, ?_⟩
@@ -287,7 +287,7 @@ theorem acceptingRun_conj (hv₁ : r₁.ValidFrom A S₁ ξ)
       · exact h
     · intro i
       have hstep := hb.2 i
-      simp only [VWAA.Run.conj, VWAA.Run.conjSucc, if_neg (hcase i)] at hstep
+      simp only [VWAA.Run.conj, VWAA.Run.conjSucc, ite_eq_right (hcase i)] at hstep
       exact hstep
 
 /-- Two satisfiable level-0 sets are satisfiable together. -/

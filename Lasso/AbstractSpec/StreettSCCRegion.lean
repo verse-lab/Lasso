@@ -374,13 +374,13 @@ theorem exists_RFairSCC_of_run (hcompat : spec.Compat succs edgeMarks)
       · exact Or.inl ⟨h1, by simpa using h2⟩
       · refine Or.inr ⟨j, List.mem_range.mp hj, ?_⟩
         by_cases hp : (spec.regionSuccs (fun l => R l && (gs.getD j (fun _ => false)) l) s).contains t = true
-        · rw [if_pos hp] at hje
+        · rw [ite_eq_left hp] at hje
           exact ⟨(Option.some.inj hje).symm, hp⟩
-        · rw [if_neg hp] at hje
+        · rw [ite_eq_right hp] at hje
           exact absurd hje (by simp)
     · rintro (⟨h1, h2⟩ | ⟨j, hj, rfl, hp⟩)
       · exact Or.inl ⟨h1, by simpa using h2⟩
-      · exact Or.inr ⟨j, List.mem_range.mpr hj, by rw [if_pos hp]⟩
+      · exact Or.inr ⟨j, List.mem_range.mpr hj, by rw [ite_eq_left hp]⟩
   -- shift the run past the threshold, where every step is a restricted step
   set σ : Nat → State := fun n => ρ.st (N + n) with hσ
   have htrans : ∀ n, σ (n + 1) ∈ g (σ n) := by

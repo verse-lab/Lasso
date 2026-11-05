@@ -139,7 +139,7 @@ def tarjanSccHint (aux : TarjanAux State) : Std.HashSet State :=
   aux.witness.foldl (init := Std.HashSet.emptyWithCapacity 0) fun h s => h.insert s
 
 /-- Tarjan's check as a `DFSOps` instance, Algorithm 2 of [RDKP13]. -/
-@[expose] def tarjanOps (numMarks : Nat) : DFSOps State where
+@[expose, implicit_reducible] def tarjanOps (numMarks : Nat) : DFSOps State where
   Aux := TarjanAux State
   Position := Nat
   initAux := tarjanInitAux
@@ -165,8 +165,8 @@ private theorem tarjanPop_triple (numMarks : Nat) (aux : TarjanAux State) (step 
   · exact Or.inl (by simp [tarjanPop, hb])
   · by_cases h : ll = step.pos
     · by_cases hacc : acc == fullMask numMarks
-      · exact Or.inr (by simp only [tarjanPop, hb, if_pos h, if_pos hacc])
-      · exact Or.inr (by simp only [tarjanPop, hb, if_pos h, if_neg hacc])
+      · exact Or.inr (by simp only [tarjanPop, hb, ite_eq_left h, ite_eq_left hacc])
+      · exact Or.inr (by simp only [tarjanPop, hb, ite_eq_left h, ite_eq_right hacc])
     · rcases hb2 : aux.dstack.pop.back? with _ | ⟨pll, pacc⟩ <;>
         exact Or.inl (by simp [tarjanPop, hb, h, hb2])
 
@@ -183,10 +183,10 @@ private theorem tarjanPop_eq_true (numMarks : Nat) {aux aux' : TarjanAux State} 
   · by_cases hll : ll = step.pos
     · by_cases hacc : acc == fullMask numMarks
       · have hacc' : acc = fullMask numMarks := by simpa using hacc
-        exact ⟨by simp only [hll, hacc'], by simp only [tarjanPop, hb, if_pos hll, if_pos hacc]⟩
-      · simp only [tarjanPop, hb, if_pos hll, if_neg hacc, Bool.false_eq_true] at h2
+        exact ⟨by simp only [hll, hacc'], by simp only [tarjanPop, hb, ite_eq_left hll, ite_eq_left hacc]⟩
+      · simp only [tarjanPop, hb, ite_eq_left hll, ite_eq_right hacc, Bool.false_eq_true] at h2
     · rcases hb2 : aux.dstack.pop.back? with _ | ⟨pll, pacc⟩ <;>
-        simp only [tarjanPop, hb, if_neg hll, hb2, Bool.false_eq_true] at h2
+        simp only [tarjanPop, hb, ite_eq_right hll, hb2, Bool.false_eq_true] at h2
 
 /-- `tarjanOps` is a lawful refinement: PUSH, UPDATE and POP preserve `LiveWF`, and the three status laws hold. -/
 def tarjanLawful [Inhabited State] [LawfulBEq State] [LawfulHashable State] (numMarks : Nat) :
@@ -198,7 +198,7 @@ def tarjanLawful [Inhabited State] [LawfulBEq State] [LawfulHashable State] (num
     by_contra hc
     simp only [Bool.not_eq_false] at hc
     rw [show (tarjanOps numMarks).getStatus aux q = liveStatusOf aux.liveIndex aux.dead q from rfl,
-      liveStatusOf, if_pos hc] at hq
+      liveStatusOf, ite_eq_left hc] at hq
     exact absurd hq (by simp)
   wf_update := fun aux marks d hwf => by
     show LiveWF (tarjanUpdate numMarks aux marks d).1.live
@@ -288,8 +288,8 @@ theorem tarjanLowlinkLawful (numMarks : Nat) :
     have hll' : ll = step.pos := by simpa using hll
     refine ⟨?_, ?_, ?_⟩
     · by_cases hacc : acc == fullMask numMarks
-      · simp only [tarjanView, tarjanOps, tarjanPop, hb, if_pos hll', if_pos hacc]; rfl
-      · simp only [tarjanView, tarjanOps, tarjanPop, hb, if_pos hll', if_neg hacc]; rfl
+      · simp only [tarjanView, tarjanOps, tarjanPop, hb, ite_eq_left hll', ite_eq_left hacc]; rfl
+      · simp only [tarjanView, tarjanOps, tarjanPop, hb, ite_eq_left hll', ite_eq_right hacc]; rfl
     · subst hll'
       grind [tarjanPop, Array.map_pop, tarjanView, tarjanOps]
     · subst hll'
@@ -319,9 +319,9 @@ theorem tarjanLowlinkLawful (numMarks : Nat) :
     have hmb : ((aux.dstack.map (·.1)).pop).back? = Option.map (·.1) (aux.dstack.pop.back?) := by
       rw [← Array.map_pop, Array.back?_map]
     rcases hb2 : aux.dstack.pop.back? with _ | ⟨pll, pacc⟩
-    · simp only [tarjanView, tarjanOps, tarjanPop, hbk, if_neg hne, hb2, hmb,
+    · simp only [tarjanView, tarjanOps, tarjanPop, hbk, ite_eq_right hne, hb2, hmb,
         Option.map_none, Array.map_pop]
-    · simp only [tarjanView, tarjanOps, tarjanPop, hbk, if_neg hne, hb2, hmb,
+    · simp only [tarjanView, tarjanOps, tarjanPop, hbk, ite_eq_right hne, hb2, hmb,
         Option.map_some, Array.map_pop, Array.map_push]
   pop_merge_accs := fun succs edgeMarks aux step acc hcl hb => by
     simp only [tarjanView, Array.back?_map, Option.map_eq_some_iff] at hb
@@ -335,9 +335,9 @@ theorem tarjanLowlinkLawful (numMarks : Nat) :
     have hmb : ((aux.dstack.map (·.2)).pop).back? = Option.map (·.2) (aux.dstack.pop.back?) := by
       rw [← Array.map_pop, Array.back?_map]
     rcases hb2 : aux.dstack.pop.back? with _ | ⟨pll, pacc⟩
-    · simp only [tarjanView, tarjanOps, tarjanPop, hbk, if_neg hne, hb2, hmb,
+    · simp only [tarjanView, tarjanOps, tarjanPop, hbk, ite_eq_right hne, hb2, hmb,
         Option.map_none, Array.map_pop]
-    · simp [tarjanView, tarjanOps, tarjanPop, hbk, if_neg hne, hb2, hmb, Array.map_pop]
+    · simp [tarjanView, tarjanOps, tarjanPop, hbk, ite_eq_right hne, hb2, hmb, Array.map_pop]
   init_live := rfl
   init_dead := by simp [tarjanView, tarjanOps, tarjanInitAux]
   init_lowlinks := by simp [tarjanView, tarjanOps, tarjanInitAux]

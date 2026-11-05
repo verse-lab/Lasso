@@ -237,7 +237,7 @@ private theorem shrinkChoice_spec
     shrinkChoice hstep hv i q ∈ Y.trans q ∧ (shrinkChoice hstep hv i q).1 (ξ i) ∧
       (shrinkChoice hstep hv i q).2 ⊆ r.succ i q := by
   unfold shrinkChoice
-  rw [dif_pos hq]
+  rw [dite_eq_left hq]
   exact Classical.choose_spec (shrinkEx hstep hv i q hq)
 
 private noncomputable def shrinkSucc
@@ -251,7 +251,7 @@ private theorem shrinkSucc_subset
   · exact (shrinkChoice_spec hstep hv i q hq).2.2
   · show (shrinkChoice hstep hv i q).2 ⊆ r.succ i q
     unfold shrinkChoice
-    rw [dif_neg hq]
+    rw [dite_eq_right hq]
     exact FinSet.empty_subset _
 
 private noncomputable def shrinkLevel

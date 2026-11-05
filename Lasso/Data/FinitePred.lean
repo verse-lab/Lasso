@@ -68,7 +68,7 @@ theorem of_finite_image {p : α → Prop} {f : α → β} (h : FinitePred fun b 
     fun a ha => ?_⟩
   have hb : ∃ a', p a' ∧ f a' = f a := ⟨a, ha, rfl⟩
   refine List.mem_filterMap.mpr ⟨f a, hL _ hb, ?_⟩
-  rw [dif_pos hb]
+  rw [dite_eq_left hb]
   exact congrArg some (hinj _ (Classical.choose_spec hb).1 _ ha (Classical.choose_spec hb).2)
 
 /-- Pigeonhole: a sequence confined to a finite predicate takes some value twice. -/

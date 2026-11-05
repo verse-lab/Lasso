@@ -248,7 +248,7 @@ route calls `liveFlush`. -/
 /-! ## The `DFSOps` instance and the drivers -/
 
 /-- The fast prune as a `DFSOps` instance, the proved operations with the retained arrays threaded through. -/
-@[expose] def streettOpsF [Inhabited State] [LawfulBEq State] [LawfulHashable State]
+@[expose, implicit_reducible] def streettOpsF [Inhabited State] [LawfulBEq State] [LawfulHashable State]
     (cs : CompiledSpec State L) (curRegions : Nat) : DFSOps State where
   Aux := StreettAuxF State
   Position := Nat
@@ -435,11 +435,11 @@ private theorem scanEdgesF_fst_testBit (liveIndex : Std.HashMap State Nat) (lo s
         exact ⟨h1, fun k' hkk' hk' hin => h2 k' (Nat.le_of_succ_le hkk') hk' hin⟩
     | some j =>
       by_cases hj : lo ≤ j
-      · simp only [hj, if_true]
+      · simp only [hj, ite_true]
         have hyes : InSccF liveIndex lo ss[k] := ⟨j, hm, hj⟩
         by_cases hu : uniform = true
         · -- the early exit: every later edge of this state carries `os[k]!`
-          simp only [hu, if_true]
+          simp only [hu, ite_true]
           rw [Nat.testBit_and, Bool.and_eq_true]
           constructor
           · rintro ⟨h1, hb'⟩
@@ -447,7 +447,7 @@ private theorem scanEdgesF_fst_testBit (liveIndex : Std.HashMap State Nat) (lo s
             rw [huni hu k' hk', ← huni hu k hk]; exact hb'
           · rintro ⟨h1, h2⟩
             exact ⟨h1, h2 k (Nat.le_refl _) hk hyes⟩
-        · rw [if_neg hu]
+        · rw [ite_eq_right hu]
           rw [hrec, Nat.testBit_and, Bool.and_eq_true]
           constructor
           · rintro ⟨⟨h1, hb'⟩, h2⟩
@@ -458,7 +458,7 @@ private theorem scanEdgesF_fst_testBit (liveIndex : Std.HashMap State Nat) (lo s
           · rintro ⟨h1, h2⟩
             exact ⟨⟨h1, h2 k (Nat.le_refl _) hk hyes⟩,
               fun k' hkk' hk' hin => h2 k' (Nat.le_of_succ_le hkk') hk' hin⟩
-      · simp only [hj, if_false]
+      · simp only [hj, ite_false]
         rw [hrec]
         have hno : ¬ InSccF liveIndex lo ss[k] := by
           rintro ⟨j', hj', hlo⟩; rw [hm] at hj'; cases hj'; exact hj hlo
@@ -508,11 +508,11 @@ private theorem scanEdgesF_snd_testBit (liveIndex : Std.HashMap State Nat) (lo s
           · exact Or.inr ⟨k', hlt, hk', hin, hbit⟩
     | some j =>
       by_cases hj : lo ≤ j
-      · simp only [hj, if_true]
+      · simp only [hj, ite_true]
         have hyes : InSccF liveIndex lo ss[k] := ⟨j, hm, hj⟩
         by_cases hu : uniform = true
         · -- the early exit, as in `scanEdgesF_fst_testBit`
-          simp only [hu, if_true]
+          simp only [hu, ite_true]
           rw [Nat.testBit_or, Nat.testBit_shiftRight, Bool.or_eq_true]
           constructor
           · rintro (h | hb')
@@ -522,7 +522,7 @@ private theorem scanEdgesF_snd_testBit (liveIndex : Std.HashMap State Nat) (lo s
             · exact Or.inl h
             · refine Or.inr ?_
               rw [huni hu k hk, ← huni hu k' hk']; exact hbit
-        · rw [if_neg hu]
+        · rw [ite_eq_right hu]
           rw [hrec, Nat.testBit_or, Nat.testBit_shiftRight, Bool.or_eq_true]
           constructor
           · rintro ((h | hb') | ⟨k', hkk', hk', hin, hbit⟩)
@@ -534,7 +534,7 @@ private theorem scanEdgesF_snd_testBit (liveIndex : Std.HashMap State Nat) (lo s
             · rcases Nat.eq_or_lt_of_le hkk' with rfl | hlt
               · exact Or.inl (Or.inr hbit)
               · exact Or.inr ⟨k', hlt, hk', hin, hbit⟩
-      · simp only [hj, if_false]
+      · simp only [hj, ite_false]
         rw [hrec]
         have hno : ¬ InSccF liveIndex lo ss[k] := by
           rintro ⟨j', hj', hlo⟩; rw [hm] at hj'; cases hj'; exact hj hlo
@@ -568,10 +568,10 @@ private theorem scanLiveF_fst_testBit (cs : CompiledSpec State L) (liveIndex : S
   by_cases hi : i < lsuccs.size
   · simp only [hi, dite_true]
     by_cases hexit : (ra == 0 && ms == fullMarks) = true
-    · rw [if_pos hexit]
+    · rw [ite_eq_left hexit]
       simp only [Bool.and_eq_true, beq_iff_eq] at hexit
       simp [hexit.1]
-    · rw [if_neg hexit]
+    · rw [ite_eq_right hexit]
       have huni : sameBitsFrom lopts[i]! lsuccs[i].size 0 (lopts[i]!)[0]! = true →
           ∀ k', k' < lsuccs[i].size → (lopts[i]!)[k']! = (lopts[i]!)[0]! :=
         fun hu k' hk' => (sameBitsFrom_eq_true _ _ _ _ 0 rfl).mp hu k' (Nat.zero_le _) hk'
@@ -613,7 +613,7 @@ private theorem scanLiveF_snd_testBit (cs : CompiledSpec State L) (liveIndex : S
   by_cases hi : i < lsuccs.size
   · simp only [hi, dite_true]
     by_cases hexit : (ra == 0 && ms == (1 <<< m) - 1) = true
-    · rw [if_pos hexit]
+    · rw [ite_eq_left hexit]
       simp only [Bool.and_eq_true, beq_iff_eq] at hexit
       rw [hexit.2]
       constructor
@@ -623,7 +623,7 @@ private theorem scanLiveF_snd_testBit (cs : CompiledSpec State L) (liveIndex : S
         · by_cases hbm : b < m
           · simp [Nat.one_shiftLeft, Nat.testBit_two_pow_sub_one, hbm]
           · rw [hbound j (by omega) hj k hk b (Nat.le_of_not_lt hbm)] at hbit; cases hbit
-    · rw [if_neg hexit]
+    · rw [ite_eq_right hexit]
       have huni : sameBitsFrom lopts[i]! lsuccs[i].size 0 (lopts[i]!)[0]! = true →
           ∀ k', k' < lsuccs[i].size → (lopts[i]!)[k']! = (lopts[i]!)[0]! :=
         fun hu k' hk' => (sameBitsFrom_eq_true _ _ _ _ 0 rfl).mp hu k' (Nat.zero_le _) hk'
@@ -857,7 +857,7 @@ private theorem markBitsAt_testBit (gs : Array (L → Bool)) (l : L) (base b : N
     rw [ih (gs.size - (j + 1)) (by omega) (j + 1) _ rfl]
     have hget : gs[j]! = gs[j] := getElem!_pos gs j hj
     by_cases hc : gs[j] l = true
-    · simp only [hc, if_true, Nat.testBit_or, Nat.one_shiftLeft, Nat.testBit_two_pow, Bool.or_eq_true,
+    · simp only [hc, ite_true, Nat.testBit_or, Nat.one_shiftLeft, Nat.testBit_two_pow, Bool.or_eq_true,
         decide_eq_true_eq]
       constructor
       · rintro ((h | h) | ⟨k, hjk, hk, hbk, hgk⟩)
@@ -905,7 +905,7 @@ private theorem letterBitsFrom_testBit (cs : CompiledSpec State L) (l : L) (b : 
     rw [ih (cs.letterOptions.size - (o + 1)) (by omega) (o + 1) _ rfl]
     have hget : cs.letterOptions[o]! = cs.letterOptions[o] := getElem!_pos _ o ho
     by_cases hr : cs.letterOptions[o].region l = true
-    · simp only [hr, if_true]
+    · simp only [hr, ite_true]
       rw [markBitsAt_testBit _ _ _ _ _ 0 _ rfl]
       simp only [Nat.testBit_or, Nat.one_shiftLeft, Nat.testBit_two_pow, Bool.or_eq_true,
         decide_eq_true_eq, Nat.zero_le, true_and]
@@ -960,9 +960,9 @@ theorem CompiledSpec.letterBits_testBit (cs : CompiledSpec State L) (hwf : cs.WF
           ((cs.letterOptions[p]!).marks)[k]! l = true)) := by
   rw [CompiledSpec.letterBits]
   by_cases hr : cs.restrict l = true
-  · rw [if_pos hr, letterBitsFrom_testBit cs l b _ 0 0 rfl, hwf.letterOptions_size]
+  · rw [ite_eq_left hr, letterBitsFrom_testBit cs l b _ 0 0 rfl, hwf.letterOptions_size]
     simp [Nat.zero_testBit, hr]
-  · rw [if_neg hr]
+  · rw [ite_eq_right hr]
     simp [Nat.zero_testBit, hr]
 
 omit [Hashable State] in
@@ -1059,12 +1059,12 @@ theorem liveFlush_fst_size (pos : Nat) : ∀ (live : Array State) (liveIndex : S
     omega
   | case2 live liveIndex dead hgt q hb ih =>
     unfold liveFlush
-    simp only [hgt, if_true, hb]
+    simp only [hgt, ite_true, hb]
     rw [ih, Array.size_pop]
     omega
   | case3 live liveIndex dead hle =>
     unfold liveFlush
-    simp only [hle, if_false]
+    simp only [hle, ite_false]
     omega
 
 theorem liveFlush_fst_getElem! [Inhabited State] (pos : Nat) :
@@ -1079,7 +1079,7 @@ theorem liveFlush_fst_getElem! [Inhabited State] (pos : Nat) :
   | case2 live liveIndex dead hgt q hb ih =>
     intro i hi
     unfold liveFlush at hi ⊢
-    simp only [hgt, if_true, hb] at hi ⊢
+    simp only [hgt, ite_true, hb] at hi ⊢
     rw [ih i hi]
     have hlt : i < live.pop.size := by
       have := liveFlush_fst_size pos live.pop (liveIndex.erase q) (dead.insert q)
@@ -1088,7 +1088,7 @@ theorem liveFlush_fst_getElem! [Inhabited State] (pos : Nat) :
   | case3 live liveIndex dead hle =>
     intro i hi
     unfold liveFlush at hi ⊢
-    simp only [hle, if_false] at hi ⊢
+    simp only [hle, ite_false] at hi ⊢
 
 /-! ### PUSH and UPDATE -/
 
@@ -1348,16 +1348,16 @@ theorem streettPopF_spec [Inhabited State] [LawfulBEq State] [LawfulHashable Sta
     obtain ⟨ll, acc⟩ := p
     by_cases hll : ll = step.pos
     · subst hll
-      simp only [if_true]
+      simp only [ite_true]
       by_cases hacc : (acc != fullAccMask cs.numMarks) = true
-      · rw [if_pos hacc, if_pos hacc]
+      · rw [ite_eq_left hacc, ite_eq_left hacc]
         exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hwit⟩
-      · rw [if_neg hacc, if_neg hacc, hscan]
+      · rw [ite_eq_right hacc, ite_eq_right hacc, hscan]
         cases hfu : firstUnsatisfied cs cr (scanFrame cs succs live step.pos).1
             (scanFrame cs succs live step.pos).2 with
         | none => exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hnew⟩
         | some liveOpts => exact ⟨rfl, rfl, hinvFlush _ _ _ _ _ hwit⟩
-    · simp only [hll, if_false]
+    · simp only [hll, ite_false]
       cases hb2 : dstack0.pop.back? with
       | none => exact ⟨rfl, rfl, hinvNoFlush _⟩
       | some p2 =>
@@ -1441,7 +1441,7 @@ theorem dfsGo_lockstep [Inhabited State] [LawfulBEq State] [LawfulHashable State
       simp only []
       by_cases h : stepF.idx < stepF.succ.size
       · simp only [h, dite_true] at hr
-        rw [dif_pos h]
+        rw [dite_eq_left h]
         cases hgs : (streettOpsF cs cr).getStatus auxF stepF.succ[stepF.idx] with
         | dead =>
           simp only [hgs] at hr
@@ -1469,8 +1469,8 @@ theorem dfsGo_lockstep [Inhabited State] [LawfulBEq State] [LawfulHashable State
             rw [hupdF] at this
             exact this
           by_cases hf : foundF = true
-          · simp only [hf, if_true, Option.some.injEq] at hr
-            simp only [hf, if_true]
+          · simp only [hf, ite_true, Option.some.injEq] at hr
+            simp only [hf, ite_true]
             refine ⟨_, rfl, ?_, ?_, ?_⟩
             · rw [← hr]
               simp only [List.map_cons, List.reverse_cons]
@@ -1502,7 +1502,7 @@ theorem dfsGo_lockstep [Inhabited State] [LawfulBEq State] [LawfulHashable State
           refine ih auxF' _ rF hr hinv' _ ?_
           simp only [List.map_cons, hrest, DFSStep.strip, hexp.fst, hexpO.fst, hexp.snd, hexpO.snd]
       · simp only [h, dite_false] at hr
-        rw [dif_neg h]
+        rw [dite_eq_right h]
         obtain ⟨hpop1, hpop2, hinv'⟩ := streettPopF_spec cs hwf cr hbits hinv
         rcases hpopF : streettPopF cs cr auxF stepF with ⟨auxF', foundF⟩
         have hpopF' : (streettOpsF cs cr).pop (fun _ => #[]) (fun _ _ => Std.HashSet.emptyWithCapacity 0)
@@ -1577,7 +1577,7 @@ theorem dfsGo_lockstep_rev [Inhabited State] [LawfulBEq State] [LawfulHashable S
       simp only []
       by_cases h : stepF.idx < stepF.succ.size
       · simp only [h, dite_true] at hr
-        rw [dif_pos h]
+        rw [dite_eq_left h]
         cases hgs : (streettOps cs cr).getStatus auxF.proj stepF.succ[stepF.idx] with
         | dead =>
           simp only [hgs] at hr
@@ -1605,8 +1605,8 @@ theorem dfsGo_lockstep_rev [Inhabited State] [LawfulBEq State] [LawfulHashable S
             rw [hupdF] at this
             exact this
           by_cases hf : foundF = true
-          · simp only [hf, if_true, Option.some.injEq] at hr
-            simp only [hf, if_true]
+          · simp only [hf, ite_true, Option.some.injEq] at hr
+            simp only [hf, ite_true]
             refine ⟨_, rfl, ?_, ?_⟩
             · rw [← hr]
               simp only [List.map_cons, List.reverse_cons]
@@ -1637,7 +1637,7 @@ theorem dfsGo_lockstep_rev [Inhabited State] [LawfulBEq State] [LawfulHashable S
           refine ih auxF'.proj _ r hr auxF' _ rfl hinv' ?_
           simp only [List.map_cons, hrest, DFSStep.strip, hexp.fst, hexpO.fst, hexp.snd, hexpO.snd]
       · simp only [h, dite_false] at hr
-        rw [dif_neg h]
+        rw [dite_eq_right h]
         obtain ⟨hpop1, hpop2, hinv'⟩ := streettPopF_spec cs hwf cr hbits hinv
         rcases hpopF : streettPopF cs cr auxF stepF with ⟨auxF', foundF⟩
         have hpopF' : (streettOpsF cs cr).pop (fun _ => #[]) (fun _ _ => Std.HashSet.emptyWithCapacity 0)
@@ -1747,7 +1747,7 @@ theorem dfsGo_witOK [Inhabited State] [LawfulBEq State] [LawfulHashable State]
             = (auxF', found) from hupd] at this
           exact this
         by_cases hf : found = true
-        · simp only [hf, if_true, Option.some.injEq] at hr
+        · simp only [hf, ite_true, Option.some.injEq] at hr
           rw [← hr]; exact hinv'.witOK
         · simp only [hf] at hr
           exact ih auxF' _ rF hr (hinv'.bump _)
@@ -2007,7 +2007,7 @@ theorem filterExpand_thd {e : Array State × Array (Std.HashSet Nat) × Array Na
   · have hne : (ss.map g).isEmpty = false := by
       simp only [Array.isEmpty, Array.size_map]
       simpa using hs
-    rw [if_neg (by simp [hne]), zip_filter_map, Array.map_map]
+    rw [ite_eq_right (by simp [hne]), zip_filter_map, Array.map_map]
     rfl
 
 theorem candidateRunF_eq [Inhabited State] [LawfulBEq State] [LawfulHashable State]

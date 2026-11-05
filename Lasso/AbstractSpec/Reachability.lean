@@ -238,11 +238,11 @@ open Classical in
 theorem reachCount_le {q q' : State → Prop} (h : ∀ s, Reachable initialStates succs s → q s → q' s) :
     reachCount initialStates succs q ≤ reachCount initialStates succs q' := by
   by_cases fr : FiniteReach initialStates succs
-  · simp only [reachCount, dif_pos fr]
+  · simp only [reachCount, dite_eq_left fr]
     exact List.countP_mono_left fun s _ hs => by
       simp only [decide_eq_true_eq] at hs ⊢
       exact ⟨hs.1, h s hs.1 hs.2⟩
-  · simp only [reachCount, dif_neg fr, Nat.le_refl]
+  · simp only [reachCount, dite_eq_right fr, Nat.le_refl]
 
 open Classical in
 /-- Weakening the property strictly increases the count once some reachable state gains it. -/
@@ -250,7 +250,7 @@ theorem reachCount_lt (fr : FiniteReach initialStates succs) {q q' : State → P
     (h : ∀ s, Reachable initialStates succs s → q s → q' s) {x : State}
     (hx : Reachable initialStates succs x) (hq : ¬ q x) (hq' : q' x) :
     reachCount initialStates succs q < reachCount initialStates succs q' := by
-  simp only [reachCount, dif_pos fr]
+  simp only [reachCount, dite_eq_left fr]
   refine Lasso.List.countP_lt_countP (fun s _ hs => ?_) (Classical.choose_spec fr x hx) ?_ ?_
   · simp only [decide_eq_true_eq] at hs ⊢
     exact ⟨hs.1, h s hs.1 hs.2⟩

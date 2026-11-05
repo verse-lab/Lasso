@@ -156,7 +156,7 @@ the state that flushed it. -/
 abbrev EnumAux (ops : DFSOps State) := ops.Aux × Array (Std.HashSet State × ops.Aux)
 
 /-- The refinement's operations, recording every closed frame and never reporting. -/
-@[expose] def enumOps (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
+@[expose, implicit_reducible] def enumOps (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
   Aux := EnumAux ops
   Position := ops.Position
   initAux := (ops.initAux, #[])
@@ -194,7 +194,7 @@ def enumRun (ops : DFSOps State) (V : LowlinkView ops) (succs : State → Array 
 
 /-- The recording wrapper without the snapshot beside each set, which compiled code runs so that POP updates the
 refinement's state in place. -/
-@[expose] def enumOpsFast (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
+@[expose, implicit_reducible] def enumOpsFast (ops : DFSOps State) (V : LowlinkView ops) : DFSOps State where
   Aux := ops.Aux × Array (Std.HashSet State)
   Position := ops.Position
   initAux := (ops.initAux, #[])
@@ -602,7 +602,7 @@ private theorem dfsGo_base_eq (ops : DFSOps.{u,v,w} State) (V : LowlinkView ops)
         simp only [hupd] at hr hr'
         cases found with
         | true =>
-          simp only [if_true, Option.some.injEq] at hr'
+          simp only [ite_true, Option.some.injEq] at hr'
           rw [← hr'] at hnone'; exact absurd hnone' (by simp)
         | false => exact ih _ _ r hr r' hr' hnone'
       | unknown =>
@@ -994,7 +994,7 @@ theorem searchWF_init [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : Lowlin
     obtain ⟨p, hp⟩ := Option.ne_none_iff_exists'.mp hc
     have h := hlaw.status ops.initAux q
     rw [hlaw.init_status q, liveStatusOf,
-      if_pos (by rw [Std.HashMap.contains_eq_isSome_getElem?, hp]; rfl)] at h
+      ite_eq_left (by rw [Std.HashMap.contains_eq_isSome_getElem?, hp]; rfl)] at h
     exact absurd h (by simp)
   have hsize : (V.live ops.initAux).size = 0 := by rw [hlaw.init_live]; rfl
   exact {
@@ -1051,7 +1051,7 @@ theorem SearchWF.bump_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V : L
   have hnli : (V.liveIndex aux).contains d = false := by
     by_contra hc
     simp only [Bool.not_eq_false] at hc
-    rw [liveStatusOf, if_pos hc] at hstat
+    rw [liveStatusOf, ite_eq_left hc] at hstat
     exact absurd hstat (by simp)
   have hnone : (V.liveIndex aux)[d]? = none := by
     rcases hg : (V.liveIndex aux)[d]? with _ | pd
@@ -1060,8 +1060,8 @@ theorem SearchWF.bump_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V : L
       simp at hnli
   have hdmem : d ∈ V.dead aux := by
     by_contra hc
-    rw [liveStatusOf, if_neg (by simp [hnli]),
-      if_neg (fun hcc => hc (Std.HashSet.mem_iff_contains.mpr hcc))] at hstat
+    rw [liveStatusOf, ite_eq_right (by simp [hnli]),
+      ite_eq_right (fun hcc => hc (Std.HashSet.mem_iff_contains.mpr hcc))] at hstat
     exact absurd hstat (by simp)
   have hexp : ∀ s t, ExploredEdge (⟨src, p, idx + 1, a⟩ :: gray) succs s t →
       ExploredEdge (⟨src, p, idx, a⟩ :: gray) succs s t ∨ (s = src ∧ t = d) := by
@@ -1442,11 +1442,11 @@ theorem SearchWF.push_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V : L
   have hli : (V.liveIndex aux).contains d = false := by
     by_contra hc
     simp only [Bool.not_eq_false] at hc
-    rw [liveStatusOf, if_pos hc] at hstat
+    rw [liveStatusOf, ite_eq_left hc] at hstat
     exact absurd hstat (by simp)
   have hnd : d ∉ V.dead aux := by
     intro hdd
-    rw [liveStatusOf, if_neg (by simp [hli]), if_pos (Std.HashSet.mem_iff_contains.mp hdd)] at hstat
+    rw [liveStatusOf, ite_eq_right (by simp [hli]), ite_eq_left (Std.HashSet.mem_iff_contains.mp hdd)] at hstat
     exact absurd hstat (by simp)
   have hnl : ∀ i, (hi : i < (V.live aux).size) → (V.live aux)[i] ≠ d := by
     intro i hi heq
@@ -1592,8 +1592,8 @@ theorem SearchWF.push_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V : L
         obtain ⟨l, hl, hlb⟩ := hlow
         refine ⟨u, v, pu, pv, hexppush _ _ hune he, ?_, ?_, ?_,
           ⟨l + 1, by omega, by rw [hllS l]; exact hlb⟩, ?_, hmk⟩
-        · rwa [Std.HashMap.getElem?_insert, if_neg (by simpa using Ne.symm hune)]
-        · rwa [Std.HashMap.getElem?_insert, if_neg (by simpa using Ne.symm hvne)]
+        · rwa [Std.HashMap.getElem?_insert, ite_eq_right (by simpa using Ne.symm hune)]
+        · rwa [Std.HashMap.getElem?_insert, ite_eq_right (by simpa using Ne.symm hvne)]
         · simp only [List.getElem_cons_succ]
           rw [(hbump k (by simp at hk ⊢; omega)).2.1]
           exact hlo
@@ -1610,7 +1610,7 @@ theorem SearchWF.push_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V : L
       by_cases hud : u = d
       · subst hud; exact absurd he (hexpd v)
       have hu' : (V.liveIndex aux)[u]? = some pu := by
-        rwa [Std.HashMap.getElem?_insert, if_neg (by simpa using Ne.symm hud)] at hu
+        rwa [Std.HashMap.getElem?_insert, ite_eq_right (by simpa using Ne.symm hud)] at hu
       obtain ⟨hpult, hpuval⟩ := h.liveWF.bwd u pu hu'
       rcases hexp u v he with he' | ⟨hus, hvd⟩
       · -- an edge taken earlier, whose owner moves up one frame
@@ -1622,7 +1622,7 @@ theorem SearchWF.push_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V : L
           · exact hdmem hl
           · exact hnd hdd
         have hv' : (V.liveIndex aux)[v]? = some pv := by
-          rwa [Std.HashMap.getElem?_insert, if_neg (by simpa using Ne.symm hvd)] at hv
+          rwa [Std.HashMap.getElem?_insert, ite_eq_right (by simpa using Ne.symm hvd)] at hv
         obtain ⟨l, hl, hlo, hup, hacc⟩ := h.acc_complete u v pu pv he' hu' hv' b hb
         refine ⟨l + 1, by simp at hl ⊢; omega, ?_, fun l' hl' => ?_, ?_⟩
         · simp only [List.getElem_cons_succ]; rw [(hbump l hl).2.1]; exact hlo
@@ -1783,7 +1783,7 @@ theorem SearchWF.push_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V : L
         · exact hdmem hl
         · exact hnd hdd
       have hpt' : (V.liveIndex aux)[t]? = some pt := by
-        rwa [Std.HashMap.getElem?_insert, if_neg (by simpa using Ne.symm htne)] at hpt
+        rwa [Std.HashMap.getElem?_insert, ite_eq_right (by simpa using Ne.symm htne)] at hpt
       rcases k with _ | k
       · exfalso
         simp only [List.getElem_cons_zero, hpos] at hle
@@ -1795,7 +1795,7 @@ theorem SearchWF.push_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V : L
     · refine ⟨0, Nat.zero_le _, ?_⟩
       rw [hll0]
       have hpteq : pt = (V.live aux).size := by
-        rw [Std.HashMap.getElem?_insert, if_pos (by simp)] at hpt
+        rw [Std.HashMap.getElem?_insert, ite_eq_left (by simp)] at hpt
         exact (Option.some.inj hpt).symm
       omega
 
@@ -2630,12 +2630,12 @@ theorem SearchWF.pushRoot_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V
   have hli : (V.liveIndex aux).contains q0 = false := by
     by_contra hc
     simp only [Bool.not_eq_false] at hc
-    rw [liveStatusOf, if_pos hc] at hstat
+    rw [liveStatusOf, ite_eq_left hc] at hstat
     exact absurd hstat (by simp)
   have hnd : q0 ∉ V.dead aux := by
     intro hd
-    rw [liveStatusOf, if_neg (by simp [hli]),
-      if_pos (Std.HashSet.mem_iff_contains.mp hd)] at hstat
+    rw [liveStatusOf, ite_eq_right (by simp [hli]),
+      ite_eq_left (Std.HashSet.mem_iff_contains.mp hd)] at hstat
     exact absurd hstat (by simp)
   have hlive' : V.live (ops.push aux q0 m).1 = (V.live aux).push q0 := hlaw.push_live aux q0 m
   have hsize' : (V.live (ops.push aux q0 m).1).size = 1 := by
@@ -2683,7 +2683,7 @@ theorem SearchWF.pushRoot_step [Inhabited State] {ops : DFSOps.{u,v,w} State} {V
       rintro u v pu pv ⟨j, -, hg⟩ hu
       by_cases hqu : q0 = u
       · exact absurd (hg _ (List.mem_cons_self ..) hqu) (by simp)
-      · rw [Std.HashMap.getElem?_insert, if_neg (by simpa using hqu)] at hu
+      · rw [Std.HashMap.getElem?_insert, ite_eq_right (by simpa using hqu)] at hu
         have := (h.liveWF.bwd u pu hu).1
         omega
   }
@@ -2869,7 +2869,7 @@ private theorem dfsGo_enumWF [Inhabited State] (ops : DFSOps.{u,v,w} State) (V :
     case neg =>
       simp only [hidx, dite_false] at hr
       by_cases hcl : V.closes aux.1 step
-      · simp only [enumOps, hcl, if_true] at hr
+      · simp only [enumOps, hcl, ite_true] at hr
         exact ih _ rest r hr (fun st hst => hsucc st (List.mem_cons_of_mem _ hst))
           (fun st hst => hmk st (List.mem_cons_of_mem _ hst))
           (fun st hst => hreach st (List.mem_cons_of_mem _ hst))
@@ -3030,7 +3030,7 @@ theorem enumSCCs_sound [Inhabited State] (ops : DFSOps.{u,v,w} State) (V : Lowli
         exact Option.isSome_iff_exists.mp hc
       have := (hwf.liveWF.bwd s p hp).1
       omega
-    simp only [hnl, Bool.false_eq_true, if_false] at hs
+    simp only [hnl, Bool.false_eq_true, ite_false] at hs
     by_cases hd : (V.dead fin.1).contains s = true
     · exact Std.HashSet.mem_iff_contains.mpr hd
     · simp [hd] at hs
@@ -3395,7 +3395,7 @@ private theorem dfsGo_recordedAt [Inhabited State] (ops : DFSOps.{u,v,w} State) 
           simp only [hidx, dite_false, hpop]
           rwa [hp1] at h
         by_cases hcl : V.closes aux.1 step
-        · simp only [enumOps, hcl, if_true] at hr
+        · simp only [enumOps, hcl, ite_true] at hr
           refine ih _ rest r hr hreal' (fun st hst => hsucc st (List.mem_cons_of_mem _ hst))
             (fun st hst => hmk st (List.mem_cons_of_mem _ hst))
             (fun st hst => hreach st (List.mem_cons_of_mem _ hst))

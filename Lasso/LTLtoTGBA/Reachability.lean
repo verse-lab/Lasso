@@ -67,7 +67,7 @@ theorem size_foldl_erase_lt (l : List Nat) (s : Std.HashSet Nat) (x : Nat) (hx :
           exact absurd hmem (Std.HashSet.isEmpty_iff_forall_not_mem.mp hempty a)
         · exact h0
       have hlt : (s.erase a).size < s.size := by
-        rw [Std.HashSet.size_erase, if_pos hmem]
+        rw [Std.HashSet.size_erase, ite_eq_left hmem]
         omega
       exact Nat.lt_of_le_of_lt (size_foldl_erase_le rest _) hlt
     · have hxrest : x ∈ rest := by rcases List.mem_cons.mp hx with h | h; exact absurd h.symm hax; exact h

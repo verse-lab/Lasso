@@ -416,7 +416,7 @@ theorem dfsGo_touched_reachable [LawfulBEq State] (ops : DFSOps State) (succs : 
       haux'1 ▸ L.update_status aux (step.succMarks[step.idx]!) d s
     have hwfupd : L.WellFormed aux' := haux'1 ▸ L.wf_update aux (step.succMarks[step.idx]!) d hwf
     by_cases hf : found = true
-    · simp only [hf, if_true, Option.some.injEq] at hr
+    · simp only [hf, ite_true, Option.some.injEq] at hr
       rw [← hr] at hstatus
       simp only at hstatus
       rw [hueq] at hstatus
@@ -510,7 +510,7 @@ theorem dfsGo_status_monotone (ops : DFSOps State) (succs : State → Array Stat
       fun s => haux'1 ▸ L.update_status aux (step.succMarks[step.idx]!) d s
     have hwf' : L.WellFormed aux' := haux'1 ▸ L.wf_update aux (step.succMarks[step.idx]!) d hwf
     by_cases hf : found = true
-    · simp only [hf, if_true, Option.some.injEq] at hr
+    · simp only [hf, ite_true, Option.some.injEq] at hr
       intro s hs
       rw [← hr]
       simp only
@@ -642,7 +642,7 @@ theorem dfsGo_stem_path [LawfulBEq State] (ops : DFSOps State) (succs : State �
       simp only [hupdeq] at hr
       by_cases hf : found = true
       -- the closing back-edge's own frame is the anchor, and the live stack is the stem
-      · simp only [hf, if_true, Option.some.injEq] at hr
+      · simp only [hf, ite_true, Option.some.injEq] at hr
         intro anchor stem heq
         rw [← hr] at heq
         simp only [Option.some.injEq, Prod.mk.injEq] at heq
@@ -845,7 +845,7 @@ theorem dfsGo_closed [LawfulBEq State] (ops : DFSOps State) (succs : State → A
         fun s => haux'1 ▸ L.update_status aux (step.succMarks[step.idx]!) d s
       by_cases hf : found = true
       · exfalso
-        simp only [hf, if_true, Option.some.injEq] at hr
+        simp only [hf, ite_true, Option.some.injEq] at hr
         rw [← hr] at hnone
         simp at hnone
       · simp only [hf] at hr
@@ -910,7 +910,7 @@ theorem dfsGo_closed [LawfulBEq State] (ops : DFSOps State) (succs : State → A
             rcases List.mem_append.mp hx with hx | hx
             · have hxne : x ≠ d := by
                 intro hxeq; rw [hxeq] at hx; exact hstepPrefix d hx hgs
-              simp only [hpeq, beq_iff_eq, hxne, if_false]
+              simp only [hpeq, beq_iff_eq, hxne, ite_false]
               exact hstepPrefix x hx
             · simp only [List.mem_singleton] at hx
               rw [hx]; simp only [hpeq]; simp
@@ -918,7 +918,7 @@ theorem dfsGo_closed [LawfulBEq State] (ops : DFSOps State) (succs : State → A
             simp only [hpeq]
             have hxne : x ≠ d := by
               intro hxeq; rw [hxeq] at hx; exact hrestPrefix st hst d hx hgs
-            simp only [beq_iff_eq, hxne, if_false]
+            simp only [beq_iff_eq, hxne, ite_false]
             exact hrestPrefix st hst x hx
       have hClosed' : ∀ t, ops.getStatus aux' t ≠ .unknown →
           (∀ st ∈ newStep :: ({ step with idx := step.idx + 1 } : DFSStep State ops.Position) :: rest,
@@ -1031,7 +1031,7 @@ theorem dfsFromRoot_closed [LawfulBEq State] (ops : DFSOps State) (succs : State
       ∀ x ∈ succs t, ops.getStatus aux' x ≠ .unknown := by
     intro t ht hexcl x hx
     have htq : t ≠ q0 := fun heq => hexcl step (by simp) (by rw [hstep]; exact heq.symm)
-    simp only [hpeq, beq_iff_eq, htq, if_false] at ht
+    simp only [hpeq, beq_iff_eq, htq, ite_false] at ht
     have hxeq : ops.getStatus aux x ≠ .unknown := hClosed0 t ht x hx
     rw [hpeq]
     by_cases hxq : x == q0
@@ -1075,7 +1075,7 @@ theorem dfsGo_wellFormed (ops : DFSOps State) (succs : State → Array State)
       have haux'1 : (ops.update aux (step.succMarks[step.idx]!) d).1 = aux' := congrArg Prod.fst hupdeq
       have hwf' : L.WellFormed aux' := haux'1 ▸ L.wf_update aux (step.succMarks[step.idx]!) d hwf
       by_cases hf : found = true
-      · simp only [hf, if_true, Option.some.injEq] at hr; rw [← hr]; exact hwf'
+      · simp only [hf, ite_true, Option.some.injEq] at hr; rw [← hr]; exact hwf'
       · simp only [hf] at hr; exact ih aux' _ r hr hwf'
     | unknown =>
       simp only [hgs] at hr
@@ -1786,7 +1786,7 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
     rw [dfsGo.eq_def]
     simp only []
     by_cases h : step.idx < step.succ.size
-    · rw [dif_pos h]
+    · rw [dite_eq_left h]
       set d := step.succ[step.idx] with hd_def
       have hdSucc : d ∈ succs step.state := hstepSucc ▸ Array.getElem_mem h
       have hdReach : Reachable initialStates succs d := .step hstepReach hdSucc
@@ -1810,8 +1810,8 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
         exact ih3 _ (stackPending_bump step rest h) aux _ rfl hbumpLen rfl hwf hbumpSucc hbumpReach
       | live =>
         by_cases hf : (ops.update aux (step.succMarks[step.idx]!) d).2 = true
-        · rw [if_pos hf]; simp
-        · rw [if_neg hf]
+        · rw [ite_eq_left hf]; simp
+        · rw [ite_eq_right hf]
           have hcard : unexploredCard ops succs initialStates
               (ops.update aux (step.succMarks[step.idx]!) d).1 =
               unexploredCard ops succs initialStates aux :=
@@ -1833,7 +1833,7 @@ theorem dfsGo_ne_none [LawfulBEq State] (ops : DFSOps State) (succs : State → 
           · exact hdReach
           · exact hbumpReach st hst
     -- backtracking: the stack shrinks, and `pop` never touches the unknown set
-    · rw [dif_neg h]
+    · rw [dite_eq_right h]
       have hcard : unexploredCard ops succs initialStates (ops.pop succs edgeMarks aux step).1 =
           unexploredCard ops succs initialStates aux :=
         unexploredCard_eq_of_eq ops succs initialStates

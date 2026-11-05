@@ -319,7 +319,7 @@ theorem innerDFS_fuel_fold_seed (fuel : Nat) (current succ : State) (rest : List
     innerDFS_fuel_fold succs seed cyan fuel current (succ :: rest) iv st =
       some (some ([current], succ), iv, st) := by
   unfold innerDFS_fuel_fold
-  simp only [hse, if_true]
+  simp only [hse, ite_true]
 
 omit [LawfulHashable State] in
 theorem innerDFS_fuel_fold_cons (fuel : Nat) (current succ : State) (rest : List State)
@@ -330,7 +330,7 @@ theorem innerDFS_fuel_fold_cons (fuel : Nat) (current succ : State) (rest : List
       | some (some (cyc, target), iv', st') => some (some (current :: cyc, target), iv', st')
       | some (none, iv', st') => innerDFS_fuel_fold succs seed cyan fuel current rest iv' st' := by
   conv => lhs; rw [innerDFS_fuel_fold.eq_def]
-  simp only [hse, Bool.false_eq_true, if_false]
+  simp only [hse, Bool.false_eq_true, ite_false]
   rfl
 
 omit [LawfulHashable State] in

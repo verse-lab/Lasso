@@ -58,11 +58,11 @@ variable {State : Type u} {Edge : Type u'} {α : Type v} {k : Nat} (A : TOASpec 
 
 private theorem counterStep_not_accept (e : Edge) (c : Fin k) (hna : ¬ A.acceptMark c e) :
     A.counterStep hk e c = c := by
-  unfold TOASpec.counterStep; exact if_neg hna
+  unfold TOASpec.counterStep; exact ite_eq_right hna
 
 private theorem counterStep_accept (e : Edge) (c : Fin k) (ha : A.acceptMark c e) :
     A.counterStep hk e c = ⟨(c.val + 1) % k, Nat.mod_lt _ hk⟩ := by
-  unfold TOASpec.counterStep; exact if_pos ha
+  unfold TOASpec.counterStep; exact ite_eq_left ha
 
 /-- Counter stays at value c as long as mark c is not carried. -/
 private theorem counter_stays_at (σ : exec Edge) (n m : Nat) (c : Fin k) (hc : A.mkCounter hk σ n = c)
@@ -193,7 +193,7 @@ private theorem degeneralize_forward {ξ : OmegaWord α} (h : (A.degeneralize hk
         show A.counterStep hk (σ_edge m₁) (A.mkCounter hk σ_edge m₁) = _
         rw [hm1_eq]; unfold TOASpec.counterStep
         have hf0 : A.acceptMark ⟨0, hk⟩ (σ_edge m₁) := hm1_f0
-        rw [if_pos hf0]
+        rw [ite_eq_left hf0]
         have h1k : 1 < k := by omega
         exact Fin.ext (Nat.mod_eq_of_lt h1k)
       obtain ⟨j₂, hm2_c0, _⟩ := hacc' (m₁ + 1)

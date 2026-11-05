@@ -419,7 +419,7 @@ theorem succsFrom_mem_iff (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
   · -- the shared-letter branch: `LSys.letter base st.1 = base` for every step, by the guard
     next hall =>
       have hbase : ∀ st ∈ steps, LSys.letter base st.1 = base := fun st hst => by
-        rw [LSys.letter, if_pos (by simpa using Array.all_eq_true'.mp hall st hst)]
+        rw [LSys.letter, ite_eq_left (by simpa using Array.all_eq_true'.mp hall st hst)]
       simp only [Array.mem_flatMap, Array.mem_map, Array.mem_filter]
       constructor
       · rintro ⟨st, hst, t, ⟨ht, hc⟩, heq⟩
@@ -432,12 +432,12 @@ theorem succsFrom_mem_iff (tgba : TGBA α) (q : Nat) (base : Std.HashSet α)
     constructor
     · rintro ⟨st, hst, t, ht, hopt⟩
       by_cases hc : transCompatible t (LSys.letter base st.1) = true
-      · rw [if_pos hc] at hopt
+      · rw [ite_eq_left hc] at hopt
         obtain ⟨rfl, rfl⟩ := Prod.mk.injEq .. |>.mp (Option.some.inj hopt)
         exact ⟨st, hst, t, ht, hc, rfl, rfl⟩
-      · rw [if_neg hc] at hopt; exact absurd hopt (by simp)
+      · rw [ite_eq_right hc] at hopt; exact absurd hopt (by simp)
     · rintro ⟨st, hst, t, ht, hc, rfl, rfl⟩
-      exact ⟨st, hst, t, ht, by rw [if_pos hc]⟩
+      exact ⟨st, hst, t, ht, by rw [ite_eq_left hc]⟩
 
 /-! ## Proof-level bridge -/
 
@@ -634,7 +634,7 @@ private theorem foldl_marksByTarget_contains (base : Std.HashSet α) (k m : Nat)
     by_cases hc : transCompatible a base = true
     · by_cases hk : a.target = k
       · subst hk
-        rw [if_pos hc, Std.HashMap.getD_insert, if_pos (beq_self_eq_true a.target),
+        rw [ite_eq_left hc, Std.HashMap.getD_insert, ite_eq_left (beq_self_eq_true a.target),
           Std.HashSet.union_eq, Std.HashSet.contains_union]
         simp only [Bool.or_eq_true]
         constructor
@@ -647,7 +647,7 @@ private theorem foldl_marksByTarget_contains (base : Std.HashSet α) (k m : Nat)
           · rcases ht with rfl | ht
             · exact Or.inl (Or.inr htm)
             · exact Or.inr ⟨t, ht, htk, htc, htm⟩
-      · rw [if_pos hc, Std.HashMap.getD_insert, if_neg (by simpa using hk)]
+      · rw [ite_eq_left hc, Std.HashMap.getD_insert, ite_eq_right (by simpa using hk)]
         constructor
         · rintro (h | ⟨t, ht, h⟩)
           · exact Or.inl h
@@ -657,7 +657,7 @@ private theorem foldl_marksByTarget_contains (base : Std.HashSet α) (k m : Nat)
           · rcases ht with rfl | ht
             · exact absurd htk hk
             · exact Or.inr ⟨t, ht, htk, htc, htm⟩
-    · rw [if_neg hc]
+    · rw [ite_eq_right hc]
       constructor
       · rintro (h | ⟨t, ht, h⟩)
         · exact Or.inl h
@@ -719,11 +719,11 @@ theorem genMarksFromShared_eq [BEq SysState] [Hashable SysState] [LawfulBEq SysS
   obtain ⟨st, hst, -, -, -, h1, -⟩ := (succsFrom_mem_iff tgba q base steps p').mp hp'
   rw [edgeMarksFrom, marksTable, marksTableGen]
   by_cases hall : steps.all (·.1.isEmpty) = true
-  · rw [if_pos hall, if_pos hall]
+  · rw [ite_eq_left hall, ite_eq_left hall]
     show _ = (if (stepTargets steps).contains p'.1 then _ else _)
-    rw [if_pos ((contains_stepTargets steps p'.1).mpr ⟨st, hst, h1⟩)]
+    rw [ite_eq_left ((contains_stepTargets steps p'.1).mpr ⟨st, hst, h1⟩)]
     rfl
-  · rw [if_neg hall, if_neg hall]
+  · rw [ite_eq_right hall, ite_eq_right hall]
     rfl
 
 /-- `expand` is the fused form of `getSuccessors` and `edgeMarks`: one call per product state. -/
@@ -744,13 +744,13 @@ theorem contains_edgeMarksFrom_iff [BEq SysState] [Hashable SysState] [LawfulBEq
       ∃ r ∈ realizationsFrom tgba q base steps p', r.2.acceptMarks.contains m := by
   rw [edgeMarksFrom, marksTable]
   by_cases hall : steps.all (·.1.isEmpty) = true
-  · rw [if_pos hall]
+  · rw [ite_eq_left hall]
     show (if (stepTargets steps).contains p'.1 then
         (marksByTarget tgba q base).getD p'.2 (Std.HashSet.emptyWithCapacity 0)
       else Std.HashSet.emptyWithCapacity 0).contains m ↔ _
     -- under the guard every step reads `base`, so compatibility no longer depends on the step
     have hbase : ∀ st ∈ steps, LSys.letter base st.1 = base := fun st hst => by
-      rw [LSys.letter, if_pos (by simpa using Array.all_eq_true'.mp hall st hst)]
+      rw [LSys.letter, ite_eq_left (by simpa using Array.all_eq_true'.mp hall st hst)]
     have hR : (∃ r ∈ realizationsFrom tgba q base steps p', r.2.acceptMarks.contains m) ↔
         (∃ st ∈ steps, st.2 = p'.1) ∧
           (∃ t ∈ tgba.getSuccessors q,
@@ -766,12 +766,12 @@ theorem contains_edgeMarksFrom_iff [BEq SysState] [Hashable SysState] [LawfulBEq
         exact ⟨⟨hst, hst2⟩, ht, htgt, by rw [hbase st hst]; exact hc⟩
     rw [hR]
     by_cases hg : (stepTargets steps).contains p'.1 = true
-    · rw [if_pos hg, contains_marksByTarget]
+    · rw [ite_eq_left hg, contains_marksByTarget]
       exact (and_iff_right ((contains_stepTargets steps p'.1).mp hg)).symm
-    · rw [if_neg hg, Std.HashSet.contains_emptyWithCapacity]
+    · rw [ite_eq_right hg, Std.HashSet.contains_emptyWithCapacity]
       simp only [Bool.false_eq_true, false_iff, not_and]
       exact fun h1 => absurd ((contains_stepTargets steps p'.1).mpr h1) hg
-  · rw [if_neg hall]
+  · rw [ite_eq_right hall]
     simp only [edgeMarksFromShared]
     rw [← Array.foldl_toList,
       foldl_union_contains m (fun r : LStep α SysState × TGBA.Transition α => r.2.acceptMarks),

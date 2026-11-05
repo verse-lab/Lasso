@@ -6,12 +6,12 @@ testDriver = "LassoTests"
 [[require]]
 name = "lentil"
 git = "https://github.com/verse-lab/Lentil.git"
-rev = "4b336806735fa80c9a6073c33afdb9cb0360edb8"
+rev = "1ddf1fc16138371cae6687db2698770533c4058a"
 
 [[require]]
 name = "batteries"
 git = "https://github.com/leanprover-community/batteries"
-rev = "v4.32.0"
+rev = "v4.35.0"
 
 [[lean_lib]]
 name = "Lasso"

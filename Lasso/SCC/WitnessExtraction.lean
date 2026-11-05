@@ -62,7 +62,7 @@ private theorem collectNew_visited_eq (domain : Std.HashSet State) (visited : St
     (h1 : visited.contains d = true) :
     collectNew domain visited ((d, path) :: rest) = collectNew domain visited rest := by
   conv => lhs; unfold collectNew
-  rw [if_pos h1]
+  rw [ite_eq_left h1]
 
 private theorem collectNew_new_eq (domain : Std.HashSet State) (visited : Std.HashSet State)
     (d : State) (path : List State) (rest : List (State × List State))
@@ -71,14 +71,14 @@ private theorem collectNew_new_eq (domain : Std.HashSet State) (visited : Std.Ha
       ((collectNew domain (visited.insert d) rest).1,
         (d, path) :: (collectNew domain (visited.insert d) rest).2) := by
   conv => lhs; unfold collectNew
-  rw [if_neg h1, if_pos h2]
+  rw [ite_eq_right h1, ite_eq_left h2]
 
 private theorem collectNew_outside_eq (domain : Std.HashSet State) (visited : Std.HashSet State)
     (d : State) (path : List State) (rest : List (State × List State))
     (h1 : ¬ visited.contains d = true) (h2 : ¬ domain.contains d = true) :
     collectNew domain visited ((d, path) :: rest) = collectNew domain visited rest := by
   conv => lhs; unfold collectNew
-  rw [if_neg h1, if_neg h2]
+  rw [ite_eq_right h1, ite_eq_right h2]
 
 private theorem collectNew_kept_subset_candidates (domain : Std.HashSet State)
     (visited : Std.HashSet State) (candidates : List (State × List State)) :
@@ -229,7 +229,7 @@ private theorem collectNew_size_eq (domain : Std.HashSet State)
     · by_cases h2 : domain.contains d = true
       · have hins : (visited.insert d).size = visited.size + 1 := by
           rw [Std.HashSet.size_insert,
-            if_neg (fun hmem => h1 (Std.HashSet.mem_iff_contains.mp hmem))]
+            ite_eq_right (fun hmem => h1 (Std.HashSet.mem_iff_contains.mp hmem))]
         have hrec := ih (visited.insert d)
         rw [collectNew_new_eq domain visited d path tl h1 h2]
         simp only [List.length_cons]
@@ -788,7 +788,7 @@ private theorem buildCycleFrom_empty_eq [LawfulBEq State] [LawfulHashable State]
     (hrem : remaining.isEmpty = true) :
     buildCycleFrom scc succs edgeMarks anchor cur remaining = connector scc succs cur anchor := by
   conv => lhs; unfold buildCycleFrom
-  rw [dif_pos hrem]
+  rw [dite_eq_left hrem]
 
 private theorem buildCycleFrom_next_eq [LawfulBEq State] [LawfulHashable State]
     (scc : Std.HashSet State) (succs : State → Array State)
@@ -802,7 +802,7 @@ private theorem buildCycleFrom_next_eq [LawfulBEq State] [LawfulHashable State]
       path ++ buildCycleFrom scc succs edgeMarks anchor b
         (remaining.filter fun x => !(edgeMarks a b).contains x) := by
   conv => lhs; unfold buildCycleFrom
-  rw [dif_neg (by simp [hrem] : ¬ remaining.isEmpty = true), hpath]
+  rw [dite_eq_right (by simp [hrem] : ¬ remaining.isEmpty = true), hpath]
   dsimp only
   rw [hlast]
   dsimp only
@@ -931,7 +931,7 @@ private theorem stitchCycleAt_zero_eq [LawfulBEq State] [LawfulHashable State]
     stitchCycleAt scc succs edgeMarks 0 anchor =
       (connector scc succs anchor a ++ connector scc succs b anchor).dropLast := by
   conv => lhs; unfold stitchCycleAt
-  rw [if_pos rfl, hfind]
+  rw [ite_eq_left rfl, hfind]
 
 private theorem stitchCycleAt_pos_eq [LawfulBEq State] [LawfulHashable State]
     (scc : Std.HashSet State) (succs : State → Array State)
@@ -940,7 +940,7 @@ private theorem stitchCycleAt_pos_eq [LawfulBEq State] [LawfulHashable State]
     stitchCycleAt scc succs edgeMarks numMarks anchor =
       (buildCycleFrom scc succs edgeMarks anchor anchor (Std.HashSet.ofList (List.range numMarks))).dropLast := by
   conv => lhs; unfold stitchCycleAt
-  rw [if_neg hnm]
+  rw [ite_eq_right hnm]
 
 /-- `stitchCycleAt` is a `scc`-confined cycle anchored at `anchor`, covering every mark `< numMarks`,
 indexed modularly since the covering edge may be the wraparound one. -/
